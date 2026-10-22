@@ -15,6 +15,7 @@ import { AppModule } from './app.module';
 import { AdminCrudController } from './admin-crud.controller';
 import { ApiKeysController } from './api-keys.controller';
 import { IntegrationsController } from './integrations.controller';
+import { LinkPageController } from './link-page.controller';
 import { PublicController } from './public.controller';
 import {
   API_KEY_ALLOWED_ROUTES,
@@ -156,6 +157,8 @@ describe('ApiKeyRouteGuard', () => {
       true,
     );
     expect(guard.canActivate(contextFor(PublicController, PublicController.prototype.form, auth))).toBe(true);
+    expect(guard.canActivate(contextFor(LinkPageController, LinkPageController.prototype.get, auth))).toBe(true);
+    expect(guard.canActivate(contextFor(LinkPageController, LinkPageController.prototype.put, auth))).toBe(true);
   });
 
   it('without a key, or with a session bearer, every route goes through untouched', () => {

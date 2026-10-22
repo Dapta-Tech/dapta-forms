@@ -4,9 +4,11 @@
  * route guard and again here).
  *
  *   GET    /v1/api-keys      { keys: [{ id, name, last4, createdAt, lastUsedAt,
- *                             createdBy: { memberId, name, email } }] }
+ *                             createdBy: { memberId, name, email, staff } }] }
  *                            A member sees their own keys; owner and admin,
- *                            every active key of the workspace.
+ *                            every active key of the workspace, including the
+ *                            ones the deployment's staff created through a
+ *                            staff access grant (`createdBy.staff`).
  *   POST   /v1/api-keys      { name } (1 to 60 characters) -> 201
  *                            { id, name, last4, createdAt, key }. The only
  *                            response that ever carries the key in clear. The
@@ -15,6 +17,11 @@
  *   DELETE /v1/api-keys/:id  204. Someone else's key without being owner or
  *                            admin: 403. Unknown, already revoked or another
  *                            workspace's: 404.
+ *
+ * Staff in a workspace through a staff access grant (only while they are
+ * staff, judged on each request) act as that grant's `admin` row: they list,
+ * create and revoke keys there like any admin. A key they create keeps
+ * working until someone revokes it, whatever their staff status later.
  */
 import {
   BadRequestException,
@@ -44,7 +51,7 @@ import { z } from 'zod';
 import { AnalyticsEffects } from './analytics-effects';
 import { generateApiKey, type MintedApiKey } from './api-keys';
 import { keyNotAllowed } from './api-key-routes';
-import { AuthService, isApiKeyPrincipal, type HostPrincipal, type ReqLike } from './auth.service';
+import { AuthService, isAgentPrincipal, type HostPrincipal, type ReqLike } from './auth.service';
 import { assertOwnsOrAdmin, isAdmin } from './permissions';
 import { DB } from './tokens';
 
@@ -82,10 +89,10 @@ export class ApiKeysController {
     @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
   ) {}
 
-  /** The session principal; a key is refused even if the guard was bypassed. */
+  /** The session principal; an agent (a key or an MCP connection) is refused even if the guard was bypassed. */
   private async session(req: ReqLike): Promise<HostPrincipal> {
     const p = await this.auth.resolveHost(req);
-    if (isApiKeyPrincipal(p)) keyNotAllowed();
+    if (isAgentPrincipal(p)) keyNotAllowed();
     return p;
   }
 
@@ -99,6 +106,11 @@ export class ApiKeysController {
   @Post()
   @HttpCode(201)
   async create(@Req() req: ReqLike, @Body() body: unknown) {
+    // Staff acting through a staff access grant may create keys here: the
+    // session only resolves to a grant while the person is staff on this
+    // request (`AuthService.resolveHost`). The key is the workspace's, held
+    // by the grant row, and the workspace's owners and admins see it marked
+    // as created by staff and can revoke it.
     const p = await this.session(req);
     const parsed = createApiKeySchema.safeParse(body ?? {});
     if (!parsed.success) {
@@ -118,9 +130,12 @@ export class ApiKeysController {
     }
 
     const created = result.value;
+    // A key staff create through a grant is marked, so adoption metrics can
+    // leave the deployment's own staff out of the customer's numbers.
     await this.productAnalytics?.captureForMember('api_key_created', p, {
       api_key_id: created.id,
       role: p.role,
+      ...(p.accessGrant === 'staff' ? { staff_access: true } : {}),
     });
     return {
       id: created.id,

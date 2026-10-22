@@ -308,36 +308,32 @@ test.describe('V12: account settings behind the profile menu', () => {
     });
   });
 
-  test('Home links to the public page only while it is published', async ({ page, request }) => {
+  test('Home links to the workspace page only while it is published', async ({ page, request }) => {
     const me = await whoAmI(request);
-    const before = await request.get(`${API}/v1/me/profile`);
-    expect(before.ok(), `GET /v1/me/profile ${before.status()}`).toBeTruthy();
-    const original = (await before.json()) as { handle: string | null; profile: unknown };
-    test.skip(!original.handle, 'the seeded owner has no handle, so there is no public page');
+    const before = await request.get(`${API}/v1/link-page`);
+    expect(before.ok(), `GET /v1/link-page ${before.status()}`).toBeTruthy();
+    const original = (await before.json()) as { page: unknown };
 
     const setEnabled = async (enabled: boolean) => {
-      const res = await request.put(`${API}/v1/me/profile`, {
-        data: { profile: { version: 1, enabled } },
+      const res = await request.put(`${API}/v1/link-page`, {
+        data: { page: { version: 1, enabled } },
       });
-      expect(res.ok(), `PUT /v1/me/profile ${res.status()}`).toBeTruthy();
+      expect(res.ok(), `PUT /v1/link-page ${res.status()}`).toBeTruthy();
     };
 
     try {
       await setEnabled(true);
       await page.goto('/admin');
       const box = page.getByTestId('home-public-page');
-      await expect(box, 'published: Home shows the public page box').toBeVisible({
+      await expect(box, 'published: Home shows the page box').toBeVisible({
         timeout: 20_000,
       });
-      // The link is the PAGE (/{code}/{handle}), not one of the forms.
-      await expect(box).toContainText(`/${me.accountCode}/${original.handle}`);
+      // The link is the WORKSPACE page (/{code}), not a member page or a form.
+      await expect(box).toContainText(`/${me.accountCode}`);
       await expect(box, 'the box copies the page, not a form').not.toContainText(
-        new RegExp(`/${escapeRegExp(me.accountCode)}/${escapeRegExp(original.handle!)}/.+`),
+        new RegExp(`/${escapeRegExp(me.accountCode)}/.+`),
       );
-      await expect(box.getByRole('link', { name: /Open/ })).toHaveAttribute(
-        'href',
-        `/${me.accountCode}/${original.handle}`,
-      );
+      await expect(box.getByRole('link', { name: /Open/ })).toHaveAttribute('href', `/${me.accountCode}`);
 
       await setEnabled(false);
       await page.goto('/admin');
@@ -347,10 +343,10 @@ test.describe('V12: account settings behind the profile menu', () => {
         'unpublished: the box is gone rather than pointing at a 404',
       ).toHaveCount(0);
     } finally {
-      const res = await request.put(`${API}/v1/me/profile`, {
-        data: { profile: original.profile ?? null },
+      const res = await request.put(`${API}/v1/link-page`, {
+        data: { page: original.page ?? null },
       });
-      expect(res.ok(), 'the original profile is restored').toBeTruthy();
+      expect(res.ok(), 'the original page is restored').toBeTruthy();
     }
   });
 
@@ -373,14 +369,15 @@ test.describe('V12: account settings behind the profile menu', () => {
       page.getByRole('heading', { level: 3, name: 'Respondent confirmation', exact: true }),
     ).toBeVisible();
 
-    // Public page: the switch + headline + bio section.
+    // Public page: the workspace link page editor and its live preview.
     await page.goto('/admin/account/public-page');
     await expectAccountNav(page);
     const publicPage = page.getByTestId('public-page-settings');
     await expect(publicPage, 'the public page section renders').toBeVisible({ timeout: 20_000 });
     await expect(
-      publicPage.getByRole('heading', { name: 'Your public page', exact: true }),
+      publicPage.getByRole('heading', { name: 'Your workspace page', exact: true }),
     ).toBeVisible();
+    await expect(publicPage.getByTestId('link-page-preview')).toBeVisible();
 
     // Brand kit: title + the panel (the logo field renders for every role).
     await page.goto('/admin/account/brand-kit');

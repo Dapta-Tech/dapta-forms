@@ -300,8 +300,9 @@ body {
 }
 
 /* The rail's MCP icon (components/mcp-logos.tsx): three stacked logos that
-   take turns. Each is a mask filled with currentColor, so it takes the row's
-   ink in both themes; Claude overrides it inline with its brand orange. The
+   take turns. Each is an inline SVG filled with currentColor, so it takes the
+   row's ink in both themes; Claude overrides `color` inline with its brand
+   orange. Inline on purpose: a session replay cannot fetch a mask file. The
    one leaving shrinks and turns away while the next one fades in on the same
    spot. */
 .mcp-logos {
@@ -311,18 +312,14 @@ body {
 .mcp-logos__logo {
   position: absolute;
   inset: 0;
-  background-color: currentColor;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
-  -webkit-mask-size: contain;
-  mask-size: contain;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
   opacity: 0;
-  transform: scale(0.7) rotate(-20deg);
+  transform: scale(0.8);
   transition:
-    opacity 420ms ease,
-    transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    opacity 280ms ease,
+    transform 280ms ease;
 }
 .mcp-logos__logo.is-active {
   opacity: 1;
@@ -331,6 +328,49 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mcp-logos__logo {
     transition: none;
+  }
+}
+
+/* The rail's "Connect your agent" row breathes a soft green glow to draw the
+   eye: a ring that swells and fades, never the layout. Still with reduced
+   motion, where the static tint already sets it apart. */
+.rail-pulse {
+  animation: rail-pulse 2.4s ease-in-out infinite;
+}
+@keyframes rail-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(61 220 132 / 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(61 220 132 / 0.22), 0 0 14px 2px rgb(61 220 132 / 0.28);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail-pulse {
+    animation: none;
+  }
+}
+
+/* The "Recommended" pill on the connect page breathes the same green glow,
+   with a slight swell. Still with reduced motion. */
+.pill-pulse {
+  animation: pill-pulse 2.4s ease-in-out infinite;
+}
+@keyframes pill-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(61 220 132 / 0);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 4px rgb(61 220 132 / 0.25), 0 0 14px 2px rgb(61 220 132 / 0.35);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pill-pulse {
+    animation: none;
   }
 }
 

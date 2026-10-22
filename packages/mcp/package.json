@@ -21,6 +21,7 @@
     "@modelcontextprotocol/node": "^2.1.1",
     "@modelcontextprotocol/server": "2.3.1",
     "@quill/engine": "workspace:*",
+    "@quill/shared": "workspace:*",
     "@quill/types": "workspace:*",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.25.2",

@@ -9,6 +9,8 @@ import type {
   AnalyticsResponse,
   BrandKit,
   FormConfig,
+  LinkPage,
+  LinkPageFormRef,
   FormDestination,
   MemberProfile,
   SubmissionFile,
@@ -300,6 +302,15 @@ export interface Folder {
   updatedAt: number;
 }
 
+/** GET /v1/link-page: the stored page and everything its editor's preview needs. */
+export interface LinkPageEditorView {
+  accountCode: string;
+  accountName: string;
+  page: LinkPage | null;
+  forms: LinkPageFormRef[];
+  brandKit: BrandKit | null;
+}
+
 /** GET/PUT /v1/branding — the workspace brand kit (null = none saved yet). */
 export interface BrandingResponse {
   config: BrandKit | null;
@@ -398,36 +409,6 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 }
 
 export const isAdminRole = (role: AccountRole): boolean => role === 'owner' || role === 'admin';
-
-/** Who created an API key, as `GET /v1/api-keys` names them. */
-export interface ApiKeyCreator {
-  memberId: string;
-  name: string | null;
-  email: string | null;
-}
-
-/**
- * One active API key, as listed. The secret itself is never here: only its last
- * four characters. A member is sent their own keys; an owner or admin, every
- * active key of the workspace. Revoked keys are never listed.
- */
-export interface ApiKey {
-  id: string;
-  name: string;
-  last4: string;
-  createdAt: number;
-  lastUsedAt: number | null;
-  createdBy: ApiKeyCreator;
-}
-
-/** `POST /v1/api-keys` (201): the only response that ever carries the full `key`. */
-export interface CreatedApiKey {
-  id: string;
-  name: string;
-  last4: string;
-  createdAt: number;
-  key: string;
-}
 
 /**
  * One allowed value of an enumeration property. `value` is what gets WRITTEN to
@@ -793,6 +774,11 @@ export const adminApi = {
   listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
   /** Every webhook across this account's forms, read-only (secrets never selected). */
   listAccountWebhooks: () => req<AccountWebhooksResponse>('GET', '/v1/integrations/webhooks'),
+  /** The workspace link page, with the forms and brand kit its editor previews with. */
+  linkPage: () => req<LinkPageEditorView>('GET', '/v1/link-page'),
+  /** Replace the workspace link page; null removes it. Any member may. */
+  saveLinkPage: (page: unknown | null) =>
+    req<{ ok: boolean; page: LinkPage | null }>('PUT', '/v1/link-page', { page }),
   /** The caller's own public page config (raw blob or null). */
   myProfile: () => req<{ handle: string | null; profile: MemberProfile | null }>('GET', '/v1/me/profile'),
   /** Replace the caller's own public page; null removes it. */
@@ -871,10 +857,4 @@ export const adminApi = {
   resetFormNotification: (id: string, emailKey: NotificationEmailKey) =>
     req<FormNotificationView>('POST', `/v1/forms/${id}/notifications/${emailKey}/reset`),
 
-  // API keys (Developers page). Session only: the API refuses these routes to a key.
-  listApiKeys: () => req<{ keys: ApiKey[] }>('GET', '/v1/api-keys'),
-  /** 409 `KEY_LIMIT` once the caller already holds ten active keys in this workspace. */
-  createApiKey: (name: string) => req<CreatedApiKey>('POST', '/v1/api-keys', { name }),
-  /** 204. Someone else's key without owner/admin: 403. Another workspace's: 404. */
-  revokeApiKey: (id: string) => req<void>('DELETE', `/v1/api-keys/${encodeURIComponent(id)}`),
 };

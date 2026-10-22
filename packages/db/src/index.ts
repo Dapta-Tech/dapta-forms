@@ -15,6 +15,7 @@ export * from './crypto';
 export * from './analytics';
 export * from './milestones';
 export * from './members';
+export * from './link-page';
 export * from './api-keys';
 export * from './workspaces';
 export * from './demo-form';

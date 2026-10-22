@@ -6,7 +6,11 @@
  *
  * In order:
  *   1. unknown or revoked key, or a member who is no longer active in the
- *      key's workspace: 401 `INVALID_API_KEY`;
+ *      key's workspace: 401 `INVALID_API_KEY`. A key the deployment's staff
+ *      created through a staff access grant resolves like any other, as that
+ *      grant row (an `admin` there): a key is a credential of its workspace,
+ *      not of the person, so it keeps working after they stop being staff,
+ *      until someone revokes it (the way Dapta's own MCP keys work);
  *   2. the key fixes the workspace: an `x-quill-workspace` naming another one
  *      is a 403 `WORKSPACE_FORBIDDEN`, never a quiet switch;
  *   3. 120 calls a minute per key (the public limiter, keyed by key id): 429
@@ -23,7 +27,7 @@
 import { ForbiddenException, HttpException, HttpStatus, Logger, UnauthorizedException } from '@nestjs/common';
 import { findApiKeyPrincipal, touchApiKeyLastUsed, type Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
-import { hashApiKey, isMcpRequest } from './api-keys';
+import { hashApiKey } from './api-keys';
 import { header, type HostPrincipal, type ReqLike } from './auth.provider';
 import { noteApiKeyCall } from './deprecated-hosts';
 import { NoopRateLimiter, TokenBucketRateLimiter, type RateLimiter } from './rate-limit';
@@ -74,8 +78,22 @@ export class ApiKeyAuthenticator {
   ) {}
 
   async resolve(req: ReqLike, key: string): Promise<HostPrincipal> {
-    const row = await findApiKeyPrincipal(this.db, hashApiKey(key));
+    return this.resolveHash(req, hashApiKey(key));
+  }
+
+  /**
+   * The same steps for a key known by its hash: the MCP's in-process
+   * principal carries the hash, never the key. `expected` is the member and
+   * workspace that principal names; a key that resolves to any other is a 401.
+   */
+  async resolveHash(
+    req: ReqLike,
+    keyHash: string,
+    expected?: { accountId: string; memberId: string },
+  ): Promise<HostPrincipal> {
+    const row = await findApiKeyPrincipal(this.db, keyHash);
     if (!row || row.memberStatus !== 'active') invalidKey();
+    if (expected && (expected.accountId !== row.accountId || expected.memberId !== row.memberId)) invalidKey();
     noteApiKeyCall(req, row.keyId, row.accountId);
 
     const requested = header(req, WORKSPACE_HEADER)?.trim();
@@ -107,7 +125,6 @@ export class ApiKeyAuthenticator {
       role: row.role,
       via: 'api_key',
       apiKeyId: row.keyId,
-      ...(isMcpRequest(req) ? { channel: 'mcp' as const } : {}),
     };
   }
 

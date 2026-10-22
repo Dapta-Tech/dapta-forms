@@ -135,7 +135,9 @@ export class WorkOsAuthProvider implements AuthProvider {
         state = await this.projection.ensure(upstream, { force: true });
         home = await this.projection.home(upstream, state);
       }
-      if (home) return home;
+      // Staff is judged again here, on the token's email, every request: the
+      // auth service ignores grant rows for anyone it does not mark.
+      if (home) return { ...home, staff: this.projection.isStaff(upstream.email) };
       // Nothing upstream and nothing local. The identity service creates a
       // workspace at signup, so this is a real fault, not a first login — and
       // minting a token-account row here would recreate exactly the pre-0015

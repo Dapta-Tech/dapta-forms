@@ -236,6 +236,16 @@ defaults below.
 | `MCP_RATE_LIMIT_CAPACITY` / `MCP_RATE_LIMIT_REFILL_PER_SEC` | `120` / `2` | per API key, every request; off with `RATE_LIMIT_ENABLED=false` | no |
 | `MCP_WRITE_RATE_LIMIT_CAPACITY` / `MCP_WRITE_RATE_LIMIT_REFILL_PER_SEC` | `20` / `0.2` | per API key, write tools only | no |
 | `MCP_TOOL_TIMEOUT_MS` | `20000` | a tool call that runs longer is abandoned | no |
+| `MCP_OAUTH_PROVIDER` | _(unset: API keys only)_ | `workos` lets chat apps sign in through your WorkOS AuthKit (see [`docs/MCP.md`](docs/MCP.md)); then the values below are required (all but `IAM_DB_PORT`), and a missing or malformed one refuses to boot | no |
+| `WORKOS_AUTHKIT_DOMAIN` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: the AuthKit issuer, an https origin with no path | no |
+| `MCP_PUBLIC_URL` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: the `/mcp` endpoint customers reach, registered as a resource with AuthKit; every token's audience. The web app reads the same name | no |
+| `IAM_DB_HOST` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: host of the identity service's database, read to map a signed-in person to the user id members carry. A bare host name; TLS is required unless it is a loopback host | no |
+| `IAM_DB_PORT` | `5432` | that database listens elsewhere | no |
+| `IAM_DB_NAME` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: the database | no |
+| `IAM_DB_SCHEMA` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: the schema holding its `users` and `sessions` tables | no |
+| `IAM_DB_USER` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: a role that can only read those two tables | no |
+| `IAM_DB_PASS` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: that role's password | yes |
+| `IAM_DB_SSL_CA` | _(unset: encrypted, certificate not verified, logged once at boot)_ | you have that database's CA: the PEM itself or the path of a file holding it. The certificate and its host name are then verified (verify-full), TLS is on even on a loopback host, and anything that is not a certificate refuses to boot | no |
 
 ### Deprecated API hosts (API, optional)
 
@@ -404,6 +414,7 @@ are runtime server env for the web container.
 | `PUBLIC_APP_URL` | _(empty)_ | trusted origin for OAuth redirects (same as API) | no |
 | `PUBLIC_API_URL` | `API_URL` when public, else `NEXT_PUBLIC_API_URL`, else `http://localhost:4000` | `API_URL` is a cluster-internal address: where customers reach the API (docs page, skill zip) | no |
 | `MCP_PUBLIC_URL` | `<PUBLIC_API_URL>/mcp` | the MCP endpoint customers reach is on another host (a dedicated MCP hostname); runtime, shown in the MCP setup guide | no |
+| `MCP_OAUTH_PROVIDER` | _(empty)_ | mirror the API value, with `MCP_PUBLIC_URL` set to the API's value too: the MCP page then shows the chat path (Claude.ai, ChatGPT: paste the URL, sign in) above the key guide; runtime; unset, unknown, or without `MCP_PUBLIC_URL` (the token audience) shows the key guide alone | no |
 
 ## Reverse proxy + TLS
 

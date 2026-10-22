@@ -7,10 +7,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
 import { createDb, getAccountByCode, insertApiKey, migrate, seed, sql, type Db } from '@quill/db';
 import { BackendError } from '@quill/mcp';
-import { createdVia, generateApiKey, isMcpRequest, markMcpRequest } from './api-keys';
+import { createdVia, generateApiKey } from './api-keys';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
-import { authenticateMcpKey, toBackendError } from './mcp.backend';
+import { inProcessPrincipalOf, inProcessRequest } from './in-process-principal';
+import { ApiFormsBackend, authenticateMcpKey, toBackendError, type McpHandlers } from './mcp.backend';
 
 let db: Db;
 let accountId: string;
@@ -36,15 +37,16 @@ async function mint(memberId = ownerId) {
 }
 
 describe('authenticateMcpKey', () => {
-  it("resolves an active key to its member, role and stored prefix, carrying the request the app's handlers resolve", async () => {
+  it("resolves an active key to its member, role and stored prefix, carrying the in-process principal the app's handlers resolve", async () => {
     const k = await mint();
     const caller = await authenticateMcpKey(db, k.key);
     expect(caller).toMatchObject({ accountId, memberId: ownerId, role: 'owner', label: k.prefix });
     const req = (caller!.context as { req: ReqLike }).req;
-    expect(req.headers).toEqual({ authorization: `Bearer ${k.key}` });
-    expect(isMcpRequest(req)).toBe(true);
-    // The marker never serializes: a request cannot be logged into carrying it, nor rebuilt from JSON.
-    expect(JSON.stringify(req)).not.toContain('mcp');
+    expect(inProcessPrincipalOf(req)).toEqual({ accountId, memberId: ownerId, apiKeyHash: k.keyHash });
+    // No credential rides on the request itself, and nothing of the principal serializes.
+    expect(req.headers).toEqual({});
+    expect(JSON.stringify(req)).not.toContain(k.keyHash);
+    expect(JSON.stringify(req)).not.toContain(k.key);
   });
 
   it('refuses a non-key bearer, an unknown key, a revoked key and a disabled member', async () => {
@@ -75,17 +77,25 @@ describe('the mcp channel', () => {
     const rest = await auth.resolveHost({ headers: { authorization: `Bearer ${k.key}`, 'x-quill-channel': 'mcp' } });
     expect(rest.channel).toBeUndefined();
     expect(createdVia(rest)).toBe('api');
-    const viaMcp = await auth.resolveHost(markMcpRequest({ headers: { authorization: `Bearer ${k.key}` } }));
+    const caller = await authenticateMcpKey(db, k.key);
+    const viaMcp = await auth.resolveHost((caller!.context as { req: ReqLike }).req);
     expect(viaMcp).toMatchObject({ via: 'api_key', channel: 'mcp', role: 'owner' });
     expect(createdVia(viaMcp)).toBe('mcp');
   });
 
   it('never applies to a session, whatever is on the request', async () => {
     const auth = new AuthService(db, provider());
-    const p = await auth.resolveHost(markMcpRequest({ headers: { 'x-quill-email': 'alex@example.com' } }));
+    const p = await auth.resolveHost({ headers: { 'x-quill-email': 'alex@example.com', 'x-quill-channel': 'mcp' } });
     expect(p.channel).toBeUndefined();
     expect(createdVia(p)).toBe('web');
     expect(createdVia({ via: 'session', channel: 'mcp' })).toBe('web');
+  });
+
+  it('an in-process request is resolved from its principal alone, never from a session header on it', async () => {
+    const auth = new AuthService(db, provider());
+    const req = inProcessRequest({ accountId, memberId: ownerId });
+    req.headers['x-quill-email'] = 'someone.else@example.com';
+    expect(await auth.resolveHost(req)).toMatchObject({ accountId, memberId: ownerId, via: 'mcp_connection' });
   });
 });
 
@@ -111,5 +121,29 @@ describe('toBackendError', () => {
   it('leaves anything that is not an HTTP error untouched', () => {
     const err = new Error('db down');
     expect(toBackendError(err)).toBe(err);
+  });
+});
+
+describe('ApiFormsBackend.whoami', () => {
+  const caller = (personId?: string) => ({
+    accountId,
+    workspaceName: 'Acme',
+    memberId: ownerId,
+    role: 'owner',
+    credentialId: 'c',
+    label: 'l',
+    ...(personId ? { personId } : {}),
+    context: { req: inProcessRequest({ accountId, memberId: ownerId }) },
+  });
+  const nobody = () => ({ forms: { me: async () => null }, analytics: {} }) as unknown as McpHandlers;
+
+  it('names the credential that stopped working: the key for a key, the member for a signed-in person', async () => {
+    const backend = new ApiFormsBackend(db, nobody);
+    const forKey = await backend.whoami(caller()).catch((e: unknown) => e);
+    expect(forKey).toBeInstanceOf(BackendError);
+    expect((forKey as BackendError).code).toBe('INVALID_API_KEY');
+    const forPerson = await backend.whoami(caller('person-1')).catch((e: unknown) => e);
+    expect((forPerson as BackendError).code).toBe('MEMBER_NOT_ACTIVE');
+    expect((forPerson as BackendError).message).not.toMatch(/key/i);
   });
 });

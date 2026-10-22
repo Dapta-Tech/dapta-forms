@@ -1,6 +1,6 @@
 /**
  * In-app doors to the rest of the Dapta suite — the app-switcher rows and the
- * "Dapta Agents" nav item. One helper so every door tags itself the same way.
+ * "Sales AI Agents" nav item. One helper so every door tags itself the same way.
  *
  * A different loop from the public badge (`lib/growth.ts`): the reader here is
  * already a Forms user, so `utm_source` is the product's own name and

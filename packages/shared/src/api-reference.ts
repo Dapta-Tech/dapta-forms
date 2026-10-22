@@ -30,6 +30,7 @@ export type ApiArea =
   | 'responses'
   | 'analytics'
   | 'branding'
+  | 'linkPage'
   | 'notifications'
   | 'integrations'
   | 'identity';
@@ -42,6 +43,7 @@ export const API_AREAS: readonly ApiArea[] = [
   'responses',
   'analytics',
   'branding',
+  'linkPage',
   'notifications',
   'integrations',
   'identity',
@@ -110,6 +112,14 @@ export type ApiParamDoc =
   | 'brandButtonStyle'
   | 'brandClientLogos'
   | 'formIds'
+  // Link page
+  | 'linkPage'
+  | 'linkPageEnabled'
+  | 'linkPageName'
+  | 'linkPageBio'
+  | 'linkPageLogo'
+  | 'linkPageItems'
+  | 'linkPageSocials'
   // Notifications
   | 'notificationEnabled'
   | 'notificationSubject'
@@ -357,6 +367,25 @@ const BRAND_KIT = {
   buttonStyle: 'solid',
 };
 
+/** The link page the examples save: a form button, a link and two socials. */
+const LINK_PAGE = {
+  version: 1,
+  enabled: true,
+  name: 'Acme Inc.',
+  bio: 'Talk to us, or book a demo.',
+  items: [
+    { type: 'form', formId: ID.form },
+    { type: 'link', label: 'Our website', url: 'https://example.com' },
+  ],
+  socials: { instagram: '@acme', whatsapp: '+57 300 123 4567' },
+};
+
+/** `LINK_PAGE` as the API stores and answers it: socials normalized, WhatsApp as digits. */
+const LINK_PAGE_SAVED = {
+  ...LINK_PAGE,
+  socials: { instagram: 'https://www.instagram.com/acme', whatsapp: '573001234567' },
+};
+
 export const API_REFERENCE = {
   // Forms
   'GET /v1/forms': {
@@ -416,6 +445,19 @@ export const API_REFERENCE = {
       publishedAt: STAMP + 120_000,
       previousPublishedAt: STAMP,
       updatedAt: STAMP + 120_000,
+    },
+  },
+  'POST /v1/forms/:id/discard-draft': {
+    area: 'forms',
+    params: [FORM_PATH, { name: 'expectedUpdatedAt', in: 'body', type: 'epoch ms', doc: 'expectedUpdatedAt' }],
+    status: 200,
+    response: {
+      ...FORM_VIEW,
+      config: SAVED_EDITED,
+      publishedAt: STAMP + 120_000,
+      previousPublishedAt: STAMP,
+      // A discard is a write: it stamps updatedAt, so it lands after the publish.
+      updatedAt: STAMP + 180_000,
     },
   },
   'POST /v1/forms/:id/revert': {
@@ -514,7 +556,7 @@ export const API_REFERENCE = {
     params: [FORM_PATH],
     status: 200,
     adminOnly: true,
-    response: { ok: true },
+    response: { ok: true, status: 200 },
   },
 
   // Responses
@@ -726,6 +768,37 @@ export const API_REFERENCE = {
     status: 201,
     adminOnly: true,
     response: { reverted: [ID.form] },
+  },
+
+  // Link page
+  'GET /v1/link-page': {
+    area: 'linkPage',
+    status: 200,
+    response: {
+      accountCode: 'acme',
+      accountName: 'Acme Inc.',
+      page: LINK_PAGE_SAVED,
+      forms: [{ id: ID.form, slug: 'talk-to-sales', name: 'Talk to sales', title: 'Talk to sales' }],
+      brandKit: BRAND_KIT,
+      publicUrl: 'https://forms.example.com/acme',
+      live: true,
+    },
+  },
+  'PUT /v1/link-page': {
+    area: 'linkPage',
+    params: [
+      { name: 'page', in: 'body', type: 'object | null', required: true, doc: 'linkPage' },
+      { name: 'page.enabled', in: 'body', type: 'boolean', doc: 'linkPageEnabled' },
+      { name: 'page.name', in: 'body', type: 'string | null', doc: 'linkPageName' },
+      { name: 'page.bio', in: 'body', type: 'string | null', doc: 'linkPageBio' },
+      { name: 'page.logo', in: 'body', type: 'http(s) URL | null', doc: 'linkPageLogo' },
+      { name: 'page.items', in: 'body', type: 'object[]', doc: 'linkPageItems' },
+      { name: 'page.socials', in: 'body', type: 'object', doc: 'linkPageSocials' },
+    ],
+    body: { page: LINK_PAGE },
+    status: 200,
+    destructive: true,
+    response: { ok: true, page: LINK_PAGE_SAVED },
   },
 
   // Notifications

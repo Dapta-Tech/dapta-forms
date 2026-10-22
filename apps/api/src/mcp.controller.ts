@@ -3,26 +3,49 @@ import { All, Controller, Inject, Logger, OnModuleInit, Req, Res } from '@nestjs
 import { ModuleRef } from '@nestjs/core';
 import type { Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
-import { FormsMcpServer, McpDoor, unlimited, type DoorRequest, type DoorResponse, type RateLimiter } from '@quill/mcp';
+import {
+  FormsMcpServer,
+  McpDoor,
+  isConnection,
+  unlimited,
+  type DoorRequest,
+  type DoorResponse,
+  type ErrorDescriptor,
+  type RateLimiter,
+} from '@quill/mcp';
 import { AdminCrudController } from './admin-crud.controller';
 import { AnalyticsController } from './analytics.controller';
+import { AnalyticsEffects } from './analytics-effects';
+import { McpUsageReporter } from './mcp-usage';
+import { BrandingController } from './branding.controller';
+import { LinkPageController } from './link-page.controller';
+import { FormDestinationsController, IntegrationsController } from './integrations.controller';
 import {
-  ApiFormsBackend,
   MCP_ANALYTICS_HANDLERS,
   MCP_FORM_HANDLERS,
+  authenticateMcpConnection,
   authenticateMcpKey,
   keyAllowedRoutes,
   type McpHandlers,
 } from './mcp.backend';
+import { ApiMcpBackend, MCP_PARITY_HANDLERS, type McpParityHandlers } from './mcp.backend.parity';
 import { noteApiKeyCall } from './deprecated-hosts';
+import { API_KEY_PREFIX } from './api-keys';
+import type { McpOAuth } from './mcp-oauth';
+import { cachePersonDirectory, type PersonDirectory } from './person-directory';
 import { TokenBucketRateLimiter, clientKey, resolveTrustProxyHops } from './rate-limit';
-import { DB, ENV, RATE_LIMITER } from './tokens';
+import { DB, ENV, MCP_OAUTH, PERSON_DIRECTORY, RATE_LIMITER } from './tokens';
 
 function csv(value: string | undefined): string[] {
   return (value ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/** `TypeError code=SQLITE_BUSY`: what a log line says about a failure. */
+export function errorLabel(error: ErrorDescriptor): string {
+  return error.code ? `${error.errorClass} code=${error.code}` : error.errorClass;
 }
 
 /** A caller's own request id when it is a short safe token, else a fresh one. */
@@ -48,7 +71,12 @@ export class McpController implements OnModuleInit {
   readonly server: FormsMcpServer;
   private readonly door: McpDoor;
   private readonly trustProxyHops: number;
+  /** Reports each tool call to product analytics. A field so specs can reach it. */
+  readonly usage: McpUsageReporter;
   private handlers: McpHandlers | null = null;
+  private parityHandlers: McpParityHandlers | null = null;
+  /** Where each staff call outside the person's own workspaces is logged (one JSON line). A field so specs can read it. */
+  staffLogSink: (line: string) => void = (line) => this.logger.log(line);
 
   constructor(
     @Inject(ENV) env: ServerEnv,
@@ -56,17 +84,36 @@ export class McpController implements OnModuleInit {
     // The public per-IP bucket: requests without a valid key are charged to it.
     @Inject(RATE_LIMITER) ipLimiter: RateLimiter,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
+    // MCP connections over OAuth: both null unless MCP_OAUTH_PROVIDER is set.
+    @Inject(MCP_OAUTH) oauth: McpOAuth | null,
+    @Inject(PERSON_DIRECTORY) directory: PersonDirectory | null,
+    // Product analytics: one `$mcp_tool_call` per tool call, only with PRODUCT_ANALYTICS_KEY set.
+    @Inject(AnalyticsEffects) analytics: AnalyticsEffects,
   ) {
     this.trustProxyHops = resolveTrustProxyHops(env);
     const bucket = (capacity: number, refill: number): RateLimiter =>
       env.RATE_LIMIT_ENABLED ? new TokenBucketRateLimiter(capacity, refill) : unlimited;
+    // The identity database is read before any member bucket is known, so it
+    // sits behind a per-pod cache, and a lookup the cache cannot answer takes
+    // a token keyed by the token's verified subject first: a burst of 10, then
+    // one every 6 seconds, ample for a cache that asks once a minute.
+    this.usage = new McpUsageReporter(db, analytics, env.IAM_STAFF_DOMAINS);
+    const people = directory ? cachePersonDirectory(directory, { limiter: bucket(10, 1 / 6) }) : null;
     this.server = new FormsMcpServer({
-      backend: new ApiFormsBackend(db, () => this.resolveHandlers()),
+      backend: new ApiMcpBackend(
+        db,
+        () => this.resolveHandlers(),
+        () => this.resolveParityHandlers(),
+      ),
       toolTimeoutMs: env.MCP_TOOL_TIMEOUT_MS,
       writeLimiter: bucket(env.MCP_WRITE_RATE_LIMIT_CAPACITY, env.MCP_WRITE_RATE_LIMIT_REFILL_PER_SEC),
-      onInternalError: (tool, requestId, error) =>
-        this.logger.error(`tool ${tool} failed (${requestId})`, error instanceof Error ? error.stack : String(error)),
-      onTransportError: (error) => this.logger.warn(`mcp transport: ${error.message}`),
+      // Named to a signed-in person with no workspace yet: open dForms once there.
+      appUrl: env.PUBLIC_APP_URL,
+      // Class and code only: a stack or a message can quote the request's data.
+      onInternalError: (tool, requestId, error) => this.logger.error(`tool ${tool} failed (${requestId}): ${errorLabel(error)}`),
+      onTransportError: (error) => this.logger.warn(`mcp transport: ${errorLabel(error)}`),
+      // Fire and forget: the tool's result never waits on reporting, and `report` never rejects.
+      onToolCall: (event) => void this.usage.report(event),
     });
     this.door = new McpDoor({
       server: this.server,
@@ -74,8 +121,26 @@ export class McpController implements OnModuleInit {
       allowedOrigins: csv(env.MCP_ALLOWED_ORIGINS),
       allowedHosts: csv(env.MCP_ALLOWED_HOSTS),
       authenticate: (token) => authenticateMcpKey(db, token),
+      // A `dforms_` bearer takes the key path above; any other is an access
+      // token of the identity provider. Off: every bearer is a key, as before.
+      oauth:
+        oauth && people
+          ? {
+              isApiKey: (token) => token.startsWith(API_KEY_PREFIX),
+              authenticate: (token) =>
+                authenticateMcpConnection(db, oauth, people, token, {
+                  appUrl: env.PUBLIC_APP_URL,
+                  // Staff of the deployment: the same list, and the same rule, as the web app's switcher.
+                  staffDomains: env.IAM_STAFF_DOMAINS,
+                  staffLog: (line) => this.staffLogSink(line),
+                }),
+              resourceMetadataUrl: oauth.resourceMetadataUrl,
+            }
+          : undefined,
       // A key call on a deprecated API host is logged by key id, like REST.
-      onAuthenticated: (req, caller) => noteApiKeyCall(req, caller.credentialId, caller.accountId),
+      onAuthenticated: (req, credential) => {
+        if (!isConnection(credential)) noteApiKeyCall(req, credential.credentialId, credential.accountId);
+      },
       keyLimiter: bucket(env.MCP_RATE_LIMIT_CAPACITY, env.MCP_RATE_LIMIT_REFILL_PER_SEC),
       ipLimiter,
     });
@@ -89,6 +154,7 @@ export class McpController implements OnModuleInit {
    */
   onModuleInit(): void {
     this.resolveHandlers();
+    this.resolveParityHandlers();
   }
 
   private resolveHandlers(): McpHandlers {
@@ -101,6 +167,27 @@ export class McpController implements OnModuleInit {
       };
     }
     return this.handlers;
+  }
+
+  /** The handlers of the rest of the API reference, checked against the API-key allowlist the same way. */
+  private resolveParityHandlers(): McpParityHandlers {
+    if (!this.parityHandlers) {
+      keyAllowedRoutes(AdminCrudController, MCP_PARITY_HANDLERS.forms);
+      keyAllowedRoutes(AnalyticsController, MCP_PARITY_HANDLERS.analytics);
+      keyAllowedRoutes(FormDestinationsController, MCP_PARITY_HANDLERS.destinations);
+      keyAllowedRoutes(BrandingController, MCP_PARITY_HANDLERS.branding);
+      keyAllowedRoutes(LinkPageController, MCP_PARITY_HANDLERS.linkPage);
+      keyAllowedRoutes(IntegrationsController, MCP_PARITY_HANDLERS.integrations);
+      this.parityHandlers = {
+        forms: this.moduleRef.get(AdminCrudController, { strict: false }),
+        analytics: this.moduleRef.get(AnalyticsController, { strict: false }),
+        destinations: this.moduleRef.get(FormDestinationsController, { strict: false }),
+        branding: this.moduleRef.get(BrandingController, { strict: false }),
+        linkPage: this.moduleRef.get(LinkPageController, { strict: false }),
+        integrations: this.moduleRef.get(IntegrationsController, { strict: false }),
+      };
+    }
+    return this.parityHandlers;
   }
 
   @All()

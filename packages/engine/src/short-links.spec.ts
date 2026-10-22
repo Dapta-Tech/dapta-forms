@@ -81,4 +81,11 @@ describe('reserved public slugs', () => {
     expect(validateVanitySlug('file')).toBe('reserved');
     expect(validateVanitySlug('files')).toBe('reserved');
   });
+
+  it('reserves every static route at the root, so a vanity can never land behind one', () => {
+    for (const word of ['admin', 'login', 'api', 'file', 'preview', 'onboarding']) {
+      expect(isReservedPublicSlug(word), word).toBe(true);
+      expect(validateVanitySlug(word), word).toBe('reserved');
+    }
+  });
 });

@@ -34,6 +34,7 @@ import {
   type IamWorkspace,
 } from './iam-workspaces';
 import { maybeSeedDemoForm, notifySignup, type SeedDemoEnv, type SignupObserver } from './auth.provider';
+import { isStaffEmail } from './staff';
 
 /** What the auth provider proved about the caller — never read from the request body. */
 export interface UpstreamIdentity {
@@ -88,14 +89,9 @@ export class WorkspaceProjection {
     this.ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
   }
 
-  /** Whether this email belongs to the deployment's staff (by domain). */
+  /** Whether this email belongs to the deployment's staff (by domain): the one rule, `isStaffEmail`. */
   isStaff(email: string | null | undefined): boolean {
-    const domains = this.opts.staffDomains ?? [];
-    if (!domains.length || !email) return false;
-    const at = email.lastIndexOf('@');
-    if (at < 0) return false;
-    const domain = email.slice(at + 1).trim().toLowerCase();
-    return domains.includes(domain);
+    return isStaffEmail(email, this.opts.staffDomains);
   }
 
   private now(): number {
@@ -247,10 +243,12 @@ export class WorkspaceProjection {
   /**
    * Where this person lands: the workspace they opened last (in either app),
    * if they are still a member of it; else their most recently seen local
-   * membership; else null (nothing upstream, nothing local).
+   * membership; else null (nothing upstream, nothing local). A staff access
+   * grant counts only while the person is staff now: someone who stopped
+   * being staff never lands in a workspace they reached through a grant.
    */
   async home(id: UpstreamIdentity, state: ProjectionState): Promise<{ accountId: string; memberId: string } | null> {
-    return pickHomeAccount(this.db, id.sub, state.lastWorkspace);
+    return pickHomeAccount(this.db, id.sub, state.lastWorkspace, { includeGrants: this.isStaff(id.email) });
   }
 
   /**

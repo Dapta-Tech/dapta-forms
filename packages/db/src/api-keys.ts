@@ -15,6 +15,12 @@
  * (disabled, removed, dropped by the identity service) revokes their keys in
  * the same transaction (`revokeKeysOfInactiveMembersSql`), so reactivating the
  * member later never brings an old key back.
+ *
+ * A key the deployment's staff create through a staff access grant belongs to
+ * the grant row (an `admin` of that workspace) and acts as it. It is a
+ * credential of the workspace, not of the person: it keeps working after they
+ * stop being staff, until someone revokes it. Grant rows are never disabled,
+ * so revoking is the only way such a key ends.
  */
 import { randomUUID } from "node:crypto";
 import type { SQL } from "drizzle-orm";
@@ -29,6 +35,12 @@ export interface ApiKeyCreator {
   memberId: string;
   name: string | null;
   email: string | null;
+  /**
+   * True when the key belongs to a staff access grant row: the deployment's
+   * staff created it while acting in this workspace. The Developers page marks
+   * it so the workspace's owners and admins can tell it apart and revoke it.
+   */
+  staff: boolean;
 }
 
 /** An active key as the Developers page lists it. Never carries the hash. */
@@ -60,9 +72,19 @@ export interface ApiKeyRecord {
 export interface ApiKeyPrincipalRow {
   keyId: string;
   accountId: string;
+  /** The key's workspace name, so an agent can be told where it acts. */
+  accountName: string;
   memberId: string;
   role: AccountRole;
   memberStatus: string;
+  /**
+   * `'staff'` when the key's member is a staff access grant row, that is, a
+   * key the deployment's staff created in this workspace. Informational: such
+   * a key authenticates like any other. A key is a credential of the
+   * workspace, so it keeps working after its creator stops being staff, until
+   * someone revokes it.
+   */
+  accessGrant: "staff" | null;
   lastUsedAt: number | null;
 }
 
@@ -151,9 +173,11 @@ export async function getApiKeyById(
  * omitted, every active key of the workspace (owner and admin).
  *
  * Only keys of members who are active there: those are the only ones that
- * authenticate. Taking a member out revokes their keys anyway; this also hides
- * a key whose member was disabled some other way (by hand, or before keys
- * followed their member).
+ * authenticate. Taking a member out revokes their keys anyway; this also
+ * hides a key whose member was disabled some other way (by hand, or before
+ * keys followed their member). Keys the deployment's staff created through a
+ * staff access grant are listed too, marked `createdBy.staff`, so the
+ * workspace can see and revoke them.
  */
 export async function listApiKeys(
   db: Db,
@@ -163,7 +187,7 @@ export async function listApiKeys(
   const mine = memberId === undefined ? sql`` : sql` AND k.member_id = ${memberId}`;
   const rows = await db.all<Record<string, unknown>>(
     sql`SELECT k.id, k.name, k.last4, k.created_at, k.last_used_at_ms, k.member_id,
-               m.display_name, m.email
+               m.display_name, m.email, m.access_grant
         FROM api_key k
         JOIN member m ON m.id = k.member_id AND m.account_id = k.account_id AND m.status = 'active'
         WHERE k.account_id = ${accountId} AND k.revoked_at_ms IS NULL${mine}
@@ -179,6 +203,7 @@ export async function listApiKeys(
       memberId: r.member_id == null ? "" : String(r.member_id),
       name: r.display_name == null ? null : String(r.display_name),
       email: r.email == null ? null : String(r.email),
+      staff: r.access_grant === "staff",
     },
   }));
 }
@@ -225,9 +250,10 @@ export async function findApiKeyPrincipal(
   keyHash: string,
 ): Promise<ApiKeyPrincipalRow | null> {
   const r = await db.get<Record<string, unknown>>(
-    sql`SELECT k.id, k.account_id, k.member_id, k.last_used_at_ms, m.role, m.status
+    sql`SELECT k.id, k.account_id, k.member_id, k.last_used_at_ms, m.role, m.status, m.access_grant, a.name AS account_name
         FROM api_key k
         JOIN member m ON m.id = k.member_id AND m.account_id = k.account_id
+        JOIN account a ON a.id = k.account_id
         WHERE k.key_hash = ${keyHash} AND k.revoked_at_ms IS NULL
         LIMIT 1`,
   );
@@ -235,9 +261,11 @@ export async function findApiKeyPrincipal(
   return {
     keyId: String(r.id),
     accountId: String(r.account_id),
+    accountName: String(r.account_name ?? ""),
     memberId: String(r.member_id),
     role: ((r.role as AccountRole | null) ?? "member") as AccountRole,
     memberStatus: String(r.status ?? "active"),
+    accessGrant: r.access_grant == null ? null : "staff",
     lastUsedAt: numOrNull(r.last_used_at_ms),
   };
 }

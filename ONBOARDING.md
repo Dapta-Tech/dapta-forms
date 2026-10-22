@@ -273,6 +273,14 @@ account's signup **attribution (UTMs)** — so every onboarding funnel in PostHo
 can be filtered or broken down by campaign. Anything counting conversions must
 read the server event, never infer it from client events.
 
+**MCP tool calls are the one exception to the prefix.** Each call to the dForms
+MCP is captured server side as `$mcp_tool_call` (`apps/api/src/mcp-usage.ts`),
+the name PostHog's MCP analytics screens read, through
+`AnalyticsEffects.captureRaw`, which accepts only `$mcp_*` names. Tell it apart
+from another MCP in the shared project by `$mcp_server_name: 'dForms'` or
+`product: 'forms'`. See `docs/MCP.md` for what it carries and what it never
+does.
+
 ## 7. Measuring drop-off without PostHog
 
 `account.onboarding` and `account.attribution` are the **same row**, so

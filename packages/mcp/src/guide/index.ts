@@ -19,6 +19,7 @@ export {
   GUIDE_PARTS,
   GUIDE_RULES,
   GUIDE_STEP_TYPES,
+  GUIDE_WORKSPACES,
   formGuide,
   type FormGuide,
   type GuidePart,

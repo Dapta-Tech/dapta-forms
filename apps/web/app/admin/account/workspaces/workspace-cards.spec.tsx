@@ -51,6 +51,7 @@ function render(locale: 'en' | 'es') {
     roleMember: s.roleMember,
     openErrorForbidden: s.manageErrorForbidden,
     openErrorFailed: s.manageErrorFailed,
+    openErrorMembershipNotActive: s.manageErrorMembershipNotActive,
     createDialog: m.chrome.workspaces,
   };
   return renderToStaticMarkup(

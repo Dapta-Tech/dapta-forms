@@ -337,6 +337,16 @@ export async function getMemberIdentity(
 export async function listWorkspacesForIdentity(
   db: Db,
   identity: MemberIdentity,
+  options: {
+    /**
+     * Match a row by email only when it is bound to nobody yet
+     * (`external_id IS NULL`) or to this same person. Off for the web's
+     * switcher, which has always matched on either key; on for an MCP
+     * connection, whose email comes from another service and must never
+     * reach a row someone else already holds.
+     */
+    emailOnlyWhenUnbound?: boolean;
+  } = {},
 ): Promise<WorkspaceRow[]> {
   const email = identity.email?.trim().toLowerCase() || null;
   const externalId = identity.externalId || null;
@@ -352,7 +362,9 @@ export async function listWorkspacesForIdentity(
   // only on SQLite until the switcher became always-on.
   const conds: SQL[] = [];
   if (externalId) conds.push(sql`m.external_id = ${externalId}`);
-  if (email) conds.push(sql`lower(m.email) = ${email}`);
+  if (email && !options.emailOnlyWhenUnbound) conds.push(sql`lower(m.email) = ${email}`);
+  else if (email && externalId) conds.push(sql`(lower(m.email) = ${email} AND (m.external_id IS NULL OR m.external_id = ${externalId}))`);
+  else if (email) conds.push(sql`(lower(m.email) = ${email} AND m.external_id IS NULL)`);
   const rows = await db.all<{
     account_id: string;
     external_id: string | null;
@@ -370,12 +382,16 @@ export async function listWorkspacesForIdentity(
         FROM member m JOIN account a ON a.id = m.account_id
         WHERE m.status IN ('active', 'invited')
           AND (${sql.join(conds, sql` OR `)})
-        ORDER BY (m.access_grant IS NOT NULL) ASC, a.name ASC, a.created_at ASC`,
+        ORDER BY (m.access_grant IS NOT NULL) ASC, a.name ASC, a.created_at ASC, a.id ASC,
+                 CASE WHEN m.status = 'active' THEN 0 ELSE 1 END ASC, m.created_at ASC, m.id ASC`,
   );
 
-  // The same account can match on both keys (one row, two predicates) — and in
-  // principle a person could hold two member rows in one account. Collapse to
-  // one entry per account so the switcher never lists a workspace twice.
+  // The same account can match on both keys (one row, two predicates), and a
+  // person can hold two member rows in one account (an invitation by email
+  // next to the membership the identity service projected). Collapse to one
+  // entry per account so the switcher never lists a workspace twice, keeping
+  // the first row of the order above: an active row before an invited one, so
+  // a stale invitation can never hide a membership that works.
   const seen = new Set<string>();
   const out: WorkspaceRow[] = [];
   for (const r of rows) {

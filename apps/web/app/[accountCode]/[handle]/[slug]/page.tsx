@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
 import { getPublicForm } from '@/lib/api';
 import { publicLocale } from '@/lib/locale';
-import { canonicalFor } from '@/lib/public-form-path';
+import { canonicalFor, PUBLIC_FORM_ROBOTS } from '@/lib/public-form-path';
 import { getMessages, t } from '@quill/shared';
 import { resolveFormLayout, publicTitle } from '@quill/engine';
 import { formLoadsHubspotTracking, resolveTracking } from '@/components/tracking/resolve-tracking';
@@ -14,7 +14,7 @@ import { VerticalFormRenderer } from './vertical-form-renderer';
 /**
  * SEO/OG metadata for the public form — the form name as the title and a
  * localized description (the form's cover subheadline when present, else a
- * templated fallback). `noindex` support is deferred to a later phase.
+ * templated fallback), and always `noindex` (see `PUBLIC_FORM_ROBOTS`).
  */
 export async function generateMetadata({
   params,
@@ -25,7 +25,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { accountCode, handle, slug } = await params;
   const form = await getPublicForm(accountCode, slug);
-  if (!form) return {};
+  if (!form) return { robots: PUBLIC_FORM_ROBOTS };
   const query = await searchParams;
   const lang = typeof query.lang === 'string' ? query.lang : undefined;
   // NOTE: this function deliberately does NOT redirect, even though it runs
@@ -69,6 +69,7 @@ export async function generateMetadata({
   return {
     title,
     description,
+    robots: PUBLIC_FORM_ROBOTS,
     ...(canonical ? { alternates: { canonical } } : {}),
     openGraph: { title, description, type: 'website', ...(images ? { images } : {}) },
     twitter: {

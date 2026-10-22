@@ -33,6 +33,7 @@ import {
 import { submissionVisitSchema, submissionVisitViewSchema } from './submission-visit';
 
 export * from './submission-visit';
+export * from './link-page';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z

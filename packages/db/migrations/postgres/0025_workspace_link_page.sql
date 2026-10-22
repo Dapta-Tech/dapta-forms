@@ -1,0 +1,11 @@
+-- Workspace link page: additive.
+--
+-- One public page per workspace at /{accountCode}: the workspace's logo, name
+-- and bio, an ordered column of buttons (forms the team chose, mixed with
+-- custom links) and a row of social icons. The whole page is one JSON blob,
+-- `linkPageSchema` in @quill/types, versioned like the form config.
+--
+-- NULL means "no page", and a blob with `enabled: false` means the same thing
+-- to a visitor: the URL keeps answering 404 until someone in the workspace
+-- turns the page on. Nothing is published by this migration.
+ALTER TABLE account ADD COLUMN IF NOT EXISTS link_page JSONB;

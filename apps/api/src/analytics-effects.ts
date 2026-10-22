@@ -15,7 +15,10 @@ import { DB, ENV } from './tokens';
  * never captured.
  */
 export interface AnalyticsEventPayload {
-  /** Event name. Always `forms_`-prefixed — see AnalyticsEffects.capture. */
+  /**
+   * Event name. Always `forms_`-prefixed (see AnalyticsEffects.capture), except
+   * the vendor's own `$mcp_*` vocabulary (see AnalyticsEffects.captureRaw).
+   */
   event: string;
   /** Who the event is about: the member's email. */
   distinctId: string;
@@ -37,6 +40,14 @@ export interface AnalyticsEventPayload {
  * than trusted to each call site.
  */
 const EVENT_PREFIX = 'forms_';
+
+/**
+ * The only names that may skip the prefix: PostHog's MCP analytics vocabulary
+ * (`$mcp_tool_call`, ...). Its MCP screens read those exact names, and the
+ * `product: 'forms'` property plus the `forms_account` group already tell our
+ * events apart from another Dapta MCP's in the shared project.
+ */
+const RAW_EVENT_PATTERN = /^\$mcp_[a-z_]+$/;
 
 /**
  * Durable PRODUCT ANALYTICS enqueue (mirrors EmailEffects / BookingEffects).
@@ -89,10 +100,45 @@ export class AnalyticsEffects {
     },
     now: number = Date.now(),
   ): Promise<void> {
+    await this.enqueue(`${EVENT_PREFIX}${event}`, input, now);
+  }
+
+  /**
+   * Enqueue one event under its name AS GIVEN, with no `forms_` prefix. Only
+   * the vendor's MCP analytics names (`$mcp_*`) are accepted; any other name is
+   * dropped and logged, so this cannot become a way around the prefix.
+   *
+   * NEVER REJECTS, like `capture`.
+   */
+  async captureRaw(
+    event: string,
+    input: {
+      distinctId: string;
+      accountId: string | null;
+      properties?: Record<string, string | number | boolean | null>;
+    },
+    now: number = Date.now(),
+  ): Promise<void> {
+    if (!RAW_EVENT_PATTERN.test(event)) {
+      this.log.error(`refused raw analytics event ${event}: only $mcp_* names skip the prefix`);
+      return;
+    }
+    await this.enqueue(event, input, now);
+  }
+
+  private async enqueue(
+    event: string,
+    input: {
+      distinctId: string;
+      accountId: string | null;
+      properties?: Record<string, string | number | boolean | null>;
+    },
+    now: number,
+  ): Promise<void> {
     if (!this.enabled) return;
     try {
       const payload: AnalyticsEventPayload = {
-        event: `${EVENT_PREFIX}${event}`,
+        event,
         distinctId: input.distinctId,
         properties: input.properties,
         accountId: input.accountId,

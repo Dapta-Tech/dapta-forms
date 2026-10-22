@@ -14,10 +14,12 @@ import {
   upsertNotificationSetting,
   getAccountByCode,
   createForm,
+  submissionFacetCounts,
+  FORM_TEMPLATES,
   sql,
   type Db,
 } from '@quill/db';
-import { computeScore } from '@quill/engine';
+import { computeScore, nameFields, runtimeSteps, type Answers, type FormConfig } from '@quill/engine';
 import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
@@ -186,9 +188,15 @@ describe('submit', () => {
   });
 
   it('a completed submission WITHOUT an email enqueues only the owner notice', async () => {
-    await svc.submit('acme', 'lead-qualifier', {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: 'No email form',
+      config: { version: 1, steps: [{ key: 'company', type: 'text', question: 'Company?' }] },
+    });
+    if (!created.ok) throw new Error('createForm failed');
+    await svc.submit('acme', created.value.slug, {
       sessionId: 'sess-noemail',
-      data: { role: 'founder', team_size: 20, company: 'Acme' },
+      data: { company: 'Acme' },
     });
     await flushEffects();
     const outbox = await listOutbox(db, { kind: 'email' });
@@ -375,9 +383,16 @@ describe('submit', () => {
     });
     expect('error' in partial).toBe(true);
 
-    // The FLOOR is browser-side only, on purpose: a short answer still lands.
+    // The FLOOR holds on a complete, exactly as the renderers hold it on the
+    // button; a partial save in the middle of typing still lands.
     const short = await svc.submit('acme', slug, { sessionId: 'sess-short', data: { why: 'hi' } });
-    expect('error' in short).toBe(false);
+    expect('error' in short && short.error).toBe('INVALID_ANSWERS');
+    const shortPartial = await svc.submit('acme', slug, {
+      sessionId: 'sess-short-partial',
+      data: { why: 'hi' },
+      partial: true,
+    });
+    expect('error' in shortPartial).toBe(false);
 
     // A long-text question with NO ceiling is not measured at all.
     const unbounded = await svc.submit('acme', slug, {
@@ -1020,5 +1035,218 @@ describe('booking callbacks', () => {
     await expect(
       svc.booking('acme', 'lead-qualifier', { sessionId: '', provider: 'zoom' }),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * A completed response is checked against the form it claims to answer: the
+ * steps on the path its answers took, with the validator the renderers run.
+ */
+describe('submit: a complete must be one the form could have produced', () => {
+  /**
+   * What a respondent who walked the form would send: the answers are built
+   * step by step along the live path, so skip logic decides what gets asked.
+   */
+  function walk(config: FormConfig): Answers {
+    const answers: Answers = {};
+    for (let guard = 0; guard < 50; guard += 1) {
+      const next = runtimeSteps(config, answers).find((s) => {
+        if (s.type === 'message' || s.type === 'reveal') return false;
+        return s.type === 'name' ? nameFields(s).some((f) => answers[f] == null) : answers[s.key] == null;
+      });
+      if (!next) break;
+      switch (next.type) {
+        case 'name':
+          for (const f of nameFields(next)) answers[f] = 'Ana';
+          break;
+        case 'multiple_choice':
+        case 'dropdown': {
+          const first = next.options?.[0]?.value ?? '';
+          answers[next.key] = next.selectionMode === 'multiple' ? [first] : first;
+          break;
+        }
+        case 'email':
+          answers[next.key] = 'ana@acme.io';
+          break;
+        case 'phone':
+          answers[next.key] = '+573001234567';
+          break;
+        case 'url':
+          answers[next.key] = 'https://acme.io';
+          break;
+        case 'slider':
+          answers[next.key] = next.default ?? next.min ?? 0;
+          break;
+        case 'textarea':
+          answers[next.key] = 'x'.repeat(Math.max(1, next.minChars ?? 1));
+          break;
+        case 'scheduler':
+          answers[next.key] = '2026-10-21T15:00:00Z';
+          break;
+        default:
+          answers[next.key] = 'Acme';
+      }
+    }
+    return answers;
+  }
+
+  async function formFrom(config: unknown, name: string): Promise<{ id: string; slug: string }> {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, { name, config: config as never });
+    if (!created.ok) throw new Error('createForm failed');
+    return { id: created.value.id, slug: created.value.slug };
+  }
+
+  it('refuses an option the step does not have, writes nothing and keeps the facets clean', async () => {
+    const out = await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-nope',
+      data: { role: 'nope', team_size: 20, email: 'lead@acme.io' },
+    });
+    expect(out).toMatchObject({ error: 'INVALID_ANSWERS', status: 400 });
+    if ('error' in out) expect(out.message).toContain('"role"');
+    const form = await db.get<{ id: string }>(sql`SELECT id FROM form WHERE slug = 'lead-qualifier'`);
+    expect(await listSubmissions(db, form!.id)).toHaveLength(0);
+    const facets = await submissionFacetCounts(db, form!.id, ['role']);
+    expect(facets.choices.role?.values).toEqual({});
+    await flushEffects();
+    expect(await listOutbox(db, {})).toHaveLength(0);
+  });
+
+  it('refuses a complete missing a required answer on its path (the QA case)', async () => {
+    const out = await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-missing',
+      data: { role: 'founder' },
+    });
+    expect(out).toMatchObject({ error: 'INVALID_ANSWERS', status: 400 });
+    if ('error' in out) expect(out.message).toContain('"email"');
+  });
+
+  it('names the missing field of a name question sent under its own key', async () => {
+    const { slug } = await formFrom(
+      {
+        version: 1,
+        steps: [
+          { key: 'full', type: 'name', question: 'Your name?', required: true },
+          { key: 'email', type: 'email', question: 'Your email?', required: true },
+        ],
+      },
+      'Name shape',
+    );
+    const out = await svc.submit('acme', slug, { sessionId: 'sess-name', data: { full: 'Eva Retest', email: 'eva@acme.io' } });
+    expect(out).toMatchObject({ error: 'INVALID_ANSWERS', status: 400 });
+    if ('error' in out) expect(out.message).toBe('Answer for "firstname" is not valid (required). A name question is sent as its fields (firstname, lastname), not under its own key.');
+  });
+
+  it('still saves the same answers as a partial, step by step', async () => {
+    for (const data of [{ role: 'founder' }, { role: 'founder', team_size: 20 }]) {
+      const out = await svc.submit('acme', 'lead-qualifier', { sessionId: 'sess-steps', data, partial: true });
+      expect('error' in out).toBe(false);
+    }
+    const done = await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-steps',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    expect('error' in done).toBe(false);
+  });
+
+  it('accepts a walked response for every built-in template and the demo form', async () => {
+    for (const [id, template] of Object.entries(FORM_TEMPLATES)) {
+      if (!template.config) continue;
+      const form = await formFrom(template.config, `T ${id}`);
+      const data = walk(template.config as FormConfig);
+      const out = await svc.submit('acme', form.slug, { sessionId: `sess-${id}`, data });
+      expect({ id, out }).toMatchObject({ id, out: { id: expect.any(String) } });
+    }
+  });
+
+  it('reads only the path taken: skipped and hidden steps, prefills, UTMs and messages pass', async () => {
+    const config = {
+      version: 1,
+      steps: [
+        {
+          key: 'team',
+          type: 'multiple_choice',
+          required: true,
+          options: [
+            { label: 'Solo', value: 'solo' },
+            { label: 'Team', value: 'team' },
+          ],
+          goto: [{ values: ['solo'], target: 'email' }],
+        },
+        {
+          key: 'size',
+          type: 'dropdown',
+          required: true,
+          options: [{ label: 'Big', value: 'big' }],
+        },
+        {
+          key: 'budget',
+          type: 'multiple_choice',
+          required: true,
+          showWhen: { field: 'team', values: ['team'] },
+          options: [{ label: 'High', value: 'high' }],
+        },
+        { key: 'intro', type: 'message', question: 'Last one' },
+        { key: 'src', type: 'text', hidden: true, required: true },
+        { key: 'email', type: 'email', required: true },
+        { key: 'name', type: 'name', required: false },
+      ],
+    };
+    const form = await formFrom(config, 'Skip logic');
+    // Solo jumps over `size`; `budget` only shows for teams; a stale `size`
+    // from a URL prefill and the hidden `src` ride along unchecked.
+    const solo = await svc.submit('acme', form.slug, {
+      sessionId: 'sess-solo',
+      data: { team: 'solo', size: 'from-the-url', email: 'ana@acme.io', utm_source: 'li', firstname: 'Ana' },
+    });
+    expect('error' in solo).toBe(false);
+    // The team path asks both; without them the complete is refused.
+    const team = await svc.submit('acme', form.slug, {
+      sessionId: 'sess-team',
+      data: { team: 'team', email: 'ana@acme.io' },
+    });
+    expect(team).toMatchObject({ error: 'INVALID_ANSWERS' });
+    const teamOk = await svc.submit('acme', form.slug, {
+      sessionId: 'sess-team-ok',
+      data: { team: 'team', size: 'big', budget: 'high', email: 'ana@acme.io' },
+    });
+    expect('error' in teamOk).toBe(false);
+  });
+
+  it('accepts a booked scheduler and a terminal disqualify that ends the form early', async () => {
+    const config = {
+      version: 1,
+      steps: [
+        {
+          key: 'gate',
+          type: 'multiple_choice',
+          required: true,
+          options: [
+            { label: 'Yes', value: 'yes' },
+            { label: 'No', value: 'no' },
+          ],
+        },
+        {
+          key: 'bye',
+          type: 'multiple_choice',
+          required: true,
+          terminal: true,
+          showWhen: { field: 'gate', values: ['no'] },
+          options: [{ label: 'Ok', value: 'ok' }],
+        },
+        { key: 'call', type: 'scheduler', required: true },
+      ],
+    };
+    const form = await formFrom(config, 'Scheduler');
+    const booked = await svc.submit('acme', form.slug, {
+      sessionId: 'sess-booked',
+      data: { gate: 'yes', call: '2026-10-21T15:00:00Z' },
+    });
+    expect('error' in booked).toBe(false);
+    const unbooked = await svc.submit('acme', form.slug, { sessionId: 'sess-unbooked', data: { gate: 'yes' } });
+    expect(unbooked).toMatchObject({ error: 'INVALID_ANSWERS' });
+    // The disqualify step ends the form: the calendar after it was never shown.
+    const out = await svc.submit('acme', form.slug, { sessionId: 'sess-out', data: { gate: 'no', bye: 'ok' } });
+    expect('error' in out).toBe(false);
   });
 });

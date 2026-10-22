@@ -14,14 +14,19 @@
  * UTM values are fixed product-wide; only the medium varies by surface.
  *
  * `form-button` is the attribution pill on the form itself; `confirmation` is
- * the "Want your own form?" CTA on the thank-you screen. The pill's medium was
- * `badge` until 2026-08 — any report filtering on it has to accept BOTH values
- * across that date, or the earlier days read as zero.
+ * the "Want your own form?" CTA on the thank-you screen; `link-page` is the
+ * pill at the foot of a workspace's link page (`/{accountCode}`). The pill's
+ * medium was `badge` until 2026-08, so any report filtering on it has to accept
+ * BOTH values across that date, or the earlier days read as zero.
  */
-export type SignupMedium = 'form-button' | 'confirmation';
+export type SignupMedium = 'form-button' | 'confirmation' | 'link-page';
 
 export const UTM_SOURCE = 'dapta-forms';
-export const UTM_CAMPAIGN = 'made-with-dapta';
+/**
+ * Was `made-with-dapta` until the product became dForms. A report on the
+ * campaign has to accept BOTH values across the release that renamed it.
+ */
+export const UTM_CAMPAIGN = 'made-with-dforms';
 
 /**
  * The signup destination carrying the growth-loop UTM tags, or null when no

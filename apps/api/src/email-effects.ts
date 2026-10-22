@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { enqueueOutbox, getNotificationSettings, sql, type Db } from '@quill/db';
+import { enqueueOutbox, getNotificationSettings, recordSettledDelivery, sql, type Db } from '@quill/db';
 import {
   SubmissionNotifier,
   type EmailProvider,
@@ -35,6 +35,13 @@ function dedupeAddresses(list: string[]): string[] {
   }
   return out;
 }
+
+/**
+ * Why an enabled owner notice was not sent. On screen verbatim in the delivery
+ * history, so it says what to do about it.
+ */
+export const NO_RECIPIENT_REASON =
+  'No recipient: this notice has no addresses configured and the workspace has no active owner or admin with an email address. Add an address under Notifications.';
 
 /** The submission emails the outbox can carry. */
 export type EmailKind = 'submission_received' | 'submission_confirmed';
@@ -106,12 +113,19 @@ export class EmailEffects {
     formId?: string | null,
   ): Promise<void> {
     try {
-      // The owner row is still the fallback audience and, either way, the source
-      // of the `locale` that selects the EN/ES copy (absent = English default).
-      const owner = await this.db.get<{ email: string | null; locale: string | null }>(
+      // The fallback audience, and either way the source of the `locale` that
+      // selects the EN/ES copy (absent = English default): the workspace's
+      // oldest active OWNER with an address, else its oldest active ADMIN. The
+      // admin step exists because a workspace can legitimately have no owner
+      // row here (one projected from the identity service with its owner still
+      // to sign in, or an upstream role that maps to admin), and every response
+      // to it used to vanish without a trace. A staff access grant is never
+      // part of a customer's audience, whatever role the grant carries.
+      const fallback = await this.db.get<{ email: string | null; locale: string | null }>(
         sql`SELECT email, locale FROM member
-            WHERE account_id = ${accountId} AND role = 'owner' AND status = 'active'
-            ORDER BY created_at ASC LIMIT 1`,
+            WHERE account_id = ${accountId} AND status = 'active' AND access_grant IS NULL
+              AND role IN ('owner', 'admin') AND email IS NOT NULL AND TRIM(email) <> ''
+            ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, created_at ASC LIMIT 1`,
       );
       // Snapshot the toggle AND the custom copy, already merged form → account →
       // stock (absent rows = enabled with the stock template, the fork-friendly
@@ -120,19 +134,12 @@ export class EmailEffects {
       const setting = await this.resolveSetting(accountId, formId, 'submission_received');
       if (!setting.enabled) return;
       // Who hears about it: an explicit `to` from the caller, else the stored
-      // list. A stored EMPTY list is the deliberate "owner only" and falls
-      // through to the owner inbox, exactly like no list at all, which is also
-      // what a fork with no member email gets.
+      // list. A stored EMPTY list (the deliberate "owner only") and no list at
+      // all both fall through to the fallback above.
       const configured = n.to ?? setting.recipients;
       const to = dedupeAddresses(
-        configured && configured.length > 0 ? configured : owner?.email ? [owner.email] : [],
+        configured && configured.length > 0 ? configured : fallback?.email ? [fallback.email] : [],
       );
-      // Nobody to tell: every adapter throws on an empty recipient list, so a
-      // row enqueued here would burn its whole retry schedule for nothing.
-      if (to.length === 0) {
-        this.log.warn(`submission_received for account ${accountId} has no recipient: not enqueued`);
-        return;
-      }
       const payload: SubmissionNotification = {
         ...n,
         accountId,
@@ -147,10 +154,26 @@ export class EmailEffects {
         formId: formId ?? null,
         // Replaced per row below; the shape stays honest for a reader.
         to,
-        locale: n.locale ?? owner?.locale ?? null,
+        locale: n.locale ?? fallback?.locale ?? null,
         subjectTemplate: setting.subject,
         bodyTemplate: setting.body,
       };
+      // Nobody to tell. Not queued (every adapter throws on an empty recipient
+      // list, so a pending row would burn its whole retry schedule), but
+      // RECORDED as skipped with the reason, so the delivery history explains
+      // why an enabled notice never arrived instead of showing nothing.
+      if (to.length === 0) {
+        this.log.warn(`submission_received for account ${accountId} has no recipient: recorded as skipped`);
+        await recordSettledDelivery(this.db, {
+          kind: 'email',
+          action: 'submission_received',
+          accountId,
+          payload: JSON.stringify(payload),
+          status: 'skipped',
+          error: NO_RECIPIENT_REASON,
+        });
+        return;
+      }
       // ONE ROW PER RECIPIENT, not one row addressed to all of them. Each copy
       // then retries, bounces and shows up in the delivery history on its own:
       // an address that rejects the mail no longer costs the other four their

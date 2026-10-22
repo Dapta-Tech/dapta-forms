@@ -83,7 +83,7 @@ describe('proxy matcher', () => {
   const HOPPED = [
     '/admin',
     '/admin/forms/f1/submissions?view=all&page=2',
-    '/admin/developers/keys',
+    '/admin/developers/connect',
     '/admin/forms/f1/submissions/export?ids=a,b',
     '/onboarding',
     '/onboarding?step=3',

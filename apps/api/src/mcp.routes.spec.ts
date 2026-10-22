@@ -6,6 +6,8 @@
  * and fails the boot too (`McpController.onModuleInit`).
  */
 import 'reflect-metadata';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Controller, Get } from '@nestjs/common';
 import { AdminCrudController } from './admin-crud.controller';
@@ -40,6 +42,7 @@ describe('the handlers the MCP calls', () => {
       'PUT /v1/forms/:id',
       'POST /v1/forms/:id/publish',
       'POST /v1/forms/:id/revert',
+      'POST /v1/forms/:id/discard-draft',
       'GET /v1/forms/:id/submissions',
       'GET /v1/forms/:id/analytics',
     ]);
@@ -66,5 +69,18 @@ describe('keyAllowedRoutes', () => {
     expect(keyAllowedRoutes(Fake, ['routed'])).toEqual(['GET /v1/forms']);
     expect(() => keyAllowedRoutes(Fake, ['plain'])).toThrow(/has no route/);
     expect(() => keyAllowedRoutes(Fake, ['missing'])).toThrow(/has no route/);
+  });
+});
+
+describe('the in-process principal', () => {
+  // The MCP's in-process requests never pass through Nest's pipeline, so the
+  // app-wide guard never sees them: the boot check above is what holds every
+  // handler the MCP can reach to the API-key allowlist.
+  it('is built for a handler only by the MCP backend, so the boot check above covers every one', () => {
+    const dir = __dirname;
+    const builders = readdirSync(dir, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts') && f !== 'in-process-principal.ts')
+      .filter((f) => readFileSync(join(dir, f), 'utf8').includes('inProcessRequest('));
+    expect(builders).toEqual(['mcp.backend.ts']);
   });
 });

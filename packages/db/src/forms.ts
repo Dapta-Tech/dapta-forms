@@ -883,6 +883,58 @@ export async function publishForm(
   return { ok: true, value: (await getFormById(db, accountId, id))!, published: Boolean(fired) };
 }
 
+/** `discardDraft`'s answer: `discarded` is true only on the call that dropped a draft. */
+export type DiscardDraftResult =
+  | { ok: true; value: FormRow; discarded: boolean }
+  | Extract<CrudResult<FormRow>, { ok: false }>;
+
+/**
+ * Drop a form's pending draft, so the editor and the next publish start from
+ * the live config again. What the public sees does not change: the live
+ * config, the version kept for a revert and the publish dates stay as they
+ * are. With no draft pending it is a no-op (the row comes back unchanged), so
+ * a retry is safe. Guarded by `expectedUpdatedAt` like a publish: a caller
+ * whose stamp is stale is about to throw away a draft someone saved after
+ * they looked, which is the overwrite the guard exists for.
+ */
+export async function discardDraft(
+  db: Db,
+  accountId: string,
+  id: string,
+  expectedUpdatedAt?: number,
+): Promise<DiscardDraftResult> {
+  const existing = await getFormById(db, accountId, id);
+  if (!existing) return { ok: false, reason: 'NOT_FOUND' };
+  if (expectedUpdatedAt !== undefined && existing.updatedAt !== expectedUpdatedAt) return stale();
+  if (existing.draftConfig == null) return { ok: true, value: existing, discarded: false };
+  const fired = await db.get<{ id: string }>(
+    sql`UPDATE form SET draft_config = NULL, updated_at = ${Date.now()}
+        WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL
+          ${staleGuard(expectedUpdatedAt)}
+        RETURNING id`,
+  );
+  if (!fired && expectedUpdatedAt !== undefined) return stale();
+  return { ok: true, value: (await getFormById(db, accountId, id))!, discarded: Boolean(fired) };
+}
+
+/**
+ * How many steps the LIVE config of each form of the account has, by form id
+ * (drafts never count: only what the public link serves). Zero for a form
+ * whose live config has no steps, which is a form that never published any:
+ * its public link serves an empty form. Counted in the database so a list of
+ * forms does not haul every config to answer it.
+ */
+export async function listLiveStepCounts(db: Db, accountId: string): Promise<Map<string, number>> {
+  const count =
+    db.dialect === 'postgres'
+      ? sql`CASE WHEN jsonb_typeof(config -> 'steps') = 'array' THEN jsonb_array_length(config -> 'steps') ELSE 0 END`
+      : sql`CASE WHEN json_type(config, '$.steps') = 'array' THEN json_array_length(config, '$.steps') ELSE 0 END`;
+  const rows = await db.all<{ id: unknown; steps: unknown }>(
+    sql`SELECT id, ${count} AS steps FROM form WHERE account_id = ${accountId}`,
+  );
+  return new Map(rows.map((r) => [String(r.id), Number(r.steps) || 0]));
+}
+
 /**
  * A duplicated config with each HubSpot destination's OWNED mirror state
  * stripped. `formGuid` points at the mirror form in the portal that produces

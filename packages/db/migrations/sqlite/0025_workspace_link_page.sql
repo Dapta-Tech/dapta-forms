@@ -1,0 +1,2 @@
+-- Workspace link page: additive. See the Postgres twin for the why.
+ALTER TABLE account ADD COLUMN link_page TEXT;

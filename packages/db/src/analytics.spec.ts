@@ -29,6 +29,7 @@ import {
   DAY_MS,
   querySubmissions,
   allSubmissionsForExport,
+  firstSubmissionsForExport,
   getSubmissionAnswersForAccount,
   getSubmissionAnswersUnscoped,
   searchSubmissionAnswers,
@@ -585,5 +586,15 @@ describe('header filters and sort (one filter for the table, the CSV and the Sum
     expect(ids(await submissionsForSummary(db, formId, q))).toEqual(['f3', 'f2', 'f1']);
     const search = await searchSubmissionAnswers(db, formId, ['kind'], { answers: { tools: ['ads'] } });
     expect(ids(search.items)).toEqual(['f2', 'f1']);
+  });
+
+  it('reads only the first rows of the export, in its order, with the count of the whole export', async () => {
+    const q = { answers: { tools: ['crm', 'ads'] }, sort: 'score_asc' as const };
+    const first = await firstSubmissionsForExport(db, formId, q, 2);
+    expect({ ids: ids(first.items), total: first.total }).toEqual({ ids: ['f2', 'f3'], total: 3 });
+    expect(first.items).toEqual((await allSubmissionsForExport(db, formId, q)).slice(0, 2));
+    const picked = await firstSubmissionsForExport(db, formId, { ...q, ids: ['f1', 'f3', 'nope'] }, 1);
+    expect({ ids: ids(picked.items), total: picked.total }).toEqual({ ids: ['f3'], total: 2 });
+    expect(await firstSubmissionsForExport(db, formId, { ids: [] }, 5)).toEqual({ items: [], total: 0 });
   });
 });

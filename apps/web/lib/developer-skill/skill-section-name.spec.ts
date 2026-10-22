@@ -18,14 +18,15 @@ describe('skill: the section name', () => {
     for (const f of files) expect(f.content, f.path).not.toMatch(/\bDevelopers\b/);
   });
 
-  it('tells the agent where the person creates a key, by the names the rail shows', () => {
+  it('tells the agent where the person connects without a key, by the names the rail shows', () => {
     const skill = files.find((f) => f.path === `${SKILL_DIR}/SKILL.md`)!.content;
     const chrome = getMessages('en').admin.chrome;
-    expect(skill).toContain(`${chrome.nav.developers}, then ${chrome.developersMenu.keys}`);
+    expect(skill).toContain(`(${chrome.nav.developers}, in the left menu of dForms)`);
+    expect(skill).not.toMatch(/create a key in dForms/i);
   });
 
-  it('keeps linking the addresses that zips already carry', () => {
+  it('links the connector guide, where the old keys address now lands', () => {
     const skill = files.find((f) => f.path === `${SKILL_DIR}/SKILL.md`)!.content;
-    expect(skill).toContain('https://forms.example.com/admin/developers/keys');
+    expect(skill).toContain('https://forms.example.com/admin/developers/connect');
   });
 });

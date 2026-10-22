@@ -168,7 +168,8 @@ export interface FormStep {
    * `textarea` step: the shortest answer accepted, in characters. Absent (which
    * every config saved before this existed is) means no floor, which is why a published
    * long-text question keeps behaving exactly as it did. Enforced in the browser
-   * (same parity as `required` and `phoneMinDigits`), not on submit.
+   * and, like `required` and `phoneMinDigits`, on a COMPLETE submit through
+   * `validateSubmission` (a partial save is never measured).
    */
   minChars?: number;
   /**
@@ -2534,6 +2535,55 @@ export function runtimeScreens(config: FormConfig, answers: Answers): FormStep[]
     current = id;
   }
   return screens;
+}
+
+/**
+ * The steps a COMPLETED response walked, as the server can reconstruct them
+ * from the final answers: `runtimeSteps`, cut after the first `terminal` step.
+ *
+ * The cut is the lenient reading of both layouts. Slides finalize the moment a
+ * terminal step (or a screen holding one) is completed, answered or not; the
+ * one-page layout cuts at the first terminal step that holds an answer. Cutting
+ * at the first terminal step on the path, whatever it holds, never asks for a
+ * step either layout would have let the person skip.
+ */
+export function answeredPath(config: FormConfig, answers: Answers): FormStep[] {
+  const path = runtimeSteps(config, answers);
+  const cut = path.findIndex((s) => s.terminal);
+  return cut >= 0 ? path.slice(0, cut + 1) : path;
+}
+
+/** Why a completed response does not stand, or ok. */
+export type SubmissionValidation =
+  | { ok: true }
+  | { ok: false; key: string; code: ValidationCode; nameFields?: string[] };
+
+/**
+ * Validate a COMPLETED response the way the renderers did on the way through:
+ * every step on the path it actually took (`answeredPath`), with the same
+ * `validateAnswerCode` each button press runs. Only that path is read: a step
+ * logic skipped, a hidden step and any extra key (UTMs, a URL prefill nobody
+ * saw) are not this check's business, so a stale or seeded answer off the path
+ * never refuses a real response. Inputless steps (message, reveal) pass.
+ *
+ * Never call it on a partial save: a partial is by definition missing the
+ * required answers further down.
+ */
+export function validateSubmission(config: FormConfig, answers: Answers): SubmissionValidation {
+  for (const step of answeredPath(config, answers)) {
+    const check = validateAnswerCode(step, answers[step.key], answers);
+    if (!check.ok) {
+      // A name step stores its sub-fields, never its own key: name the one
+      // that is missing, so a client that sent `name: "Ana"` learns the shape.
+      if (step.type === 'name') {
+        const fields = nameFields(step);
+        const missing = fields.find((f) => answers[f] == null || String(answers[f]).trim() === '') ?? step.key;
+        return { ok: false, key: missing, code: check.code, nameFields: fields };
+      }
+      return { ok: false, key: step.key, code: check.code };
+    }
+  }
+  return { ok: true };
 }
 
 /** The key of the step at `partialSubmitAfterStep` (1-based over `steps`), or null. */

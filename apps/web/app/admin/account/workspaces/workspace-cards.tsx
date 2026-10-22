@@ -40,6 +40,8 @@ export interface WorkspaceCardsLabels {
   /** Shown when entering a workspace fails (the API refused, or the call never landed). */
   openErrorForbidden: string;
   openErrorFailed: string;
+  /** Staff only: their own membership in that workspace is disabled or pending, so a grant cannot open it. */
+  openErrorMembershipNotActive: string;
   /** The "New workspace" dialog's own catalog slice. */
   createDialog: FormsMessages['admin']['chrome']['workspaces'];
 }
@@ -165,6 +167,7 @@ export function WorkspaceCards({
       if (isTransportError(res) && res.message === 'NEXT_REDIRECT') return;
       setOpeningId(null);
       if (isTransportError(res)) toast.error(labels.openErrorFailed);
+      else if (res.error === 'membership_not_active') toast.error(labels.openErrorMembershipNotActive);
       else if (res.error) toast.error(res.error === 'forbidden' ? labels.openErrorForbidden : labels.openErrorFailed);
     });
   }

@@ -1,33 +1,59 @@
 import { describe, expect, it } from 'vitest';
-import { publicPagePath, publishedPublicPagePath } from './public-page';
+import {
+  initialsOf,
+  linkPageOgPath,
+  plausibleAccountCode,
+  publishedWorkspacePagePath,
+  workspacePagePath,
+} from './public-page';
 
-const me = { accountCode: 'isna88', handle: 'josue' };
-
-describe('publicPagePath', () => {
-  it('builds /{accountCode}/{handle}', () => {
-    expect(publicPagePath(me)).toBe('/isna88/josue');
-  });
-
-  it('is null without a handle (no reserved fallback like "me")', () => {
-    expect(publicPagePath({ accountCode: 'isna88', handle: null })).toBeNull();
+describe('workspacePagePath', () => {
+  it('is the workspace code at the root', () => {
+    expect(workspacePagePath('acme')).toBe('/acme');
   });
 });
 
-describe('publishedPublicPagePath', () => {
+describe('publishedWorkspacePagePath', () => {
   it('returns the path only while the page is published', () => {
-    expect(publishedPublicPagePath(me, { enabled: true })).toBe('/isna88/josue');
+    expect(publishedWorkspacePagePath('acme', { enabled: true })).toBe('/acme');
   });
 
   it('is null when the page is off, so Home hides its box', () => {
-    expect(publishedPublicPagePath(me, { enabled: false })).toBeNull();
+    expect(publishedWorkspacePagePath('acme', { enabled: false })).toBeNull();
   });
 
-  it('is null when there is no profile at all', () => {
-    expect(publishedPublicPagePath(me, null)).toBeNull();
-    expect(publishedPublicPagePath(me, undefined)).toBeNull();
+  it('is null when there is no page at all', () => {
+    expect(publishedWorkspacePagePath('acme', null)).toBeNull();
+    expect(publishedWorkspacePagePath('acme', undefined)).toBeNull();
+  });
+});
+
+describe('plausibleAccountCode', () => {
+  it('takes codes and vanity slugs', () => {
+    expect(plausibleAccountCode('acme')).toBe(true);
+    expect(plausibleAccountCode('a1b2c3')).toBe(true);
+    expect(plausibleAccountCode('acme-studio')).toBe(true);
   });
 
-  it('is null when published but the member has no handle', () => {
-    expect(publishedPublicPagePath({ accountCode: 'isna88', handle: null }, { enabled: true })).toBeNull();
+  it('refuses file names and probes without a call to the API', () => {
+    expect(plausibleAccountCode('favicon.ico')).toBe(false);
+    expect(plausibleAccountCode('.env')).toBe(false);
+    expect(plausibleAccountCode('-acme')).toBe(false);
+    expect(plausibleAccountCode('a/b')).toBe(false);
+    expect(plausibleAccountCode('')).toBe(false);
+  });
+});
+
+describe('linkPageOgPath', () => {
+  it('points at the share card route', () => {
+    expect(linkPageOgPath('acme')).toBe('/api/public/pages/acme/og');
+  });
+});
+
+describe('initialsOf', () => {
+  it('takes the first letter of two words, or two letters of one', () => {
+    expect(initialsOf('Acme Studio')).toBe('AS');
+    expect(initialsOf('acme')).toBe('AC');
+    expect(initialsOf('  ')).toBe('');
   });
 });

@@ -51,6 +51,8 @@ import {
   IntegrationsController,
 } from './integrations.controller';
 import { LocalAuthProvider, type HostPrincipal, type ReqLike } from './auth.provider';
+import { LinkPageController } from './link-page.controller';
+import { LinkPageService } from './link-page.service';
 
 const endpoints = apiEndpoints();
 const documented = new Set<string>(endpoints.map((e) => e.route));
@@ -361,6 +363,7 @@ describe('every API_REFERENCE example, through the real handlers with an API key
       ),
       new AnalyticsController(db, key, new AnalyticsService(db)),
       new BrandingController(db, key),
+      new LinkPageController(key, new LinkPageService(db), env),
       new IntegrationsController(
         key,
         new HubspotPropertiesService(env, db, providers),

@@ -146,12 +146,22 @@ export function formatAnswerCell(
   return formatAnswerValue(step, value, opts);
 }
 
-/** The answered rows of `answers`, in step order. Unanswered steps are omitted. */
-export function summarizeAnswers(
+/** A summary row with the step it answers, for readers that need to tell steps apart. */
+export interface StepAnswerRow extends AnswerSummaryRow {
+  key: string;
+  type: FormStep["type"];
+}
+
+/**
+ * The answered rows of `answers`, in step order, each with its step's key and
+ * type. Unanswered and inputless steps are omitted. `summarizeAnswers` is
+ * this without the step, which is the shape the emails store.
+ */
+export function summarizeAnswersByStep(
   config: FormConfig,
   answers: Answers,
-): AnswerSummaryRow[] {
-  const rows: AnswerSummaryRow[] = [];
+): StepAnswerRow[] {
+  const rows: StepAnswerRow[] = [];
   for (const step of config.steps) {
     if (isInputlessStep(step)) continue;
     let value: string;
@@ -168,7 +178,17 @@ export function summarizeAnswers(
     rows.push({
       label: question || step.key,
       value: value.slice(0, ANSWER_VALUE_MAX),
+      key: step.key,
+      type: step.type,
     });
   }
   return rows;
+}
+
+/** The answered rows of `answers`, in step order. Unanswered steps are omitted. */
+export function summarizeAnswers(
+  config: FormConfig,
+  answers: Answers,
+): AnswerSummaryRow[] {
+  return summarizeAnswersByStep(config, answers).map(({ label, value }) => ({ label, value }));
 }

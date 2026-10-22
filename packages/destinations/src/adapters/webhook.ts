@@ -52,6 +52,8 @@ export interface WebhookPayload {
   utm: Record<string, string>;
   /** The page it was answered on. Absent when none was reported (older rows too). */
   visit?: WebhookVisit;
+  /** True on a test delivery sent from the dashboard or the API; absent on every real one. */
+  test?: true;
 }
 
 /**
@@ -131,6 +133,7 @@ export class WebhookDestination implements SubmissionDestination {
       data: withFileLinks(ctx.data, ctx.fileLinks),
       utm: ctx.utm,
       ...(ctx.visit ? { visit: webhookVisit(ctx.visit) } : {}),
+      ...(ctx.test ? { test: true as const } : {}),
     };
   }
 

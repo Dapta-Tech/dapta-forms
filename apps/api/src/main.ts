@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { databaseLogLabel } from './database-log-label';
 import { configureCors } from './cors';
 import { configureDeprecatedHosts } from './deprecated-hosts';
+import { linkPageBodyParser } from './link-page-body';
 
 async function bootstrap() {
   // Load .env (root + app-local) before reading env — a self-hoster's .env must
@@ -13,6 +14,9 @@ async function bootstrap() {
   loadDotenv();
   const env = loadServerEnv();
   const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
+  // On SIGTERM, close the app so its destroy hooks run: the outbox worker
+  // stops polling and the person directory closes its identity database pool.
+  app.enableShutdownHooks();
   // Deprecated API hosts (off unless API_DEPRECATED_HOSTS is set): mounted
   // first, so every response on a listed host carries the headers, errors and
   // CORS refusals included. See deprecated-hosts.ts.
@@ -23,6 +27,10 @@ async function bootstrap() {
   // CORS (P1-4): an explicit allowlist, never a reflected origin; `/mcp` has
   // its own (MCP_ALLOWED_ORIGINS, no credentials). See cors.ts.
   const origins = configureCors(app, env);
+  // `PUT /v1/link-page` and the MCP (`update_link_page`) read a larger body
+  // than the global 100 KB parser allows (an inlined logo); mounted before
+  // it, and for those two routes only.
+  app.use(linkPageBodyParser());
   console.log(`[api] CORS allowlist: ${origins.join(', ')}`);
   await app.listen(env.API_PORT);
   console.log(`[api] listening on http://localhost:${env.API_PORT} (db=${databaseLogLabel(env.DATABASE_URL)})`);

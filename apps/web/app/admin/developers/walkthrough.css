@@ -1,0 +1,194 @@
+/* ── Connect walkthrough: the looping mock of each AI app ─────────────────────
+   Every animated element is written in its FINAL state; the keyframes only say
+   where it comes FROM, with `both` fill so it waits there until its delay
+   (`--d`). That is what makes reduced motion free: with the animations off,
+   every frame simply shows its end state. */
+
+.wt-stage {
+  position: relative;
+  overflow: hidden;
+}
+
+.wt-stage[data-paused] *,
+.wt-stage[data-paused] *::before,
+.wt-stage[data-paused] *::after {
+  animation-play-state: paused !important;
+}
+
+.wt-fade {
+  animation: wt-fade 0.35s ease-out both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.wt-pop {
+  animation: wt-pop 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+}
+
+/* Typing: the text is revealed left to right, one step per character. */
+.wt-type {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: bottom;
+  animation: wt-type var(--dur, 1s) steps(var(--n, 20), end) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.wt-press {
+  animation: wt-press 0.45s ease both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-press {
+  40% {
+    transform: scale(0.93);
+    filter: brightness(0.92);
+  }
+}
+
+/* A row or a menu item that lights up when the pointer reaches it. */
+.wt-hl {
+  animation: wt-hl 0.25s ease both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-hl {
+  from {
+    background-color: transparent;
+    color: inherit;
+  }
+}
+
+.wt-toggle-track {
+  animation: wt-track 0.25s ease both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-track {
+  from {
+    background-color: #d4d4d8;
+  }
+}
+.wt-toggle-knob {
+  transform: translateX(14px);
+  animation: wt-knob 0.25s ease both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-knob {
+  from {
+    transform: translateX(0);
+  }
+}
+
+.wt-check {
+  animation: wt-check 0.2s ease both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-check {
+  from {
+    background-color: transparent;
+    color: transparent;
+  }
+}
+
+/* Leaves at --d: written hidden (its final state), shown until then. */
+.wt-out {
+  opacity: 0;
+  visibility: hidden;
+  animation: wt-out 0.35s ease both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-out {
+  from {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+/* A dialog's content scrolled to its end at --d, the way the apps scroll a long form. */
+.wt-scroll {
+  transform: translateY(-150px);
+  animation: wt-scroll 0.9s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-scroll {
+  from {
+    transform: translateY(0);
+  }
+}
+
+/* The pointer travels from (--fx, --fy) to where it is drawn. */
+.wt-pointer {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.35));
+  animation: wt-pointer 0.8s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes wt-pointer {
+  from {
+    transform: translate(var(--fx, 80px), var(--fy, 60px));
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+}
+
+.wt-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: wt-caret 1s steps(1) infinite;
+}
+@keyframes wt-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* The progress bar under the stage: the current step fills over its duration. */
+.wt-progress {
+  transform-origin: left center;
+  animation: wt-progress var(--dur, 4s) linear both;
+}
+@keyframes wt-progress {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-stage *,
+  .wt-stage *::before,
+  .wt-stage *::after,
+  .wt-progress {
+    animation: none !important;
+  }
+  .wt-caret {
+    display: none;
+  }
+}

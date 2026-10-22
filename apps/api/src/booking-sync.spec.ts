@@ -119,10 +119,27 @@ function bookedDay(bookedAt: number, timezone?: string): string {
   return String(dayMidnightMs(bookedAt, timezone));
 }
 
+/**
+ * The seeded form with nothing required. These specs are about what happens
+ * AFTER a response lands, and post the few answers each case needs; a complete
+ * that skips a required answer is refused before any of that runs.
+ */
+async function relaxSeededForm(db: Db): Promise<void> {
+  const form = await db.get<{ id: string; config: string }>(
+    sql`SELECT id, config FROM form WHERE slug = 'lead-qualifier' LIMIT 1`,
+  );
+  const config = (typeof form!.config === 'string' ? JSON.parse(form!.config) : form!.config) as {
+    steps: Record<string, unknown>[];
+  };
+  const steps = config.steps.map((s) => ({ ...s, required: false }));
+  await db.run(sql`UPDATE form SET config = ${JSON.stringify({ ...config, steps })} WHERE id = ${form!.id}`);
+}
+
 beforeEach(async () => {
   db = await createDb('file::memory:');
   await migrate(db);
   await seed(db);
+  await relaxSeededForm(db);
   bookingSync = new BookingSyncEffects(
     db,
     { CALENDLY_API_TOKEN: 'cal-token', HUBSPOT_PRIVATE_APP_TOKEN: 'hs-token' } as never,

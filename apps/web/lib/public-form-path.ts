@@ -44,3 +44,13 @@ export function canonicalFor(
     redirect: retired ? target : null,
   };
 }
+
+/**
+ * Every public form is `noindex, follow`. A form is a customer's page living on
+ * our domain: a question and a submit button, thin to a search engine and never
+ * what a searcher wants. Indexed by the thousand, those pages would sit under
+ * dforms.ai beside the blog and drag the whole domain down. Forms reach people
+ * through links, QR codes and embeds, never through Google. `follow` stays on so
+ * the "Made with" badge still passes its link to the landing.
+ */
+export const PUBLIC_FORM_ROBOTS = { index: false, follow: true } as const;

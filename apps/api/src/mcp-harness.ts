@@ -4,15 +4,20 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { createServer, type Server } from 'node:http';
+import { Client, ClientCredentialsProvider, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { createDb, insertApiKey, migrate, seed, sql, type Db } from '@quill/db';
 import { loadServerEnv } from '@quill/config/env';
 import { AppModule } from './app.module';
 import { generateApiKey } from './api-keys';
 import { configureCors } from './cors';
 import { configureDeprecatedHosts } from './deprecated-hosts';
+import { linkPageBodyParser } from './link-page-body';
 import { McpController } from './mcp.controller';
+import { normalizeWorkspaceSearch } from '@quill/mcp';
+import type { EstateWorkspace, Person, PersonDirectory } from './person-directory';
 
 /**
  * A real API for the MCP specs: the whole `AppModule` (so every `@Inject` and
@@ -21,6 +26,8 @@ import { McpController } from './mcp.controller';
  * client.
  */
 export interface Harness {
+  /** The running app, for specs that reach a provider directly. */
+  app: INestApplication;
   base: string;
   url: string;
   db: Db;
@@ -37,6 +44,26 @@ export interface Harness {
   key(role?: 'owner' | 'admin' | 'member'): Promise<{ key: string; memberId: string }>;
   otherKey(): Promise<string>;
   connect(token?: string, headers?: Record<string, string>): Promise<Client>;
+  /**
+   * Connect the official client with no credential and let it find the login
+   * itself (401, protected-resource metadata, authorization server), then sign
+   * in with these client credentials. Only with `oauth` on.
+   */
+  signIn(credentials: { clientId: string; clientSecret: string }): Promise<Client>;
+  /** The fake person directory (only with `oauth` on): register who a token's subject is. */
+  people: Map<string, Person>;
+  /**
+   * The identity service's live workspaces, by id, as the fake directory
+   * answers staff lookups; `members` are the people (`Person.id`) holding a
+   * live membership there.
+   */
+  estate: Map<string, EstateWorkspace & { members?: string[] }>;
+  /** The lines the API logged for staff calls outside the person's own workspaces. */
+  staffLog: string[];
+  /** How many times the API asked the person directory. */
+  directoryLookups(): number;
+  /** Whether the API closed the person directory (it does when it shuts down). */
+  directoryClosed(): boolean;
   post(body: unknown, headers?: Record<string, string>, path?: string): Promise<Response>;
   close(): Promise<void>;
 }
@@ -64,12 +91,79 @@ const ENV_KEYS = [
   'API_SUCCESSOR_URL',
   'API_DEPRECATION_DATE',
   'API_SUNSET_DATE',
+  'MCP_OAUTH_PROVIDER',
+  'WORKOS_AUTHKIT_DOMAIN',
+  'MCP_PUBLIC_URL',
+  'IAM_DB_HOST',
+  'IAM_DB_PORT',
+  'IAM_DB_NAME',
+  'IAM_DB_SCHEMA',
+  'IAM_DB_USER',
+  'IAM_DB_PASS',
+  'IAM_STAFF_DOMAINS',
 ] as const;
 
 export const APP_URL = 'https://forms.example.test';
 
-export async function bootHarness(env: Partial<Record<(typeof ENV_KEYS)[number], string>> = {}): Promise<Harness> {
+export interface HarnessOAuth {
+  /** The issuer the API trusts (a `FakeIdentityProvider`'s). */
+  issuer: string;
+}
+
+/**
+ * A loopback HTTP server bound to a port the OS picks, and kept: the port is
+ * known before the app boots (the MCP public URL, every token's audience, has
+ * to name it), and nothing else can take it in between. It serves the app
+ * once the app is built.
+ */
+async function boundServer(): Promise<{ server: Server; port: number }> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { server, port: (server.address() as AddressInfo).port };
+}
+
+/**
+ * The person directory of the specs: a table from token subject to person,
+ * and one of live workspaces for the staff lookups (the IAM adapter is
+ * separate).
+ */
+function tableDirectory(
+  people: Map<string, Person>,
+  estate: Map<string, EstateWorkspace & { members?: string[] }>,
+  counter: { lookups: number; closed: boolean },
+): PersonDirectory {
+  const squash = (s: string | null) => normalizeWorkspaceSearch(s ?? '');
+  return {
+    personOf: async (subject) => {
+      counter.lookups += 1;
+      return people.get(subject) ?? null;
+    },
+    workspaceOf: async (id) => estate.get(id.toLowerCase()) ?? null,
+    holdsMembership: async (workspaceId, personId) => estate.get(workspaceId)?.members?.includes(personId) ?? false,
+    searchWorkspaces: async (needle, limit) =>
+      [...estate.values()].filter((w) => squash(w.name).includes(needle) || squash(w.accountName).includes(needle)).slice(0, limit),
+    close: async () => {
+      counter.closed = true;
+    },
+  };
+}
+
+export async function bootHarness(
+  env: Partial<Record<(typeof ENV_KEYS)[number], string>> = {},
+  opts: { oauth?: HarnessOAuth } = {},
+): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'forms-mcp-spec-'));
+  const { server, port } = await boundServer();
+  const people = new Map<string, Person>();
+  const estate = new Map<string, EstateWorkspace & { members?: string[] }>();
+  const counter = { lookups: 0, closed: false };
+  const oauthEnv = opts.oauth
+    ? {
+        MCP_OAUTH_PROVIDER: 'workos',
+        WORKOS_AUTHKIT_DOMAIN: opts.oauth.issuer,
+        MCP_PUBLIC_URL: `http://127.0.0.1:${port}/mcp`,
+      }
+    : {};
   const url = `file:${join(dir, 'spec.db')}`;
   const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
   Object.assign(process.env, {
@@ -80,6 +174,7 @@ export async function bootHarness(env: Partial<Record<(typeof ENV_KEYS)[number],
     AUTH_PROVIDER: 'local',
     SEED_DEMO_FORM: 'false',
     ONBOARDING_WIZARD: 'false',
+    ...oauthEnv,
     ...env,
   });
 
@@ -91,22 +186,37 @@ export async function bootHarness(env: Partial<Record<(typeof ENV_KEYS)[number],
   const formId = (await db.get<{ id: string }>(sql`SELECT id FROM form WHERE account_id = ${accountId} AND slug = 'lead-qualifier'`))!.id;
   const other = await seedOtherTenant(db);
 
-  const app = await NestFactory.create(AppModule, { logger: false });
+  // A failed boot (a refused configuration) must still put the environment back.
+  let app: INestApplication;
+  try {
+    // abortOnError off: a refused boot rejects here instead of exiting the process.
+    app = await NestFactory.create(opts.oauth ? AppModule.withPersonDirectory(tableDirectory(people, estate, counter)) : AppModule, {
+      logger: false,
+      abortOnError: false,
+    });
+  } catch (error) {
+    restoreEnv(saved);
+    await db.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
   // The same wiring main.ts applies, in the same order, so the specs see the
-  // real policy: the deprecated-hosts middleware, then CORS.
+  // real policy: the deprecated-hosts middleware, CORS, then the large-body reader.
   const deprecatedHostLog: string[] = [];
   configureDeprecatedHosts(app, loadServerEnv(), (line) => deprecatedHostLog.push(line));
   configureCors(app, loadServerEnv());
-  await app.listen(0, '127.0.0.1');
+  app.use(linkPageBodyParser());
+  await app.init();
+  server.on('request', app.getHttpAdapter().getInstance());
   // Providers read the environment while the app is built; put it back at once
   // so harnesses booted side by side do not leak settings into each other.
-  for (const k of ENV_KEYS) {
-    if (saved[k] === undefined) delete process.env[k];
-    else process.env[k] = saved[k];
-  }
+  restoreEnv(saved);
   const audit: string[] = [];
   app.get(McpController).server.auditSink = (line) => audit.push(line);
-  const base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+  const staffLog: string[] = [];
+  app.get(McpController).staffLogSink = (line) => staffLog.push(line);
+  const base = `http://127.0.0.1:${port}`;
 
   const mint = async (account: string, memberId: string): Promise<string> => {
     const minted = generateApiKey();
@@ -124,6 +234,7 @@ export async function bootHarness(env: Partial<Record<(typeof ENV_KEYS)[number],
 
   const clients: Client[] = [];
   return {
+    app,
     base,
     url: `${base}/mcp`,
     db,
@@ -159,6 +270,21 @@ export async function bootHarness(env: Partial<Record<(typeof ENV_KEYS)[number],
       clients.push(client);
       return client;
     },
+    async signIn({ clientId, clientSecret }) {
+      const client = new Client({ name: 'spec-oauth-client', version: '1.0.0' });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+          authProvider: new ClientCredentialsProvider({ clientId, clientSecret, expectedIssuer: opts.oauth?.issuer }),
+        }),
+      );
+      clients.push(client);
+      return client;
+    },
+    people,
+    estate,
+    staffLog,
+    directoryLookups: () => counter.lookups,
+    directoryClosed: () => counter.closed,
     post: (body, headers = {}, path = '/mcp') =>
       fetch(`${base}${path}`, {
         method: 'POST',
@@ -168,10 +294,19 @@ export async function bootHarness(env: Partial<Record<(typeof ENV_KEYS)[number],
     async close() {
       await Promise.all(clients.map((c) => c.close().catch(() => undefined)));
       await app.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       await db.close();
       rmSync(dir, { recursive: true, force: true });
     },
   };
+}
+
+function restoreEnv(saved: Record<string, string | undefined>): void {
+  for (const k of ENV_KEYS) {
+    if (saved[k] === undefined) delete process.env[k];
+    else process.env[k] = saved[k];
+  }
 }
 
 /** A second workspace with an owner and one form. */

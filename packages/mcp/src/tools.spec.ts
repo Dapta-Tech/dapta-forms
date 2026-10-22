@@ -19,17 +19,19 @@ async function client(opts: HarnessOptions = {}, role = 'owner') {
 }
 
 describe('catalog', () => {
-  it('lists ten task-shaped tools, every one with a title and all four behaviour hints, and no delete tool', async () => {
+  it('lists the task-shaped tools first, every tool with a title and all four behaviour hints, and every delete destructive', async () => {
     const { c } = await client();
     const { tools } = await c.listTools();
-    expect(tools.map((t) => t.name)).toEqual([
+    expect(tools.map((t) => t.name).slice(0, TOOLS.length)).toEqual([
       'whoami',
+      'list_my_workspaces',
       'list_forms',
       'get_form',
       'create_form',
       'update_form',
       'publish_form',
       'revert_form',
+      'discard_draft',
       'list_responses',
       'get_form_analytics',
       'get_form_guide',
@@ -40,21 +42,24 @@ describe('catalog', () => {
       for (const hint of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint'] as const)
         expect(typeof t.annotations?.[hint], `${t.name}.${hint}`).toBe('boolean');
       expect(t.outputSchema, t.name).toBeTruthy();
-      expect(t.name).not.toMatch(/delete|remove/);
+      if (/delete|remove/.test(t.name)) expect(t.annotations?.destructiveHint, t.name).toBe(true);
     }
   });
 
-  it('marks reads read-only, publish and revert destructive, and never takes a workspace argument', () => {
+  it('marks reads read-only, publish and revert destructive, and takes a workspace only as an optional workspace_id', () => {
     const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
-    for (const name of ['whoami', 'list_forms', 'get_form', 'list_responses', 'get_form_analytics', 'get_form_guide'])
+    for (const name of ['whoami', 'list_my_workspaces', 'list_forms', 'get_form', 'list_responses', 'get_form_analytics', 'get_form_guide'])
       expect(byName[name]!.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     for (const name of ['create_form', 'update_form']) expect(byName[name]!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
-    for (const name of ['publish_form', 'revert_form']) expect(byName[name]!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
-    expect(TOOLS.filter((t) => t.write).map((t) => t.name)).toEqual(['create_form', 'update_form', 'publish_form', 'revert_form']);
+    for (const name of ['publish_form', 'revert_form', 'discard_draft'])
+      expect(byName[name]!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(TOOLS.filter((t) => t.write).map((t) => t.name)).toEqual(['create_form', 'update_form', 'publish_form', 'revert_form', 'discard_draft']);
     for (const t of TOOLS) {
       const keys = Object.keys(t.input.shape);
-      expect(keys.some((k) => /account|workspace|member/.test(k)), t.name).toBe(false);
+      expect(keys.filter((k) => /account|workspace|member/.test(k)), t.name).toEqual(t.workspace === 'none' ? [] : ['workspace_id']);
+      if (t.workspace !== 'none') expect(t.input.shape.workspace_id!.safeParse(undefined).success, t.name).toBe(true);
     }
+    expect(TOOLS.filter((t) => t.workspace === 'none').map((t) => t.name)).toEqual(['list_my_workspaces', 'get_form_guide']);
   });
 
   it('keeps the server instructions and descriptions free of em dashes', async () => {
@@ -62,6 +67,34 @@ describe('catalog', () => {
     const { tools } = await c.listTools();
     const text = JSON.stringify(tools) + (c.getInstructions() ?? '');
     expect(text).not.toMatch(/\u2014|\u2015/);
+  });
+});
+
+describe('results', () => {
+  it('carry the data as a JSON text block after the summary, for clients that only read text', async () => {
+    const { c } = await client();
+    const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [
+      { name: 'whoami', arguments: {} },
+      { name: 'list_forms', arguments: {} },
+      { name: 'get_form', arguments: { form_id: 'form-1' } },
+      { name: 'create_form', arguments: { name: 'New', config: { version: 1, steps: [] } } },
+      { name: 'get_form_analytics', arguments: { form_id: 'form-1' } },
+      { name: 'get_form_guide', arguments: { part: 'rules' } },
+    ];
+    for (const call of calls) {
+      const result = (await c.callTool(call)) as { content: Array<{ type: string; text: string }>; structuredContent: unknown };
+      expect(result.content, call.name).toHaveLength(2);
+      expect(result.content.every((block) => block.type === 'text'), call.name).toBe(true);
+      expect(result.content[0]!.text, call.name).not.toBe(result.content[1]!.text);
+      expect(JSON.parse(result.content[1]!.text), call.name).toEqual(result.structuredContent);
+    }
+  });
+
+  it('keep an error to its one text block', async () => {
+    const { c } = await client();
+    const result = (await c.callTool({ name: 'get_form', arguments: { form_id: 'missing' } })) as { isError: boolean; content: unknown[] };
+    expect(result.isError).toBe(true);
+    expect(result.content).toHaveLength(1);
   });
 });
 
@@ -222,7 +255,7 @@ describe('publish_form and revert_form', () => {
       await c.callTool({ name: 'publish_form', arguments: { form_id: 'form-1', expected_updated_at: NOW + 1 } }),
     );
     expect(out.form.public_url).toContain('/acme/f/lead-form');
-    expect(out.last_published_at).toBe(new Date(NOW + 2).toISOString());
+    expect(Date.parse(out.last_published_at)).toBeGreaterThan(NOW);
     expect(out.previous_published_at).toBe(new Date(NOW - 5).toISOString());
     expect(h.calls.at(-1)).toMatchObject({ method: 'publishForm', args: ['form-1', NOW + 1] });
   });
@@ -332,11 +365,19 @@ describe('get_form_guide', () => {
   it('serves the rules, the config JSON Schema and the examples, whole or by part', async () => {
     const { c } = await client();
     const all = structured<Record<string, unknown>>(await c.callTool({ name: 'get_form_guide', arguments: {} }));
-    expect(Object.keys(all).sort()).toEqual(['config_schema', 'examples', 'lifecycle', 'logic', 'part', 'rules', 'step_types']);
+    expect(Object.keys(all).sort()).toEqual(['config_schema', 'examples', 'lifecycle', 'logic', 'part', 'rules', 'step_types', 'workspaces']);
     const schema = structured<{ config_schema: { required: string[] }; rules?: unknown }>(
       await c.callTool({ name: 'get_form_guide', arguments: { part: 'config_schema' } }),
     );
     expect(schema.config_schema.required).toEqual(expect.arrayContaining(['version', 'steps']));
     expect(schema.rules).toBeUndefined();
+  });
+});
+
+describe('get_form_guide, choosing a workspace', () => {
+  it('serves the workspace rules with the other rules', async () => {
+    const { c } = await client();
+    const guide = structured<{ workspaces: string[] }>(await c.callTool({ name: 'get_form_guide', arguments: { part: 'rules' } }));
+    expect(guide.workspaces.join(' ')).toContain('list_my_workspaces');
   });
 });

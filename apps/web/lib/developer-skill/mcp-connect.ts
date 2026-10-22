@@ -1,6 +1,6 @@
 /**
- * Where an agent connects to the dForms MCP server, and the snippet each agent
- * needs to do it, for the setup guide on the API keys page.
+ * Where an AI app connects to the dForms MCP server, and the snippet each app
+ * needs to do it, for the connector guide on the MCP page.
  *
  * The address is read at RUNTIME from the server's environment, never from a
  * `NEXT_PUBLIC_*` variable: Next inlines those at build time and one image
@@ -15,11 +15,10 @@
  * Null when neither is usable: the guide then says so instead of printing an
  * address nobody can reach.
  *
- * KEY HANDLING. No snippet ever contains a key. Each one names the environment
- * variable the agent reads it from at connect time, so a link, a pasted
- * command or a committed config file cannot leak a credential.
+ * NO KEY. Every snippet connects with the URL alone: the app signs in with
+ * the person's account (OAuth) the first time it calls the server, so a
+ * link, a pasted command or a committed config file carries no credential.
  */
-import { API_KEY_ENV } from './agent-setup';
 import { publicApiUrl } from './public-api-url';
 import { cleanPublicUrl } from './public-url';
 
@@ -33,44 +32,98 @@ export function publicMcpUrl(env: Record<string, string | undefined> = process.e
   return api ? `${api}/mcp` : null;
 }
 
-/** The single entry Cursor stores under `mcpServers.dforms`. */
-export function cursorServerEntry(mcpUrl: string): { url: string; headers: { Authorization: string } } {
-  // `${env:NAME}` is Cursor's own interpolation, resolved on the user's machine
-  // when the server starts: the entry carries the variable's NAME, never its value.
-  return { url: mcpUrl, headers: { Authorization: `Bearer \${env:${API_KEY_ENV}}` } };
+/**
+ * The sign-in adapters the API's MCP door knows (its `MCP_OAUTH_PROVIDER`).
+ * The web mirrors that variable, the way it mirrors `AUTH_PROVIDER`.
+ */
+const MCP_OAUTH_PROVIDERS = ['workos'] as const;
+
+/**
+ * Whether this deployment's MCP server takes a sign-in (OAuth) besides the API
+ * key, so a chat client (Claude.ai, ChatGPT) can connect with the URL alone.
+ *
+ * Read at RUNTIME from `MCP_OAUTH_PROVIDER`, the same name and values as the
+ * API's, so one value per environment drives both. Unset or blank is the
+ * self-hosted default: the page shows the key guide alone, exactly as before.
+ * A value the API would not accept fails closed for the same reason: the page
+ * never offers a sign-in that cannot work.
+ *
+ * It also needs `MCP_PUBLIC_URL`, which the API requires with the provider on
+ * and checks every token's audience against. Without it the page would show
+ * the address it derives from the public API (`publicMcpUrl`), a URL whose
+ * tokens the API would refuse, so the chat path stays off instead.
+ */
+export function mcpOauthEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  const value = env.MCP_OAUTH_PROVIDER?.trim().toLowerCase();
+  if (!value || !(MCP_OAUTH_PROVIDERS as readonly string[]).includes(value)) return false;
+  return cleanPublicUrl(env.MCP_PUBLIC_URL) !== null;
 }
 
-/** The one-click install link. Cursor asks the user to confirm; it never installs on its own. */
+/** The single entry Cursor stores under `mcpServers.dforms`: the URL alone, Cursor runs the sign-in. */
+export function cursorServerEntry(mcpUrl: string): { url: string } {
+  return { url: mcpUrl };
+}
+
+/**
+ * The one-click install link, the same encoding as Dapta's own MCP page: the
+ * entry as base64 JSON. Cursor asks the user to confirm; it never installs on
+ * its own.
+ */
 export function cursorDeeplink(mcpUrl: string): string {
   const config = Buffer.from(JSON.stringify(cursorServerEntry(mcpUrl)), 'utf8').toString('base64');
   return `cursor://anysphere.cursor-deeplink/mcp/install?name=${MCP_SERVER_NAME}&config=${encodeURIComponent(config)}`;
 }
 
-/** `.cursor/mcp.json` in a project, or `~/.cursor/mcp.json` for every project. */
+/** `~/.cursor/mcp.json` (every project) or `.cursor/mcp.json` (one project). */
 export function cursorMcpJson(mcpUrl: string): string {
   return JSON.stringify({ mcpServers: { [MCP_SERVER_NAME]: cursorServerEntry(mcpUrl) } }, null, 2);
 }
 
+/** Claude Code, for every project of this user; `/mcp` then runs the sign-in. */
 export function claudeCodeCommand(mcpUrl: string): string {
-  return [
-    `claude mcp add --transport http ${MCP_SERVER_NAME} ${mcpUrl} \\`,
-    // Single quotes on purpose: the shell must NOT expand the variable, or Claude
-    // Code would store the plaintext key in its config. It stores the literal
-    // `${VAR}` and expands it each time it connects.
-    `  --header 'Authorization: Bearer \${${API_KEY_ENV}}'`,
-  ].join('\n');
+  return `claude mcp add --transport http --scope user ${MCP_SERVER_NAME} ${mcpUrl}`;
 }
 
-/** `~/.codex/config.toml`: Codex reads the bearer token from the named variable. */
-export function codexConfigToml(mcpUrl: string): string {
-  return [`[mcp_servers.${MCP_SERVER_NAME}]`, `url = "${mcpUrl}"`, `bearer_token_env_var = "${API_KEY_ENV}"`].join('\n');
+/** Codex: add the server by URL, then `codexLoginCommand` runs the sign-in. */
+export function codexAddCommand(mcpUrl: string): string {
+  return `codex mcp add ${MCP_SERVER_NAME} --url ${mcpUrl}`;
 }
+
+export const codexLoginCommand = `codex mcp login ${MCP_SERVER_NAME}`;
+
+/**
+ * OpenClaw: save the server as a remote, streamable-HTTP entry that logs in
+ * with OAuth (`mcp.servers.dforms` in its config), per OpenClaw's
+ * `openclaw mcp set` docs; `openclawLoginCommand` then runs the sign-in.
+ */
+export function openclawSetCommand(mcpUrl: string): string {
+  const entry = JSON.stringify({ url: mcpUrl, transport: 'streamable-http', auth: 'oauth' });
+  return `openclaw mcp set ${MCP_SERVER_NAME} '${entry}'`;
+}
+
+export const openclawLoginCommand = `openclaw mcp login ${MCP_SERVER_NAME}`;
+
+/**
+ * Hermes (Nous Research): an `mcp_servers` entry in `~/.hermes/config.yaml`
+ * with `auth: oauth`, per Hermes' MCP docs; `hermesLoginCommand` then runs
+ * the sign-in in the browser.
+ */
+export function hermesConfig(mcpUrl: string): string {
+  return `mcp_servers:\n  ${MCP_SERVER_NAME}:\n    url: "${mcpUrl}"\n    auth: oauth`;
+}
+
+export const hermesLoginCommand = `hermes mcp login ${MCP_SERVER_NAME}`;
 
 /** Everything the guide prints for one address, built on the server. */
 export interface McpSnippets {
   url: string;
   claudeCode: string;
-  codexToml: string;
+  codexAdd: string;
+  codexLogin: string;
+  openclawSet: string;
+  openclawLogin: string;
+  hermesConfig: string;
+  hermesLogin: string;
   cursorDeeplink: string;
   cursorJson: string;
 }
@@ -79,7 +132,12 @@ export function mcpSnippets(mcpUrl: string): McpSnippets {
   return {
     url: mcpUrl,
     claudeCode: claudeCodeCommand(mcpUrl),
-    codexToml: codexConfigToml(mcpUrl),
+    codexAdd: codexAddCommand(mcpUrl),
+    codexLogin: codexLoginCommand,
+    openclawSet: openclawSetCommand(mcpUrl),
+    openclawLogin: openclawLoginCommand,
+    hermesConfig: hermesConfig(mcpUrl),
+    hermesLogin: hermesLoginCommand,
     cursorDeeplink: cursorDeeplink(mcpUrl),
     cursorJson: cursorMcpJson(mcpUrl),
   };

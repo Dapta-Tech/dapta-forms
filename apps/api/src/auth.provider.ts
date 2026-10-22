@@ -42,36 +42,65 @@ export interface ReqLike {
 export interface ResolvedHost {
   accountId: string;
   memberId: string;
+  /**
+   * True only when the provider proved, on THIS request, that the person is
+   * staff of the deployment (the email its token carries is on
+   * `IAM_STAFF_DOMAINS`, `isStaffEmail`). Absent or false: every row they
+   * hold through a staff access grant (`member.access_grant = 'staff'`) is
+   * ignored, because grant rows are never revoked and outlive staff status.
+   */
+  staff?: boolean;
 }
 
 /**
- * How a principal got in: the browser `session` every provider resolves, or an
- * `api_key` sent as `Authorization: Bearer`. Never an authorization input on its
- * own; it only lets code that must treat a key differently (routes a key may not
- * call, the stricter API validation, the created-via metric) tell the two apart.
+ * How a principal got in: the browser `session` every provider resolves, an
+ * `api_key` sent as `Authorization: Bearer`, or an `mcp_connection` (an agent
+ * client signed in to the MCP server as a person, handed to the handlers as an
+ * in-process principal). Never an authorization input on its own; it only lets
+ * code that must treat an agent differently (routes an agent may not call, the
+ * stricter API validation, the created-via metric) tell them apart.
  */
-export type PrincipalVia = 'session' | 'api_key';
+export type PrincipalVia = 'session' | 'api_key' | 'mcp_connection';
 
 /** The authenticated host, enriched with the account role for authorization. */
-export interface HostPrincipal extends ResolvedHost {
+export interface HostPrincipal extends Omit<ResolvedHost, 'staff'> {
   role: AccountRole;
   via: PrincipalVia;
+  /**
+   * `'staff'` when a session or MCP connection acts as a staff access grant
+   * row, never present otherwise. Such a principal exists only while the
+   * person is staff on this request (a session) or this call (MCP). An API
+   * key a grant created is not this: it carries no person, resolves as the
+   * grant row without the mark, and works until someone revokes it.
+   */
+  accessGrant?: 'staff';
   /** The `api_key.id` the request authenticated with; set only when `via` is `'api_key'`. */
   apiKeyId?: string;
   /**
-   * `'mcp'` when an API-key request came through the MCP endpoint rather than
-   * the REST routes. A label for the created-via metric only: it grants and
-   * refuses nothing, and only the MCP adapter can set it (see `markMcpRequest`).
+   * `'mcp'` when the call came through the MCP endpoint rather than the REST
+   * routes: every `mcp_connection`, and an API key used through the MCP. A
+   * label for the created-via metric only: it grants and refuses nothing, and
+   * only the in-process principal can set it (see `in-process-principal.ts`).
    */
   channel?: 'mcp';
 }
 
 /**
- * Did this request come with an API key rather than a session? The one question
- * the key, validation and metric code ask, so none of them compares `via` by hand.
+ * Did this request come with an API key rather than a session? Only the key
+ * code asks this; the rules every agent is held to ask `isAgentPrincipal`.
  */
 export function isApiKeyPrincipal(p: Pick<HostPrincipal, 'via'>): boolean {
   return p.via === 'api_key';
+}
+
+/**
+ * Is this an agent (an API key or an MCP connection) rather than a person in
+ * the browser? Agents get the API's agent rules: the route allowlist, the
+ * strict validation, no key management. Fails closed: anything that is not a
+ * browser session is an agent.
+ */
+export function isAgentPrincipal(p: Pick<HostPrincipal, 'via'>): boolean {
+  return p.via !== 'session';
 }
 
 /**

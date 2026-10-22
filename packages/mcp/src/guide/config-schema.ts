@@ -184,7 +184,20 @@ function describeField(root: JsonSchema, path: string, description: string): num
  * with an API key that leaves it out is refused (`STEPS_REQUIRED`), and the
  * skill tells the agent to always send the whole list.
  */
-export function formConfigJsonSchema(): JsonSchema {
+/**
+ * Who reads the schema: an agent on the REST API (the skill) sends the config
+ * to `POST /v1/forms` and `PUT /v1/forms/{id}`; an agent on the MCP sends it to
+ * the `create_form` and `update_form` tools. The description names the calls
+ * the reader makes.
+ */
+export type ConfigSchemaAudience = 'rest' | 'mcp';
+
+const SCHEMA_DESCRIPTION: Record<ConfigSchemaAudience, string> = {
+  rest: 'The `config` object of a dForms form, as POST /v1/forms and PUT /v1/forms/{id} accept it. Fields the editor cannot show are left out (the API refuses them with UNSUPPORTED_FIELD), except the defaults the editor writes itself, which only take that value, and the fields a form carries from a template or the brand kit, which only go back as read.',
+  mcp: 'The `config` argument of create_form and update_form. Fields the editor cannot show are left out (they are refused with UNSUPPORTED_FIELD), except the defaults the editor writes itself, which only take that value, and the fields a form carries from a template or the brand kit, which only go back as read. additionalProperties is false everywhere: any other field is refused, never dropped.',
+};
+
+export function formConfigJsonSchema(audience: ConfigSchemaAudience = 'rest'): JsonSchema {
   const schema = zodToJsonSchema(formConfigSchema, {
     $refStrategy: 'none',
     target: 'jsonSchema7',
@@ -205,8 +218,7 @@ export function formConfigJsonSchema(): JsonSchema {
     $schema: schema.$schema,
     $id: 'form-config.schema.json',
     title: 'dForms form config (version 1)',
-    description:
-      'The `config` object of a dForms form, as POST /v1/forms and PUT /v1/forms/{id} accept it. Fields the editor cannot show are left out (the API refuses them with UNSUPPORTED_FIELD), except the defaults the editor writes itself, which only take that value, and the fields a form carries from a template or the brand kit, which only go back as read.',
+    description: SCHEMA_DESCRIPTION[audience],
     ...Object.fromEntries(Object.entries(schema).filter(([k]) => k !== '$schema')),
     required: [...required],
   };

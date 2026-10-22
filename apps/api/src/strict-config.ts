@@ -1,5 +1,7 @@
 /**
- * The stricter rules a form config is held to when an API KEY writes it.
+ * The stricter rules a form config is held to when an API KEY writes it, or
+ * any other agent (an MCP connection): every principal that is not a browser
+ * session (`isAgentPrincipal`).
  *
  * An agent will write any field the schema accepts, so with a key the API
  * refuses what a person could not see or edit afterwards in the builder: the
@@ -24,7 +26,7 @@ import {
   type FormConfig as EngineConfig,
   type FormFieldType,
 } from '@quill/engine';
-import { isApiKeyPrincipal, type HostPrincipal } from './auth.provider';
+import { isAgentPrincipal, type HostPrincipal } from './auth.provider';
 import { dotPath, type ValidationIssue } from './validation';
 
 export const UNSUPPORTED_FIELD = 'UNSUPPORTED_FIELD';
@@ -242,7 +244,7 @@ export async function keyFormBodyIssues(
   body: unknown,
   opts: { requireSteps: boolean; storesDestinations: boolean; formId?: string },
 ): Promise<ValidationIssue[]> {
-  if (!isApiKeyPrincipal(p) || !isObj(body) || !isObj(body.config)) return [];
+  if (!isAgentPrincipal(p) || !isObj(body) || !isObj(body.config)) return [];
   const config = body.config;
   const issues: ValidationIssue[] = [];
   if (opts.requireSteps && config.steps === undefined) {
@@ -270,7 +272,7 @@ export async function keyFormBodyIssues(
 
 /** The strict-rule issues of a `PUT /v1/forms/:id/destinations` body: none for a session. */
 export function keyDestinationsBodyIssues(p: HostPrincipal, body: unknown): ValidationIssue[] {
-  if (!isApiKeyPrincipal(p) || !isObj(body)) return [];
+  if (!isAgentPrincipal(p) || !isObj(body)) return [];
   return strictDestinationIssues(body.destinations, ['destinations']);
 }
 
@@ -281,6 +283,6 @@ export function keyDestinationsBodyIssues(p: HostPrincipal, body: unknown): Vali
  * session's config is stored as sent, exactly as before.
  */
 export function keyNormalizedConfig<T>(p: HostPrincipal, config: T): T {
-  if (!isApiKeyPrincipal(p) || config == null) return config;
+  if (!isAgentPrincipal(p) || config == null) return config;
   return normalizeConfig(config as unknown as EngineConfig) as unknown as T;
 }

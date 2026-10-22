@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   MCP_SERVER_NAME,
   claudeCodeCommand,
-  codexConfigToml,
+  codexAddCommand,
+  codexLoginCommand,
+  openclawLoginCommand,
+  openclawSetCommand,
   cursorDeeplink,
   cursorMcpJson,
+  mcpOauthEnabled,
   mcpSnippets,
   publicMcpUrl,
 } from './mcp-connect';
@@ -36,30 +40,66 @@ describe('publicMcpUrl', () => {
   });
 });
 
+describe('mcpOauthEnabled', () => {
+  const PUBLIC = { MCP_PUBLIC_URL: 'https://mcp.example.com/mcp' };
+
+  it('is on when the web mirrors the API adapter, whatever the case or the spaces', () => {
+    expect(mcpOauthEnabled({ ...PUBLIC, MCP_OAUTH_PROVIDER: 'workos' })).toBe(true);
+    expect(mcpOauthEnabled({ ...PUBLIC, MCP_OAUTH_PROVIDER: ' WorkOS ' })).toBe(true);
+  });
+
+  it('is off without MCP_PUBLIC_URL, the token audience the API requires: the address derived from the API would not match it', () => {
+    expect(mcpOauthEnabled({ MCP_OAUTH_PROVIDER: 'workos' })).toBe(false);
+    expect(mcpOauthEnabled({ MCP_OAUTH_PROVIDER: 'workos', MCP_PUBLIC_URL: '  ', PUBLIC_API_URL: 'https://api.example.com' })).toBe(false);
+  });
+
+  it('is off when unset or blank, the way a self-hosted install runs', () => {
+    expect(mcpOauthEnabled({})).toBe(false);
+    expect(mcpOauthEnabled({ MCP_OAUTH_PROVIDER: '' })).toBe(false);
+    expect(mcpOauthEnabled({ MCP_OAUTH_PROVIDER: '   ' })).toBe(false);
+  });
+
+  it('fails closed on a value the API would not accept, so the page never offers a sign-in that cannot work', () => {
+    expect(mcpOauthEnabled({ ...PUBLIC, MCP_OAUTH_PROVIDER: 'true' })).toBe(false);
+    expect(mcpOauthEnabled({ ...PUBLIC, MCP_OAUTH_PROVIDER: 'workso' })).toBe(false);
+  });
+
+  it('never reads a build-time NEXT_PUBLIC_ variable', () => {
+    expect(mcpOauthEnabled({ NEXT_PUBLIC_MCP_OAUTH_PROVIDER: 'workos' })).toBe(false);
+  });
+});
+
 describe('snippets', () => {
-  it('Claude Code: single-quoted header, so the shell keeps the variable for Claude Code to expand', () => {
-    expect(claudeCodeCommand(URL_)).toBe(
-      `claude mcp add --transport http dforms ${URL_} \\\n  --header 'Authorization: Bearer \${DFORMS_API_KEY}'`,
+  it('Claude Code: added for every project by URL alone, the sign-in runs from /mcp', () => {
+    expect(claudeCodeCommand(URL_)).toBe(`claude mcp add --transport http --scope user dforms ${URL_}`);
+  });
+
+  it('Codex: add by URL, then log in', () => {
+    expect(codexAddCommand(URL_)).toBe(`codex mcp add dforms --url ${URL_}`);
+    expect(codexLoginCommand).toBe('codex mcp login dforms');
+  });
+
+  it('OpenClaw: a remote streamable-HTTP entry that logs in with OAuth, then login', () => {
+    expect(openclawSetCommand(URL_)).toBe(
+      `openclaw mcp set dforms '{"url":"${URL_}","transport":"streamable-http","auth":"oauth"}'`,
     );
+    expect(openclawLoginCommand).toBe('openclaw mcp login dforms');
   });
 
-  it('Codex: the bearer comes from the named variable', () => {
-    expect(codexConfigToml(URL_)).toBe(`[mcp_servers.dforms]\nurl = "${URL_}"\nbearer_token_env_var = "DFORMS_API_KEY"`);
-  });
-
-  it("Cursor: the entry uses Cursor's own env interpolation, in the file and in the one-click link", () => {
-    const json = JSON.parse(cursorMcpJson(URL_)) as { mcpServers: Record<string, { url: string; headers: Record<string, string> }> };
-    expect(json.mcpServers[MCP_SERVER_NAME]).toEqual({ url: URL_, headers: { Authorization: 'Bearer ${env:DFORMS_API_KEY}' } });
+  it('Cursor: the entry is the URL alone, in the file and in the one-click link (base64 JSON, as on Dapta)', () => {
+    const json = JSON.parse(cursorMcpJson(URL_)) as { mcpServers: Record<string, { url: string }> };
+    expect(json.mcpServers[MCP_SERVER_NAME]).toEqual({ url: URL_ });
     const link = new URL(cursorDeeplink(URL_));
     expect(link.protocol).toBe('cursor:');
     expect(link.searchParams.get('name')).toBe('dforms');
     const config = JSON.parse(Buffer.from(link.searchParams.get('config')!, 'base64').toString('utf8'));
-    expect(config).toEqual(json.mcpServers[MCP_SERVER_NAME]);
+    expect(config).toEqual({ url: URL_ });
   });
 
-  it('never carries a key, only the variable that holds it', () => {
+  it('carries no key and no key variable: the app signs in instead', () => {
     const all = JSON.stringify(mcpSnippets(URL_));
     expect(all).not.toMatch(/dforms_[A-Za-z0-9]/);
-    expect(all).toContain('DFORMS_API_KEY');
+    expect(all).not.toContain('DFORMS_API_KEY');
+    expect(all).not.toMatch(/Authorization|bearer/i);
   });
 });

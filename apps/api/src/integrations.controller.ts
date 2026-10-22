@@ -42,6 +42,7 @@ import {
   type FormDestination,
 } from '@quill/types';
 import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
+import { isInputlessStep, type FormStep } from '@quill/engine';
 import { syncMirrorForm, type MirrorSyncResult } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
@@ -894,8 +895,12 @@ export class FormDestinationsController {
    *    be turned into a scanner by repetition.
    *
    * The payload is the real `WebhookPayload` shape with sample answers built
-   * from the form's own steps, and it carries `phase: 'partial'` plus a
-   * `test` marker so a receiver can tell it apart from a lead.
+   * from the form's own input steps (a message or reveal step collects
+   * nothing, so it gets none), in the phase the webhook listens to
+   * (`complete` unless it only takes partial saves), and it carries `test:
+   * true` at the top level so a receiver can tell it apart from a lead. The
+   * older `data.test` marker stays for receivers that read it, unless a step
+   * is keyed `test`: its sample answer wins there, never the marker.
    */
   @UseGuards(RateLimitGuard)
   @Post('forms/:id/destinations/webhook/ping')
@@ -937,7 +942,12 @@ export class FormDestinationsController {
     );
 
     const now = Date.now();
-    const data = { ...sampleAnswers(config.steps ?? []), test: true };
+    const answers = sampleAnswers(config.steps ?? []);
+    const data = 'test' in answers ? answers : { ...answers, test: true };
+    // The phase the endpoint will really receive: a webhook that only takes
+    // partial saves gets a partial, every other one the final submit.
+    const events = webhook.events ?? [];
+    const phase: 'partial' | 'complete' = events.length > 0 && !events.includes('complete') ? 'partial' : 'complete';
     // A file answer gets its `url` exactly as a real delivery would, minted by
     // the same code for this placeholder submission, so the receiver sees the
     // real shape. Opening it answers 404: there is no such submission. Absent
@@ -952,9 +962,10 @@ export class FormDestinationsController {
       sessionId: 'test-session',
       score: 0,
       outcomeLabel: null,
-      phase: 'partial' as const,
+      phase,
       submittedAt: now,
       data,
+      test: true,
       utm: {},
       ...(fileLinks ? { fileLinks } : {}),
       // The page a real delivery names (#199), so the author sees every key a
@@ -1010,7 +1021,8 @@ export class FormDestinationsController {
         responseStatus: result.responseStatus,
         responseBody: result.responseBody,
       });
-      return { ok: true };
+      // The status the endpoint answered, as the delivery log records it.
+      return { ok: true, ...(typeof result.responseStatus === 'number' ? { status: result.responseStatus } : {}) };
     } catch (err) {
       await record(
         'failed',
@@ -1117,7 +1129,8 @@ function isLiteralLoopbackHost(rawUrl: string): boolean {
 function sampleAnswers(steps: { key: string; type: string }[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const s of steps) {
-    if (s.type === 'message') continue;
+    // A message or reveal step collects nothing: a real delivery has no answer for it.
+    if (isInputlessStep(s as Pick<FormStep, 'type'>)) continue;
     switch (s.type) {
       case 'email':
         out[s.key] = 'sample@example.com';

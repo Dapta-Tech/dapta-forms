@@ -23,9 +23,13 @@ export function corsOrigins(env: Pick<ServerEnv, 'CORS_ORIGINS' | 'PUBLIC_APP_UR
   return configured.length > 0 ? configured : [env.PUBLIC_APP_URL || 'http://localhost:3000'];
 }
 
-/** True for a request to the MCP endpoint, whose browser policy is its own. */
+/**
+ * True for a request to the MCP endpoint, whose browser policy is its own.
+ * Case-insensitive, because the router is: `/MCP` reaches the MCP controller,
+ * so it must not get the dashboard's allowlist with credentials.
+ */
 export function isMcpPath(url: string | undefined): boolean {
-  const path = (url ?? '').split('?')[0];
+  const path = (url ?? '').split('?')[0]!.toLowerCase();
   return path === '/mcp' || path === '/mcp/';
 }
 

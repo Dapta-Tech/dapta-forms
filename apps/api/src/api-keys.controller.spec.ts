@@ -165,6 +165,19 @@ describe('POST /v1/api-keys', () => {
     });
   });
 
+  it('marks api_key_created as staff access when staff create the key through a grant', async () => {
+    const staffAuth = {
+      resolveHost: async () => ({ accountId, memberId: adminId, role: 'admin' as const, via: 'session' as const, accessGrant: 'staff' as const }),
+    } as unknown as AuthService;
+    const analytics = (keys as unknown as { productAnalytics: AnalyticsEffects }).productAnalytics;
+    const staffKeys = new ApiKeysController(db, staffAuth, analytics);
+    const created = await staffKeys.create(as(adminId), { name: 'support' });
+    expect(await captured()).toContainEqual({
+      event: 'forms_api_key_created',
+      props: { api_key_id: created.id, role: 'admin', staff_access: true },
+    });
+  });
+
   it('validates the name: 1 to 60 characters', async () => {
     await expectError(keys.create(as(bobId), {}), BadRequestException, 'BAD_REQUEST');
     await expectError(keys.create(as(bobId), { name: '   ' }), BadRequestException, 'BAD_REQUEST');
@@ -199,7 +212,7 @@ describe('GET /v1/api-keys', () => {
       last4: b.last4,
       createdAt: b.createdAt,
       lastUsedAt: null,
-      createdBy: { memberId: bobId, name: 'bob', email: 'bob@example.com' },
+      createdBy: { memberId: bobId, name: 'bob', email: 'bob@example.com', staff: false },
     });
 
     for (const viewer of [ownerId, adminId]) {

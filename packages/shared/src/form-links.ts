@@ -73,3 +73,14 @@ export function formLinks(
     editorUrl: `${base}${formEditorPath(form.id)}`,
   };
 }
+
+/**
+ * The workspace link page's absolute public URL (`/{accountCode}`) on the
+ * deployment's public address, or null when there is no `PUBLIC_APP_URL` to
+ * promise. Built here like a form's link, so the API hands agents the same
+ * address the editor shows.
+ */
+export function linkPageUrl(appUrl: string | null | undefined, accountCode: string): string | null {
+  const base = trimTrailing((appUrl ?? '').trim(), '/');
+  return base ? `${base}/${encodeURIComponent(accountCode)}` : null;
+}

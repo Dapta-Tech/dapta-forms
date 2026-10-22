@@ -1,6 +1,7 @@
 import { getMessages } from '@quill/shared';
 import { BrandMark } from '@/components/brand/brand';
 import { signupHref } from '@/lib/growth';
+import type { SignupMedium } from '@quill/shared';
 
 /**
  * "Made with dForms": the growth-loop attribution on every public surface (R11).
@@ -35,11 +36,14 @@ import { signupHref } from '@/lib/growth';
 export function MadeWithBadge({
   locale = 'en',
   accountCode,
+  medium = 'form-button',
 }: {
   locale?: string;
   accountCode?: string | null;
+  /** Which surface the pill sits on: the form itself, or a workspace link page. */
+  medium?: Extract<SignupMedium, 'form-button' | 'link-page'>;
 }) {
-  const href = signupHref('form-button', accountCode);
+  const href = signupHref(medium, accountCode);
   if (!href) return null;
   const m = getMessages(locale);
   return (

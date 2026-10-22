@@ -76,6 +76,13 @@ export interface DestinationContext {
    * reported: every adapter then behaves exactly as it did without it.
    */
   visit?: DestinationVisit;
+  /**
+   * A test delivery (the admin's webhook test), not a respondent's answers.
+   * The webhook sends it as `test: true` at the top of the payload, apart from
+   * `data`, so it can never collide with a step keyed `test`. Absent on every
+   * real delivery.
+   */
+  test?: boolean;
 }
 
 /**

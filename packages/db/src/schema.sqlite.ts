@@ -34,6 +34,8 @@ export const account = sqliteTable('account', {
   firstViewedAt: integer('first_viewed_at'),
   /** The workspace's IANA timezone (0020); NULL = UTC. See the Postgres twin. */
   timezone: text('timezone'),
+  /** The workspace's public link page (0025, TEXT JSON); NULL = none. See the Postgres twin. */
+  linkPage: text('link_page'),
   /**
    * Onboarding wizard state AND result (TEXT JSON, see 0011) —
    * `accountOnboardingSchema` in @quill/types. Written on every step advance, so

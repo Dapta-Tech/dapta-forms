@@ -5,9 +5,9 @@
  * keys until someone decides it belongs here. Allowed are the routes an agent
  * needs to build and run forms: forms (create, read, edit, slug, duplicate,
  * publish, revert, delete, file into a folder), folders, destinations,
- * responses and their files, CSV, analytics, brand kit, notifications,
- * `GET /v1/me`, reading the profile and the public page, and reading
- * integrations.
+ * responses and their files, CSV, analytics, brand kit, the workspace link
+ * page, notifications, `GET /v1/me`, reading the profile and the public page,
+ * and reading integrations.
  *
  * Everything else is a 403 `KEY_NOT_ALLOWED` with a key: the key routes
  * themselves, members, invitations, workspaces, onboarding and attribution,
@@ -50,6 +50,7 @@ export const API_KEY_ALLOWED_ROUTES: ReadonlySet<string> = new Set([
   'POST /v1/forms/:id/duplicate',
   'POST /v1/forms/:id/publish',
   'POST /v1/forms/:id/revert',
+  'POST /v1/forms/:id/discard-draft',
   'PATCH /v1/forms/:id/folder',
 
   // Folders.
@@ -82,6 +83,10 @@ export const API_KEY_ALLOWED_ROUTES: ReadonlySet<string> = new Set([
   'PUT /v1/branding',
   'POST /v1/branding/apply',
   'POST /v1/branding/revert',
+
+  // The workspace link page (any member, as in the dashboard).
+  'GET /v1/link-page',
+  'PUT /v1/link-page',
 
   // Notifications, workspace-wide and per form.
   'GET /v1/notifications',
@@ -139,6 +144,11 @@ export function keyNotAllowed(): never {
  * Applied app-wide. Lets every request through untouched unless it carries an
  * API key; with a key, refuses any admin route outside the allowlist. A
  * handler whose route cannot be read is refused too (fail closed).
+ *
+ * The MCP calls its handlers in process, never through Nest's pipeline, so
+ * this guard never runs for an in-process principal; `keyAllowedRoutes`
+ * (mcp.backend.ts) makes the same check for every handler the MCP can call,
+ * at boot.
  */
 @Injectable()
 export class ApiKeyRouteGuard implements CanActivate {

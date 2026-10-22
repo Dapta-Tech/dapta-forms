@@ -16,6 +16,7 @@ import {
 import { ZodError } from 'zod';
 import type { ServerEnv } from '@quill/config/env';
 import { SubmissionService } from './submission.service';
+import { LinkPageService } from './link-page.service';
 import { FILE_LINK_NOT_FOUND, UploadService } from './upload.service';
 import { fileLinkKey, verifyFileToken } from './file-link';
 import { unwrap } from './http';
@@ -47,6 +48,9 @@ export class PublicController {
     // Only for the proxy depth the client address is read at. Optional so a
     // construction without it trusts the socket peer alone, the safe default.
     @Optional() @Inject(ENV) env?: ServerEnv,
+    // The workspace link page. Optional and LAST so every existing positional
+    // construction keeps working; absent, its routes answer 404.
+    @Optional() @Inject(LinkPageService) private readonly linkPages?: LinkPageService,
   ) {
     this.trustProxyHops = env ? resolveTrustProxyHops(env) : 0;
     this.fileLinkKey = fileLinkKey(env);
@@ -66,6 +70,26 @@ export class PublicController {
     const p = await this.svc.publicProfile(accountCode, handle);
     if (!p) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Page not found.' });
     return p;
+  }
+
+  /** A workspace's link page, or 404 until someone in the workspace turns it on. */
+  @Get('pages/:accountCode')
+  async linkPage(@Param('accountCode') accountCode: string) {
+    const page = this.linkPages ? await this.linkPages.publicPage(accountCode) : null;
+    if (!page) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Page not found.' });
+    return page;
+  }
+
+  /** Record a view of a link page, or a click on one of its buttons or icons (analytics only). */
+  @Post('pages/:accountCode/events')
+  @HttpCode(202)
+  async linkPageEvent(@Param('accountCode') accountCode: string, @Body() body: unknown) {
+    if (!this.linkPages) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Page not found.' });
+    try {
+      return unwrap(await this.linkPages.event(accountCode, body));
+    } catch (err) {
+      badReq(err);
+    }
   }
 
   /**

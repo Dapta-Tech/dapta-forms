@@ -67,6 +67,9 @@ export async function enterEstateWorkspaceAction(workspaceId: string): Promise<{
     accountId = (await adminApi.enterEstateWorkspace(id)).accountId;
   } catch (e) {
     unstable_rethrow(e);
+    // Their own membership there is disabled or pending: staff access never
+    // replaces it, and the person should be told why, not just "forbidden".
+    if (e instanceof ApiError && e.code === 'MEMBERSHIP_NOT_ACTIVE') return { error: 'membership_not_active' };
     return { error: 'forbidden' };
   }
   await setWorkspace(accountId);

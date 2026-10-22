@@ -126,7 +126,55 @@ describe('webhook ping', () => {
     expect(body.id).toMatch(/^ping:/);
     expect(body.form.id).toBe(formId);
     expect(body.submission.id).toBe('test-submission');
+    expect((body as { test?: unknown }).test).toBe(true);
+    // Kept for receivers that read the older marker.
     expect(body.data.test).toBe(true);
+  });
+
+  it('reports the status the endpoint answered on success too', async () => {
+    await setWebhook('http://localhost:4999/hook');
+    controller.fetchImpl = (async () => new Response('', { status: 202 })) as unknown as typeof fetch;
+    expect(await controller.pingWebhook(asOwner(), formId)).toEqual({ ok: true, status: 202 });
+  });
+
+  /** Replace the seeded form's steps and its webhook's `events`. */
+  async function reshape(steps: unknown[], events?: string[]): Promise<void> {
+    const { sql } = await import('@quill/db');
+    const row = await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${formId}`);
+    const config = JSON.parse(row!.config) as { steps: unknown[]; destinations: Array<Record<string, unknown>> };
+    config.steps = steps;
+    config.destinations = config.destinations.map((d) => (events ? { ...d, events } : d));
+    await db.run(sql`UPDATE form SET config = ${JSON.stringify(config)} WHERE id = ${formId}`);
+  }
+
+  it('sends the phase the webhook listens to, and answers only the steps that take input', async () => {
+    await setWebhook('http://localhost:4999/hook');
+    const steps = [
+      { key: 'email', type: 'email', question: 'Email?' },
+      { key: 'intro', type: 'message', question: 'Hi' },
+      { key: 'wow', type: 'reveal', question: 'Your result' },
+    ];
+    const sentPhase = async (events?: string[]) => {
+      await reshape(steps, events);
+      calls = [];
+      await controller.pingWebhook(asOwner(), formId);
+      return JSON.parse(String(calls[0]!.init.body)) as { phase: string; data: Record<string, unknown> };
+    };
+    expect((await sentPhase(['complete'])).phase).toBe('complete');
+    expect((await sentPhase(['partial'])).phase).toBe('partial');
+    expect((await sentPhase(['partial', 'complete'])).phase).toBe('complete');
+    const body = await sentPhase();
+    expect(body.phase).toBe('complete');
+    expect(Object.keys(body.data).sort()).toEqual(['email', 'test']);
+  });
+
+  it('marks the test at the top of the payload, so a step keyed test keeps its sample answer', async () => {
+    await setWebhook('http://localhost:4999/hook');
+    await reshape([{ key: 'test', type: 'text', question: 'Which test?' }]);
+    await controller.pingWebhook(asOwner(), formId);
+    const body = JSON.parse(String(calls[0]!.init.body)) as { test?: unknown; data: Record<string, unknown> };
+    expect(body.test).toBe(true);
+    expect(body.data.test).toBe('Sample answer');
   });
 
   it('shows the visit a real delivery carries, with an obviously fake cookie', async () => {
@@ -259,10 +307,10 @@ describe('webhook ping', () => {
       expect(res.reason).toBe('unreachable');
     });
 
-    it('leaves a success with no reason at all', async () => {
+    it('leaves a success with no reason at all, only the status', async () => {
       await setWebhook('http://localhost:4999/hook');
       const res = await controller.pingWebhook(asOwner(), formId);
-      expect(res).toEqual({ ok: true });
+      expect(res).toEqual({ ok: true, status: 200 });
     });
   });
 

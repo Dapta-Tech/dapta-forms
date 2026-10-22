@@ -1,0 +1,80 @@
+/* ── Home: the "Connect your agent" banner and card ────────────────────────── */
+
+/* The banner's logo marquee: the list twice in a row, slid by one copy's width,
+   so the loop has no seam. It stops under the pointer and with reduced motion,
+   where the second copy is hidden and the first sits still. */
+.ap-marquee {
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.ap-marquee__track {
+  display: flex;
+  width: max-content;
+  animation: ap-marquee 26s linear infinite;
+}
+.ap-marquee:hover .ap-marquee__track {
+  animation-play-state: paused;
+}
+@keyframes ap-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* The card's logos float gently, each on its own beat (--dur, --delay, --amp). */
+.ap-float {
+  animation: ap-float var(--dur, 4s) ease-in-out var(--delay, 0s) infinite alternate;
+}
+@keyframes ap-float {
+  from {
+    transform: translateY(0) rotate(0deg);
+  }
+  to {
+    transform: translateY(var(--amp, 5px)) rotate(var(--tilt, 1.5deg));
+  }
+}
+
+.ap-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: #3ddc84;
+  animation: ap-caret 1s steps(1) infinite;
+}
+@keyframes ap-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+.ap-in {
+  animation: ap-in 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes ap-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ap-marquee {
+    mask-image: none;
+  }
+  .ap-marquee__track {
+    animation: none;
+    width: auto;
+    flex-wrap: wrap;
+  }
+  .ap-marquee__copy {
+    display: none;
+  }
+  .ap-float,
+  .ap-caret,
+  .ap-in {
+    animation: none;
+  }
+}

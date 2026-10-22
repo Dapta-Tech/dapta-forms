@@ -28,6 +28,7 @@ import {
   DAY_MS,
   querySubmissions,
   allSubmissionsForExport,
+  firstSubmissionsForExport,
   deleteSubmissionForAccount,
   deleteSubmissionsForAccount,
   searchSubmissionAnswers,
@@ -334,6 +335,15 @@ export class AnalyticsService {
     q: Omit<SubmissionQuery, 'limit' | 'offset'> & { ids?: readonly string[] },
   ) {
     return allSubmissionsForExport(this.db, formId, q);
+  }
+
+  /** The first `limit` rows of `exportSubmissions`, and how many it holds in all. */
+  firstExportSubmissions(
+    formId: string,
+    q: Omit<SubmissionQuery, 'limit' | 'offset'> & { ids?: readonly string[] },
+    limit: number,
+  ) {
+    return firstSubmissionsForExport(this.db, formId, q, limit);
   }
 
   /**

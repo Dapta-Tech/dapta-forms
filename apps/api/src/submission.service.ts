@@ -18,6 +18,7 @@ import {
   resolveOutcome,
   respondentFullName,
   summarizeAnswers,
+  validateSubmission,
   type FormConfig,
 } from '@quill/engine';
 import {
@@ -198,9 +199,7 @@ export class SubmissionService {
     // browser, because `submissionSchema` puts no bound on an answer string at
     // all, and an unbounded payload was an open door before this setting existed.
     // Checked for partial saves too: a giant string is the same problem either
-    // way. The FLOOR is deliberately not checked here; per-answer validation on
-    // the server is a different, larger job (see `validateAnswerCode`, which
-    // this app never calls) and a short answer keeps being accepted.
+    // way. Everything else about an answer is checked on a COMPLETE only, below.
     const tooLong = overLongAnswer(config, input.data);
     if (tooLong)
       return {
@@ -208,6 +207,28 @@ export class SubmissionService {
         message: `Answer for "${tooLong.key}" is longer than the ${tooLong.maxChars} characters this question allows.`,
         status: 400,
       };
+
+    // A COMPLETE has to be a response the form could have produced: every step
+    // on the path the answers took passes the same validator the renderers ran
+    // on each button (an option that exists, a required answer present, an
+    // email that is one). Without it any client could post `{team: "nope"}` as
+    // a completed response with an outcome, and the value landed in the
+    // filters and the summary. Only the path is read, so a step logic skipped,
+    // a hidden step, a URL prefill nobody saw and the UTMs never refuse a real
+    // response. Partials are not checked: they are missing the rest by
+    // definition. Before the challenge and the uploads, so a refusal spends
+    // neither and writes nothing.
+    if (input.partial !== true) {
+      const verdict = validateSubmission(config, input.data);
+      if (!verdict.ok)
+        return {
+          error: 'INVALID_ANSWERS',
+          message: verdict.nameFields
+            ? `Answer for "${verdict.key}" is not valid (${verdict.code}). A name question is sent as its fields (${verdict.nameFields.join(', ')}), not under its own key.`
+            : `Answer for "${verdict.key}" is not valid (${verdict.code}).`,
+          status: 400,
+        };
+    }
 
     // SPAM PROTECTION. With it on, one rule: a partial is saved and never
     // delivered; a complete is verified, then saved and delivered. So only a

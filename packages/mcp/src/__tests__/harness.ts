@@ -10,8 +10,10 @@ import {
   type ResponsesPage,
 } from '../backend';
 import { McpDoor, type McpDoorOptions } from '../door';
+import type { ApiParityBackend } from '../parity-backend';
+import { parityFakes } from './parity-fakes';
 import { unlimited, type RateLimiter } from '../rate-limit';
-import { FormsMcpServer } from '../server';
+import { FormsMcpServer, type FormsMcpServerOptions } from '../server';
 
 /**
  * The package on a real HTTP socket, with an in-memory backend: the door, the
@@ -80,7 +82,9 @@ export function fakeBackend(over: Partial<FormsBackend> = {}) {
       displayName: 'Ada',
       email: 'ada@example.test',
       role: c.role,
+      status: 'active',
       timezone: 'UTC',
+      locale: 'en',
     }),
     listForms: async () => [form(), form({ id: 'form-2', name: 'Quiz', slug: 'quiz', hasDraft: true })],
     getForm: async (_c, id) => {
@@ -89,13 +93,25 @@ export function fakeBackend(over: Partial<FormsBackend> = {}) {
     },
     createForm: async (_c, input) => form({ id: 'form-new', name: input.name }),
     updateForm: async (_c, id) => form({ id, hasDraft: true, updatedAt: NOW + 1 }),
-    publishForm: async (_c, id) => form({ id, publishedAt: NOW + 2, previousPublishedAt: NOW - 5 }),
+    publishForm: async (_c, id) => {
+      const at = Date.now();
+      return form({ id, publishedAt: at, updatedAt: at, previousPublishedAt: NOW - 5 });
+    },
     revertForm: async (_c, id) => form({ id }),
+    discardDraft: async (_c, id) => form({ id, updatedAt: NOW + 3 }),
     listResponses: async () => page,
     formAnalytics: async () => analytics(),
+    ...parityFakes(),
   };
   const merged = { ...base, ...over };
+  const parity = Object.fromEntries(
+    (Object.keys(parityFakes()) as Array<keyof ApiParityBackend>).map((method) => [
+      method,
+      record(method, merged[method] as (caller: McpCaller, ...args: unknown[]) => Promise<unknown>),
+    ]),
+  ) as unknown as ApiParityBackend;
   const backend: FormsBackend = {
+    ...parity,
     whoami: record('whoami', merged.whoami),
     listForms: record('listForms', merged.listForms),
     getForm: record('getForm', merged.getForm),
@@ -103,6 +119,7 @@ export function fakeBackend(over: Partial<FormsBackend> = {}) {
     updateForm: record('updateForm', merged.updateForm),
     publishForm: record('publishForm', merged.publishForm),
     revertForm: record('revertForm', merged.revertForm),
+    discardDraft: record('discardDraft', merged.discardDraft),
     listResponses: record('listResponses', merged.listResponses),
     formAnalytics: record('formAnalytics', merged.formAnalytics),
   };
@@ -143,6 +160,9 @@ export interface HarnessOptions {
   door?: Partial<Omit<McpDoorOptions, 'server' | 'authenticate'>>;
   toolTimeoutMs?: number;
   writeLimiter?: RateLimiter;
+  onInternalError?: FormsMcpServerOptions['onInternalError'];
+  onTransportError?: FormsMcpServerOptions['onTransportError'];
+  onToolCall?: FormsMcpServerOptions['onToolCall'];
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -164,6 +184,9 @@ export async function bootHarness(opts: HarnessOptions = {}): Promise<Harness> {
     backend,
     toolTimeoutMs: opts.toolTimeoutMs ?? 5_000,
     writeLimiter: opts.writeLimiter ?? unlimited,
+    onInternalError: opts.onInternalError,
+    onTransportError: opts.onTransportError,
+    onToolCall: opts.onToolCall,
   });
   const audit: string[] = [];
   server.auditSink = (line) => audit.push(line);
@@ -201,6 +224,7 @@ export async function bootHarness(opts: HarnessOptions = {}): Promise<Harness> {
       const t = token(role);
       keys.set(t, {
         accountId: 'acct-1',
+        workspaceName: 'Acme',
         memberId: `member-${role}`,
         role,
         credentialId: `key-${keys.size + 1}`,

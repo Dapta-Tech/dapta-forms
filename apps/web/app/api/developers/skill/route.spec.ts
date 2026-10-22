@@ -128,7 +128,7 @@ describe('GET /api/developers/skill', () => {
     expect(skill).toContain('https://api.forms.example.com');
     expect(skill).not.toContain('svc.cluster.local');
     // The dashboard address is the configured public origin, not the pod's URL.
-    expect(skill).toContain('https://forms.example.com/admin/developers/keys');
+    expect(skill).toContain('https://forms.example.com/admin/developers/connect');
     expect(skill).not.toContain('0.0.0.0');
     expect(() => JSON.parse(files.get('dforms-api/reference/form-config.schema.json')!)).not.toThrow();
   });

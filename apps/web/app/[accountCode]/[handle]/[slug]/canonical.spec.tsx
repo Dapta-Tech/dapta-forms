@@ -78,6 +78,21 @@ describe('the canonical tag', () => {
   });
 });
 
+describe('the robots tag', () => {
+  // A customer's form is a thin page on our domain: reachable by link, never
+  // listed by a search engine, while the badge link it carries is still followed.
+  it('keeps every public form out of the index, on any link', async () => {
+    const links: Array<[handle: string, slug: string]> = [
+      ['f', 'lead-qualifier'],
+      ['alex-rivera', 'old-link'],
+    ];
+    for (const [handle, slug] of links) {
+      const meta = await generateMetadata(request(handle, slug));
+      expect(meta.robots).toEqual({ index: false, follow: true });
+    }
+  });
+});
+
 describe('the page', () => {
   beforeEach(() => {
     permanentRedirect.mockClear();

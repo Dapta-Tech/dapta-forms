@@ -10,7 +10,7 @@
  * `enter` refuses an account the caller is not in.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { createDb, migrate, seed, getAccountByCode, insertApiKey, sql, type Db } from '@quill/db';
 import { AuthService, WORKSPACE_HEADER } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
@@ -18,6 +18,7 @@ import { WorkOsAuthProvider } from './auth.provider.workos';
 import { WorkspaceProjection } from './workspace-projection';
 import { IamWorkspacesClient, type IamWorkspace } from './iam-workspaces';
 import { WorkspaceService } from './workspace.service';
+import { ApiKeysController } from './api-keys.controller';
 import { signJwtHs256 } from './jwt';
 
 const SECRET = 's';
@@ -426,6 +427,11 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
   // upstream list lags behind the create); only its single read answers.
   let lagList: boolean;
   let lagged: IamWorkspace[];
+  // Mutable on purpose: a spec drops the domain to make someone stop being staff.
+  let staffDomains: string[];
+  // The workspace the staff person opened last, as the identity service remembers it.
+  let staffLast: string | null;
+  let auth: AuthService;
   const STAFF_SUB = 'sub-staff';
   const staffToken = signJwtHs256({ sub: STAFF_SUB, account_id: 'acc-staff', email: 's@staff.test', name: 'Staff', exp: 4102444800 }, SECRET);
   const staffReq = (workspace?: string): ReqLike => ({
@@ -433,6 +439,9 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
   });
   const customerToken = signJwtHs256({ sub: SUB, account_id: IAM_ACCOUNT, email: 'a@x.com', name: 'A', exp: 4102444800 }, SECRET);
   const customerReq = (): ReqLike => ({ headers: { authorization: `Bearer ${customerToken}` } });
+  const customerReqIn = (workspace: string): ReqLike => ({
+    headers: { authorization: `Bearer ${customerToken}`, [WORKSPACE_HEADER]: workspace },
+  });
 
   beforeEach(async () => {
     db = await createDb('file::memory:');
@@ -442,6 +451,8 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     createRefusal = null;
     lagList = false;
     lagged = [];
+    staffDomains = ['staff.test'];
+    staffLast = null;
     workspaces = [
       { id: WS_OWN, name: 'Mine', account_id: IAM_ACCOUNT, is_active: true, users: [{ id: 'wu1', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }] },
       { id: 'ws-staff', name: 'Staff HQ', account_id: 'acc-staff', is_active: true, users: [{ id: 'wu-s', user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }] },
@@ -451,7 +462,10 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
       const url = new URL(String(input));
       const method = init?.method ?? 'GET';
       calls.push({ method, path: url.pathname, search: url.search });
-      if (method === 'GET' && url.pathname.startsWith('/iam/account/')) return json({ id: url.pathname.split('/').pop(), feature_flags: {} });
+      if (method === 'GET' && url.pathname.startsWith('/iam/account/')) {
+        const id = url.pathname.split('/').pop();
+        return json({ id, feature_flags: id === 'acc-staff' && staffLast ? { last_workspace: staffLast } : {} });
+      }
       if (method === 'PUT' && url.pathname.startsWith('/iam/account/')) return json({});
       if (method === 'GET' && url.pathname === '/iam/workspace/search') {
         // As the real one: a staff token sees the estate; `accountId` scopes it.
@@ -492,7 +506,7 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     const projection = new WorkspaceProjection(
       db,
       new IamWorkspacesClient({ baseUrl: 'https://iam.test/iam', fetchImpl }),
-      { staffDomains: ['staff.test'] },
+      { staffDomains },
     );
     const provider = new WorkOsAuthProvider(
       db,
@@ -500,11 +514,130 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
       undefined,
       projection,
     );
-    svc = new WorkspaceService(db, provider, new AuthService(db, provider), projection);
+    auth = new AuthService(db, provider);
+    svc = new WorkspaceService(db, provider, auth, projection);
   });
 
   afterEach(async () => {
     await db.close?.();
+  });
+
+  /** The local account of the customer's workspace, projected by the customer opening dForms. */
+  async function customerAccount(): Promise<string> {
+    await svc.list(customerReq());
+    const row = await db.get<{ id: string }>(sql`SELECT id FROM account WHERE external_id = ${WS_OWN}`);
+    return row!.id;
+  }
+
+  it('a person who stops being staff (domain dropped) loses every grant in the web: list, header, enter and home; the key they made keeps working', async () => {
+    staffLast = WS_OWN;
+    const { accountId } = await svc.enterEstateWorkspace(staffReq(), WS_OWN);
+    // While staff: listed, enterable by header, and home is the workspace opened last.
+    expect((await svc.list(staffReq())).map((w) => w.accountId)).toContain(accountId);
+    expect((await auth.resolveHost(staffReq(accountId))).accountId).toBe(accountId);
+    expect((await auth.resolveHost(staffReq())).accountId).toBe(accountId);
+    const grantMember = (await auth.resolveHost(staffReq(accountId))).memberId;
+    // A key created through the grant while staff.
+    const keys = new ApiKeysController(db, auth);
+    const created = await keys.create(staffReq(accountId), { name: 'support agent' });
+
+    staffDomains.length = 0; // the domain is dropped from IAM_STAFF_DOMAINS
+
+    expect((await svc.list(staffReq())).map((w) => w.accountId)).not.toContain(accountId);
+    await expect(auth.resolveHost(staffReq(accountId))).rejects.toMatchObject({ response: { error: 'WORKSPACE_FORBIDDEN' } });
+    await expect(svc.enter(staffReq(), accountId)).rejects.toBeInstanceOf(ForbiddenException);
+    // Home falls back to their own workspace, never the grant they opened last.
+    const home = await auth.resolveHost(staffReq());
+    expect(home.accountId).not.toBe(accountId);
+    expect(home.accessGrant).toBeUndefined();
+    // Nor can they create keys there any more: the session never reaches the grant.
+    await expect(keys.create(staffReq(accountId), { name: 'again' })).rejects.toBeInstanceOf(ForbiddenException);
+    // The key is the workspace's, not the person's: it keeps working, as the
+    // grant's admin row in that workspace only, until someone revokes it.
+    const byKey = await auth.resolveHost({ headers: { authorization: `Bearer ${created.key}` } });
+    expect(byKey).toMatchObject({ accountId, memberId: grantMember, role: 'admin', via: 'api_key' });
+    expect(byKey.accessGrant).toBeUndefined();
+    // The row itself stays (grants are never revoked); it just stopped counting for the session.
+    const row = await db.get<{ access_grant: string | null; status: string }>(sql`SELECT access_grant, status FROM member WHERE id = ${grantMember}`);
+    expect(row).toEqual({ access_grant: 'staff', status: 'active' });
+    // Offboarding is revoking it: the workspace's admin does, and it stops.
+    await keys.revoke(customerReqIn(accountId), created.id);
+    await expect(auth.resolveHost({ headers: { authorization: `Bearer ${created.key}` } })).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('a person whose email moves off the staff domains loses every grant on the next request', async () => {
+    const { accountId } = await svc.enterEstateWorkspace(staffReq(), WS_OWN);
+    const movedToken = signJwtHs256({ sub: STAFF_SUB, account_id: 'acc-staff', email: 's@elsewhere.test', name: 'Staff', exp: 4102444800 }, SECRET);
+    const moved = (workspace?: string): ReqLike => ({
+      headers: { authorization: `Bearer ${movedToken}`, ...(workspace ? { [WORKSPACE_HEADER]: workspace } : {}) },
+    });
+    expect((await svc.list(moved())).map((w) => w.accountId)).not.toContain(accountId);
+    expect((await auth.listWorkspaces(moved())).map((w) => w.accountId)).not.toContain(accountId);
+    await expect(auth.resolveHost(moved(accountId))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.enter(moved(), accountId)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('staff create, list and revoke keys through a grant; the workspace sees them marked as staff and can revoke them', async () => {
+    const { accountId } = await svc.enterEstateWorkspace(staffReq(), WS_OWN);
+    const keys = new ApiKeysController(db, auth);
+    const staffKey = await keys.create(staffReq(accountId), { name: 'support' });
+    expect(staffKey.key).toMatch(/^dforms_/);
+    // The key acts as the grant row, an admin of this workspace, and nowhere else.
+    const grant = await auth.resolveHost(staffReq(accountId));
+    const byKey = await auth.resolveHost({ headers: { authorization: `Bearer ${staffKey.key}` } });
+    expect(byKey).toMatchObject({ accountId, memberId: grant.memberId, role: 'admin', via: 'api_key' });
+    await expect(
+      auth.resolveHost({ headers: { authorization: `Bearer ${staffKey.key}`, [WORKSPACE_HEADER]: 'another-account' } }),
+    ).rejects.toMatchObject({ response: { error: 'WORKSPACE_FORBIDDEN' } });
+    // The customer's own admin creates one too, in the same workspace.
+    const mine = await keys.create(customerReqIn(accountId), { name: 'mine' });
+    // Both see every key; the staff one is marked.
+    const listed = (await keys.list(customerReqIn(accountId))).keys;
+    expect(listed.map((k) => [k.name, k.createdBy.staff]).sort()).toEqual([['mine', false], ['support', true]]);
+    expect((await keys.list(staffReq(accountId))).keys.map((k) => k.name).sort()).toEqual(['mine', 'support']);
+    // Staff revoke their own key like any admin.
+    const second = await keys.create(staffReq(accountId), { name: 'second' });
+    await keys.revoke(staffReq(accountId), second.id);
+    await expect(auth.resolveHost({ headers: { authorization: `Bearer ${second.key}` } })).rejects.toBeInstanceOf(UnauthorizedException);
+    // The workspace's admin revokes the staff key.
+    await keys.revoke(customerReqIn(accountId), staffKey.id);
+    await expect(auth.resolveHost({ headers: { authorization: `Bearer ${staffKey.key}` } })).rejects.toBeInstanceOf(UnauthorizedException);
+    expect((await keys.list(customerReqIn(accountId))).keys.map((k) => k.id)).toEqual([mine.id]);
+  });
+
+  it('never turns a membership the owner disabled into an admin grant: the web entry refuses and leaves it untouched', async () => {
+    const accountId = await customerAccount();
+    const memberId = 'm-staff-disabled';
+    await db.run(
+      sql`INSERT INTO member (id, account_id, external_id, email, role, status, created_at)
+          VALUES (${memberId}, ${accountId}, ${STAFF_SUB}, 's@staff.test', 'member', 'disabled', ${Date.now()})`,
+    );
+    await expect(svc.enterEstateWorkspace(staffReq(), WS_OWN)).rejects.toMatchObject({
+      response: { error: 'MEMBERSHIP_NOT_ACTIVE' },
+    });
+    const row = await db.get<{ role: string; status: string; access_grant: string | null }>(
+      sql`SELECT role, status, access_grant FROM member WHERE id = ${memberId}`,
+    );
+    expect(row).toEqual({ role: 'member', status: 'disabled', access_grant: null });
+    // Nor does the header reach it.
+    await expect(auth.resolveHost(staffReq(accountId))).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('never adopts a pending invitation by email as the web grant', async () => {
+    const accountId = await customerAccount();
+    await db.run(
+      sql`INSERT INTO member (id, account_id, email, role, status, created_at)
+          VALUES ('m-invite', ${accountId}, 's@staff.test', 'member', 'invited', ${Date.now()})`,
+    );
+    await svc.enterEstateWorkspace(staffReq(), WS_OWN);
+    const invite = await db.get<{ external_id: string | null; role: string; status: string; access_grant: string | null }>(
+      sql`SELECT external_id, role, status, access_grant FROM member WHERE id = 'm-invite'`,
+    );
+    expect(invite).toEqual({ external_id: null, role: 'member', status: 'invited', access_grant: null });
+    const grant = await db.get<{ role: string }>(
+      sql`SELECT role FROM member WHERE account_id = ${accountId} AND external_id = ${STAFF_SUB} AND access_grant = 'staff'`,
+    );
+    expect(grant).toEqual({ role: 'admin' });
   });
 
   it('a customer searches only their own workspaces; staff get the estate too, own rows first', async () => {

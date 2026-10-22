@@ -2,21 +2,22 @@
 
 import { unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import type { MemberProfile } from '@quill/types';
+import type { LinkPageInput } from '@quill/types';
 import { adminApi } from '@/lib/admin-api';
 
 /**
- * Save (or clear) the caller's own public page. Scoped server-side to the
- * authenticated member — the id is never taken from the request.
+ * Save (or clear) the workspace link page. The workspace is the caller's own,
+ * resolved server-side from the session; the API validates the page with
+ * `linkPageSchema` and answers 400 with the field when something is off.
  */
-export async function saveMyProfileAction(
-  profile: MemberProfile | null,
+export async function saveLinkPageAction(
+  page: LinkPageInput | null,
 ): Promise<{ ok: boolean; message?: string }> {
   try {
-    await adminApi.saveMyProfile(profile);
+    await adminApi.saveLinkPage(page);
     revalidatePath('/admin/account/public-page');
-    // Home shows the public page link only while it is published, so a toggle
-    // here has to reach that page too, not just this one.
+    // Home shows the page's link only while it is published, so a toggle here
+    // has to reach that page too.
     revalidatePath('/admin');
     return { ok: true };
   } catch (e) {

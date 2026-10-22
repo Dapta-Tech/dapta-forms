@@ -3,7 +3,8 @@
  * handlers the REST routes run, on a throwaway SQLite database, driven by the
  * official MCP client over HTTP.
  */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
 import { recordFormEvent, sql, upsertSubmission } from '@quill/db';
 import { loadServerEnv } from '@quill/config/env';
 import { APP_URL, bootHarness, errorText, initialize, structured, type Harness } from './mcp-harness';
@@ -91,6 +92,45 @@ describe('tools over the real handlers', () => {
     expect(JSON.parse(afterRevert!.config).steps).toHaveLength(2);
   });
 
+  it('discards a draft through the real route, flags a form whose link serves nothing, and leaves the live form alone', async () => {
+    const h = await boot();
+    const c = await h.connect((await h.key()).key);
+    const created = structured<FormOut & { form: { is_live: boolean; live_step_count: number } }>(
+      await c.callTool({ name: 'create_form', arguments: { name: 'Agenda una demo', config: { version: 1, steps: [] } } }),
+    );
+    expect(created.form).toMatchObject({ is_live: false, live_step_count: 0 });
+    const read = structured<{ config: Record<string, unknown>; updated_at: number }>(
+      await c.callTool({ name: 'get_form', arguments: { form_id: created.form.id } }),
+    );
+    const draft = structured<FormOut>(
+      await c.callTool({
+        name: 'update_form',
+        arguments: { form_id: created.form.id, config: { ...read.config, steps: LEAD.steps }, expected_updated_at: read.updated_at },
+      }),
+    );
+    const listed = structured<{ forms: Array<{ id: string; is_live: boolean | null; live_step_count: number | null }> }>(
+      await c.callTool({ name: 'list_forms', arguments: { query: 'agenda' } }),
+    );
+    expect(listed.forms).toEqual([expect.objectContaining({ id: created.form.id, is_live: false, live_step_count: 0 })]);
+    expect(
+      structured<{ forms: Array<{ id: string; live_step_count: number | null }> }>(await c.callTool({ name: 'list_forms', arguments: {} })).forms.find(
+        (f) => f.id === h.formId,
+      )!.live_step_count,
+    ).toBeGreaterThan(0);
+
+    const discarded = structured<FormOut & { discarded: boolean }>(
+      await c.callTool({ name: 'discard_draft', arguments: { form_id: created.form.id, expected_updated_at: draft.form.updated_at } }),
+    );
+    expect(discarded).toMatchObject({ discarded: true, form: { has_unpublished_draft: false } });
+    const row = await h.db.get<{ config: string; draft_config: string | null }>(
+      sql`SELECT config, draft_config FROM form WHERE id = ${created.form.id}`,
+    );
+    expect(row!.draft_config).toBeNull();
+    expect(JSON.parse(row!.config).steps).toEqual([]);
+    const again = structured<{ discarded: boolean }>(await c.callTool({ name: 'discard_draft', arguments: { form_id: created.form.id } }));
+    expect(again.discarded).toBe(false);
+  });
+
   it('answers STALE, with the new stamp, when the form changed since it was read', async () => {
     const h = await boot();
     const c = await h.connect((await h.key()).key);
@@ -103,29 +143,103 @@ describe('tools over the real handlers', () => {
     expect(text).toContain('get_form');
   });
 
+  it('an edit of a form that already had a repeated option value and a rule to a deleted step says exactly what the save changes', async () => {
+    const h = await boot();
+    const c = await h.connect((await h.key()).key);
+    const created = structured<FormOut>(await c.callTool({ name: 'create_form', arguments: { name: 'Canal', config: LEAD } }));
+    // Saved the way a session stores a config (as sent, never normalized):
+    // two options share the value "otro", and a rule jumps to a step deleted since.
+    const stored = {
+      version: 1,
+      steps: [
+        {
+          key: 'canal',
+          type: 'multiple_choice',
+          question: 'How did you hear about us?',
+          options: [
+            { label: 'LinkedIn', value: 'linkedin' },
+            { label: 'Otro', value: 'otro' },
+            { label: 'Otro (evento)', value: 'otro' },
+          ],
+          goto: [{ values: ['linkedin'], target: 'borrado' }],
+        },
+        { key: 'email', type: 'email', question: 'What is your work email?', required: true },
+        { key: 'cerca', type: 'text', question: 'Anything else?', hideWhen: { field: 'gone', values: ['x'] } },
+      ],
+    };
+    await h.db.run(sql`UPDATE form SET config = ${JSON.stringify(stored)} WHERE id = ${created.form.id}`);
+
+    const read = structured<{ config: { steps: unknown[] }; updated_at: number }>(
+      await c.callTool({ name: 'get_form', arguments: { form_id: created.form.id } }),
+    );
+    const edited = { ...read.config, steps: [...read.config.steps, { key: 'msg', type: 'textarea', question: 'One more thing?' }] };
+    const result = await c.callTool({
+      name: 'update_form',
+      arguments: { form_id: created.form.id, config: edited, expected_updated_at: read.updated_at },
+    });
+    const warnings = structured<{ warnings: string[] }>(result).warnings;
+
+    const row = await h.db.get<{ draft_config: string }>(sql`SELECT draft_config FROM form WHERE id = ${created.form.id}`);
+    const draft = JSON.parse(row!.draft_config) as {
+      steps: Array<{ key: string; options?: Array<{ value: string }>; goto?: unknown; hideWhen?: { field: string } }>;
+    };
+    // What the API really saved.
+    expect(draft.steps[0]!.options!.map((o) => o.value)).toEqual(['linkedin', 'otro', 'otro_2']);
+    expect(draft.steps[0]!.goto).toBeUndefined();
+    expect(draft.steps[2]!.hideWhen!.field).toBe('gone');
+
+    // And each warning says exactly that, never "saved as it was" for what changed.
+    const value = warnings.find((w) => w.startsWith('config.steps.0.options.2.value'))!;
+    expect(value).toContain('"otro_2"');
+    expect(value).not.toContain('saved as it was');
+    const rule = warnings.find((w) => w.startsWith('config.steps.0.goto.0.target'))!;
+    expect(rule).toContain('removed from the draft');
+    expect(rule).not.toContain('saved as it was');
+    const field = warnings.find((w) => w.startsWith('config.steps.2.hideWhen.field'))!;
+    expect(field).toContain('saved as it was');
+  });
+
   it('reads responses with the answers inside respondent_supplied, labelled and cleaned', async () => {
     const h = await boot();
     const c = await h.connect((await h.key()).key);
     await upsertSubmission(h.db, {
       formId: h.formId,
       sessionId: 'sess-1',
-      data: { role: 'founder', team_size: 12, company: 'Acme <script>x</script> [win](https://evil.test)', email: 'lead@example.org' },
+      data: {
+        role: 'founder',
+        team_size: 12,
+        company: 'Acme <script>x</script> [win](https://evil.test)',
+        email: 'lead@example.org',
+        // A step deleted from the form since this response was given.
+        budget: 'Over 10k',
+      },
       score: 18,
     });
     await upsertSubmission(h.db, { formId: h.formId, sessionId: 'sess-2', data: { role: 'lead' }, score: 6, partial: true });
     const out = structured<{
       total: number;
-      responses: Array<{ status: string; score: number | null; respondent_supplied: { answers: Array<{ question: string; answer: string }> } }>;
+      responses: Array<{
+        status: string;
+        score: number | null;
+        outcome: { id: string; label: string } | null;
+        respondent_supplied: { answers: Array<Record<string, unknown>> };
+      }>;
     }>(await c.callTool({ name: 'list_responses', arguments: { form_id: h.formId } }));
     expect(out.total).toBe(2);
     const done = out.responses.find((r) => r.status === 'completed')!;
     expect(done.score).toBe(18);
-    expect(done.respondent_supplied.answers).toEqual([
-      { question: 'What best describes you?', answer: 'Founder / Owner' },
-      { question: 'How big is your team?', answer: '12' },
-      { question: 'What company do you work at?', answer: 'Acme x win' },
-      { question: 'Where should we send the results?', answer: 'lead@example.org' },
+    expect(done.respondent_supplied.answers.map(({ question, answer, step_key, step_removed }) => ({ question, answer, step_key, step_removed }))).toEqual([
+      { question: 'What best describes you?', answer: 'Founder / Owner', step_key: 'role', step_removed: false },
+      { question: 'How big is your team?', answer: '12', step_key: 'team_size', step_removed: false },
+      { question: 'What company do you work at?', answer: 'Acme x win', step_key: 'company', step_removed: false },
+      { question: 'Where should we send the results?', answer: 'lead@example.org', step_key: 'email', step_removed: false },
+      { question: 'budget', answer: 'Over 10k', step_key: 'budget', step_removed: true },
     ]);
+    expect(done.respondent_supplied.answers.find((a) => a.step_key === 'email')!.type).toBe('email');
+    expect(done.respondent_supplied.answers.find((a) => a.step_key === 'budget')!.type).toBeNull();
+    // Resolved by the live form's outcomes, as the respondent's ending was.
+    expect(done.outcome).toEqual({ id: 'qualified', label: 'Qualified' });
+    expect(out.responses.find((r) => r.status === 'partial')!.outcome).toBeNull();
     const completedOnly = structured<{ total: number }>(
       await c.callTool({ name: 'list_responses', arguments: { form_id: h.formId, status: 'completed' } }),
     );
@@ -271,6 +385,35 @@ describe('the door on the real app', () => {
     expect((await h.post(initialize('2025-06-18'), { authorization: 'Bearer dforms_not_a_real_key' })).status).toBe(401);
   });
 
+  it('refuses a batch of 100 tool calls in one request, and URL credentials in any case', async () => {
+    const h = await boot();
+    const { key } = await h.key();
+    const auth = { authorization: `Bearer ${key}`, 'mcp-protocol-version': '2025-06-18' };
+    const batch = Array.from({ length: 100 }, (_, i) => ({
+      jsonrpc: '2.0',
+      id: i + 1,
+      method: 'tools/call',
+      params: { name: 'get_form_guide', arguments: {} },
+    }));
+    expect((await h.post(batch, auth)).status).toBe(400);
+    expect(h.audit).toHaveLength(0);
+    for (const p of ['API_KEY', 'Token', 'bearer', 'access_key']) expect((await h.post(initialize('2025-06-18'), auth, `/mcp?${p}=x`)).status, p).toBe(400);
+  });
+
+  it('logs a failure by class only, never the request data that caused it', async () => {
+    const h = await boot();
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const auth = { authorization: `Bearer ${(await h.key()).key}`, 'mcp-protocol-version': '2025-06-18' };
+      const res = await h.post({ note: 'private.person@example.org' }, auth);
+      expect(res.status).toBe(400);
+      expect(warn).toHaveBeenCalledWith('mcp transport: Error');
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('private.person');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('answers 429 with Retry-After once a key spends its MCP bucket', async () => {
     const h = await boot({ MCP_RATE_LIMIT_CAPACITY: '2', MCP_RATE_LIMIT_REFILL_PER_SEC: '0.01' });
     const auth = { authorization: `Bearer ${(await h.key()).key}` };
@@ -339,6 +482,18 @@ describe('browser access (CORS)', () => {
     expect(rest.headers.get('access-control-allow-credentials')).toBe('true');
     const crossed = await preflight(h, '/v1/forms', mcpOrigin);
     expect(crossed.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('applies the MCP policy to /mcp in any case: /MCP never gets the dashboard allowlist', async () => {
+    const mcpOrigin = 'https://inspector.example.test';
+    const h = await boot({ MCP_ALLOWED_ORIGINS: mcpOrigin });
+    for (const path of ['/MCP', '/Mcp/']) {
+      const dashboard = await preflight(h, path, APP_URL);
+      expect(dashboard.headers.get('access-control-allow-origin'), path).toBeNull();
+      expect(dashboard.headers.get('access-control-allow-credentials'), path).toBeNull();
+      const listed = await preflight(h, path, mcpOrigin);
+      expect(listed.headers.get('access-control-allow-origin'), path).toBe(mcpOrigin);
+    }
   });
 
   it('with no MCP origin configured, no browser can preflight /mcp', async () => {

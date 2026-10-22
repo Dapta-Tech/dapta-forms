@@ -46,8 +46,8 @@ description: Create, edit, publish and revert dForms forms (quizzes, lead forms,
 
 - API base URL: \`${apiUrl}\`
 - dForms dashboard: ${appUrl}
-- API keys: ${appUrl}/admin/developers/keys
-- API docs, every route with an example (for a person to read): ${appUrl}/admin/developers/docs
+- Connect an AI app with the dForms MCP (no key, the person signs in): ${appUrl}/admin/developers/connect
+- What an agent can do in dForms, in plain words (for a person to read): ${appUrl}/admin/developers/tools
 
 Every path below is relative to the API base URL.
 
@@ -59,7 +59,7 @@ Send the key on every request:
 Authorization: Bearer $DFORMS_API_KEY
 ~~~
 
-- Read the key from the \`DFORMS_API_KEY\` environment variable. If it is not set, ask the user to create a key in dForms (MCP, then API keys) and set it. Never print the key, never write it to a file, never commit it.
+- Read the key from the \`DFORMS_API_KEY\` environment variable. If it is not set, ask the user for an API key their workspace already has. dForms no longer creates keys from the dashboard: if they have none, suggest connecting through the dForms MCP instead (Connect your agent, in the left menu of dForms), which needs no key. Never print the key, never write it to a file, never commit it.
 - The key belongs to one workspace and acts as the person who created it. Never send an \`x-quill-workspace\` header.
 - Check the key first with \`GET /v1/me\`. A 401 \`INVALID_API_KEY\` means the key is wrong, revoked, or its owner left the workspace: ask the user for a new one.
 
@@ -112,7 +112,8 @@ Pick the \`type\` that matches what the step asks. \`name\`, \`email\` and \`pho
 1. **Create:** \`POST /v1/forms\` with \`{ "name", "config" }\`. The config is live at once: the form answers at its \`publicUrl\` right away.
 2. **Edit:** \`PUT /v1/forms/{id}\` with \`{ "config", "expectedUpdatedAt" }\` saves a draft (\`draftConfig\`). The public form does not change yet. When the form already has a draft, start from \`draftConfig\`, not \`config\`.
 3. **Publish:** \`POST /v1/forms/{id}/publish\` with \`{ "expectedUpdatedAt" }\` makes the draft live.
-4. **Revert:** \`POST /v1/forms/{id}/revert\`, with no body, puts the previously published version back live and answers 200 with the form. Calling it again undoes the revert. Every form carries \`previousPublishedAt\`: when the version a revert would bring back went live (epoch ms), or \`null\` when there is nothing to go back to, in which case the revert answers 409 \`NOTHING_TO_REVERT\`.
+4. **Discard:** \`POST /v1/forms/{id}/discard-draft\` with \`{ "expectedUpdatedAt" }\` throws the pending draft away and answers 200 with the form, \`draftConfig: null\`. The live form does not change. Use it to undo a draft you saved by mistake; a revert is not that, it changes what is live.
+5. **Revert:** \`POST /v1/forms/{id}/revert\`, with no body, puts the previously published version back live and answers 200 with the form. Calling it again undoes the revert. Every form carries \`previousPublishedAt\`: when the version a revert would bring back went live (epoch ms), or \`null\` when there is nothing to go back to, in which case the revert answers 409 \`NOTHING_TO_REVERT\`.
 
 Tell the user what you changed, and give them the \`publicUrl\` and the \`editorUrl\`.
 
@@ -130,7 +131,7 @@ Tell the user what you changed, and give them the \`publicUrl\` and the \`editor
 - \`recipes/quiz-with-scoring.md\`: a scored quiz with result ranges.
 - \`recipes/gate-a-step-by-score.md\`: show a step, such as a booking page, only above a score.
 - \`recipes/edit-a-step.md\`: change one question without losing the rest.
-- \`recipes/publish-and-revert.md\`: publish a draft and roll it back.
+- \`recipes/publish-and-revert.md\`: publish a draft, discard it, or roll back a publish.
 - \`recipes/responses-with-filters.md\`: read responses with filters and pagination.
 - \`recipes/analytics-and-csv.md\`: funnel metrics and the CSV export.
 `;
@@ -156,6 +157,7 @@ Base URL: \`${apiUrl}\`. Every request carries \`Authorization: Bearer $DFORMS_A
 | POST | \`/v1/forms\` | Create. Body \`{ "name", "slug"?, "config"?, "folderId"? }\`. 201 with the form. The config is live at once. |
 | PUT | \`/v1/forms/{id}\` | Edit. Body \`{ "name"?, "config"?, "expectedUpdatedAt"? }\`. \`config\` replaces the whole draft and must carry \`steps\`. It ignores \`destinations\` inside the config: use the destinations route. |
 | POST | \`/v1/forms/{id}/publish\` | Publish the draft. Body \`{ "expectedUpdatedAt"? }\`. No draft: returns the form unchanged. |
+| POST | \`/v1/forms/{id}/discard-draft\` | Throw the pending draft away. Body \`{ "expectedUpdatedAt"? }\`. 200 with the form, \`draftConfig\` null; the live config, \`publishedAt\` and the version a revert brings back do not change. No draft: returns the form unchanged. |
 | POST | \`/v1/forms/{id}/revert\` | Put the previously published version back live. No body; 200 with the form. 409 \`NOTHING_TO_REVERT\` when there is none (\`previousPublishedAt\` is null). The pending draft and the destinations are left as they are. |
 | PUT | \`/v1/forms/{id}/slug\` | Change the public URL segment. Body \`{ "slug" }\`. The old slug keeps redirecting. 409 \`SLUG_TAKEN\` or \`SLUG_INVALID\`. |
 | POST | \`/v1/forms/{id}/duplicate\` | Copy a form. 201 with the copy. |
@@ -215,12 +217,13 @@ Each item has \`id\`, \`data\` (answers keyed by step key), \`score\`, \`started
 
 ## Workspace settings a key can use
 
-Everything here except reading the brand kit and the integrations needs a key whose owner is an owner or admin of the workspace; a member's key gets 403 \`FORBIDDEN\`.
+Everything here except reading the brand kit, the link page and the integrations needs a key whose owner is an owner or admin of the workspace; a member's key gets 403 \`FORBIDDEN\`. Any member's key can also write the link page.
 
 | Method | Path | What it does |
 |---|---|---|
 | GET, PUT | \`/v1/branding\` | The workspace brand kit. Reading it works with any key. |
 | POST | \`/v1/branding/apply\`, \`/v1/branding/revert\` | Apply the kit to forms, or undo it. Body \`{ "formIds": [...] }\`. |
+| GET, PUT | \`/v1/link-page\` | The workspace's public page at \`/{accountCode}\`. \`PUT\` replaces the whole page: body \`{ "page": { "version": 1, "enabled", "name", "bio", "logo", "items", "socials" } }\`, or \`{ "page": null }\` to delete it. Read it first and send it back whole; a stored WhatsApp number comes back as digits, send it with a leading \`+\`. |
 | GET | \`/v1/notifications\` | The workspace's email notifications. |
 | PUT | \`/v1/notifications/{emailKey}\` | Change one. Body \`{ "enabled"?, "subject"?, "body"?, "recipients"? }\`. |
 | POST | \`/v1/notifications/{emailKey}/reset\` | Back to the default. |
@@ -411,6 +414,17 @@ curl -sS -X POST "${apiUrl}/v1/forms/$FORM_ID/publish" \\
 
 The answer is the form with the new \`config\`, \`draftConfig: null\` and a new \`publishedAt\`. Check the \`publicUrl\` and hand it to the user as is.
 
+To throw a draft away instead of publishing it (a draft saved by mistake), discard it. The live form does not change:
+
+~~~bash
+curl -sS -X POST "${apiUrl}/v1/forms/$FORM_ID/discard-draft" \\
+  -H "Authorization: Bearer $DFORMS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  --data '{"expectedUpdatedAt": 1767225600000}'
+~~~
+
+It answers 200 with the form and \`draftConfig: null\`. With no draft pending it changes nothing.
+
 If the published version is wrong, put the previous one back. Check first that the form's \`previousPublishedAt\` is not null: it is when the version a revert brings back went live (epoch ms). The call takes no body:
 
 ~~~bash
@@ -517,8 +531,10 @@ The CSV is not paginated: it has every response that matches the filters. \`ids=
 function installMd({ apiUrl, appUrl }: SkillUrls): string {
   return `# Installing the dForms API skill
 
-1. Create an API key on ${appUrl}/admin/developers/keys. It is shown once: copy it then.
-   Every route, with a curl example and its answer, is on ${appUrl}/admin/developers/docs.
+1. This skill calls the API with an API key your workspace already has. dForms no longer
+   creates keys from the dashboard: to connect Claude, ChatGPT, Claude Code, Cursor or Codex
+   without a key, use the dForms MCP connector on ${appUrl}/admin/developers/connect.
+   What an agent can do in dForms, in plain words, is on ${appUrl}/admin/developers/tools.
 2. Put it in the environment the agent runs in, never in a file you commit:
 
 ~~~bash

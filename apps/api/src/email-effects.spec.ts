@@ -23,7 +23,7 @@ import {
 } from '@quill/db';
 import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import type { ServerEnv } from '@quill/config/env';
-import { EmailEffects, OutboxSkipError } from './email-effects';
+import { EmailEffects, NO_RECIPIENT_REASON, OutboxSkipError } from './email-effects';
 
 let db: Db;
 let effects: EmailEffects;
@@ -252,17 +252,63 @@ describe('formLink (owner notice only)', () => {
 });
 
 describe('no recipient', () => {
-  it('an account whose owner has no email enqueues nothing (instead of a row that fails 5 times)', async () => {
-    const lonely = 'acc-lonely';
+  const lonely = 'acc-lonely';
+  let memberSeq = 0;
+  async function addMember(role: string, email: string | null, grant: string | null = null): Promise<void> {
     await db.run(
-      sql`INSERT INTO account (id, code, name, created_at) VALUES (${lonely}, 'lonely', 'Lonely', ${Date.now()})`,
+      sql`INSERT INTO member (id, account_id, email, role, status, access_grant, created_at)
+          VALUES (${`m-${++memberSeq}`}, ${lonely}, ${email}, ${role}, 'active', ${grant}, ${Date.now() + memberSeq})`,
     );
-    await effects.enqueueSubmissionReceived(lonely, {
-      submissionId: 'sub-lonely',
-      formName: 'Orphan',
-      respondentEmail: null,
-    });
-    expect(await listOutbox(db, { kind: 'email' })).toHaveLength(0);
+  }
+  async function notifyLonely(): Promise<void> {
+    await db.run(
+      sql`INSERT INTO account (id, code, name, created_at)
+          SELECT ${lonely}, 'lonely', 'Lonely', ${Date.now()}
+          WHERE NOT EXISTS (SELECT 1 FROM account WHERE id = ${lonely})`,
+    );
+    await effects.enqueueSubmissionReceived(
+      lonely,
+      { submissionId: 'sub-lonely', formName: 'Orphan', respondentEmail: null },
+      'form-lonely',
+    );
+  }
+
+  it('nobody to address: nothing is queued, and the skip is RECORDED with its reason', async () => {
+    await addMember('owner', null);
+    await notifyLonely();
+    const rows = await listOutbox(db, { kind: 'email' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ action: 'submission_received', status: 'skipped', lastError: NO_RECIPIENT_REASON });
+    // Attributed to its form, so the per-form delivery history shows it.
+    expect(JSON.parse(rows[0]!.payload!)).toMatchObject({ formId: 'form-lonely', to: [] });
+  });
+
+  it('no owner row: the oldest active admin is the audience', async () => {
+    await addMember('member', 'member@acme.io');
+    await addMember('admin', 'first-admin@acme.io');
+    await addMember('admin', 'second-admin@acme.io');
+    await notifyLonely();
+    const rows = await listOutbox(db, { kind: 'email' });
+    expect(rows.map((r) => [r.status, (JSON.parse(r.payload!) as { to: string[] }).to])).toEqual([
+      ['pending', ['first-admin@acme.io']],
+    ]);
+  });
+
+  it('an owner with an address still wins over any admin', async () => {
+    await addMember('admin', 'admin@acme.io');
+    await addMember('owner', 'owner@acme.io');
+    await notifyLonely();
+    const rows = await listOutbox(db, { kind: 'email' });
+    expect(rows.map((r) => (JSON.parse(r.payload!) as { to: string[] }).to)).toEqual([['owner@acme.io']]);
+  });
+
+  it('a staff access grant is never the audience, whatever role it carries', async () => {
+    await addMember('admin', 'staff@dapta.example', 'staff');
+    await addMember('owner', 'staff-owner@dapta.example', 'staff');
+    await notifyLonely();
+    const rows = await listOutbox(db, { kind: 'email' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('skipped');
   });
 
   it('deliver() skips (never retries) an owner notice already enqueued with an empty `to`', async () => {

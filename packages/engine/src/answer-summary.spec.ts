@@ -4,6 +4,7 @@ import {
   formatAnswerValue,
   stepLabel,
   summarizeAnswers,
+  summarizeAnswersByStep,
 } from "./answer-summary";
 import type { FormConfig, FormStep } from "./form-logic";
 
@@ -126,6 +127,24 @@ describe("summarizeAnswers", () => {
 
   it("ignores answers with no matching step (hidden fields, UTM params)", () => {
     expect(summarizeAnswers(config, { utm_source: "linkedin" })).toEqual([]);
+  });
+});
+
+describe("summarizeAnswersByStep", () => {
+  const answers = { firstname: "Ana", role: "founder", email: "ana@acme.io" };
+
+  it("is summarizeAnswers with each row's step key and type", () => {
+    const rows = summarizeAnswersByStep(config, answers);
+    expect(rows).toEqual([
+      { label: "Your name?", value: "Ana", key: "name", type: "name" },
+      { label: "What is your role?", value: "Founder / CEO", key: "role", type: "multiple_choice" },
+      { label: "Email", value: "ana@acme.io", key: "email", type: "email" },
+    ]);
+    expect(summarizeAnswers(config, answers)).toEqual(rows.map(({ label, value }) => ({ label, value })));
+  });
+
+  it("keeps summarizeAnswers rows to label and value, the shape the emails store", () => {
+    for (const row of summarizeAnswers(config, answers)) expect(Object.keys(row).sort()).toEqual(["label", "value"]);
   });
 });
 

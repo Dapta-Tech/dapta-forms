@@ -231,6 +231,15 @@ describe('WebhookDestination: the visit', () => {
     expect(JSON.parse(sent[0]!.body)).not.toHaveProperty('visit');
   });
 
+  it('marks a test delivery at the top of the payload, apart from the answers, and a real one not at all', async () => {
+    const { sent, dest } = capture();
+    await dest.deliver(ctx({ test: true, data: { test: 'an answer' } }));
+    await dest.deliver(ctx());
+    const [test, real] = sent.map((s) => JSON.parse(s.body) as Record<string, unknown>);
+    expect(test).toMatchObject({ test: true, data: { test: 'an answer' } });
+    expect(real).not.toHaveProperty('test');
+  });
+
   it('records a transcript that hides the cookie, delivered or refused', async () => {
     const ok = capture();
     const result = await ok.dest.deliver(ctx({ visit: VISIT }));

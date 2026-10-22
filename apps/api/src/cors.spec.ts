@@ -24,4 +24,10 @@ describe('isMcpPath', () => {
     expect(isMcpPath('/v1/mcp')).toBe(false);
     expect(isMcpPath(undefined)).toBe(false);
   });
+
+  it('ignores case, like the router that serves the path', () => {
+    expect(isMcpPath('/MCP')).toBe(true);
+    expect(isMcpPath('/Mcp/?x=1')).toBe(true);
+    expect(isMcpPath('/MCPX')).toBe(false);
+  });
 });

@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { createDb, insertApiKey, migrate, seed, sql } from '@quill/db';
+import { CATALOG } from '@quill/mcp';
 import { generateApiKey } from '../src/api-keys.ts';
 
 const apiDir = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -105,7 +106,7 @@ try {
   await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${key}` } } }));
   const tools = (await c.listTools()).tools;
   say(`tools/list -> ${tools.length} tools: ${tools.map((t) => `${t.name}${t.annotations?.destructiveHint ? '(destructive)' : t.annotations?.readOnlyHint ? '(read)' : '(write)'}`).join(', ')}`);
-  if (tools.length !== 10) fail('expected 10 tools');
+  if (tools.length !== CATALOG.length) fail(`expected ${CATALOG.length} tools`);
   if (tools.some((t) => !t.title || typeof t.annotations?.readOnlyHint !== 'boolean')) fail('a tool lacks its title or hints');
 
   const call = async (name, args = {}) => {

@@ -5,7 +5,9 @@
  */
 import { cache } from 'react';
 import type {
+  LinkPageEvent,
   PublicForm,
+  PublicLinkPage,
   PublicProfile,
   SubmissionVisit,
   UploadPresignInput,
@@ -45,6 +47,26 @@ export const getPublicProfile = cache(
       `/v1/public/profiles/${encodeURIComponent(accountCode)}/${encodeURIComponent(handle)}`,
     ),
 );
+
+/**
+ * A workspace's link page (`/{accountCode}`), or null while nobody in the
+ * workspace has published it. A 404 is the normal answer for most codes.
+ */
+export const getPublicLinkPage = cache(
+  (accountCode: string): Promise<PublicLinkPage | null> =>
+    getJson<PublicLinkPage>(`/v1/public/pages/${encodeURIComponent(accountCode)}`),
+);
+
+/** Report a link page view or click (best-effort analytics; the API validates the body). */
+export async function postLinkPageEvent(accountCode: string, event: LinkPageEvent): Promise<number> {
+  const res = await fetch(`${API_URL}/v1/public/pages/${encodeURIComponent(accountCode)}/events`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(await forwardedForHeader()) },
+    body: JSON.stringify(event),
+    cache: 'no-store',
+  });
+  return res.status;
+}
 
 export interface SubmitResult {
   ok: boolean;

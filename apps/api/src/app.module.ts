@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Inject, Module, type DynamicModule, type OnModuleDestroy } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { createDb } from '@quill/db';
 import { createEmailProvider, SubmissionNotifier, type EmailProvider } from '@quill/notifications';
@@ -11,8 +11,10 @@ import {
   EMAIL,
   ENTITLEMENTS,
   ENV,
+  MCP_OAUTH,
   NOTIFIER,
   ONBOARDING_ENABLED,
+  PERSON_DIRECTORY,
   PREMIUM_MODE,
   RATE_LIMITER,
   STORAGE,
@@ -47,9 +49,14 @@ import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
 import { BrandingController } from './branding.controller';
+import { LinkPageController } from './link-page.controller';
+import { LinkPageService } from './link-page.service';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { McpController } from './mcp.controller';
+import { McpOAuthMetadataController } from './mcp-oauth.controller';
+import { createMcpOAuth, mcpOAuthSettings } from './mcp-oauth';
+import { createPersonDirectory, type PersonDirectory } from './person-directory';
 import {
   CalendlyEventTypesService,
   FormDestinationsController,
@@ -82,12 +89,16 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     AdminCrudController,
     ApiKeysController,
     BrandingController,
+    LinkPageController,
     AnalyticsController,
     IntegrationsController,
     FormDestinationsController,
     // POST /mcp: the dForms MCP server (@quill/mcp). Runs each tool through the
     // form handlers above, so it resolves them from the module once it is built.
     McpController,
+    // GET /.well-known/oauth-protected-resource/mcp: where an MCP client finds
+    // the login (RFC 9728). 404 unless MCP_OAUTH_PROVIDER is set.
+    McpOAuthMetadataController,
   ],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },
@@ -171,6 +182,8 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // when RATE_LIMIT_ENABLED=false; swappable for a distributed limiter.
     { provide: RATE_LIMITER, useFactory: (env: ServerEnv) => createRateLimiter(env), inject: [ENV] },
     RateLimitGuard,
+    // The workspace link page: public read + events, and the editor's read/write.
+    LinkPageService,
     // API keys (public API v1): 120 calls a minute per key, in memory per pod,
     // off with the rest of the limiting when RATE_LIMIT_ENABLED=false.
     {
@@ -236,6 +249,24 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // Drains the durable outbox (submission emails + destinations) with
     // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).
     OutboxWorker,
+    // MCP connections over OAuth (docs/adr/0001). Both null with
+    // MCP_OAUTH_PROVIDER unset, the default and every fork: /mcp takes API
+    // keys only. The adapter verifies the identity provider's tokens; the
+    // directory maps the person a token names to the person members know.
+    { provide: MCP_OAUTH, useFactory: (env: ServerEnv) => createMcpOAuth(mcpOAuthSettings(env)), inject: [ENV] },
+    { provide: PERSON_DIRECTORY, useFactory: (env: ServerEnv) => createPersonDirectory(env), inject: [ENV] },
   ],
 })
-export class AppModule {}
+export class AppModule implements OnModuleDestroy {
+  constructor(@Inject(PERSON_DIRECTORY) private readonly directory: PersonDirectory | null) {}
+
+  /** Close the person directory's identity database pool with the app (main.ts turns on the shutdown hooks). */
+  async onModuleDestroy(): Promise<void> {
+    await this.directory?.close?.();
+  }
+
+  /** The app with `directory` as its person directory, in place of the configured one (specs). */
+  static withPersonDirectory(directory: PersonDirectory): DynamicModule {
+    return { module: AppModule, providers: [{ provide: PERSON_DIRECTORY, useValue: directory }] };
+  }
+}

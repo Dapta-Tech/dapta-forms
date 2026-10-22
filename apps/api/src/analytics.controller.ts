@@ -32,6 +32,9 @@ import { csvRow, exportColumns, UTF8_BOM } from './csv';
 import { parseBound, parseIdList, parseIntParam, parseTimeZone } from './query-params';
 import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } from './submission-filter';
 
+/** One stored submission as the CSV export reads it. */
+type ExportedSubmission = Awaited<ReturnType<AnalyticsService['exportSubmissions']>>[number];
+
 /** A minimal response shape (structurally satisfied by the express Response). */
 interface StreamRes {
   setHeader(name: string, value: string): void;
@@ -108,9 +111,50 @@ export class AnalyticsController {
     @Query() query: FilterQuery,
     @Query('ids') idsParam?: string,
   ): Promise<void> {
+    // Everything that can refuse runs before any header is written: once the
+    // stream starts, the status is 200 whatever happens next.
+    const plan = await this.csvPlan(req, id, query, idsParam);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${plan.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+
+    res.write(UTF8_BOM + plan.header);
+
+    const rows = await this.analytics.exportSubmissions(id, plan.filter);
+    for (const s of rows) res.write(plan.line(s));
+    res.end();
+  }
+
+  /**
+   * The start of the same CSV, for the MCP tool `export_responses_csv`: this
+   * route's principal, account scope, validation, columns and cell encoding
+   * (`csvPlan`, so the bytes are the download's), but only the first
+   * `maxRows` rows are read and formatted, with a count of the whole export.
+   * A large form is never read in full to hand back a few rows. No route of
+   * its own: it stands for `GET /v1/forms/:id/submissions.csv`, and the MCP
+   * checks that route against the API-key allowlist at boot.
+   */
+  async exportCsvFirst(
+    req: ReqLike,
+    id: string,
+    query: FilterQuery,
+    idsParam: string | undefined,
+    maxRows: number,
+  ): Promise<{ header: string; rows: string[]; total: number }> {
+    const plan = await this.csvPlan(req, id, query, idsParam);
+    const page = await this.analytics.firstExportSubmissions(id, plan.filter, maxRows);
+    return { header: plan.header, rows: page.items.map(plan.line), total: page.total };
+  }
+
+  /**
+   * What the CSV export decides before it reads a row: the caller and form
+   * (404 outside the account), the filter and `ids` (400 when malformed),
+   * the columns in the member's language, and how one submission becomes one
+   * CRLF-terminated line (`csvRow`, with its formula-injection guard).
+   */
+  private async csvPlan(req: ReqLike, id: string, query: FilterQuery, idsParam: string | undefined) {
     const ids = parseIdList(idsParam);
-    // Checked before any header is written: once the stream starts, the
-    // status is 200 whatever happens next.
     if (ids && (ids.length === 0 || ids.length > MAX_BULK_SUBMISSIONS || !ids.every(isSubmissionId))) {
       throw new BadRequestException({
         error: 'BAD_REQUEST',
@@ -126,7 +170,7 @@ export class AnalyticsController {
     // An unknown stored zone exports as UTC (+00:00) rather than failing the download.
     const zone = await workspaceZone(this.db, p.accountId, (m) => this.log.warn(m));
     // Parsed before any header is written, so a malformed filter is still a 400.
-    const filter = { ...parseSubmissionFilter(query, config, zone), sort: parseSort(query.sort, config) };
+    const filter = { ...parseSubmissionFilter(query, config, zone), sort: parseSort(query.sort, config), ids };
     const local = (ms: number | null) => (ms == null ? '' : formatIsoWithOffset(ms, zone));
     const locale = (await getMemberLocale(this.db, p.accountId, p.memberId)) ?? config.language ?? 'en';
     const m = getMessages(locale).admin.submissions;
@@ -143,15 +187,7 @@ export class AnalyticsController {
         pageUrl: m.colPageUrl,
       },
     });
-
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Cache-Control', 'no-store');
-
-    res.write(UTF8_BOM + csvRow(columns.map((c) => c.header)));
-
-    const rows = await this.analytics.exportSubmissions(id, { ...filter, ids });
-    for (const s of rows) {
+    const line = (s: ExportedSubmission): string => {
       const row = {
         id: s.id,
         data: (s.data ?? {}) as Record<string, unknown>,
@@ -163,9 +199,9 @@ export class AnalyticsController {
         // The dashboard's view of the visit: the page, never the HubSpot cookie.
         pageUri: s.visit?.pageUri ?? '',
       };
-      res.write(csvRow(columns.map((c) => c.value(row))));
-    }
-    res.end();
+      return csvRow(columns.map((c) => c.value(row)));
+    };
+    return { filename, filter, header: csvRow(columns.map((c) => c.header)), line };
   }
 
   /**

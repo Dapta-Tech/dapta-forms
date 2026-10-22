@@ -22,17 +22,25 @@ describe('admin.chrome docs link', () => {
 });
 
 describe('admin.chrome MCP item', () => {
-  it('labels the nav item MCP in both languages, keyed as before', () => {
-    expect(getMessages('en').admin.chrome.nav.developers).toBe('MCP');
-    expect(getMessages('es').admin.chrome.nav.developers).toBe('MCP');
+  it('labels the nav item Connect your agent in both languages, keyed as before', () => {
+    expect(getMessages('en').admin.chrome.nav.developers).toBe('Connect your agent');
+    expect(getMessages('es').admin.chrome.nav.developers).toBe('Conecta tu agente');
   });
 
-  it('keeps the pages under it named after what they hold', () => {
-    expect(getMessages('en').admin.chrome.developersMenu).toEqual({ keys: 'API keys', docs: 'API docs' });
-    expect(getMessages('es').admin.chrome.developersMenu).toEqual({ keys: 'Llaves de API', docs: 'Docs de la API' });
+  it('names the platform door Sales AI Agents, in the rail and the app switcher', () => {
+    for (const [locale, label] of [['en', 'Sales AI Agents'], ['es', 'Agentes de ventas con IA']] as const) {
+      const c = getMessages(locale).admin.chrome;
+      expect(c.nav.agents).toBe(label);
+      expect(c.switcher.dapta).toBe(label);
+    }
   });
 
-  it('titles the API keys page after the section', () => {
+  it('is followed by Tools, named in both languages', () => {
+    expect(getMessages('en').admin.chrome.nav.tools).toBe('Tools');
+    expect(getMessages('es').admin.chrome.nav.tools).toBe('Herramientas');
+  });
+
+  it('keeps MCP as the eyebrow of the connect page', () => {
     expect(getMessages('en').admin.developers.title).toBe('MCP');
     expect(getMessages('es').admin.developers.title).toBe('MCP');
   });
@@ -47,19 +55,22 @@ describe('admin.chrome MCP item', () => {
   });
 });
 
-describe('admin.developers keys copy', () => {
-  it('keeps the masked key and the revoke prompt templated in both languages', () => {
+describe('admin.developers: the connector, never keys, never the identity provider', () => {
+  it('carries no API key copy at all: keys have no place in the dashboard any more', () => {
     for (const locale of ['en', 'es'] as const) {
-      const m = getMessages(locale).admin.developers.keys;
-      expect(m.masked).toContain('{last4}');
-      expect(m.maskedLabel).toContain('{last4}');
-      expect(m.revokeLabel).toContain('{name}');
-      expect(m.revokeConfirm).toContain('{name}');
+      const m = getMessages(locale).admin.developers as Record<string, unknown>;
+      expect(Object.keys(m)).not.toContain('keys');
+      expect(Object.keys(m)).not.toContain('guide');
     }
   });
 
-  it('names the ten-key limit in the limit error', () => {
-    expect(getMessages('en').admin.developers.keys.errorLimit).toContain('10');
-    expect(getMessages('es').admin.developers.keys.errorLimit).toContain('10');
+  it('never names Dapta on the connect page, the Tools page, the home promos or the menu entry', () => {
+    const strings = (v: unknown): string[] =>
+      typeof v === 'string' ? [v] : v && typeof v === 'object' ? Object.values(v).flatMap(strings) : [];
+    for (const locale of ['en', 'es'] as const) {
+      const a = getMessages(locale).admin;
+      const surfaces = [a.developers, a.home.agentBanner, a.home.agentCard, a.chrome.nav.developers, a.chrome.nav.tools];
+      expect(strings(surfaces).filter((x) => /dapta/i.test(x)), locale).toEqual([]);
+    }
   });
 });

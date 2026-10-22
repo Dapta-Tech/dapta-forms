@@ -451,7 +451,12 @@ export async function recordSettledDelivery(
     accountId: string;
     subjectUid?: string | null;
     payload: string;
-    status: 'done' | 'failed';
+    /**
+     * `skipped` records a delivery that was decided against before it was ever
+     * queued (an owner notice with nobody to address), so the history says so
+     * instead of showing nothing at all.
+     */
+    status: 'done' | 'failed' | 'skipped';
     error?: string | null;
     transcript?: DeliveryTranscript;
     now?: number;
@@ -467,7 +472,7 @@ export async function recordSettledDelivery(
            request_body, response_status, response_body)
         VALUES (${id}, ${input.kind}, ${input.action}, ${input.subjectUid ?? null},
                 ${input.accountId}, ${null}, ${input.payload}, ${input.status},
-                ${1}, ${1}, ${Number.MAX_SAFE_INTEGER}, ${input.error?.slice(0, 1000) ?? null},
+                ${input.status === 'skipped' ? 0 : 1}, ${1}, ${Number.MAX_SAFE_INTEGER}, ${input.error?.slice(0, 1000) ?? null},
                 ${now}, ${now},
                 ${t.requestBody === undefined ? null : clip(t.requestBody, MAX_REQUEST_BODY)},
                 ${t.responseStatus ?? null},

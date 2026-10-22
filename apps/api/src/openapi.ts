@@ -35,7 +35,7 @@ export const openapiSpec = {
       post: {
         summary: 'A submission reached a phase (webhook destination)',
         description:
-          'POSTed to each enabled webhook destination of a form, once per phase it fires on (`partial`, `complete`, or both). Headers: `X-Forms-Event`, `X-Forms-Delivery` (the idempotency key, also the body `id`), `X-Forms-Timestamp`, and, when the destination has a secret, an HMAC-SHA256 signature of the raw body, as `sha256=<hex>` (header `X-Forms-Signature` unless the destination names another). Body { id, type, phase, submittedAt, form { id, name }, submission { id, sessionId, score, outcome }, data, utm, visit? }. `data` holds the answers keyed by question. A file answer is an object { key, name, size, mime, url }: `key` is the stored object key, `name` the original file name, `size` the size in bytes as a string, `mime` the type the browser declared (not verified), and `url` a permanent link that opens the file without signing in (PDFs and images in the browser, anything else as a download). `url` is absent when the deployment has no public web address or no signing key configured. Treat it as a secret: anyone holding it can open the file until the submission is deleted.',
+          'POSTed to each enabled webhook destination of a form, once per phase it fires on (`partial`, `complete`, or both). Headers: `X-Forms-Event`, `X-Forms-Delivery` (the idempotency key, also the body `id`), `X-Forms-Timestamp`, and, when the destination has a secret, an HMAC-SHA256 signature of the raw body, as `sha256=<hex>` (header `X-Forms-Signature` unless the destination names another). Body { id, type, phase, submittedAt, form { id, name }, submission { id, sessionId, score, outcome }, data, utm, visit?, test? }. `data` holds the answers keyed by question. `test: true` marks a test delivery (the webhook test); it is absent on every real one. A file answer is an object { key, name, size, mime, url }: `key` is the stored object key, `name` the original file name, `size` the size in bytes as a string, `mime` the type the browser declared (not verified), and `url` a permanent link that opens the file without signing in (PDFs and images in the browser, anything else as a download). `url` is absent when the deployment has no public web address or no signing key configured. Treat it as a secret: anyone holding it can open the file until the submission is deleted.',
         responses: {
           '200': { description: 'Any 2xx marks the delivery done; anything else, a timeout or a redirect is retried with backoff' },
         },
@@ -62,10 +62,10 @@ export const openapiSpec = {
       post: {
         summary: 'Submit answers (score recomputed server-side)',
         description:
-          'Body { sessionId, data, partial?, locale?, captchaToken?, hp?, visit? }. A form whose owner turned on spam protection, on a deployment that can run it, is served with a `captcha` object in its public payload; its COMPLETE submit must then carry `captchaToken`, the token the human check issued for this session, and the API verifies it before anything is written. A partial submit of such a form is saved but delivered to no destination; the verified complete delivers everything. `hp` is the hidden field of strict mode and must be empty. `visit` is the page the form was answered on, as the browser reports it: { pageUri?, pageName?, pageId?, hutk?, hsPortalId?, embedded? }, where `pageUri` is an absolute http(s) URL (the page that embeds the form, or the form\u2019s own link without its prefill parameters), `pageName` its title, `pageId` and `hsPortalId` the HubSpot page and portal ids, and `hutk` the page\u2019s HubSpot visitor cookie (32 hex characters). Each field is checked on its own and dropped when it fails its rule, so a malformed visit never refuses a submission; a later submit without a visit keeps the one already stored. The cookie is kept only when a webhook or a HubSpot form submission of this form will use it. Every error body carries a stable `error` code next to its English `message`.',
+          'Body { sessionId, data, partial?, locale?, captchaToken?, hp?, visit? }. A form whose owner turned on spam protection, on a deployment that can run it, is served with a `captcha` object in its public payload; its COMPLETE submit must then carry `captchaToken`, the token the human check issued for this session, and the API verifies it before anything is written. A partial submit of such a form is saved but delivered to no destination; the verified complete delivers everything. `hp` is the hidden field of strict mode and must be empty. `visit` is the page the form was answered on, as the browser reports it: { pageUri?, pageName?, pageId?, hutk?, hsPortalId?, embedded? }, where `pageUri` is an absolute http(s) URL (the page that embeds the form, or the form\u2019s own link without its prefill parameters), `pageName` its title, `pageId` and `hsPortalId` the HubSpot page and portal ids, and `hutk` the page\u2019s HubSpot visitor cookie (32 hex characters). Each field is checked on its own and dropped when it fails its rule, so a malformed visit never refuses a submission; a later submit without a visit keeps the one already stored. The cookie is kept only when a webhook or a HubSpot form submission of this form will use it. A COMPLETE submit (no `partial: true`) must be a response the form could have produced: every step on the path its answers took (skip logic, jumps, up to the first terminal step) is validated like the public page validates it, so a value that is not one of a choice\u2019s options or a missing required answer is refused with `INVALID_ANSWERS` and nothing is written. Steps off that path, hidden steps and extra keys are not read; partial saves are not validated. Every error body carries a stable `error` code next to its English `message`.',
         responses: {
           '201': { description: 'Recorded' },
-          '400': { description: 'Invalid (BAD_REQUEST, ANSWER_TOO_LONG)' },
+          '400': { description: 'Invalid (BAD_REQUEST, ANSWER_TOO_LONG, INVALID_ANSWERS)' },
           '403': {
             description:
               'CAPTCHA_REQUIRED (no token on a complete submit of a protected form: refresh the page) or CAPTCHA_FAILED (the human check did not pass). Nothing is written.',
@@ -116,18 +116,52 @@ export const openapiSpec = {
         responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' } },
       },
     },
+    '/v1/public/pages/{accountCode}': {
+      get: {
+        summary: 'Fetch a workspace link page (public)',
+        description:
+          'Body { accountCode, name, bio, logo, buttons: [{ type: "form", label, slug } | { type: "link", label, url }], socials: [{ network, href }], branding }. 404 until someone in the workspace publishes the page. Buttons keep the order the workspace chose; a deleted form drops out. Only the social networks the workspace filled in are listed.',
+        parameters: [{ name: 'accountCode', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'The published page' }, '404': { description: 'Not found' } },
+      },
+    },
+    '/v1/public/pages/{accountCode}/events': {
+      post: {
+        summary: 'Record a view of a link page, or a click on one of its links',
+        description:
+          'Body { type: "view" } or { type: "click", linkType: "form" | "link" | "social", position?, network?, slug? }. Product analytics only: nothing about the visitor is recorded. 404 when the page is not published.',
+        parameters: [{ name: 'accountCode', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' }, '404': { description: 'Not found' } },
+      },
+    },
+    '/v1/link-page': {
+      get: {
+        summary: 'Read the workspace link page (host session only)',
+        description:
+          'Body { accountCode, accountName, page, forms: [{ id, slug, name, title }], brandKit }. `page` is null until one is saved. Any member of the workspace may call it.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'The page and what the editor needs' } },
+      },
+      put: {
+        summary: 'Replace the workspace link page (host session only)',
+        description:
+          'Body { page: { version: 1, enabled, name?, bio?, logo?, items?: [{ type: "form", formId } | { type: "link", label, url }], socials?: { instagram?, x?, youtube?, tiktok?, whatsapp? } } | null }. Socials are normalized to https links on their own network (a handle such as @yourbrand works too). WhatsApp must carry its country code, starting with + or 00 (a number without it is refused), and is stored as digits. `logo` absent uses the brand kit logo, null shows none. `{ page: null }` removes the page. Form buttons for forms outside the workspace are dropped. Any member of the workspace may call it.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'Saved' }, '400': { description: 'BAD_REQUEST with issues' } },
+      },
+    },
     '/v1/api-keys': {
       get: {
         summary: 'List API keys (host session only)',
         description:
-          'Body { keys: [{ id, name, last4, createdAt, lastUsedAt, createdBy: { memberId, name, email } }] }. A member sees their own keys; an owner or admin sees every active key of the workspace. Revoked keys, and keys of members who are not active, are never listed, and the key itself never appears. Disabling or removing a member revokes their keys for good: reactivating them does not bring the keys back. 403 `KEY_NOT_ALLOWED` when called with an API key.',
+          'Body { keys: [{ id, name, last4, createdAt, lastUsedAt, createdBy: { memberId, name, email, staff } }] }. A member sees their own keys; an owner or admin sees every active key of the workspace, including keys the deployment\'s staff created there through staff access (`createdBy.staff: true`). Revoked keys, and keys of members who are not active, are never listed, and the key itself never appears. Disabling or removing a member revokes their keys for good: reactivating them does not bring the keys back. 403 `KEY_NOT_ALLOWED` when called with an API key.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'Keys' }, '403': { description: 'KEY_NOT_ALLOWED' } },
       },
       post: {
         summary: 'Create an API key (host session only)',
         description:
-          'Body { name } (1 to 60 characters). Answers 201 { id, name, last4, createdAt, key }: the only response that ever carries the full key, so store it then. A person may hold 10 active keys per workspace; the 11th answers 409 `KEY_LIMIT`.',
+          'Body { name } (1 to 60 characters). Answers 201 { id, name, last4, createdAt, key }: the only response that ever carries the full key, so store it then. A person may hold 10 active keys per workspace; the 11th answers 409 `KEY_LIMIT`. The deployment\'s staff, while in the workspace through staff access, may create keys too: such a key acts as an admin of that workspace and keeps working until someone revokes it, even after its creator stops being staff.',
         security: [{ hostSession: [] }],
         responses: {
           '201': { description: 'Created, with the key in clear' },
@@ -301,6 +335,19 @@ export const openapiSpec = {
         responses: { '200': { description: 'Published (no-op without a draft)' } },
       },
     },
+    '/v1/forms/{id}/discard-draft': {
+      post: {
+        summary: 'Throw away the pending draft (host)',
+        description:
+          'Body { expectedUpdatedAt? }. Drops the unpublished draft, so the editor and the next publish start from the live config again. The live config, the version kept for a revert and the publish dates do not change. A no-op without a draft. Allowed with an API key.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'The form, with draftConfig null' },
+          '404': { description: 'No such form in this workspace' },
+          '409': { description: 'STALE: the form was saved after expectedUpdatedAt' },
+        },
+      },
+    },
     '/v1/forms/{id}/revert': {
       post: {
         summary: 'Put the previously published version back live (host)',
@@ -373,7 +420,7 @@ export const openapiSpec = {
       put: {
         summary: 'Toggle or override one submission email (host, admin/owner)',
         description:
-          'Body { enabled?, subject?, body?, recipients? }. subject/body are plain text with {{token}} markers; passing null resets that field to the shipped default. recipients is the owner notice’s audience: at most 5 valid, distinct addresses, each of which receives its own copy; null means the owner inbox and [] means the owner only. It is rejected on submission_confirmed, which is addressed to the respondent. emailKey ∈ (submission_received, submission_confirmed).',
+          'Body { enabled?, subject?, body?, recipients? }. subject/body are plain text with {{token}} markers; passing null resets that field to the shipped default. recipients is the owner notice’s audience: at most 5 valid, distinct addresses, each of which receives its own copy; null and [] both mean the workspace owner, or its oldest admin when no owner has an email (staff access never counts); with nobody to address, the notice is recorded as a skipped delivery with the reason. It is rejected on submission_confirmed, which is addressed to the respondent. emailKey ∈ (submission_received, submission_confirmed).',
         parameters: [
           {
             name: 'emailKey',

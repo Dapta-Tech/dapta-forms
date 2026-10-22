@@ -30,6 +30,11 @@ export const account = pgTable('account', {
    */
   timezone: text('timezone'),
   /**
+   * The workspace's public link page (0025), `linkPageSchema` in @quill/types.
+   * NULL = no page; the URL 404s until a blob with `enabled: true` is saved.
+   */
+  linkPage: jsonb('link_page'),
+  /**
    * Onboarding wizard state AND result (see 0011) — `accountOnboardingSchema` in
    * @quill/types. Written on every step advance, so a row with a `lastStep` and
    * no `onboardingCompletedAt` IS the drop-off record.

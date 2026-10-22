@@ -47,6 +47,23 @@ export interface ProjectedIdentity {
   displayName: string | null;
 }
 
+/**
+ * `grantStaffAccess` found a membership of this person in the workspace that
+ * is not a staff access grant (active, invited or disabled). A grant never
+ * replaces a membership: a disabled one is the workspace owner's decision,
+ * and turning it into an `admin` grant would undo it.
+ */
+export class StaffGrantRefused extends Error {
+  readonly code = 'MEMBERSHIP_NOT_ACTIVE';
+  constructor(
+    readonly accountId: string,
+    readonly memberStatus: string,
+  ) {
+    super('This person holds a membership in the workspace that is not a staff access grant; staff access never replaces it.');
+    this.name = 'StaffGrantRefused';
+  }
+}
+
 export interface ProjectionResult {
   /** Local account ids for every ACTIVE upstream membership, in input order. */
   accountIds: string[];
@@ -336,12 +353,28 @@ export async function projectMemberships(
     const existing = await db.get<{ id: string; status: string }>(
       sql`SELECT id, status FROM member WHERE account_id = ${account.id} AND external_id = ${identity.externalId} LIMIT 1`,
     );
-    if (existing) {
+    if (existing && grant) {
+      // A grant only ever refreshes a grant row. A membership in any status
+      // (active, invited, or disabled by the workspace's owner) is left
+      // exactly as it is: the WHERE re-checks it, so a row that became a
+      // membership in between is not converted either. `grantStaffAccess`
+      // reads the row back and refuses.
+      await db.run(
+        sql`UPDATE member SET role = ${role}, status = 'active',
+              email = COALESCE(email, ${identity.email}),
+              display_name = COALESCE(display_name, ${identity.displayName})
+            WHERE id = ${existing.id} AND account_id = ${account.id} AND access_grant IS NOT NULL`,
+      );
+    } else if (existing) {
       // Upstream is the authority on role and on being active. `disabled`
       // locally is revived here on purpose: the identity service says this
       // membership is active NOW, and it is the only place a membership can be
       // revoked or restored from. A real membership also clears an earlier
-      // grant (the person was staff-granted, then actually invited).
+      // grant (the person was staff-granted, then actually invited). The API
+      // keys that grant row held stay: a key is a credential of the
+      // workspace, revoked only by someone revoking it. From here on they act
+      // as this member with the role upstream gives them, and follow the
+      // member out like any member's keys.
       await db.run(
         sql`UPDATE member SET role = ${role}, status = 'active',
               iam_workspace_user_id = COALESCE(${m.workspaceUserId}, iam_workspace_user_id),
@@ -352,9 +385,11 @@ export async function projectMemberships(
       );
     } else {
       // Adopt an invite-by-email row before creating a second identity for the
-      // same person (mirrors the auth provider's invite adoption).
+      // same person (mirrors the auth provider's invite adoption). Never for a
+      // grant: an invitation is a member invite the team sent, and adopting it
+      // as a grant would turn it into a hidden admin off the roster.
       const email = identity.email?.trim().toLowerCase() || null;
-      const invited = email
+      const invited = email && !grant
         ? await db.get<{ id: string }>(
             sql`SELECT id FROM member
                 WHERE account_id = ${account.id} AND external_id IS NULL AND lower(email) = ${email}
@@ -432,6 +467,11 @@ export async function projectMemberships(
  * the account is projected (created if unseen, without an onboarding stamp)
  * and the person gets an `admin` row marked `access_grant = 'staff'`. Nothing
  * else this identity holds is touched. Idempotent. Returns the local ids.
+ *
+ * Only a grant row is ever minted or reused. A member row of this person
+ * there that is not a grant (active, invited, or disabled by the owner) is
+ * left untouched and the call throws `StaffGrantRefused`; a pending
+ * invitation by email (no identity bound yet) is never adopted as the grant.
  */
 export async function grantStaffAccess(
   db: Db,
@@ -455,28 +495,33 @@ export async function grantStaffAccess(
     ],
     { inheritOnboarding: false, pruneMissing: false, now: opts.now },
   );
-  const row = await db.get<{ account_id: string; id: string }>(
-    sql`SELECT m.account_id, m.id FROM member m JOIN account a ON a.id = m.account_id
+  const row = await db.get<{ account_id: string; id: string; status: string; access_grant: string | null }>(
+    sql`SELECT m.account_id, m.id, m.status, m.access_grant FROM member m JOIN account a ON a.id = m.account_id
         WHERE a.external_id = ${workspace.workspaceId} AND m.external_id = ${identity.externalId} LIMIT 1`,
   );
   if (!row) throw new Error(`grant: no member row for ${identity.externalId} in ${workspace.workspaceId}`);
+  if (row.access_grant !== 'staff') throw new StaffGrantRefused(row.account_id, row.status);
   return { accountId: row.account_id, memberId: row.id };
 }
 
 /**
  * The account this identity should land in when nothing else says otherwise:
  * the one it was seen in most recently, else its oldest membership. Only
- * accounts where the membership is ACTIVE count.
+ * accounts where the membership is ACTIVE count. `includeGrants: false` (a
+ * person who is not staff on this request) never lands on a staff access
+ * grant row: grant rows outlive the person's staff status.
  */
 export async function pickHomeAccount(
   db: Db,
   externalId: string,
   preferExternalId: string | null,
+  opts: { includeGrants?: boolean } = {},
 ): Promise<{ accountId: string; memberId: string } | null> {
+  const grants = opts.includeGrants === false ? sql` AND m.access_grant IS NULL` : sql``;
   if (preferExternalId) {
     const preferred = await db.get<{ account_id: string; member_id: string }>(
       sql`SELECT m.account_id, m.id AS member_id FROM member m JOIN account a ON a.id = m.account_id
-          WHERE m.external_id = ${externalId} AND m.status = 'active' AND a.external_id = ${preferExternalId}
+          WHERE m.external_id = ${externalId} AND m.status = 'active' AND a.external_id = ${preferExternalId}${grants}
           LIMIT 1`,
     );
     if (preferred) return { accountId: preferred.account_id, memberId: preferred.member_id };
@@ -485,7 +530,7 @@ export async function pickHomeAccount(
   // opened anything land in their own workspace, not in a customer's.
   const row = await db.get<{ account_id: string; member_id: string }>(
     sql`SELECT m.account_id, m.id AS member_id FROM member m JOIN account a ON a.id = m.account_id
-        WHERE m.external_id = ${externalId} AND m.status = 'active'
+        WHERE m.external_id = ${externalId} AND m.status = 'active'${grants}
         ORDER BY (m.access_grant IS NOT NULL) ASC, (m.last_seen_at IS NULL) ASC, m.last_seen_at DESC, m.created_at ASC
         LIMIT 1`,
   );

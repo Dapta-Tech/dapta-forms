@@ -574,11 +574,37 @@ export async function allSubmissionsForExport(
 ): Promise<AdminSubmissionRow[]> {
   // `IN ()` is a syntax error on both dialects; no id asked for is no row.
   if (q.ids?.length === 0) return [];
-  const only = q.ids ? sql`AND id IN (${bindIds(q.ids)})` : sql``;
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT * FROM submission ${filterWhere(db, formId, q)} ${only} ${orderBy(q.sort)}`,
+    sql`SELECT * FROM submission ${exportWhere(db, formId, q)} ${orderBy(q.sort)}`,
   );
   return rows.map(mapSubmission);
+}
+
+/** What the CSV export selects: the table's filter, narrowed to `ids` when given (never empty here). */
+function exportWhere(db: Db, formId: string, q: SubmissionFilter & { ids?: readonly string[] }): SQL {
+  const only = q.ids ? sql`AND id IN (${bindIds(q.ids)})` : sql``;
+  return sql`${filterWhere(db, formId, q)} ${only}`;
+}
+
+/**
+ * The first `limit` rows of `allSubmissionsForExport`, same filter, same
+ * order, and how many the whole export holds. For a caller that keeps only
+ * the start of the file (the MCP tool), so a large form is never read in
+ * full to hand back a few rows.
+ */
+export async function firstSubmissionsForExport(
+  db: Db,
+  formId: string,
+  q: Omit<SubmissionQuery, 'limit' | 'offset'> & { ids?: readonly string[] },
+  limit: number,
+): Promise<{ items: AdminSubmissionRow[]; total: number }> {
+  if (q.ids?.length === 0) return { items: [], total: 0 };
+  const where = exportWhere(db, formId, q);
+  const totalRow = await db.get<{ n: number | string }>(sql`SELECT COUNT(*) AS n FROM submission ${where}`);
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT * FROM submission ${where} ${orderBy(q.sort)} LIMIT ${Math.max(Math.floor(limit), 0)}`,
+  );
+  return { items: rows.map(mapSubmission), total: Number(totalRow?.n ?? 0) };
 }
 
 /** A submission as the Summary reads it: the answers and the three instants, nothing else. */

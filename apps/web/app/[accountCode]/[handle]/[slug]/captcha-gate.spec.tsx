@@ -679,6 +679,7 @@ describe('submitErrorMessage', () => {
       expect(submitErrorMessage({ ...english, error: 'CAPTCHA_UNAVAILABLE' }, m)).toBe(m.captcha.unavailable);
       expect(submitErrorMessage({ ...english, error: 'RATE_LIMITED' }, m)).toBe(m.errors.rate_limited);
       expect(submitErrorMessage({ ...english, error: 'ANSWER_TOO_LONG' }, m)).toBe(m.errors.answer_too_long);
+      expect(submitErrorMessage({ ...english, error: 'INVALID_ANSWERS' }, m)).toBe(m.errors.invalid_answers);
     }
     expect(getMessages('es').renderer.errors.captcha).toBe(
       'No pudimos verificar que eres una persona. Inténtalo de nuevo.',

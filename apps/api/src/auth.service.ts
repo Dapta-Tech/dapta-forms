@@ -1,12 +1,13 @@
-import { ForbiddenException, Inject, Injectable, Optional } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
   activateInvitedMember,
   findMembership,
+  getAccountMember,
   getMemberIdentity,
-  getMemberRole,
   listWorkspacesForIdentity,
   touchMemberLastSeen,
+  type MemberIdentity,
   type WorkspaceRow,
 } from '@quill/db';
 import { AnalyticsEffects } from './analytics-effects';
@@ -15,12 +16,43 @@ import { ApiKeyAuthenticator, createApiKeyRateLimiter } from './api-key-auth';
 import type { RateLimiter } from './rate-limit';
 import { API_KEY_RATE_LIMITER, AUTH_PROVIDER, DB } from './tokens';
 import { header, type AuthProvider, type HostPrincipal, type ReqLike } from './auth.provider';
+import { inProcessPrincipalOf, oncePerCall, type InProcessPrincipal } from './in-process-principal';
 
 export type { HostPrincipal, PrincipalVia, ReqLike } from './auth.provider';
-export { isApiKeyPrincipal } from './auth.provider';
+export { isAgentPrincipal, isApiKeyPrincipal } from './auth.provider';
 
 /** The header the web app uses to ask for a workspace other than the home one. */
 export const WORKSPACE_HEADER = 'x-quill-workspace';
+
+function workspaceForbidden(): ForbiddenException {
+  return new ForbiddenException({
+    error: 'WORKSPACE_FORBIDDEN',
+    message: 'You are not a member of that workspace.',
+  });
+}
+
+/**
+ * The workspaces this identity can enter, with the rows it holds through a
+ * staff access grant only when `staff` (the provider proved the person is
+ * staff on this request). Grant rows are never revoked, so someone who stops
+ * being staff keeps them in the table; they must stop counting, here and on
+ * every door that reads them.
+ */
+export async function workspacesFor(db: Db, identity: MemberIdentity, staff: boolean): Promise<WorkspaceRow[]> {
+  const rows = await listWorkspacesForIdentity(db, identity);
+  return staff ? rows : rows.filter((w) => w.accessGrant === null);
+}
+
+/** `findMembership`, under the same staff rule as `workspacesFor`. */
+export async function membershipFor(
+  db: Db,
+  identity: MemberIdentity,
+  accountId: string,
+  staff: boolean,
+): Promise<WorkspaceRow | null> {
+  const row = await findMembership(db, identity, accountId);
+  return row && (staff || row.accessGrant === null) ? row : null;
+}
 
 /**
  * Auth authority for the API. Host/dashboard identity is delegated to the
@@ -69,9 +101,19 @@ export class AuthService {
    * principal came in through the provider's session, so it carries
    * `via: 'session'` and no `apiKeyId`.
    *
+   * A request the MCP adapter built in process carries an in-process
+   * principal (see `in-process-principal.ts`) and is resolved from it alone,
+   * before anything on the request is read: with an API key, through the key
+   * path above; without one, as an MCP connection (`resolveConnection`). Both
+   * carry `channel: 'mcp'`.
+   *
    * Throws 401 if the provider cannot resolve the host.
    */
   async resolveHost(req: ReqLike): Promise<HostPrincipal> {
+    const inProcess = inProcessPrincipalOf(req);
+    // One tool call that runs several handlers resolves (and counts a key) once.
+    if (inProcess) return oncePerCall(req, () => this.resolveInProcess(req, inProcess));
+
     const key = apiKeyFromRequest(req);
     if (key !== null) return this.apiKeys.resolve(req, key);
 
@@ -97,22 +139,31 @@ export class AuthService {
       void touchMemberLastSeen(this.db, home.memberId).catch(() => {});
     }
 
+    // Staff access grants count only while the provider says the person is
+    // staff on THIS request: a grant row outlives staff status (it is never
+    // revoked), so without this a person who stopped being staff would keep
+    // entering every workspace they once opened as an admin.
+    const staff = home.staff === true;
     const requested = header(req, WORKSPACE_HEADER)?.trim();
     if (!requested || requested === home.accountId) {
-      const role = (await getMemberRole(this.db, home.accountId, home.memberId)) ?? 'member';
-      return { ...home, role, via: 'session' };
+      const member = await getAccountMember(this.db, home.accountId, home.memberId);
+      if (member?.accessGrant === 'staff' && !staff) throw workspaceForbidden();
+      return {
+        accountId: home.accountId,
+        memberId: home.memberId,
+        role: member?.role ?? 'member',
+        via: 'session',
+        ...(member?.accessGrant === 'staff' ? { accessGrant: 'staff' as const } : {}),
+      };
     }
 
     const identity = await getMemberIdentity(this.db, home.accountId, home.memberId);
-    const membership = identity ? await findMembership(this.db, identity, requested) : null;
-    if (!membership) {
-      throw new ForbiddenException({
-        error: 'WORKSPACE_FORBIDDEN',
-        message: 'You are not a member of that workspace.',
-      });
-    }
+    const membership = identity ? await membershipFor(this.db, identity, requested, staff) : null;
+    // A header naming an account the caller has no row in (or only a grant
+    // they no longer qualify for) is a 403, never a quiet fall back.
+    if (!membership) throw workspaceForbidden();
 
-    // Opening a workspace you were invited to IS accepting the invitation — the
+    // Opening a workspace you were invited to IS accepting the invitation, the
     // same transition the home account gets above, for the same reason.
     await activateInvitedMember(this.db, membership.accountId, membership.memberId);
     return {
@@ -120,6 +171,39 @@ export class AuthService {
       memberId: membership.memberId,
       role: membership.role,
       via: 'session',
+      ...(membership.accessGrant === 'staff' ? { accessGrant: 'staff' as const } : {}),
+    };
+  }
+
+  private async resolveInProcess(req: ReqLike, principal: InProcessPrincipal): Promise<HostPrincipal> {
+    if (principal.apiKeyHash !== undefined) {
+      const p = await this.apiKeys.resolveHash(req, principal.apiKeyHash, principal);
+      return { ...p, channel: 'mcp' };
+    }
+    return this.resolveConnection(principal);
+  }
+
+  /**
+   * An MCP connection acting as a member: re-read on every call, so a member
+   * disabled, removed or demoted since the last call is seen on this one. The
+   * workspace is the one the principal names, never a header; a member that
+   * is not active there is a 401, exactly like a dead API key.
+   */
+  private async resolveConnection(principal: InProcessPrincipal): Promise<HostPrincipal> {
+    const member = await getAccountMember(this.db, principal.accountId, principal.memberId);
+    if (!member || member.status !== 'active') {
+      throw new UnauthorizedException({
+        error: 'MEMBER_NOT_ACTIVE',
+        message: 'You are no longer an active member of this workspace.',
+      });
+    }
+    return {
+      accountId: principal.accountId,
+      memberId: principal.memberId,
+      role: member.role,
+      via: 'mcp_connection',
+      channel: 'mcp',
+      ...(member.accessGrant === 'staff' ? { accessGrant: 'staff' as const } : {}),
     };
   }
 
@@ -129,12 +213,13 @@ export class AuthService {
    * Derived from the home identity the provider resolved, never from whichever
    * workspace they are currently viewing — so the list reads the same from
    * inside any of them, and a switch can never strand someone somewhere with no
-   * way back.
+   * way back. Rows held through a staff access grant are listed only while
+   * the person is staff on this request.
    */
   async listWorkspaces(req: ReqLike): Promise<WorkspaceRow[]> {
     const home = await this.provider.resolveHost(req);
     const identity = await getMemberIdentity(this.db, home.accountId, home.memberId);
     if (!identity) return [];
-    return listWorkspacesForIdentity(this.db, identity);
+    return workspacesFor(this.db, identity, home.staff === true);
   }
 }

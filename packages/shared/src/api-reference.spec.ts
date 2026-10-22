@@ -23,6 +23,13 @@ function strings(value: unknown): string[] {
   return [];
 }
 
+describe('the discard-draft example', () => {
+  it('moves updatedAt past publishedAt, as a real discard does (it stamps the write)', () => {
+    const view = API_REFERENCE['POST /v1/forms/:id/discard-draft']!.response as { updatedAt: number; publishedAt: number };
+    expect(view.updatedAt).toBeGreaterThan(view.publishedAt);
+  });
+});
+
 describe('apiEndpoints', () => {
   it('lists every route once, grouped by area in reading order', () => {
     expect(endpoints).toHaveLength(Object.keys(API_REFERENCE).length);

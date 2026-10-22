@@ -242,6 +242,45 @@ export const serverEnvSchema = z.object({
   MCP_WRITE_RATE_LIMIT_REFILL_PER_SEC: blankAsUnset(z.coerce.number().positive().default(0.2)),
   MCP_TOOL_TIMEOUT_MS: blankAsUnset(z.coerce.number().int().positive().max(120_000).default(20_000)),
 
+  // MCP connections over OAuth (the MCP server as an OAuth resource server; see
+  // docs/adr/0001). Unset or blank MCP_OAUTH_PROVIDER, the default and every
+  // fork: off, and /mcp takes API keys only, exactly as before. `workos`: the
+  // door also accepts access tokens signed by the deployment's WorkOS AuthKit,
+  // and a request without a credential is pointed at the login. With it on,
+  // the two values below are required and checked at boot (`mcpOAuth`):
+  //   WORKOS_AUTHKIT_DOMAIN  the AuthKit issuer, an origin (https://auth.example.com).
+  //   MCP_PUBLIC_URL         the MCP endpoint customers reach, the OAuth resource
+  //                          and the audience of every token
+  //                          (https://mcp.example.com/mcp). The web app reads
+  //                          the same name for the URL its MCP page shows.
+  MCP_OAUTH_PROVIDER: z.string().optional(),
+  WORKOS_AUTHKIT_DOMAIN: z.string().optional(),
+  MCP_PUBLIC_URL: z.string().optional(),
+
+  // The person directory of MCP connections: read-only access to the identity
+  // service's database, where the API translates the person a token names into
+  // the user id members carry. Read only with MCP_OAUTH_PROVIDER set, and then
+  // all required but the port (checked when the API boots); ignored otherwise.
+  //   IAM_DB_HOST    the database host. TLS is required unless it is a loopback host.
+  //   IAM_DB_PORT    the port, 5432 when unset.
+  //   IAM_DB_NAME    the database.
+  //   IAM_DB_SCHEMA  the schema that holds its users and sessions.
+  //   IAM_DB_USER    a role that can only read.
+  //   IAM_DB_PASS    its password (a secret).
+  //   IAM_DB_SSL_CA  optional: the CA that signs the database's certificate,
+  //                  as the PEM itself or the path of a file holding it. Set,
+  //                  the certificate and its host name are verified
+  //                  (verify-full) and TLS is on even on a loopback host.
+  //                  Unset, the connection is encrypted but the certificate
+  //                  is not verified, and the API logs so once at boot.
+  IAM_DB_HOST: z.string().optional(),
+  IAM_DB_PORT: z.string().optional(),
+  IAM_DB_NAME: z.string().optional(),
+  IAM_DB_SCHEMA: z.string().optional(),
+  IAM_DB_USER: z.string().optional(),
+  IAM_DB_PASS: z.string().optional(),
+  IAM_DB_SSL_CA: z.string().optional(),
+
   // Product analytics — OUR OWN telemetry about the people who USE Dapta Forms
   // (signup, publish, activation), drained from the outbox by AnalyticsCapture.
   //
@@ -554,6 +593,8 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
   // A malformed deprecated-hosts setting fails here, at boot, not on the first
   // request to a listed host.
   apiDeprecation(parsed.data);
+  // The same for the MCP OAuth settings: a login that cannot work never boots.
+  mcpOAuth(parsed.data);
   return parsed.data;
 }
 
@@ -707,4 +748,95 @@ function deprecationDateOf(name: string, value: string | undefined): number | nu
     );
   }
   return ms;
+}
+
+/** The MCP OAuth adapters a deployment can select. */
+export const MCP_OAUTH_PROVIDERS = ['workos'] as const;
+export type McpOAuthProviderName = (typeof MCP_OAUTH_PROVIDERS)[number];
+
+/** What the MCP server needs to verify an MCP connection's token and to point a client at the login. */
+export interface McpOAuthConfig {
+  provider: McpOAuthProviderName;
+  /** The identity provider's issuer: an origin, no trailing slash. Every token's `iss`. */
+  issuer: string;
+  /** The MCP endpoint as customers reach it: the OAuth resource, and every token's `aud`. */
+  resource: string;
+  /** Where the protected-resource metadata (RFC 9728) of `resource` is published. */
+  resourceMetadataUrl: string;
+}
+
+type McpOAuthEnv = Pick<ServerEnv, 'MCP_OAUTH_PROVIDER' | 'WORKOS_AUTHKIT_DOMAIN' | 'MCP_PUBLIC_URL'>;
+
+const MCP_PATH = '/mcp';
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * A URL setting of the MCP login, parsed. https only, except on a loopback
+ * host so the flow can be tried on a laptop. A trailing slash is tolerated;
+ * anything that would silently change what tokens are checked against is not.
+ */
+function oauthUrl(name: string, raw: string | undefined): URL {
+  const value = (raw ?? '').trim();
+  if (!value) throw new Error(`Refusing to boot: ${name} is required when MCP_OAUTH_PROVIDER is set.`);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Refusing to boot: ${name} (${JSON.stringify(value)}) is not a URL.`);
+  }
+  const local = LOOPBACK.has(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) {
+    throw new Error(`Refusing to boot: ${name} must be https (plain http only on a loopback host), got ${JSON.stringify(value)}.`);
+  }
+  if (url.username || url.password) throw new Error(`Refusing to boot: ${name} must not carry credentials.`);
+  return url;
+}
+
+/**
+ * The MCP OAuth settings, or null when MCP_OAUTH_PROVIDER is unset or blank
+ * (the default, and every fork), in which case the other values are not read.
+ * Throws on anything missing or malformed, because a login that cannot work
+ * (a wrong issuer or audience fails every token in silence) must not be
+ * served. `loadServerEnv` calls it, so that happens at boot. The API also
+ * checks the public URL's host against MCP_ALLOWED_HOSTS when it builds the
+ * adapter (`mcpOAuthSettings`), with the door's own Host comparison.
+ */
+export function mcpOAuth(env: McpOAuthEnv): McpOAuthConfig | null {
+  const provider = (env.MCP_OAUTH_PROVIDER ?? '').trim().toLowerCase();
+  if (!provider) return null;
+  if (!(MCP_OAUTH_PROVIDERS as readonly string[]).includes(provider)) {
+    throw new Error(
+      `Refusing to boot: MCP_OAUTH_PROVIDER=${JSON.stringify(env.MCP_OAUTH_PROVIDER)} is not one of: ${MCP_OAUTH_PROVIDERS.join(', ')}. Leave it unset for API keys only.`,
+    );
+  }
+
+  const issuerUrl = oauthUrl('WORKOS_AUTHKIT_DOMAIN', env.WORKOS_AUTHKIT_DOMAIN);
+  if (trimSlashes(issuerUrl.pathname) !== '' || issuerUrl.search || issuerUrl.hash) {
+    throw new Error(
+      `Refusing to boot: WORKOS_AUTHKIT_DOMAIN must be an origin like https://auth.example.com, with no path, got ${JSON.stringify(env.WORKOS_AUTHKIT_DOMAIN)}.`,
+    );
+  }
+
+  const resourceUrl = oauthUrl('MCP_PUBLIC_URL', env.MCP_PUBLIC_URL);
+  if (`/${trimSlashes(resourceUrl.pathname)}` !== MCP_PATH || resourceUrl.search || resourceUrl.hash) {
+    throw new Error(
+      `Refusing to boot: MCP_PUBLIC_URL must be the /mcp endpoint customers reach, like https://mcp.example.com/mcp, got ${JSON.stringify(env.MCP_PUBLIC_URL)}.`,
+    );
+  }
+
+  return {
+    provider: provider as McpOAuthProviderName,
+    issuer: issuerUrl.origin,
+    resource: `${resourceUrl.origin}${MCP_PATH}`,
+    resourceMetadataUrl: `${resourceUrl.origin}/.well-known/oauth-protected-resource${MCP_PATH}`,
+  };
+}
+
+/** `value` without leading or trailing '/', in linear time. */
+function trimSlashes(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === '/') start++;
+  while (end > start && value[end - 1] === '/') end--;
+  return value.slice(start, end);
 }

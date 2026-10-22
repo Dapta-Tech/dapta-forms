@@ -882,6 +882,8 @@ export function submitErrorMessage(res: { error?: string; message?: string }, m:
       return m.errors.rate_limited;
     case 'ANSWER_TOO_LONG':
       return m.errors.answer_too_long;
+    case 'INVALID_ANSWERS':
+      return m.errors.invalid_answers;
     default:
       return res.message ?? m.errors.submit;
   }

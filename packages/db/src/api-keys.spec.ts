@@ -120,7 +120,7 @@ describe("listApiKeys", () => {
 
     const mine = await listApiKeys(db, accountId, bob);
     expect(mine.map((k) => k.name)).toEqual(["b"]);
-    expect(mine[0]!.createdBy).toEqual({ memberId: bob, name: "bob", email: "bob@example.com" });
+    expect(mine[0]!.createdBy).toEqual({ memberId: bob, name: "bob", email: "bob@example.com", staff: false });
 
     const all = await listApiKeys(db, accountId);
     expect(all.map((k) => k.name)).toEqual(["b", "a"]);
@@ -154,6 +154,7 @@ describe("findApiKeyPrincipal", () => {
     expect(await findApiKeyPrincipal(db, hash)).toMatchObject({
       keyId: r.value.id,
       accountId,
+      accountName: "Test",
       memberId: bob,
       role: "member",
       memberStatus: "active",

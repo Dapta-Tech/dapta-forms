@@ -119,6 +119,12 @@ export interface FormsMessages {
       rate_limited: string;
       /** The API's `ANSWER_TOO_LONG`: an answer over its question's ceiling. */
       answer_too_long: string;
+      /**
+       * The API's `INVALID_ANSWERS`: a complete whose answers the form could not
+       * have produced (a missing required answer, an option that no longer
+       * exists). In practice a page loaded before the owner changed the form.
+       */
+      invalid_answers: string;
     };
     /**
      * Spam protection on the submitting screen: the human check that runs before
@@ -183,7 +189,82 @@ export interface FormsMessages {
     formsTitle: string;
     noForms: string;
   };
+  /** The workspace link page (`/[accountCode]`). */
+  linkPage: {
+    /** Accessible name of the button list and of the icon row. */
+    buttonsLabel: string;
+    socialsLabel: string;
+    /** Accessible name of each network's icon. */
+    social: { instagram: string; x: string; youtube: string; tiktok: string; whatsapp: string };
+    /** Meta description when the page has no bio. `{name}` is the page name. */
+    seoDescription: string;
+  };
   admin: {
+    /** Account settings, Public page: the workspace link page editor. */
+    linkPage: {
+      heading: string;
+      subtitle: string;
+      anyMember: string;
+      enable: string;
+      offNote: string;
+      copy: string;
+      copied: string;
+      open: string;
+      qr: string;
+      qrTitle: string;
+      qrIntro: string;
+      qrAlt: string;
+      qrDownloadPng: string;
+      qrDownloadSvg: string;
+      qrPngFailed: string;
+      headerSection: string;
+      logo: string;
+      logoHint: string;
+      logoUpload: string;
+      logoUseKit: string;
+      logoNone: string;
+      logoFromKit: string;
+      logoNoKit: string;
+      logoInitials: string;
+      logoUrl: string;
+      logoUrlPlaceholder: string;
+      logoInvalid: string;
+      logoTooBig: string;
+      name: string;
+      bio: string;
+      bioPlaceholder: string;
+      buttonsSection: string;
+      buttonsHint: string;
+      addForm: string;
+      addFormPlaceholder: string;
+      addLink: string;
+      noForms: string;
+      allFormsAdded: string;
+      empty: string;
+      formTag: string;
+      linkTag: string;
+      linkLabel: string;
+      linkLabelPlaceholder: string;
+      linkUrl: string;
+      linkUrlPlaceholder: string;
+      linkInvalid: string;
+      moveUp: string;
+      moveDown: string;
+      remove: string;
+      maxItems: string;
+      socialsSection: string;
+      socialsHint: string;
+      socialPlaceholders: { instagram: string; x: string; youtube: string; tiktok: string; whatsapp: string };
+      socialInvalid: string;
+      whatsappInvalid: string;
+      whatsappHint: string;
+      preview: string;
+      save: string;
+      saving: string;
+      saved: string;
+      error: string;
+      fixErrors: string;
+    };
     /** Branded combobox (`components/ui/select`) that replaces native selects. */
     select: {
       search: string;
@@ -227,11 +308,14 @@ export interface FormsMessages {
         analytics: string;
         integrations: string;
         /**
-         * MCP (/admin/developers/*), between Integrations and Docs. Opens
-         * `developersMenu`. The key keeps its old name; the addresses do too,
-         * because skill zips already handed out link there.
+         * "Connect your agent" (/admin/developers/connect), between
+         * Integrations and Docs, set apart with the AI apps' logos. The key
+         * keeps its old name; the addresses do too, because skill zips already
+         * handed out links there.
          */
         developers: string;
+        /** The Tools page (/admin/developers/tools): what an agent can do with dForms. */
+        tools: string;
         /** The product documentation, an EXTERNAL link (see `docsHref`). */
         docs: string;
         /**
@@ -240,17 +324,6 @@ export interface FormsMessages {
          * never carries a dead item.
          */
         agents: string;
-      };
-      /**
-       * The two pages under the rail's MCP item: an accordion in the
-       * wide rail and the drawer, a flyout on the collapsed rail. `docs` also
-       * names the docs page itself and the link to it from the keys page.
-       */
-      developersMenu: {
-        /** /admin/developers/keys */
-        keys: string;
-        /** /admin/developers/docs */
-        docs: string;
       };
       /** The bottom-left profile button (avatar + name) and its menu. */
       profileMenu: {
@@ -328,6 +401,31 @@ export interface FormsMessages {
       publicPageDesc: string;
       /** "Updated {when}" without the verb, for a narrow column. */
       colUpdated: string;
+      /** The banner at the top of the home: control dForms from an AI agent. */
+      agentBanner: {
+        title: string;
+        body: string;
+        cta: string;
+      };
+      /**
+       * The big "Connect your agent" card: a prompt typed into an AI app and
+       * the form it creates, cycling through `prompts` and the apps.
+       */
+      agentCard: {
+        eyebrow: string;
+        title: string;
+        body: string;
+        cta: string;
+        /** Accessible name of the animation. */
+        label: string;
+        /** What the user asks, one per turn. Written for a person, not a parser. */
+        prompts: string[];
+        /** The app's answer once the form exists. */
+        done: string;
+        /** The composer's placeholder before the prompt starts. // {app} */
+        placeholder: string;
+        connected: string;
+      };
     };
     /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
@@ -471,6 +569,8 @@ export interface FormsMessages {
       manageErrorLastOwner: string;
       manageErrorForbidden: string;
       manageErrorFailed: string;
+      /** Staff opening a workspace where their own membership is disabled or pending: never replaced by staff access. */
+      manageErrorMembershipNotActive: string;
       /** The identity service could not apply the change (role missing, member unmanaged, refused). */
       manageErrorUpstream: string;
       /** Ownership is a membership type upstream; only the Dapta app transfers it. */
@@ -1875,178 +1975,179 @@ export interface FormsMessages {
       };
     };
     /**
-     * The API keys page under MCP (/admin/developers/keys): the workspace's API
-     * keys. A key lets an agent or a script call the same `/v1` routes the
-     * dashboard uses.
+     * The MCP page under the rail's MCP item (/admin/developers/connect): the
+     * connector guide, then the workspace's existing API keys.
      */
     developers: {
-      /** The page heading: the rail section's name, "MCP". */
+      /** The section's name, "MCP": the eyebrow above the connect page heading. */
       title: string;
-      subtitle: string;
       /**
-       * The setup guide above the keys: create a key, connect the agent to the
-       * dForms MCP server, try it. The skill download stays as the way in for an
-       * agent without MCP; its button and unavailable note reuse
-       * `developerDocs.skillButton` and `developerDocs.skillUnavailable`, the
-       * same download as on the API docs page.
+       * The connect page (/admin/developers/connect): connect an AI app to the
+       * dForms MCP by logging in to the person's account (OAuth), no key. In
+       * step bodies, `**text**` renders bold and text between backticks renders
+       * as inline code. Product and button names inside other apps stay in
+       * English, as those apps show them. Never names the identity provider.
        */
-      guide: {
-        title: string;
-        /** What the MCP is for and which agents connect to it. */
+      connect: {
+        heading: string;
         intro: string;
-        /** Screen-reader suffix of a finished step. */
-        stepDone: string;
-        keyTitle: string;
-        keyBody: string;
-        /** Step 1 once the caller has a key. */
-        keyDone: string;
-        agentTitle: string;
-        agentBody: string;
-        /** Step 2 once any listed key has been used. */
-        agentDone: string;
-        /** Accessible name of the agent tabs. */
-        agentsLabel: string;
-        keyCommandLabel: string;
-        keyCommandHint: string;
-        mcpLabel: string;
-        /** Where the MCP snippet goes, per agent. */
-        mcpHint: {
-          claudeCode: string;
-          codex: string;
-          cursor: string;
+        signinTitle: string;
+        /** The tag beside the sign-in card's title. */
+        recommended: string;
+        signinIntro: string;
+        benefits: {
+          noKey: { title: string; body: string };
+          workspaces: { title: string; body: string };
+          members: { title: string; body: string };
         };
-        /** Cursor's one-click install button. */
-        addToCursor: string;
-        /** Under the button: the same entry, for a config file. */
-        cursorFileHint: string;
-        /** This deployment has no public address for its MCP server. */
-        mcpUnavailable: string;
-        tryTitle: string;
-        promptHint: string;
-        /** A first request to paste into the agent. */
+        /** Accessible name of the app tabs. */
+        appsLabel: string;
+        urlLabel: string;
+        promptLabel: string;
+        /** A first request to paste into the app. */
         prompt: string;
-        copyCommand: string;
-        copyPrompt: string;
-        /** Claude in the browser and ChatGPT need a sign-in the MCP does not offer yet. */
-        chatNote: string;
-        /** The way in for an agent without MCP: the API skill zip. */
-        skillTitle: string;
-        skillBody: string;
-      };
-      keys: {
-        title: string;
-        /** Under the title. Members see their own keys only. */
-        subtitle: string;
-        /** Same line for owners and admins, who see every key in the workspace. */
-        subtitleAdmin: string;
-        create: string;
-        colName: string;
-        colKey: string;
-        colCreated: string;
-        colLastUsed: string;
-        colCreatedBy: string;
-        colActions: string;
-        /** The masked key: only its last four characters. // {last4} */
-        masked: string;
-        /** Screen-reader name of the masked key. // {last4} */
-        maskedLabel: string;
-        /** Last used: the key has never been used. */
-        neverUsed: string;
-        /** Marks the caller's own keys in the Created by column. */
-        you: string;
-        /** Created by: the member is gone from the roster. */
-        unknownCreator: string;
-        emptyTitle: string;
-        /** What a key is and how to start. */
-        emptyBody: string;
-        loadError: string;
-        revoke: string;
-        /** Accessible name of a row's revoke button. // {name} */
-        revokeLabel: string;
-        revokeTitle: string;
-        /** // {name} */
-        revokeConfirm: string;
-        revokeSuccess: string;
-        revokeErrorForbidden: string;
-        /** 404 on revoke: already revoked, or the workspace changed in another tab. */
-        revokeErrorGone: string;
-        revokeErrorFailed: string;
-        createTitle: string;
-        nameLabel: string;
-        namePlaceholder: string;
-        nameHelp: string;
-        createSubmit: string;
-        creating: string;
-        cancel: string;
-        errorInvalid: string;
-        /** 409 KEY_LIMIT: ten active keys already. */
-        errorLimit: string;
-        errorForbidden: string;
-        errorFailed: string;
-        /** The reveal step, after the key exists. Shown once. */
-        createdTitle: string;
-        keyLabel: string;
-        createdWarning: string;
         copy: string;
         copied: string;
         copyFailed: string;
-        /** Under the key: the line that hands this same key to the agent. */
-        createdNext: string;
-        exportLabel: string;
-        copyExport: string;
-        done: string;
+        copyUrl: string;
+        copyCommand: string;
+        copyConfig: string;
+        copyPrompt: string;
+        addToCursor: string;
+        /**
+         * The way into each app from its first step, fitted to the device: a
+         * web link for Claude and ChatGPT, Claude Desktop's own link on a
+         * computer, a one-click copy of the add command for the CLIs, and on a
+         * phone a note for what only a computer can do. // {app} in `phoneNote`
+         */
+        open: {
+          claude: string;
+          claudeDesktop: string;
+          chatgpt: string;
+          copyCommand: string;
+          copied: string;
+          pasteHint: string;
+          phoneNote: string;
+        };
+        /** One numbered list per app, in the order the app asks for things. */
+        apps: {
+          claude: { steps: { title: string; body: string }[] };
+          chatgpt: { steps: { title: string; body: string }[] };
+          claudeCode: { steps: { title: string; body: string }[]; note: string };
+          codex: { steps: { title: string; body: string }[]; note: string };
+          cursor: { steps: { title: string; body: string }[] };
+          openclaw: { steps: { title: string; body: string }[] };
+          hermes: { steps: { title: string; body: string }[] };
+        };
+        /** Under the steps: one connector reaches every workspace. */
+        tip: string;
+        unavailableTitle: string;
+        unavailableBody: string;
+        /** The animated walkthrough above the steps. */
+        media: {
+          /** // {app} */
+          terminalLabel: string;
+          play: string;
+          pause: string;
+        };
+        /**
+         * The animated walkthroughs. `ui` is the CLIs' own output (Claude Code,
+         * Codex, OpenClaw), kept in English in both locales the way those tools
+         * print it; `signIn` and `answer` are dForms and speak the reader's
+         * language.
+         */
+        walkthrough: {
+          ui: {
+            ccWelcome: string;
+            ccHelp: string;
+            /** // {url} */
+            ccAdded: string;
+            ccManage: string;
+            needsAuth: string;
+            authenticate: string;
+            ccBrowser: string;
+            ccAuthOk: string;
+            codexAdded: string;
+            codexAuthorize: string;
+            codexLoggedIn: string;
+            codexModel: string;
+            called: string;
+            working: string;
+            ocSaved: string;
+            ocLogin: string;
+            ocLoggedIn: string;
+            hmSaved: string;
+            hmLogin: string;
+            hmLoggedIn: string;
+          };
+          /** The dForms sign-in the apps open: email, then the code by email. */
+          signIn: {
+            title: string;
+            emailLabel: string;
+            email: string;
+            continue: string;
+            checkEmail: string;
+            codeSentTo: string;
+            noCode: string;
+            /** // {app} */
+            connected: string;
+            /** // {app} */
+            consentTitle: string;
+            redirectNote: string;
+            warning: string;
+            allow: string;
+            cancel: string;
+          };
+          answer: {
+            intro: string;
+            forms: { name: string; stat: string }[];
+            colForm: string;
+            colResponses: string;
+            colStatus: string;
+            live: string;
+          };
+        };
+        /** The short card that points to the Tools page. // {count} in `intro` */
+        toolsTitle: string;
+        toolsIntro: string;
+        toolsLink: string;
+      };
+      /**
+       * The Tools page (/admin/developers/tools): what an agent can do with
+       * dForms, in plain words, grouped. `items` is keyed by the MCP tool's
+       * name; a spec holds it to the server's catalog in both languages.
+       */
+      tools: {
+        title: string;
+        /** // {count} */
+        intro: string;
+        /** Before each example request. */
+        askLabel: string;
+        /** // {n} */
+        count: string;
+        groups: {
+          forms: { title: string; body: string };
+          responses: { title: string; body: string };
+          analytics: { title: string; body: string };
+          folders: { title: string; body: string };
+          brandKit: { title: string; body: string };
+          linkPage: { title: string; body: string };
+          notifications: { title: string; body: string };
+          integrations: { title: string; body: string };
+          account: { title: string; body: string };
+        };
+        items: Record<string, { what: string; ask: string }>;
+        connectCta: string;
       };
     };
     /**
-     * The "How to use the API" section of the Developers page. Text between
-     * backticks renders as inline code; keep paths, headers and field names
-     * inside them so both locales show them the same way.
-     */
-    developerDocs: {
-      title: string;
-      intro: string;
-      apiUrlLabel: string;
-      apiUrlMissing: string;
-      authTitle: string;
-      authBody: string;
-      flowTitle: string;
-      flowBody: string;
-      flow: {
-        create: string;
-        edit: string;
-        publish: string;
-        revert: string;
-      };
-      flowLabels: {
-        create: string;
-        edit: string;
-        publish: string;
-        revert: string;
-      };
-      gotchasTitle: string;
-      gotchas: {
-        put: string;
-        stale: string;
-        /** Where a validation error's `issues[].path` points, with the body prefix. */
-        errors: string;
-        /** The editor defaults a key may send back, and the steps that need no question. */
-        editorDefaults: string;
-        destinations: string;
-        rateLimit: string;
-      };
-      skillTitle: string;
-      skillBody: string;
-      skillContents: string;
-      skillButton: string;
-      skillUnavailable: string;
-    };
-    /**
-     * The API docs page (/admin/developers/docs): the full reference of what an
-     * API key can call. The routes, parameters and examples come from
+     * The API reference prose: what an API key can call. No page shows it any
+     * more (the dashboard's API docs gave way to the Tools page); the REST API's
+     * reference specs still hold every route to its text. The routes, parameters and examples come from
      * `API_REFERENCE` (api-reference.ts); this is only the prose, keyed by the
      * same route strings and parameter docs, so the compiler refuses a route
      * or a parameter without its text in either language. Text between
-     * backticks renders as inline code, as in `developerDocs`.
+     * backticks renders as inline code.
      */
     apiDocs: {
       title: string;
@@ -2132,45 +2233,6 @@ export interface FormsMessages {
         items: Record<ApiNotAllowed, string>;
       };
     };
-    // ── API docs page: keys the page needs beyond `apiDocs` (feat/api-docs-ui) ──
-    /**
-     * The API docs page's own extras: the Authentication section, the parts of
-     * Getting started that `developerDocs` does not word for this page, and a
-     * few labels of the endpoint cards. Backticks render as inline code.
-     */
-    apiDocsPage: {
-      /** The header link to the keys page. */
-      keysLink: string;
-      start: {
-        intro: string;
-        /** Under each step of the flow: the link down to its endpoint. */
-        flowLink: string;
-      };
-      auth: {
-        /** Section title and its entry in the index. */
-        title: string;
-        actsAs: string;
-        workspace: string;
-        invalid: string;
-      };
-      /** Under the empty search: what to try. */
-      searchHint: string;
-      /** Beside each area's title. // {count} */
-      endpointCount: { one: string; other: string };
-      endpoint: {
-        noParameters: string;
-        /** Beside "Response" when the answer is a CSV file. */
-        csv: string;
-        /** Unfolds a long example answer. // {lines} */
-        showMore: string;
-        showLess: string;
-        /** Accessible names of the copy buttons. */
-        copyCurl: string;
-        copyResponse: string;
-        copyUrl: string;
-      };
-    };
-    // ── end API docs page extras ─────────────────────────────────────────────
     /** Draft → publish controls in the form editor (publish button + badge). */
     publish: {
       publish: string;
@@ -2480,6 +2542,7 @@ export const en: FormsMessages = {
       captcha_required: 'This form now checks that you’re human. Refresh the page and submit again.',
       rate_limited: 'Too many attempts from your connection. Wait a moment and try again.',
       answer_too_long: 'One of your answers is longer than this form allows. Shorten it and try again.',
+      invalid_answers: 'Some answers are missing or no longer match this form. Reload the page and try again.',
     },
     captcha: {
       prompt: 'Confirm you’re human to send your answers.',
@@ -2515,7 +2578,83 @@ export const en: FormsMessages = {
     formsTitle: 'Forms',
     noForms: 'Nothing published yet.',
   },
+  linkPage: {
+    buttonsLabel: 'Links',
+    socialsLabel: 'Social profiles',
+    social: { instagram: 'Instagram', x: 'X', youtube: 'YouTube', tiktok: 'TikTok', whatsapp: 'WhatsApp' },
+    seoDescription: 'Forms and links from {name}.',
+  },
   admin: {
+    linkPage: {
+      heading: 'Your workspace page',
+      subtitle: 'One page with your logo, your forms and your links, at a link you can share or print as a QR code.',
+      anyMember: 'Anyone in this workspace can edit this page.',
+      enable: 'Published',
+      offNote: 'Not published. Visitors get a page not found until you turn it on.',
+      copy: 'Copy link',
+      copied: 'Copied',
+      open: 'Open',
+      qr: 'QR code',
+      qrTitle: 'QR code for your page',
+      qrIntro: 'Print it on a card, a banner or a booth. Scanning it opens this page.',
+      qrAlt: 'QR code that opens your workspace page',
+      qrDownloadPng: 'Download PNG',
+      qrDownloadSvg: 'Download SVG',
+      qrPngFailed: 'Could not make the PNG in this browser. Download the SVG instead.',
+      headerSection: 'Header',
+      logo: 'Photo or logo',
+      logoHint: 'Shown at the top of the page and on the link preview.',
+      logoUpload: 'Upload image',
+      logoUseKit: 'Use brand kit logo',
+      logoNone: 'No logo',
+      logoFromKit: 'From your brand kit.',
+      logoNoKit: 'Your brand kit has no logo, so your initials show instead.',
+      logoInitials: 'No logo: your initials show instead.',
+      logoUrl: 'Or paste an image link',
+      logoUrlPlaceholder: 'https://example.com/logo.png',
+      logoInvalid: 'Use a PNG, JPEG, WebP or GIF image, or a link that starts with https://.',
+      logoTooBig: 'That image is too large even after resizing. Try a smaller one.',
+      name: 'Name',
+      bio: 'Bio',
+      bioPlaceholder: 'One line about what you do.',
+      buttonsSection: 'Buttons',
+      buttonsHint: 'Your forms and links, in the order they show on the page.',
+      addForm: 'Add a form',
+      addFormPlaceholder: 'Choose a form',
+      addLink: 'Add a link',
+      noForms: 'This workspace has no forms yet.',
+      allFormsAdded: 'Every form is already on the page.',
+      empty: 'No buttons yet. Add a form or a link.',
+      formTag: 'Form',
+      linkTag: 'Link',
+      linkLabel: 'Label',
+      linkLabelPlaceholder: 'Our website',
+      linkUrl: 'URL',
+      linkUrlPlaceholder: 'https://example.com',
+      linkInvalid: 'Give the link a label and a full URL that starts with https://.',
+      moveUp: 'Move up',
+      moveDown: 'Move down',
+      remove: 'Remove',
+      maxItems: 'A page holds up to {max} buttons.',
+      socialsSection: 'Social links',
+      socialsHint: 'Only the ones you fill in show on the page. Each opens in a new tab.',
+      socialPlaceholders: {
+        instagram: 'instagram.com/yourbrand',
+        x: 'x.com/yourbrand',
+        youtube: 'youtube.com/@yourbrand',
+        tiktok: 'tiktok.com/@yourbrand',
+        whatsapp: '+57 300 123 4567',
+      },
+      socialInvalid: 'Enter a {network} link or handle, like @yourbrand.',
+      whatsappInvalid: 'Add the country code at the start, with a +, like +57 300 123 4567.',
+      whatsappHint: 'Visitors open a WhatsApp chat with this number.',
+      preview: 'Preview',
+      save: 'Save',
+      saving: 'Saving…',
+      saved: 'Page saved.',
+      error: 'Could not save the page.',
+      fixErrors: 'Fix the highlighted fields first.',
+    },
     select: {
       search: 'Search…',
       noResults: 'No results',
@@ -2545,13 +2684,10 @@ export const en: FormsMessages = {
         submissions: 'Submissions',
         analytics: 'Analytics',
         integrations: 'Integrations',
-        developers: 'MCP',
+        developers: 'Connect your agent',
+        tools: 'Tools',
         docs: 'Docs',
-        agents: 'Dapta Agents',
-      },
-      developersMenu: {
-        keys: 'API keys',
-        docs: 'API docs',
+        agents: 'Sales AI Agents',
       },
       profileMenu: {
         label: 'Account menu',
@@ -2562,7 +2698,7 @@ export const en: FormsMessages = {
         trigger: 'Switch product',
         menuLabel: 'Dapta products',
         eyebrow: 'Dapta',
-        dapta: 'Dapta Agents',
+        dapta: 'Sales AI Agents',
         calendars: 'Dapta Calendars',
         opensNewTab: '(opens in a new tab)',
       },
@@ -2613,6 +2749,29 @@ export const en: FormsMessages = {
       statCompletionNote: 'of those who start',
       publicPageDesc: 'The forms you want people to find.',
       colUpdated: 'Updated',
+      agentBanner: {
+        title: 'Control your forms, logic and design from your AI agent',
+        body: 'Connect Claude, ChatGPT, Claude Code, Codex, Cursor, OpenClaw or Hermes with your account. No API key.',
+        cta: 'Connect your agent',
+      },
+      agentCard: {
+        eyebrow: 'Made for agents',
+        title: 'Connect your agent',
+        body: 'Ask in your own words. Your agent builds the form, sets up the logic and the design, publishes it and reads every response.',
+        cta: 'Connect your agent',
+        label: 'An AI agent creating a dForms form from a prompt',
+        prompts: [
+          'Connect to the dForms MCP and build me a form that filters the best projects for my agency.',
+          'Make a lead form for my studio and let anyone with a budget over $5k book a call.',
+          'Build a job application form and score candidates by years of experience.',
+          'Create an RSVP form for our launch event and give me a QR code for the door.',
+          'Send every new lead from my contact form to HubSpot, with the score.',
+          'Which question is costing my signup form the most responses this week?',
+        ],
+        done: 'Done. It is live in dForms.',
+        placeholder: 'Ask {app}…',
+        connected: 'dForms connected',
+      },
     },
     brandKit: {
       title: 'Brand kit',
@@ -2748,6 +2907,8 @@ export const en: FormsMessages = {
       manageErrorLastOwner: 'A workspace must keep at least one owner.',
       manageErrorForbidden: 'You do not have permission to do that.',
       manageErrorFailed: 'Something went wrong. Please try again.',
+      manageErrorMembershipNotActive:
+        'Your own membership in this workspace is not active (its owner disabled it, or it is still an invitation), so staff access cannot open it.',
       manageErrorUpstream: 'The identity service could not apply this change.',
       manageErrorOwnership: 'Ownership is transferred from the Dapta app.',
     },
@@ -2859,7 +3020,7 @@ export const en: FormsMessages = {
       recipientsLabel: 'Send to',
       recipientsHint:
         'Each address receives its own copy of this email. Up to five addresses.',
-      recipientsEmpty: 'No addresses yet, so this email goes to the workspace owner.',
+      recipientsEmpty: 'No addresses yet, so this email goes to the workspace owner, or to the first admin when there is no owner with an email.',
       recipientsAdd: 'Add address',
       recipientsRemove: 'Remove address',
       recipientsPlaceholder: 'name@example.com',
@@ -3970,147 +4131,298 @@ export const en: FormsMessages = {
     },
     developers: {
       title: 'MCP',
-      subtitle: 'Connect an AI agent or your own code to dForms with an API key.',
-      guide: {
-        title: 'Connect your agent in 3 steps',
-        intro:
-          'dForms has an MCP server. Claude Code, Codex and Cursor connect to it with an API key, then create, edit and publish forms and read responses and analytics for you.',
-        stepDone: 'done',
-        keyTitle: 'Create an API key',
-        keyBody:
-          'The key connects the agent to this workspace and acts as you. It is shown only once, so copy it when you create it.',
-        keyDone: 'You already have a key. Create one per agent so you can revoke each on its own.',
-        agentTitle: 'Connect your agent',
-        agentBody: 'Put the key in your environment, then add the dForms MCP to your agent.',
-        agentDone: 'One of your keys has already been used: your agent is connected.',
-        agentsLabel: 'Agent',
-        keyCommandLabel: 'Set your key',
-        keyCommandHint:
-          'In the terminal you open your agent from, before you open it. Replace the value with your key.',
-        mcpLabel: 'Add the dForms MCP',
-        mcpHint: {
-          claudeCode:
-            'Run it once in a terminal. Claude Code keeps the name of the variable, not the key, and reads the key each time it connects.',
-          codex: 'Add it to `~/.codex/config.toml`. Codex reads the key from the variable each time it connects.',
-          cursor: 'Add it in one click. Cursor reads the key from the variable when it starts the server.',
+      connect: {
+        heading: 'Connect Claude, ChatGPT, Codex or Cursor to dForms',
+        intro: 'Ask your AI assistant to build, edit and publish forms, read responses and check analytics, right from a chat. Log in once with your account and it can work in every workspace you can open.',
+        signinTitle: 'Connect with your account',
+        recommended: 'Recommended',
+        signinIntro: 'Pick your app and follow the steps.',
+        benefits: {
+          noKey: { title: 'No API key.', body: 'Simply log in to your account. Nothing to create or store.' },
+          workspaces: { title: 'One connector, all your workspaces.', body: 'Work in any workspace you can open in dForms.' },
+          members: { title: 'Any member can connect.', body: 'No need to ask the workspace owner.' },
         },
-        addToCursor: 'Add to Cursor',
-        cursorFileHint: 'Or paste this into `.cursor/mcp.json` (one project) or `~/.cursor/mcp.json` (every project).',
-        mcpUnavailable:
-          'This deployment has no public address for its MCP server yet, so there is nothing to connect to. Ask whoever runs it to set one.',
-        tryTitle: 'Ask it for something',
-        promptHint: 'Open your agent and paste this to check that everything works.',
-        prompt:
-          'Use the dForms MCP: check that my key works, then create a contact form with name, email and message and give me its link.',
-        copyCommand: 'Copy command',
-        copyPrompt: 'Copy prompt',
-        chatNote:
-          'Claude in the browser and ChatGPT connect with a sign-in that the dForms MCP does not offer yet. Use Claude Code, Codex or Cursor for now.',
-        skillTitle: 'No MCP in your agent?',
-        skillBody:
-          'Download the skill: a zip that teaches any agent with a terminal to use the dForms API with the same key.',
-      },
-      keys: {
-        title: 'API keys',
-        subtitle: 'Your keys for this workspace. Each one acts as you, with your role.',
-        subtitleAdmin: 'Every active key in this workspace. Each one acts as the person who created it.',
-        create: 'Create key',
-        colName: 'Name',
-        colKey: 'Key',
-        colCreated: 'Created',
-        colLastUsed: 'Last used',
-        colCreatedBy: 'Created by',
-        colActions: 'Actions',
-        masked: '•••• {last4}',
-        maskedLabel: 'Key ending in {last4}',
-        neverUsed: 'Never',
-        you: 'You',
-        unknownCreator: 'Former member',
-        emptyTitle: 'No API keys yet',
-        emptyBody:
-          'An API key lets an AI agent (Claude Code, Codex, Cursor) or a script create, edit and publish forms in this workspace, and read their responses. It works as you, so treat it like a password.',
-        loadError: 'Could not load your API keys. Reload the page to try again.',
-        revoke: 'Revoke',
-        revokeLabel: 'Revoke {name}',
-        revokeTitle: 'Revoke this key?',
-        revokeConfirm: 'Anything using “{name}” stops working right away. This cannot be undone.',
-        revokeSuccess: 'Key revoked',
-        revokeErrorForbidden: 'You can only revoke your own keys.',
-        revokeErrorGone:
-          'That key is no longer in this workspace. It may have been revoked already. The list is up to date now.',
-        revokeErrorFailed: 'Could not revoke the key. Try again.',
-        createTitle: 'Create an API key',
-        nameLabel: 'Name',
-        namePlaceholder: 'Claude Code on my laptop',
-        nameHelp: 'So you know later where it is used. Up to 60 characters.',
-        createSubmit: 'Create key',
-        creating: 'Creating…',
-        cancel: 'Cancel',
-        errorInvalid: 'Give the key a name of 1 to 60 characters.',
-        errorLimit:
-          'You already have 10 active keys, the most allowed. Revoke one you no longer use to create another.',
-        errorForbidden: 'You cannot create keys in this workspace.',
-        errorFailed: 'Could not create the key. Try again.',
-        createdTitle: 'Copy your new key',
-        keyLabel: 'Your API key',
-        createdWarning:
-          'This is the only time you will see this key. Copy it and store it somewhere safe: once you close this dialog it cannot be shown again.',
+        appsLabel: 'Your AI app',
+        urlLabel: 'MCP URL',
+        promptLabel: 'Try it',
+        prompt: 'List my forms in dForms',
         copy: 'Copy',
         copied: 'Copied',
-        copyFailed: 'Could not copy. Select the key and copy it by hand.',
-        createdNext: 'Next: paste this line in the terminal you open your agent from.',
-        exportLabel: 'Terminal',
-        copyExport: 'Copy command',
-        done: 'Done',
+        copyFailed: 'Could not copy. Select the text and copy it by hand.',
+        copyUrl: 'Copy URL',
+        copyCommand: 'Copy command',
+        copyConfig: 'Copy configuration',
+        copyPrompt: 'Copy prompt',
+        addToCursor: 'Add to Cursor',
+        open: {
+          claude: 'Open Claude',
+          claudeDesktop: 'Open Claude Desktop',
+          chatgpt: 'Open ChatGPT',
+          copyCommand: 'Copy command',
+          copied: 'Copied',
+          pasteHint: 'Paste it in your terminal.',
+          phoneNote: 'Open this page on your computer to connect {app}.',
+        },
+        apps: {
+          claude: {
+            steps: [
+              {
+                title: 'Open Connectors in Claude',
+                body: 'In claude.ai, Claude Desktop or Cowork, click **+** in the chat box, then **Connectors → Add connector → Add custom connector**.',
+              },
+              {
+                title: 'Name it dForms and paste this URL',
+                body: 'Use `dForms` as the name and paste the URL below. Leave the advanced settings empty and click **Add**.',
+              },
+              {
+                title: 'Log in to your account',
+                body: 'Your browser opens the sign-in page. Enter your email and type the 6-digit code we send you. Back in Claude, dForms shows as **Connected**.',
+              },
+              {
+                title: 'Ask',
+                body: 'Open a new chat and ask, for example:',
+              },
+            ],
+          },
+          chatgpt: {
+            steps: [
+              {
+                title: 'Create the app in ChatGPT',
+                body: 'In the ChatGPT desktop app, switch to **Work** mode. Open **Plugins**, click **Add** and choose **Create MCP App**.',
+              },
+              {
+                title: 'Fill in the form',
+                body: 'Name: `dForms`. Server URL: paste the address below. Leave Authentication on **OAuth**. Check **I understand and want to continue** and create it.',
+              },
+              {
+                title: 'Log in to your account',
+                body: 'Click **Continue**. Your browser opens: log in if it asks, then click **Open ChatGPT** to come back.',
+              },
+              {
+                title: 'Install the plugin',
+                body: 'In **Plugins**, open the **Personal** tab, choose **dForms** and click **Install plugin**. The browser opens once more to link your account: click **Open ChatGPT** again. That second sign-in is expected.',
+              },
+              {
+                title: 'Ask',
+                body: 'Click **Try now**, type `@dForms` and ask, for example:',
+              },
+            ],
+          },
+          claudeCode: {
+            steps: [
+              {
+                title: 'Add dForms to Claude Code',
+                body: 'In a terminal, run:',
+              },
+              {
+                title: 'Log in to your account',
+                body: 'Open Claude Code, run `/mcp`, choose **dforms** and then **Authenticate**. Log in in the browser and come back to the terminal.',
+              },
+              {
+                title: 'Ask',
+                body: 'Ask, for example:',
+              },
+            ],
+            note: 'Already connected dForms in Claude? Claude Code logged in with the same Claude account uses that connector too: run `/mcp` to check.',
+          },
+          codex: {
+            steps: [
+              {
+                title: 'Add dForms to Codex',
+                body: 'In a terminal, run:',
+              },
+              {
+                title: 'Log in to your account',
+                body: 'Run this command. Your browser opens: log in and come back to the terminal.',
+              },
+              {
+                title: 'Ask',
+                body: 'Open Codex and ask, for example:',
+              },
+            ],
+            note: 'Using the Codex or ChatGPT desktop app? Follow the **ChatGPT** tab.',
+          },
+          cursor: {
+            steps: [
+              {
+                title: 'Add dForms to Cursor',
+                body: 'With Cursor installed, click **Add to Cursor**. Or open **Customize → MCPs → New MCP Server**, choose **User** and paste this into `mcp.json`:',
+              },
+              {
+                title: 'Log in to your account',
+                body: '**dforms** shows up with **Needs authentication**. Click **Authenticate**, log in in the browser, click **Allow access** and then **Open Cursor**.',
+              },
+              {
+                title: 'Ask',
+                body: 'Open a **New Chat** and ask, for example. Cursor asks before it runs a tool: click **Run**.',
+              },
+            ],
+          },
+          openclaw: {
+            steps: [
+              {
+                title: 'Add dForms to OpenClaw',
+                body: 'In a terminal, save dForms as a remote MCP server that logs in with your account:',
+              },
+              {
+                title: 'Log in to your account',
+                body: 'Run this command. Your browser opens: log in and come back to the terminal. `openclaw mcp status --verbose` then shows dforms as authorized.',
+              },
+              {
+                title: 'Ask',
+                body: 'Ask your OpenClaw agent, for example:',
+              },
+            ],
+          },
+          hermes: {
+            steps: [
+              {
+                title: 'Add dForms to Hermes',
+                body: 'Open `~/.hermes/config.yaml` (or run `hermes config edit`) and add dForms under `mcp_servers`:',
+              },
+              {
+                title: 'Log in to your account',
+                body: 'Run this command. Your browser opens: log in and come back to the terminal. Then start a new session, or run `/reload-mcp` in the one you have open.',
+              },
+              {
+                title: 'Ask',
+                body: 'Ask your Hermes agent, for example:',
+              },
+            ],
+          },
+        },
+        tip: '**One connector for every workspace.** If you have several, your AI app asks which one to use. To change, just say “switch to <workspace>”. Every answer says which workspace it used.',
+        unavailableTitle: 'The connector is not available on this deployment',
+        unavailableBody: 'This deployment’s MCP server does not take a sign-in yet, so AI apps cannot connect here. Ask whoever runs it to set `MCP_OAUTH_PROVIDER` and `MCP_PUBLIC_URL`.',
+        media: {
+          terminalLabel: 'Animation: how to connect dForms in {app}',
+          play: 'Play the walkthrough',
+          pause: 'Pause the walkthrough',
+        },
+        walkthrough: {
+          ui: {
+            ccWelcome: 'Welcome to Claude Code!',
+            ccHelp: '/help for help, /status for your current setup',
+            ccAdded: 'Added HTTP MCP server dforms with URL: {url} to user config',
+            ccManage: 'Manage MCP servers',
+            needsAuth: 'needs authentication',
+            authenticate: 'Authenticate',
+            ccBrowser: 'Opening your browser to authenticate…',
+            ccAuthOk: 'Authentication successful. Connected to dforms.',
+            codexAdded: "Added global MCP server 'dforms'.",
+            codexAuthorize: 'Authorize dforms in your browser to continue.',
+            codexLoggedIn: "Successfully logged in to MCP server 'dforms'.",
+            codexModel: 'model: gpt-5-codex  directory: ~/studio',
+            called: 'Called',
+            working: 'Working',
+            ocSaved: 'Saved MCP server "dforms" (streamable-http, auth: oauth).',
+            ocLogin: 'Opening the browser to sign in to dforms…',
+            ocLoggedIn: 'dforms: authorized. 49 tools available.',
+            hmSaved: 'Saved. Run hermes mcp login dforms to sign in.',
+            hmLogin: 'Opening your browser to authorize dforms…',
+            hmLoggedIn: 'dforms: authorized. Tokens saved.',
+          },
+          signIn: {
+            title: 'Log in to your account',
+            emailLabel: 'Email',
+            email: 'alex@example.com',
+            continue: 'Continue with email',
+            checkEmail: 'Check your email',
+            codeSentTo: 'Enter the code sent to',
+            noCode: 'Didn’t receive a code? You can request a new one in 30 seconds.',
+            connected: 'dForms is connected to {app}',
+            consentTitle: '{app} would like access to your account',
+            redirectNote: 'After allowing access, you will be redirected to:',
+            warning: 'This redirect points to an application running on your machine. Only allow access if you started this from {app}.',
+            allow: 'Allow access',
+            cancel: 'Cancel',
+          },
+          answer: {
+            intro: 'Here are the forms in your workspace:',
+            forms: [
+              { name: 'Lead qualifier', stat: '128 responses' },
+              { name: 'Launch RSVP', stat: '64 responses' },
+              { name: 'Job application', stat: '23 responses' },
+            ],
+            colForm: 'Form',
+            colResponses: 'Responses',
+            colStatus: 'Status',
+            live: 'Live',
+          },
+        },
+        toolsTitle: 'What you can do with the MCP',
+        toolsIntro: '{count} tools, the same things you do in the dashboard. Ask in your own words: your AI app picks the tool.',
+        toolsLink: 'See every tool',
       },
-    },
-    developerDocs: {
-      title: 'How to use the API',
-      intro:
-        'Connect an AI agent (Claude Code, Codex, Cursor) or your own code to this workspace with an API key from this page. The API is the same one the dashboard uses.',
-      apiUrlLabel: 'API URL',
-      apiUrlMissing:
-        'This deployment has no public API address configured yet. Ask whoever runs it to set `PUBLIC_API_URL`.',
-      authTitle: 'Authenticate',
-      authBody:
-        'Send your key in the `Authorization` header of every request. The key already belongs to this workspace, so there is nothing else to choose.',
-      flowTitle: 'Create, edit, publish and revert',
-      flowBody: 'Every form goes through the same four calls.',
-      flow: {
-        create:
-          'Creates the form with its config, live right away. The answer carries `publicUrl` and `editorUrl`: share those links as they come.',
-        edit: 'Saves the whole config as a draft. The public form does not change until you publish.',
-        publish: 'Makes the draft live.',
-        revert:
-          'No body. Puts the previously published version back live and answers `200` with the form. Calling it again undoes the revert. Every form carries `previousPublishedAt`: when that version went live (epoch ms), or `null` when there is nothing to go back to.',
+      tools: {
+        title: 'Tools',
+        intro: 'Everything your agent can do in dForms once it is connected: {count} tools. You never call them yourself. Ask in your own words and your agent picks the right one.',
+        askLabel: 'Ask:',
+        count: '{n} tools',
+        groups: {
+          forms: { title: 'Forms', body: 'Create, edit, publish, revert, duplicate and delete forms, and change their link.' },
+          responses: { title: 'Responses and CSV', body: 'List, search and read responses, open their files and export them to CSV.' },
+          analytics: { title: 'Analytics', body: 'Views, starts, completions, drop-off by step and a summary of each form.' },
+          folders: { title: 'Folders', body: 'Create, rename and delete folders, and move forms between them.' },
+          brandKit: { title: 'Brand kit', body: 'Read and edit the brand kit and apply it to your forms.' },
+          linkPage: { title: 'Link page', body: 'Read and edit the workspace’s public page with your forms and links.' },
+          notifications: { title: 'Emails', body: 'Edit the notification emails of the workspace and of each form.' },
+          integrations: { title: 'Integrations', body: 'Webhooks, HubSpot and Calendly: where responses go, tests and deliveries.' },
+          account: { title: 'Account and workspaces', body: 'Who is connected, the workspaces you can work in and your profile.' },
+        },
+        items: {
+          list_forms: { what: 'See every form in the workspace, with its link and status.', ask: 'Which forms do I have?' },
+          get_form: { what: 'Open one form and read all its questions, logic and design.', ask: 'Show me the questions of my contact form' },
+          get_form_guide: { what: 'Learn how dForms forms are built before creating one.', ask: 'How should a scored quiz be built in dForms?' },
+          create_form: { what: 'Create a new form from a description, ready to share.', ask: 'Make a lead form for my studio with name, email and budget' },
+          update_form: { what: 'Change questions, logic, scoring or design. It saves as a draft.', ask: 'Add a question about the deadline to my lead form' },
+          publish_form: { what: 'Put the latest draft live.', ask: 'Publish my lead form' },
+          revert_form: { what: 'Go back to the version that was live before.', ask: 'Undo the last publish of my survey' },
+          discard_draft: { what: 'Throw away unpublished changes.', ask: 'Discard the draft changes in my RSVP form' },
+          duplicate_form: { what: 'Make a copy of a form to start from.', ask: 'Duplicate my contact form' },
+          delete_form: { what: 'Delete a form you no longer need.', ask: 'Delete the old test form' },
+          set_form_slug: { what: 'Change the end of a form\'s link.', ask: 'Change my survey link to /feedback' },
+          list_responses: { what: 'List the responses of a form, with filters by date, status or score.', ask: 'Show this week\'s responses to my lead form' },
+          get_response: { what: 'Read one response in full.', ask: 'Show me the latest response in full' },
+          get_response_file: { what: 'Open a file someone uploaded in a response.', ask: 'Open the CV the last candidate uploaded' },
+          get_response_facets: { what: 'See how the answers to each question add up.', ask: 'How did people answer the budget question?' },
+          search_answers: { what: 'Find responses that mention something.', ask: 'Find responses that mention HubSpot' },
+          export_responses_csv: { what: 'Download responses as a CSV file.', ask: 'Export this month\'s responses to CSV' },
+          delete_response: { what: 'Delete one response.', ask: 'Delete the test response I sent' },
+          delete_responses: { what: 'Delete several responses at once.', ask: 'Delete every response from last week\'s test' },
+          get_form_analytics: { what: 'Views, starts, completions and drop-off by step.', ask: 'Where are people dropping off in my signup form?' },
+          get_form_summary: { what: 'A short summary of how a form is doing.', ask: 'How is my lead form doing this week?' },
+          list_folders: { what: 'See your folders and what is in them.', ask: 'What folders do I have?' },
+          create_folder: { what: 'Create a folder to group forms.', ask: 'Create a folder called Clients' },
+          rename_folder: { what: 'Rename a folder.', ask: 'Rename the Clients folder to Customers' },
+          delete_folder: { what: 'Delete a folder. Its forms stay.', ask: 'Delete the Old folder' },
+          move_form: { what: 'Move a form into a folder.', ask: 'Move my RSVP form to the Events folder' },
+          get_brand_kit: { what: 'Read the workspace\'s logo, colors and fonts.', ask: 'What colors does my brand kit use?' },
+          update_brand_kit: { what: 'Change the brand kit.', ask: 'Make my brand color green' },
+          apply_brand_kit: { what: 'Apply the brand kit to a form.', ask: 'Apply my brand kit to the survey' },
+          revert_brand_kit: { what: 'Take a form back to the design it had before the brand kit.', ask: 'Undo the brand kit on my survey' },
+          get_link_page: { what: 'Read the workspace’s public page: its buttons, socials and link.', ask: 'What does my workspace page show?' },
+          update_link_page: { what: 'Edit, publish or delete the workspace’s public page.', ask: 'Add my contact form to the workspace page and publish it' },
+          list_notifications: { what: 'See the workspace\'s notification emails.', ask: 'Which emails does dForms send?' },
+          update_notification: { what: 'Edit a notification email for the whole workspace.', ask: 'Change the subject of the new response email' },
+          reset_notification: { what: 'Put a workspace email back to its default.', ask: 'Reset the new response email' },
+          list_form_notifications: { what: 'See the emails one form sends.', ask: 'Which emails does my lead form send?' },
+          update_form_notification: { what: 'Edit an email for one form.', ask: 'Send the lead form notices to sales@example.com' },
+          reset_form_notification: { what: 'Put a form\'s email back to the workspace default.', ask: 'Reset the emails of my survey' },
+          list_integrations: { what: 'See which apps are connected, like HubSpot or Calendly.', ask: 'Is HubSpot connected?' },
+          set_destinations: { what: 'Choose where a form\'s responses go: webhooks or HubSpot.', ask: 'Send every lead from my form to HubSpot' },
+          list_webhooks: { what: 'See a form\'s webhooks.', ask: 'Which webhooks does my lead form have?' },
+          ping_webhook: { what: 'Send a test to a webhook.', ask: 'Test the webhook of my lead form' },
+          list_deliveries: { what: 'See which responses were delivered and which failed.', ask: 'Did my last responses reach HubSpot?' },
+          list_hubspot_properties: { what: 'See the HubSpot fields a question can fill.', ask: 'Which HubSpot fields can I map?' },
+          list_calendly_event_types: { what: 'See the Calendly events a form can book.', ask: 'Which Calendly events can my form book?' },
+          whoami: { what: 'Check who is connected and in which workspace.', ask: 'Who am I connected as?' },
+          list_my_workspaces: { what: 'See every workspace you can work in.', ask: 'Which workspaces can I use?' },
+          get_my_profile: { what: 'Read your profile and public page.', ask: 'What is my public page link?' },
+          get_workspace_link_code: { what: 'Get the code that links the workspace to other apps.', ask: 'Give me the workspace link code' },
+        },
+        connectCta: 'Connect your agent',
       },
-      flowLabels: {
-        create: 'Create',
-        edit: 'Edit',
-        publish: 'Publish',
-        revert: 'Revert',
-      },
-      gotchasTitle: 'Watch out for',
-      gotchas: {
-        put: '`PUT` replaces the whole config. Read the form, change what you need and send every step back: a config without `steps` is refused, and the steps you leave out are deleted.',
-        stale:
-          'Send `expectedUpdatedAt` with the `updatedAt` you read. If someone saved the form in the editor since then, you get a `409` with the current version instead of overwriting their work.',
-        errors:
-          'A `400` lists every problem in `issues[]`, each with its path inside the body you sent: `config.steps.2.flowGroup` when you create or edit a form, `destinations.0.settings.timeoutMs` on the destinations route. Fix them all before you send again.',
-        editorDefaults:
-          'Fields the editor cannot show are refused, but the defaults it writes itself are accepted, so a form you read saves back unchanged: the `flowGroup` derived from the step type, `buttonText` `Continue` on a message step, `reveal.enabled` on a reveal step and `scheduler.prefill` on a scheduler step. `reveal`, `message` and `scheduler` steps can go without a `question`; every other step needs one.',
-        destinations:
-          'Webhooks and HubSpot have their own route, `PUT /v1/forms/{id}/destinations`. `PUT /v1/forms/{id}` ignores `destinations` inside the config.',
-        rateLimit:
-          'Each key can make 120 requests per minute. Past that you get a `429` with a `Retry-After` header: wait that many seconds and continue.',
-      },
-      skillTitle: 'Skill for your agent',
-      skillBody:
-        'Give your agent everything it needs in one file. The skill already carries this environment’s addresses, so your agent can use the API without you explaining anything.',
-      skillContents:
-        'Inside: the rules your agent should follow, every endpoint, the error codes, the JSON Schema of a form config, recipes (a quiz with scoring, editing a step, publishing and reverting, responses with filters, analytics and CSV) and how to install it in Claude Code, Codex and Cursor.',
-      skillButton: 'Download the skill',
-      skillUnavailable: 'The download is available once the API address is configured.',
     },
     apiDocs: {
       title: 'API docs',
@@ -4218,6 +4530,10 @@ export const en: FormsMessages = {
           title: 'Brand kit',
           intro: 'The workspace’s logo, colours and type, and applying them to forms.',
         },
+        linkPage: {
+          title: 'Link page',
+          intro: 'The workspace’s public page at `/{accountCode}`: its forms and links in one place. Any member can read and edit it.',
+        },
         notifications: {
           title: 'Notifications',
           intro: 'The emails dForms sends on each response, for the whole workspace or for one form.',
@@ -4241,6 +4557,8 @@ export const en: FormsMessages = {
         'PUT /v1/forms/:id':
           'Saves a new config as a draft; the public form does not change until you publish. The config replaces the whole draft, so send every step.',
         'POST /v1/forms/:id/publish': 'Makes the draft live. With no draft pending, it answers the form unchanged.',
+        'POST /v1/forms/:id/discard-draft':
+          'Throws away the pending draft, so the form goes back to its live config. What the public sees does not change. With no draft pending, it answers the form unchanged.',
         'POST /v1/forms/:id/revert':
           'Puts the previously published version back live. Calling it again undoes the revert. The pending draft and the destinations stay as they are.',
         'PUT /v1/forms/:id/slug':
@@ -4279,6 +4597,8 @@ export const en: FormsMessages = {
           'Replaces the brand kit. New forms take it at once; existing forms only when you apply it.',
         'POST /v1/branding/apply': 'Applies the brand kit to the forms you name.',
         'POST /v1/branding/revert': 'Puts back the look the forms had before the brand kit was applied.',
+        'GET /v1/link-page': 'The stored page (`page`, null when there is none), the workspace’s forms and brand kit, the page’s `publicUrl` and whether it is `live`. A stored WhatsApp number comes back as digits; send it back with a leading `+`.',
+        'PUT /v1/link-page': 'Replaces the whole page: read it first and send it back complete. Colors and type come from the brand kit. `{ "page": null }` deletes the page and its URL answers 404 again.',
         'GET /v1/notifications':
           'The two emails dForms sends on each response: the notice to your team and the receipt to the person who answered.',
         'PUT /v1/notifications/:emailKey': 'Turns an email on or off, changes its text or who gets the notice.',
@@ -4344,6 +4664,13 @@ export const en: FormsMessages = {
         brandButtonStyle: 'How buttons are drawn.',
         brandClientLogos: 'Logos of your clients to show on the cover, up to 24.',
         formIds: 'The `id`s of the forms, 1 to 500.',
+        linkPage: 'The whole page with `version: 1`, or `null` to delete it.',
+        linkPageEnabled: 'Live at the public URL. `false` (the default) answers 404 there.',
+        linkPageName: 'The heading, up to 80 characters. Blank or absent shows the workspace name.',
+        linkPageBio: 'A line under the heading, up to 280 characters.',
+        linkPageLogo: 'Absent uses the brand kit logo, `null` shows none, an http(s) URL shows that image.',
+        linkPageItems: 'The buttons, in order, up to 30: `{ "type": "form", "formId" }` or `{ "type": "link", "label", "url" }`. A form of another workspace is dropped.',
+        linkPageSocials: '`instagram`, `x`, `youtube` and `tiktok` (a link or a handle) and `whatsapp` (the number with its country code, starting with `+`).',
         notificationEnabled: 'Whether the email is sent.',
         notificationSubject: 'The subject, with `{{token}}` markers such as `{{formName}}`. `null` puts the default back.',
         notificationBody: 'The body as plain text, with `{{token}}` markers. `null` puts the default back.',
@@ -4364,36 +4691,6 @@ export const en: FormsMessages = {
         },
       },
     },
-    // ── API docs page: keys the page needs beyond `apiDocs` (feat/api-docs-ui) ──
-    apiDocsPage: {
-      keysLink: 'API keys',
-      start: {
-        intro:
-          'Connect an AI agent (Claude Code, Codex, Cursor) or your own code to this workspace with an API key. The API is the same one the dashboard uses, so every form it creates shows up here.',
-        flowLink: 'See the endpoint',
-      },
-      auth: {
-        title: 'Authentication',
-        actsAs:
-          'A key acts as the person who created it, with that person’s current role. Routes marked `Owner or admin` answer `403 FORBIDDEN` to anyone else’s key.',
-        workspace:
-          'The key already belongs to one workspace. A workspace header naming another one answers `403 WORKSPACE_FORBIDDEN`.',
-        invalid:
-          'An unknown or revoked key, or one whose creator left the workspace, answers `401 INVALID_API_KEY`.',
-      },
-      searchHint: 'Try part of a path, like `/v1/forms`, or a word like `publish`.',
-      endpointCount: { one: '1 endpoint', other: '{count} endpoints' },
-      endpoint: {
-        noParameters: 'No parameters.',
-        csv: 'CSV file',
-        showMore: 'Show the full response ({lines} lines)',
-        showLess: 'Show less',
-        copyCurl: 'Copy the curl command',
-        copyResponse: 'Copy the example',
-        copyUrl: 'Copy the API URL',
-      },
-    },
-    // ── end API docs page extras ─────────────────────────────────────────────
     publish: {
       publish: 'Publish',
       publishing: 'Publishing…',
@@ -4690,6 +4987,7 @@ export const es: FormsMessages = {
         'Este formulario ahora verifica que eres una persona. Recarga la página y vuelve a enviar tus respuestas.',
       rate_limited: 'Demasiados intentos desde tu conexión. Espera un momento e inténtalo de nuevo.',
       answer_too_long: 'Una de tus respuestas es más larga de lo que permite este formulario. Acórtala e inténtalo de nuevo.',
+      invalid_answers: 'Faltan respuestas o alguna ya no coincide con este formulario. Recarga la página e inténtalo de nuevo.',
     },
     captcha: {
       prompt: 'Confirma que eres una persona para enviar tus respuestas.',
@@ -4726,7 +5024,83 @@ export const es: FormsMessages = {
     formsTitle: 'Formularios',
     noForms: 'Todavía no hay nada publicado.',
   },
+  linkPage: {
+    buttonsLabel: 'Enlaces',
+    socialsLabel: 'Redes sociales',
+    social: { instagram: 'Instagram', x: 'X', youtube: 'YouTube', tiktok: 'TikTok', whatsapp: 'WhatsApp' },
+    seoDescription: 'Formularios y enlaces de {name}.',
+  },
   admin: {
+    linkPage: {
+      heading: 'La página de tu workspace',
+      subtitle: 'Una página con tu logo, tus formularios y tus enlaces, en un link que puedes compartir o imprimir como código QR.',
+      anyMember: 'Cualquier persona de este workspace puede editar esta página.',
+      enable: 'Publicada',
+      offNote: 'Sin publicar. Quien la visite verá una página no encontrada hasta que la actives.',
+      copy: 'Copiar link',
+      copied: 'Copiado',
+      open: 'Abrir',
+      qr: 'Código QR',
+      qrTitle: 'Código QR de tu página',
+      qrIntro: 'Imprímelo en una tarjeta, un banner o tu stand. Al escanearlo se abre esta página.',
+      qrAlt: 'Código QR que abre la página de tu workspace',
+      qrDownloadPng: 'Descargar PNG',
+      qrDownloadSvg: 'Descargar SVG',
+      qrPngFailed: 'No se pudo crear el PNG en este navegador. Descarga el SVG.',
+      headerSection: 'Encabezado',
+      logo: 'Foto o logo',
+      logoHint: 'Se muestra arriba en la página y en la vista previa del link.',
+      logoUpload: 'Subir imagen',
+      logoUseKit: 'Usar el logo del brand kit',
+      logoNone: 'Sin logo',
+      logoFromKit: 'Del brand kit.',
+      logoNoKit: 'Tu brand kit no tiene logo, así que se muestran tus iniciales.',
+      logoInitials: 'Sin logo: se muestran tus iniciales.',
+      logoUrl: 'O pega el link de una imagen',
+      logoUrlPlaceholder: 'https://example.com/logo.png',
+      logoInvalid: 'Usa una imagen PNG, JPEG, WebP o GIF, o un link que empiece por https://.',
+      logoTooBig: 'La imagen sigue siendo muy grande después de reducirla. Prueba con una más pequeña.',
+      name: 'Nombre',
+      bio: 'Bio',
+      bioPlaceholder: 'Una línea sobre lo que haces.',
+      buttonsSection: 'Botones',
+      buttonsHint: 'Tus formularios y enlaces, en el orden en que salen en la página.',
+      addForm: 'Agregar un formulario',
+      addFormPlaceholder: 'Elige un formulario',
+      addLink: 'Agregar un enlace',
+      noForms: 'Este workspace todavía no tiene formularios.',
+      allFormsAdded: 'Todos los formularios ya están en la página.',
+      empty: 'Todavía no hay botones. Agrega un formulario o un enlace.',
+      formTag: 'Formulario',
+      linkTag: 'Enlace',
+      linkLabel: 'Texto',
+      linkLabelPlaceholder: 'Nuestro sitio web',
+      linkUrl: 'URL',
+      linkUrlPlaceholder: 'https://example.com',
+      linkInvalid: 'Ponle un texto al enlace y una URL completa que empiece por https://.',
+      moveUp: 'Subir',
+      moveDown: 'Bajar',
+      remove: 'Quitar',
+      maxItems: 'Una página admite hasta {max} botones.',
+      socialsSection: 'Redes sociales',
+      socialsHint: 'Solo salen en la página las que llenes. Cada una se abre en una pestaña nueva.',
+      socialPlaceholders: {
+        instagram: 'instagram.com/tumarca',
+        x: 'x.com/tumarca',
+        youtube: 'youtube.com/@tumarca',
+        tiktok: 'tiktok.com/@tumarca',
+        whatsapp: '+57 300 123 4567',
+      },
+      socialInvalid: 'Escribe un link o un usuario de {network}, como @tumarca.',
+      whatsappInvalid: 'Agrega el código de país al inicio, con un +, como +57 300 123 4567.',
+      whatsappHint: 'Quien la visite abre un chat de WhatsApp con este número.',
+      preview: 'Vista previa',
+      save: 'Guardar',
+      saving: 'Guardando…',
+      saved: 'Página guardada.',
+      error: 'No se pudo guardar la página.',
+      fixErrors: 'Primero corrige los campos marcados.',
+    },
     select: {
       search: 'Buscar…',
       noResults: 'Sin resultados',
@@ -4756,13 +5130,10 @@ export const es: FormsMessages = {
         submissions: 'Respuestas',
         analytics: 'Analíticas',
         integrations: 'Integraciones',
-        developers: 'MCP',
+        developers: 'Conecta tu agente',
+        tools: 'Herramientas',
         docs: 'Documentación',
-        agents: 'Dapta Agents',
-      },
-      developersMenu: {
-        keys: 'Llaves de API',
-        docs: 'Docs de la API',
+        agents: 'Agentes de ventas con IA',
       },
       profileMenu: {
         label: 'Menú de cuenta',
@@ -4773,7 +5144,7 @@ export const es: FormsMessages = {
         trigger: 'Cambiar producto',
         menuLabel: 'Productos Dapta',
         eyebrow: 'Dapta',
-        dapta: 'Dapta Agents',
+        dapta: 'Agentes de ventas con IA',
         calendars: 'Dapta Calendars',
         opensNewTab: '(se abre en una pestaña nueva)',
       },
@@ -4824,6 +5195,29 @@ export const es: FormsMessages = {
       statCompletionNote: 'de quienes empiezan',
       publicPageDesc: 'Los formularios que quieres que encuentren.',
       colUpdated: 'Actualizado',
+      agentBanner: {
+        title: 'Controla tus formularios, la lógica y el diseño desde tu agente de IA',
+        body: 'Conecta Claude, ChatGPT, Claude Code, Codex, Cursor, OpenClaw o Hermes con tu cuenta. Sin llave de API.',
+        cta: 'Conecta tu agente',
+      },
+      agentCard: {
+        eyebrow: 'Hecho para agentes',
+        title: 'Conecta tu agente',
+        body: 'Pide con tus palabras. Tu agente crea el formulario, arma la lógica y el diseño, lo publica y lee cada respuesta.',
+        cta: 'Conecta tu agente',
+        label: 'Un agente de IA creando un formulario de dForms a partir de un prompt',
+        prompts: [
+          'Conéctate al MCP de dForms y hazme un formulario que filtre los mejores proyectos para mi agencia.',
+          'Haz un formulario de leads para mi estudio y deja que agende una llamada todo el que tenga más de $5k de presupuesto.',
+          'Crea un formulario de postulación a un empleo y puntúa a los candidatos por años de experiencia.',
+          'Crea un formulario de confirmación de asistencia para nuestro lanzamiento y dame un código QR para la entrada.',
+          'Manda cada lead nuevo de mi formulario de contacto a HubSpot, con el puntaje.',
+          '¿Qué pregunta le está costando más respuestas a mi formulario de registro esta semana?',
+        ],
+        done: 'Listo. Ya está publicado en dForms.',
+        placeholder: 'Pregúntale a {app}…',
+        connected: 'dForms conectado',
+      },
     },
     brandKit: {
       title: 'Kit de marca',
@@ -4960,6 +5354,8 @@ export const es: FormsMessages = {
       manageErrorLastOwner: 'Un espacio de trabajo debe conservar al menos un propietario.',
       manageErrorForbidden: 'No tienes permiso para hacer eso.',
       manageErrorFailed: 'Algo salió mal. Inténtalo de nuevo.',
+      manageErrorMembershipNotActive:
+        'Tu membresía en este espacio de trabajo no está activa (su propietario la desactivó, o sigue siendo una invitación), así que el acceso de staff no puede abrirlo.',
       manageErrorUpstream: 'El servicio de identidad no pudo aplicar este cambio.',
       manageErrorOwnership: 'La propiedad se transfiere desde la app de Dapta.',
     },
@@ -5072,7 +5468,7 @@ export const es: FormsMessages = {
       recipientsLabel: 'Enviar a',
       recipientsHint:
         'Cada dirección recibe su propia copia de este correo. Hasta cinco direcciones.',
-      recipientsEmpty: 'Sin direcciones, así que este correo llega al propietario del workspace.',
+      recipientsEmpty: 'Sin direcciones, así que este correo llega al propietario del workspace, o al primer administrador si no hay un propietario con correo.',
       recipientsAdd: 'Añadir dirección',
       recipientsRemove: 'Quitar dirección',
       recipientsPlaceholder: 'nombre@example.com',
@@ -6192,147 +6588,298 @@ export const es: FormsMessages = {
     },
     developers: {
       title: 'MCP',
-      subtitle: 'Conecta un agente de IA o tu propio código a dForms con una llave de API.',
-      guide: {
-        title: 'Conecta tu agente en 3 pasos',
-        intro:
-          'dForms tiene un servidor MCP. Claude Code, Codex y Cursor se conectan con una llave de API y desde ahí crean, editan y publican forms y leen respuestas y analítica por ti.',
-        stepDone: 'hecho',
-        keyTitle: 'Crea una llave de API',
-        keyBody:
-          'La llave conecta al agente con este workspace y actúa como tú. Solo se muestra una vez, así que cópiala al crearla.',
-        keyDone: 'Ya tienes una llave. Crea una por agente para poder revocar cada una por separado.',
-        agentTitle: 'Conecta tu agente',
-        agentBody: 'Pon la llave en tu entorno y agrega el MCP de dForms a tu agente.',
-        agentDone: 'Una de tus llaves ya se usó: tu agente está conectado.',
-        agentsLabel: 'Agente',
-        keyCommandLabel: 'Pon tu llave',
-        keyCommandHint:
-          'En la terminal desde la que abres tu agente, antes de abrirlo. Cambia el valor por tu llave.',
-        mcpLabel: 'Agrega el MCP de dForms',
-        mcpHint: {
-          claudeCode:
-            'Córrelo una vez en una terminal. Claude Code guarda el nombre de la variable, no la llave, y la lee cada vez que se conecta.',
-          codex: 'Agrégalo a `~/.codex/config.toml`. Codex lee la llave de la variable cada vez que se conecta.',
-          cursor: 'Agrégalo con un clic. Cursor lee la llave de la variable cuando inicia el servidor.',
+      connect: {
+        heading: 'Conecta Claude, ChatGPT, Codex o Cursor con dForms',
+        intro: 'Pídele a tu asistente de IA que cree, edite y publique formularios, lea respuestas y revise analíticas, directamente desde un chat. Inicia sesión una vez con tu cuenta y podrá trabajar en todos los workspaces que puedes abrir.',
+        signinTitle: 'Conecta con tu cuenta',
+        recommended: 'Recomendado',
+        signinIntro: 'Elige tu app y sigue los pasos.',
+        benefits: {
+          noKey: { title: 'Sin llave de API.', body: 'Solo inicia sesión con tu cuenta. Nada que crear ni guardar.' },
+          workspaces: { title: 'Un conector, todos tus workspaces.', body: 'Trabaja en cualquier workspace que puedas abrir en dForms.' },
+          members: { title: 'Cualquier miembro puede conectarse.', body: 'No necesitas pedírselo al owner.' },
         },
-        addToCursor: 'Agregar a Cursor',
-        cursorFileHint: 'O pega esto en `.cursor/mcp.json` (un proyecto) o en `~/.cursor/mcp.json` (todos tus proyectos).',
-        mcpUnavailable:
-          'Este entorno todavía no tiene una dirección pública para su servidor MCP, así que no hay a qué conectarse. Pídele a quien lo administra que la configure.',
-        tryTitle: 'Pídele algo',
-        promptHint: 'Abre tu agente y pega esto para comprobar que todo funciona.',
-        prompt:
-          'Usa el MCP de dForms: revisa que mi llave funciona, créame un form de contacto con nombre, email y mensaje y dame su link.',
-        copyCommand: 'Copiar comando',
-        copyPrompt: 'Copiar prompt',
-        chatNote:
-          'Claude en el navegador y ChatGPT se conectan con un inicio de sesión que el MCP de dForms todavía no ofrece. Por ahora usa Claude Code, Codex o Cursor.',
-        skillTitle: '¿Tu agente no tiene MCP?',
-        skillBody:
-          'Descarga el skill: un zip que le enseña a cualquier agente con terminal a usar la API de dForms con la misma llave.',
-      },
-      keys: {
-        title: 'Llaves de API',
-        subtitle: 'Tus llaves de este workspace. Cada una actúa como tú, con tu rol.',
-        subtitleAdmin: 'Todas las llaves activas de este workspace. Cada una actúa como la persona que la creó.',
-        create: 'Crear llave',
-        colName: 'Nombre',
-        colKey: 'Llave',
-        colCreated: 'Creada',
-        colLastUsed: 'Último uso',
-        colCreatedBy: 'Creada por',
-        colActions: 'Acciones',
-        masked: '•••• {last4}',
-        maskedLabel: 'Llave que termina en {last4}',
-        neverUsed: 'Nunca',
-        you: 'Tú',
-        unknownCreator: 'Exmiembro',
-        emptyTitle: 'Aún no tienes llaves de API',
-        emptyBody:
-          'Una llave de API le permite a un agente de IA (Claude Code, Codex, Cursor) o a un script crear, editar y publicar formularios en este workspace, y leer sus respuestas. Funciona como tú, así que cuídala como una contraseña.',
-        loadError: 'No se pudieron cargar tus llaves de API. Recarga la página para intentarlo de nuevo.',
-        revoke: 'Revocar',
-        revokeLabel: 'Revocar {name}',
-        revokeTitle: '¿Revocar esta llave?',
-        revokeConfirm: 'Todo lo que use «{name}» deja de funcionar de inmediato. No se puede deshacer.',
-        revokeSuccess: 'Llave revocada',
-        revokeErrorForbidden: 'Solo puedes revocar tus propias llaves.',
-        revokeErrorGone:
-          'Esa llave ya no está en este workspace. Puede que ya la hayan revocado. La lista ya está al día.',
-        revokeErrorFailed: 'No se pudo revocar la llave. Inténtalo de nuevo.',
-        createTitle: 'Crear una llave de API',
-        nameLabel: 'Nombre',
-        namePlaceholder: 'Claude Code en mi portátil',
-        nameHelp: 'Para saber después dónde la usas. Hasta 60 caracteres.',
-        createSubmit: 'Crear llave',
-        creating: 'Creando…',
-        cancel: 'Cancelar',
-        errorInvalid: 'Ponle a la llave un nombre de 1 a 60 caracteres.',
-        errorLimit:
-          'Ya tienes 10 llaves activas, el máximo permitido. Revoca una que ya no uses para crear otra.',
-        errorForbidden: 'No puedes crear llaves en este workspace.',
-        errorFailed: 'No se pudo crear la llave. Inténtalo de nuevo.',
-        createdTitle: 'Copia tu nueva llave',
-        keyLabel: 'Tu llave de API',
-        createdWarning:
-          'Esta es la única vez que vas a ver esta llave. Cópiala y guárdala en un lugar seguro: cuando cierres este diálogo no se podrá volver a mostrar.',
+        appsLabel: 'Tu app de IA',
+        urlLabel: 'URL del MCP',
+        promptLabel: 'Pruébalo',
+        prompt: 'Lista mis formularios en dForms',
         copy: 'Copiar',
-        copied: 'Copiada',
-        copyFailed: 'No se pudo copiar. Selecciona la llave y cópiala a mano.',
-        createdNext: 'Siguiente paso: pega esta línea en la terminal desde la que abres tu agente.',
-        exportLabel: 'Terminal',
-        copyExport: 'Copiar comando',
-        done: 'Listo',
+        copied: 'Copiado',
+        copyFailed: 'No se pudo copiar. Selecciona el texto y cópialo a mano.',
+        copyUrl: 'Copiar URL',
+        copyCommand: 'Copiar comando',
+        copyConfig: 'Copiar configuración',
+        copyPrompt: 'Copiar prompt',
+        addToCursor: 'Add to Cursor',
+        open: {
+          claude: 'Abrir Claude',
+          claudeDesktop: 'Abrir Claude Desktop',
+          chatgpt: 'Abrir ChatGPT',
+          copyCommand: 'Copiar comando',
+          copied: 'Copiado',
+          pasteHint: 'Pégalo en tu terminal.',
+          phoneNote: 'Abre esta página en tu computadora para conectar {app}.',
+        },
+        apps: {
+          claude: {
+            steps: [
+              {
+                title: 'Abre Connectors en Claude',
+                body: 'En claude.ai, Claude Desktop o Cowork, haz clic en **+** en la caja del chat y luego en **Connectors → Add connector → Add custom connector**.',
+              },
+              {
+                title: 'Ponle dForms de nombre y pega esta URL',
+                body: 'Usa `dForms` como nombre y pega la URL de abajo. Deja vacía la configuración avanzada y haz clic en **Add**.',
+              },
+              {
+                title: 'Inicia sesión con tu cuenta',
+                body: 'Tu navegador abre la página de inicio de sesión. Escribe tu correo y el código de 6 dígitos que te enviamos. De vuelta en Claude, dForms aparece como **Connected**.',
+              },
+              {
+                title: 'Pregunta',
+                body: 'Abre un chat nuevo y pregunta, por ejemplo:',
+              },
+            ],
+          },
+          chatgpt: {
+            steps: [
+              {
+                title: 'Crea la app en ChatGPT',
+                body: 'En la app de escritorio de ChatGPT, cambia a modo **Work**. Abre **Plugins**, haz clic en **Add** y elige **Create MCP App**.',
+              },
+              {
+                title: 'Llena el formulario',
+                body: 'Name: `dForms`. Server URL: pega la dirección de abajo. Deja Authentication en **OAuth**. Marca **I understand and want to continue** y créala.',
+              },
+              {
+                title: 'Inicia sesión con tu cuenta',
+                body: 'Haz clic en **Continue**. Se abre tu navegador: inicia sesión si te lo pide y luego haz clic en **Open ChatGPT** para volver.',
+              },
+              {
+                title: 'Instala el plugin',
+                body: 'En **Plugins**, abre la pestaña **Personal**, elige **dForms** y haz clic en **Install plugin**. El navegador se abre una vez más para vincular tu cuenta: haz clic otra vez en **Open ChatGPT**. Ese segundo inicio de sesión es normal.',
+              },
+              {
+                title: 'Pregunta',
+                body: 'Haz clic en **Try now**, escribe `@dForms` y pregunta, por ejemplo:',
+              },
+            ],
+          },
+          claudeCode: {
+            steps: [
+              {
+                title: 'Agrega dForms a Claude Code',
+                body: 'En una terminal, ejecuta:',
+              },
+              {
+                title: 'Inicia sesión con tu cuenta',
+                body: 'Abre Claude Code, ejecuta `/mcp`, elige **dforms** y luego **Authenticate**. Inicia sesión en el navegador y vuelve a la terminal.',
+              },
+              {
+                title: 'Pregunta',
+                body: 'Pregunta, por ejemplo:',
+              },
+            ],
+            note: '¿Ya conectaste dForms en Claude? Claude Code con la misma cuenta de Claude también usa ese conector: ejecuta `/mcp` para revisarlo.',
+          },
+          codex: {
+            steps: [
+              {
+                title: 'Agrega dForms a Codex',
+                body: 'En una terminal, ejecuta:',
+              },
+              {
+                title: 'Inicia sesión con tu cuenta',
+                body: 'Ejecuta este comando. Se abre tu navegador: inicia sesión y vuelve a la terminal.',
+              },
+              {
+                title: 'Pregunta',
+                body: 'Abre Codex y pregunta, por ejemplo:',
+              },
+            ],
+            note: '¿Usas la app de escritorio de Codex o ChatGPT? Sigue la pestaña **ChatGPT**.',
+          },
+          cursor: {
+            steps: [
+              {
+                title: 'Agrega dForms a Cursor',
+                body: 'Si tienes Cursor instalado, haz clic en **Add to Cursor**. O abre **Customize → MCPs → New MCP Server**, elige **User** y pega esto en `mcp.json`:',
+              },
+              {
+                title: 'Inicia sesión con tu cuenta',
+                body: '**dforms** aparece con **Needs authentication**. Haz clic en **Authenticate**, inicia sesión en el navegador, haz clic en **Allow access** y luego en **Open Cursor**.',
+              },
+              {
+                title: 'Pregunta',
+                body: 'Abre un **New Chat** y pregunta, por ejemplo. Cursor te pregunta antes de usar una herramienta: haz clic en **Run**.',
+              },
+            ],
+          },
+          openclaw: {
+            steps: [
+              {
+                title: 'Agrega dForms a OpenClaw',
+                body: 'En una terminal, guarda dForms como servidor MCP remoto que inicia sesión con tu cuenta:',
+              },
+              {
+                title: 'Inicia sesión con tu cuenta',
+                body: 'Ejecuta este comando. Se abre tu navegador: inicia sesión y vuelve a la terminal. Después, `openclaw mcp status --verbose` muestra dforms como autorizado.',
+              },
+              {
+                title: 'Pregunta',
+                body: 'Pregúntale a tu agente de OpenClaw, por ejemplo:',
+              },
+            ],
+          },
+          hermes: {
+            steps: [
+              {
+                title: 'Agrega dForms a Hermes',
+                body: 'Abre `~/.hermes/config.yaml` (o ejecuta `hermes config edit`) y agrega dForms dentro de `mcp_servers`:',
+              },
+              {
+                title: 'Inicia sesión con tu cuenta',
+                body: 'Ejecuta este comando. Se abre tu navegador: inicia sesión y vuelve a la terminal. Después abre una sesión nueva, o ejecuta `/reload-mcp` en la que tengas abierta.',
+              },
+              {
+                title: 'Pregunta',
+                body: 'Pregúntale a tu agente de Hermes, por ejemplo:',
+              },
+            ],
+          },
+        },
+        tip: '**Un conector para todos tus workspaces.** Si tienes varios, tu app de IA te pregunta en cuál trabajar. Para cambiar, solo di «cambia a <workspace>». Cada respuesta te dice en qué workspace trabajó.',
+        unavailableTitle: 'El conector no está disponible en esta instalación',
+        unavailableBody: 'El servidor MCP de esta instalación todavía no acepta inicio de sesión, así que las apps de IA no pueden conectarse aquí. Pídele a quien la administra que configure `MCP_OAUTH_PROVIDER` y `MCP_PUBLIC_URL`.',
+        media: {
+          terminalLabel: 'Animación: cómo conectar dForms en {app}',
+          play: 'Reproducir el recorrido',
+          pause: 'Pausar el recorrido',
+        },
+        walkthrough: {
+          ui: {
+            ccWelcome: 'Welcome to Claude Code!',
+            ccHelp: '/help for help, /status for your current setup',
+            ccAdded: 'Added HTTP MCP server dforms with URL: {url} to user config',
+            ccManage: 'Manage MCP servers',
+            needsAuth: 'needs authentication',
+            authenticate: 'Authenticate',
+            ccBrowser: 'Opening your browser to authenticate…',
+            ccAuthOk: 'Authentication successful. Connected to dforms.',
+            codexAdded: "Added global MCP server 'dforms'.",
+            codexAuthorize: 'Authorize dforms in your browser to continue.',
+            codexLoggedIn: "Successfully logged in to MCP server 'dforms'.",
+            codexModel: 'model: gpt-5-codex  directory: ~/studio',
+            called: 'Called',
+            working: 'Working',
+            ocSaved: 'Saved MCP server "dforms" (streamable-http, auth: oauth).',
+            ocLogin: 'Opening the browser to sign in to dforms…',
+            ocLoggedIn: 'dforms: authorized. 49 tools available.',
+            hmSaved: 'Saved. Run hermes mcp login dforms to sign in.',
+            hmLogin: 'Opening your browser to authorize dforms…',
+            hmLoggedIn: 'dforms: authorized. Tokens saved.',
+          },
+          signIn: {
+            title: 'Inicia sesión con tu cuenta',
+            emailLabel: 'Correo',
+            email: 'alex@example.com',
+            continue: 'Continuar con correo',
+            checkEmail: 'Revisa tu correo',
+            codeSentTo: 'Escribe el código que enviamos a',
+            noCode: '¿No te llegó el código? Puedes pedir otro en 30 segundos.',
+            connected: 'dForms está conectado a {app}',
+            consentTitle: '{app} quiere acceder a tu cuenta',
+            redirectNote: 'Después de permitir el acceso, te redirigimos a:',
+            warning: 'Esta redirección apunta a una aplicación en tu computadora. Permite el acceso solo si lo iniciaste desde {app}.',
+            allow: 'Permitir acceso',
+            cancel: 'Cancelar',
+          },
+          answer: {
+            intro: 'Estos son los formularios de tu workspace:',
+            forms: [
+              { name: 'Calificador de leads', stat: '128 respuestas' },
+              { name: 'Confirmación del lanzamiento', stat: '64 respuestas' },
+              { name: 'Postulación a empleo', stat: '23 respuestas' },
+            ],
+            colForm: 'Formulario',
+            colResponses: 'Respuestas',
+            colStatus: 'Estado',
+            live: 'Publicado',
+          },
+        },
+        toolsTitle: 'Qué puedes hacer con el MCP',
+        toolsIntro: '{count} herramientas, lo mismo que haces en el dashboard. Pide las cosas con tus palabras: tu app de IA elige la herramienta.',
+        toolsLink: 'Ver todas las herramientas',
       },
-    },
-    developerDocs: {
-      title: 'Cómo usar la API',
-      intro:
-        'Conecta un agente de IA (Claude Code, Codex, Cursor) o tu propio código a este workspace con una llave de esta página. La API es la misma que usa el dashboard.',
-      apiUrlLabel: 'URL de la API',
-      apiUrlMissing:
-        'Este entorno todavía no tiene configurada una dirección pública para la API. Pídele a quien lo administra que defina `PUBLIC_API_URL`.',
-      authTitle: 'Autenticación',
-      authBody:
-        'Manda tu llave en el header `Authorization` de cada request. La llave ya pertenece a este workspace, así que no tienes que elegir nada más.',
-      flowTitle: 'Crear, editar, publicar y revertir',
-      flowBody: 'Todo form pasa por las mismas cuatro llamadas.',
-      flow: {
-        create:
-          'Crea el form con su config, publicado de inmediato. La respuesta trae `publicUrl` y `editorUrl`: comparte esos links tal cual.',
-        edit: 'Guarda la config completa como borrador. El form público no cambia hasta que publiques.',
-        publish: 'Publica el borrador.',
-        revert:
-          'Sin body. Vuelve a publicar la versión anterior y responde `200` con el form. Si la llamas otra vez, deshaces el cambio. Cada form trae `previousPublishedAt`: cuándo se publicó esa versión (epoch ms), o `null` si no hay a qué volver.',
+      tools: {
+        title: 'Herramientas',
+        intro: 'Todo lo que tu agente puede hacer en dForms una vez conectado: {count} herramientas. Nunca las llamas tú. Pide con tus palabras y tu agente elige la correcta.',
+        askLabel: 'Pide:',
+        count: '{n} herramientas',
+        groups: {
+          forms: { title: 'Formularios', body: 'Crea, edita, publica, revierte, duplica y borra formularios, y cambia su enlace.' },
+          responses: { title: 'Respuestas y CSV', body: 'Lista, busca y lee respuestas, abre sus archivos y expórtalas a CSV.' },
+          analytics: { title: 'Analíticas', body: 'Visitas, inicios, completados, abandono por paso y un resumen de cada formulario.' },
+          folders: { title: 'Carpetas', body: 'Crea, renombra y borra carpetas, y mueve formularios entre ellas.' },
+          brandKit: { title: 'Kit de marca', body: 'Lee y edita el kit de marca y aplícalo a tus formularios.' },
+          linkPage: { title: 'Página del workspace', body: 'Lee y edita la página pública del workspace con tus formularios y enlaces.' },
+          notifications: { title: 'Correos', body: 'Edita los correos de notificación del workspace y de cada formulario.' },
+          integrations: { title: 'Integraciones', body: 'Webhooks, HubSpot y Calendly: a dónde van las respuestas, pruebas y entregas.' },
+          account: { title: 'Cuenta y workspaces', body: 'Quién está conectado, en qué workspaces puedes trabajar y tu perfil.' },
+        },
+        items: {
+          list_forms: { what: 'Ve todos los formularios del workspace, con su enlace y su estado.', ask: '¿Qué formularios tengo?' },
+          get_form: { what: 'Abre un formulario y lee sus preguntas, su lógica y su diseño.', ask: 'Muéstrame las preguntas de mi formulario de contacto' },
+          get_form_guide: { what: 'Aprende cómo se arma un formulario de dForms antes de crear uno.', ask: '¿Cómo se arma un quiz con puntaje en dForms?' },
+          create_form: { what: 'Crea un formulario nuevo a partir de una descripción, listo para compartir.', ask: 'Hazme un formulario de leads para mi estudio con nombre, correo y presupuesto' },
+          update_form: { what: 'Cambia preguntas, lógica, puntaje o diseño. Se guarda como borrador.', ask: 'Agrega una pregunta sobre el plazo a mi formulario de leads' },
+          publish_form: { what: 'Publica el último borrador.', ask: 'Publica mi formulario de leads' },
+          revert_form: { what: 'Vuelve a la versión que estaba publicada antes.', ask: 'Deshaz la última publicación de mi encuesta' },
+          discard_draft: { what: 'Descarta los cambios sin publicar.', ask: 'Descarta el borrador de mi formulario de confirmación' },
+          duplicate_form: { what: 'Haz una copia de un formulario para partir de ella.', ask: 'Duplica mi formulario de contacto' },
+          delete_form: { what: 'Borra un formulario que ya no necesitas.', ask: 'Borra el formulario viejo de prueba' },
+          set_form_slug: { what: 'Cambia el final del enlace de un formulario.', ask: 'Cambia el enlace de mi encuesta a /feedback' },
+          list_responses: { what: 'Lista las respuestas de un formulario, con filtros por fecha, estado o puntaje.', ask: 'Muéstrame las respuestas de esta semana de mi formulario de leads' },
+          get_response: { what: 'Lee una respuesta completa.', ask: 'Muéstrame completa la última respuesta' },
+          get_response_file: { what: 'Abre un archivo que alguien subió en una respuesta.', ask: 'Abre la hoja de vida que subió el último candidato' },
+          get_response_facets: { what: 'Mira cómo se reparten las respuestas de cada pregunta.', ask: '¿Cómo respondieron la pregunta de presupuesto?' },
+          search_answers: { what: 'Encuentra respuestas que mencionan algo.', ask: 'Busca respuestas que mencionen HubSpot' },
+          export_responses_csv: { what: 'Descarga las respuestas en un archivo CSV.', ask: 'Exporta a CSV las respuestas de este mes' },
+          delete_response: { what: 'Borra una respuesta.', ask: 'Borra la respuesta de prueba que envié' },
+          delete_responses: { what: 'Borra varias respuestas a la vez.', ask: 'Borra todas las respuestas de la prueba de la semana pasada' },
+          get_form_analytics: { what: 'Visitas, inicios, completados y abandono por paso.', ask: '¿En qué paso abandonan mi formulario de registro?' },
+          get_form_summary: { what: 'Un resumen corto de cómo va un formulario.', ask: '¿Cómo va mi formulario de leads esta semana?' },
+          list_folders: { what: 'Ve tus carpetas y lo que hay en ellas.', ask: '¿Qué carpetas tengo?' },
+          create_folder: { what: 'Crea una carpeta para agrupar formularios.', ask: 'Crea una carpeta llamada Clientes' },
+          rename_folder: { what: 'Cambia el nombre de una carpeta.', ask: 'Cambia el nombre de la carpeta Clientes a Cuentas' },
+          delete_folder: { what: 'Borra una carpeta. Sus formularios se quedan.', ask: 'Borra la carpeta Viejos' },
+          move_form: { what: 'Mueve un formulario a una carpeta.', ask: 'Mueve mi formulario de confirmación a la carpeta Eventos' },
+          get_brand_kit: { what: 'Lee el logo, los colores y las fuentes del workspace.', ask: '¿Qué colores usa mi kit de marca?' },
+          update_brand_kit: { what: 'Cambia el kit de marca.', ask: 'Pon verde el color de mi marca' },
+          apply_brand_kit: { what: 'Aplica el kit de marca a un formulario.', ask: 'Aplica mi kit de marca a la encuesta' },
+          revert_brand_kit: { what: 'Devuelve un formulario al diseño que tenía antes del kit de marca.', ask: 'Quita el kit de marca de mi encuesta' },
+          get_link_page: { what: 'Lee la página pública del workspace: sus botones, redes y su enlace.', ask: '¿Qué muestra la página de mi workspace?' },
+          update_link_page: { what: 'Edita, publica o borra la página pública del workspace.', ask: 'Agrega mi formulario de contacto a la página del workspace y publícala' },
+          list_notifications: { what: 'Ve los correos de notificación del workspace.', ask: '¿Qué correos envía dForms?' },
+          update_notification: { what: 'Edita un correo de notificación de todo el workspace.', ask: 'Cambia el asunto del correo de respuesta nueva' },
+          reset_notification: { what: 'Devuelve un correo del workspace a su versión original.', ask: 'Restablece el correo de respuesta nueva' },
+          list_form_notifications: { what: 'Ve los correos que envía un formulario.', ask: '¿Qué correos envía mi formulario de leads?' },
+          update_form_notification: { what: 'Edita un correo de un formulario.', ask: 'Envía los avisos del formulario de leads a ventas@example.com' },
+          reset_form_notification: { what: 'Devuelve el correo de un formulario a la versión del workspace.', ask: 'Restablece los correos de mi encuesta' },
+          list_integrations: { what: 'Ve qué apps están conectadas, como HubSpot o Calendly.', ask: '¿Está conectado HubSpot?' },
+          set_destinations: { what: 'Elige a dónde van las respuestas de un formulario: webhooks o HubSpot.', ask: 'Manda cada lead de mi formulario a HubSpot' },
+          list_webhooks: { what: 'Ve los webhooks de un formulario.', ask: '¿Qué webhooks tiene mi formulario de leads?' },
+          ping_webhook: { what: 'Envía una prueba a un webhook.', ask: 'Prueba el webhook de mi formulario de leads' },
+          list_deliveries: { what: 'Mira qué respuestas se entregaron y cuáles fallaron.', ask: '¿Llegaron a HubSpot mis últimas respuestas?' },
+          list_hubspot_properties: { what: 'Ve los campos de HubSpot que puede llenar una pregunta.', ask: '¿Qué campos de HubSpot puedo mapear?' },
+          list_calendly_event_types: { what: 'Ve los eventos de Calendly que puede agendar un formulario.', ask: '¿Qué eventos de Calendly puede agendar mi formulario?' },
+          whoami: { what: 'Revisa quién está conectado y en qué workspace.', ask: '¿Con qué cuenta estoy conectado?' },
+          list_my_workspaces: { what: 'Ve todos los workspaces en los que puedes trabajar.', ask: '¿Qué workspaces puedo usar?' },
+          get_my_profile: { what: 'Lee tu perfil y tu página pública.', ask: '¿Cuál es el enlace de mi página pública?' },
+          get_workspace_link_code: { what: 'Obtén el código que vincula el workspace con otras apps.', ask: 'Dame el código de vínculo del workspace' },
+        },
+        connectCta: 'Conecta tu agente',
       },
-      flowLabels: {
-        create: 'Crear',
-        edit: 'Editar',
-        publish: 'Publicar',
-        revert: 'Revertir',
-      },
-      gotchasTitle: 'Ten en cuenta',
-      gotchas: {
-        put: '`PUT` reemplaza la config entera. Lee el form, cambia lo que necesites y manda todos los pasos de vuelta: una config sin `steps` se rechaza, y los pasos que no mandes se borran.',
-        stale:
-          'Manda `expectedUpdatedAt` con el `updatedAt` que leíste. Si alguien guardó el form en el editor desde entonces, recibes un `409` con la versión actual en vez de pisar su trabajo.',
-        errors:
-          'Un `400` trae todos los problemas en `issues[]`, cada uno con su ruta dentro del body que mandaste: `config.steps.2.flowGroup` al crear o editar un form, `destinations.0.settings.timeoutMs` en la ruta de destinos. Corrígelos todos antes de volver a mandar.',
-        editorDefaults:
-          'Los campos que el editor no muestra se rechazan, pero los defaults que el editor escribe solo se aceptan, así que un form que leíste se guarda tal cual: el `flowGroup` que sale del tipo de paso, `buttonText` `Continue` en un paso de mensaje, `reveal.enabled` en un paso de reveal y `scheduler.prefill` en un paso de agenda. Los pasos `reveal`, `message` y `scheduler` pueden ir sin `question`; los demás necesitan una.',
-        destinations:
-          'Los webhooks y HubSpot van por su propia ruta, `PUT /v1/forms/{id}/destinations`. `PUT /v1/forms/{id}` ignora los `destinations` que vengan dentro de la config.',
-        rateLimit:
-          'Cada llave puede hacer 120 requests por minuto. Si te pasas, recibes un `429` con el header `Retry-After`: espera esos segundos y sigue.',
-      },
-      skillTitle: 'Skill para tu agente',
-      skillBody:
-        'Dale a tu agente todo lo que necesita en un solo archivo. El skill ya trae las direcciones de este entorno, así que tu agente puede usar la API sin que le expliques nada.',
-      skillContents:
-        'Incluye las reglas que tu agente debe seguir, todos los endpoints, los códigos de error, el JSON Schema de la config de un form, recetas (un quiz con puntaje, editar un paso, publicar y revertir, respuestas con filtros, analítica y CSV) y cómo instalarlo en Claude Code, Codex y Cursor.',
-      skillButton: 'Descargar el skill',
-      skillUnavailable: 'La descarga estará disponible cuando se configure la dirección de la API.',
     },
     apiDocs: {
       title: 'Docs de la API',
@@ -6440,6 +6987,10 @@ export const es: FormsMessages = {
           title: 'Brand kit',
           intro: 'El logo, los colores y la tipografía del workspace, y cómo aplicarlos a los forms.',
         },
+        linkPage: {
+          title: 'Página del workspace',
+          intro: 'La página pública del workspace en `/{accountCode}`: sus forms y enlaces en un solo lugar. Cualquier miembro puede leerla y editarla.',
+        },
         notifications: {
           title: 'Notificaciones',
           intro: 'Los correos que dForms manda con cada respuesta, para todo el workspace o para un form.',
@@ -6463,6 +7014,8 @@ export const es: FormsMessages = {
         'PUT /v1/forms/:id':
           'Guarda una config nueva como borrador; el form público no cambia hasta que publiques. La config reemplaza el borrador entero, así que manda todos los pasos.',
         'POST /v1/forms/:id/publish': 'Publica el borrador. Si no hay borrador pendiente, responde el form sin cambios.',
+        'POST /v1/forms/:id/discard-draft':
+          'Descarta el borrador pendiente, así el form vuelve a su config publicada. Lo que ve el público no cambia. Si no hay borrador pendiente, responde el form sin cambios.',
         'POST /v1/forms/:id/revert':
           'Vuelve a publicar la versión anterior. Si la llamas otra vez, deshaces el cambio. El borrador pendiente y los destinos se quedan como están.',
         'PUT /v1/forms/:id/slug':
@@ -6501,6 +7054,8 @@ export const es: FormsMessages = {
           'Reemplaza el brand kit. Los forms nuevos lo toman de inmediato; los que ya existen, solo cuando lo aplicas.',
         'POST /v1/branding/apply': 'Aplica el brand kit a los forms que indiques.',
         'POST /v1/branding/revert': 'Devuelve a los forms el estilo que tenían antes de aplicar el brand kit.',
+        'GET /v1/link-page': 'La página guardada (`page`, null si no hay), los forms y el brand kit del workspace, el `publicUrl` de la página y si está publicada (`live`). Un número de WhatsApp guardado vuelve como dígitos; envíalo de vuelta con un `+` adelante.',
+        'PUT /v1/link-page': 'Reemplaza la página completa: léela primero y envíala entera. Los colores y la tipografía vienen del brand kit. `{ "page": null }` borra la página y su URL vuelve a dar 404.',
         'GET /v1/notifications':
           'Los dos correos que dForms manda con cada respuesta: el aviso para tu equipo y el comprobante para quien respondió.',
         'PUT /v1/notifications/:emailKey': 'Activa o desactiva un correo, cambia su texto o quién recibe el aviso.',
@@ -6566,6 +7121,13 @@ export const es: FormsMessages = {
         brandButtonStyle: 'Cómo se dibujan los botones.',
         brandClientLogos: 'Logos de tus clientes para mostrar en la portada, hasta 24.',
         formIds: 'Los `id` de los forms, de 1 a 500.',
+        linkPage: 'La página completa con `version: 1`, o `null` para borrarla.',
+        linkPageEnabled: 'Publicada en la URL pública. `false` (por defecto) da 404 ahí.',
+        linkPageName: 'El título, hasta 80 caracteres. Vacío o ausente muestra el nombre del workspace.',
+        linkPageBio: 'Una línea bajo el título, hasta 280 caracteres.',
+        linkPageLogo: 'Ausente usa el logo del brand kit, `null` no muestra ninguno, una URL http(s) muestra esa imagen.',
+        linkPageItems: 'Los botones, en orden, hasta 30: `{ "type": "form", "formId" }` o `{ "type": "link", "label", "url" }`. Un form de otro workspace se descarta.',
+        linkPageSocials: '`instagram`, `x`, `youtube` y `tiktok` (un link o un usuario) y `whatsapp` (el número con su código de país, empezando por `+`).',
         notificationEnabled: 'Si el correo se manda.',
         notificationSubject: 'El asunto, con marcadores `{{token}}` como `{{formName}}`. `null` vuelve al texto por defecto.',
         notificationBody: 'El cuerpo en texto plano, con marcadores `{{token}}`. `null` vuelve al texto por defecto.',
@@ -6586,36 +7148,6 @@ export const es: FormsMessages = {
         },
       },
     },
-    // ── API docs page: keys the page needs beyond `apiDocs` (feat/api-docs-ui) ──
-    apiDocsPage: {
-      keysLink: 'Llaves de API',
-      start: {
-        intro:
-          'Conecta un agente de IA (Claude Code, Codex, Cursor) o tu propio código a este workspace con una llave de API. La API es la misma que usa el dashboard, así que cada form que cree aparece aquí.',
-        flowLink: 'Ver el endpoint',
-      },
-      auth: {
-        title: 'Autenticación',
-        actsAs:
-          'Una llave actúa como la persona que la creó, con el rol que esa persona tenga hoy. Las rutas marcadas `Owner o admin` responden `403 FORBIDDEN` a la llave de cualquier otra persona.',
-        workspace:
-          'La llave ya pertenece a un workspace. Un header de workspace que nombre otro responde `403 WORKSPACE_FORBIDDEN`.',
-        invalid:
-          'Una llave desconocida o revocada, o una cuya persona ya no está en el workspace, responde `401 INVALID_API_KEY`.',
-      },
-      searchHint: 'Prueba con parte de una ruta, como `/v1/forms`, o con una palabra como `publica`.',
-      endpointCount: { one: '1 endpoint', other: '{count} endpoints' },
-      endpoint: {
-        noParameters: 'Sin parámetros.',
-        csv: 'Archivo CSV',
-        showMore: 'Ver la respuesta completa ({lines} líneas)',
-        showLess: 'Ver menos',
-        copyCurl: 'Copiar el comando curl',
-        copyResponse: 'Copiar el ejemplo',
-        copyUrl: 'Copiar la URL de la API',
-      },
-    },
-    // ── end API docs page extras ─────────────────────────────────────────────
     publish: {
       publish: 'Publicar',
       publishing: 'Publicando…',

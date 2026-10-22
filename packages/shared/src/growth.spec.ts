@@ -13,6 +13,19 @@ describe('growth attribution', () => {
     expect(url.searchParams.get('utm_content')).toBe('acme');
   });
 
+  it('names the campaign after the product', () => {
+    const url = new URL(buildSignupUrl({ baseUrl: 'https://dforms.example/', medium: 'form-button' })!);
+    expect(url.searchParams.get('utm_campaign')).toBe('made-with-dforms');
+  });
+
+  it('tags the workspace link page badge with its own medium', () => {
+    const url = new URL(
+      buildSignupUrl({ baseUrl: 'https://dforms.example/', medium: 'link-page', accountCode: 'acme' })!,
+    );
+    expect(url.searchParams.get('utm_medium')).toBe('link-page');
+    expect(url.searchParams.get('utm_content')).toBe('acme');
+  });
+
   it('names the surface in utm_medium', () => {
     const pill = new URL(buildSignupUrl({ baseUrl: 'https://app.example.com', medium: 'form-button' })!);
     const cta = new URL(buildSignupUrl({ baseUrl: 'https://app.example.com', medium: 'confirmation' })!);

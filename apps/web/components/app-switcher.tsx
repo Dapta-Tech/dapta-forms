@@ -10,7 +10,7 @@ import { CALENDARS_URL, PLATFORM_URL, suiteHref } from '@/lib/suite';
  * App-switcher — the discreet door to the wider Dapta suite (design-parity with
  * Dapta Calendars). An Atlassian-style grid affordance next to the product
  * wordmark that opens a small menu:
- *   • Dapta Agents (→ platform, new tab)  • Dapta Calendars (new tab)  • Forms (current)
+ *   • Sales AI Agents (→ platform, new tab)  • Dapta Calendars (new tab)  • Forms (current)
  *
  * Growth-loop only — hidden entirely when NEITHER suite URL is configured
  * (white-label / self-host builds), so the switcher never dead-ends on a lone
@@ -70,8 +70,8 @@ export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
           {m.eyebrow}
         </p>
 
-        {/* Dapta Agents — the platform (external, new tab). First, per Felipe.
-            Same name and destination as the rail's own "Dapta Agents" item: one
+        {/* Sales AI Agents, the platform (external, new tab). First, per Felipe.
+            Same name and destination as the rail's own "Sales AI Agents" item: one
             door, two handles, so it never reads as two different products. */}
         {PLATFORM_URL ? (
           <a

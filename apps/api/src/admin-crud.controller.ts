@@ -27,6 +27,7 @@ import {
   defaultNotificationSetting,
   deleteForm,
   deleteNotificationSetting,
+  discardDraft,
   duplicateForm,
   getAccountMember,
   getAccountPublicCode,
@@ -776,6 +777,24 @@ export class AdminCrudController {
       });
     }
     return this.formView(p.accountId, published);
+  }
+
+  /**
+   * Drop a form's pending draft so the editor and the next publish start from
+   * the live config again. The public form, the version kept for a revert and
+   * the publish dates do not change. A no-op without a draft, and guarded by
+   * `expectedUpdatedAt` like a publish (409 STALE when the form was saved
+   * since). Same gate as publishing, and an API key may call it: an agent that
+   * saved the wrong draft needs a way to undo exactly that, which a revert
+   * (it changes what is live) is not.
+   */
+  @Post('forms/:id/discard-draft')
+  @HttpCode(200)
+  async discardDraft(@Req() req: ReqLike, @Param('id') id: string, @Body() body?: unknown) {
+    const p = await this.auth.resolveHost(req);
+    const { expectedUpdatedAt } = parse(publishFormInputSchema, body ?? {});
+    const view = (f: FormRow) => this.formView(p.accountId, f);
+    return view(await unwrapGuarded(this.db, p.accountId, id, await discardDraft(this.db, p.accountId, id, expectedUpdatedAt), view));
   }
 
   /**

@@ -38,14 +38,35 @@ const nextConfig = {
   turbopack: {
     root: join(here, '..', '..'),
   },
-  // `/admin/developers` became a group in the rail (API keys, API docs). The
-  // address is in skill zips people already downloaded, so it keeps working
-  // as a real HTTP redirect, answered before any page renders. The page at
-  // that path redirects too, for anything that reaches it anyway. Temporary,
-  // not permanent: a browser caches a 308 forever, and the path may hold an
-  // overview of its own one day.
+  // `/admin/developers` is a group in the rail (Connect, API docs), and the old
+  // API keys page became the connector guide at `/admin/developers/connect`.
+  // Both old addresses are in skill zips people already downloaded, so they
+  // keep working as real HTTP redirects, answered before any page renders. The
+  // pages at those paths redirect too, for anything that reaches them anyway.
+  // Temporary, not permanent: a browser caches a 308 forever, and the paths
+  // may hold pages of their own one day.
   async redirects() {
-    return [{ source: '/admin/developers', destination: '/admin/developers/keys', permanent: false }];
+    return [
+      { source: '/admin/developers', destination: '/admin/developers/connect', permanent: false },
+      { source: '/admin/developers/keys', destination: '/admin/developers/connect', permanent: false },
+      // The API docs page gave way to Tools: what an agent can do, in plain words.
+      { source: '/admin/developers/docs', destination: '/admin/developers/tools', permanent: false },
+      { source: '/admin/developers/docs/:path*', destination: '/admin/developers/tools', permanent: false },
+    ];
+  },
+  // A session replay (PostHog) rebuilds the page on the replay tool's origin
+  // and loads our stylesheet's fonts from here, as absolute URLs. Fonts are
+  // always fetched in CORS mode, so without this header every recording falls
+  // back to a system face and stops looking like the app. Only the static
+  // media (next/font's self-hosted files, hashed and public by design) gets
+  // it: no page, API route or server action is opened to other origins.
+  async headers() {
+    return [
+      {
+        source: '/_next/static/media/:path*',
+        headers: [{ key: 'Access-Control-Allow-Origin', value: '*' }],
+      },
+    ];
   },
 };
 

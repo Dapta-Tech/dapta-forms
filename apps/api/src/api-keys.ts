@@ -8,7 +8,7 @@
  * the key in clear exists once, in the response that created it.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { header, isApiKeyPrincipal, type HostPrincipal, type ReqLike } from './auth.provider';
+import { header, isAgentPrincipal, isApiKeyPrincipal, type HostPrincipal, type ReqLike } from './auth.provider';
 
 /** Every key starts with this, which is also how a request is told apart from a session bearer. */
 export const API_KEY_PREFIX = 'dforms_';
@@ -45,28 +45,13 @@ export function apiKeyFromRequest(req: ReqLike): string | null {
 }
 
 /**
- * Marks a request the MCP adapter builds in-process, so the principal it
- * resolves to carries `channel: 'mcp'`. A symbol, not a header: nothing that
- * arrives over HTTP can set it, so a REST caller cannot pass for the MCP.
- */
-const MCP_REQUEST = Symbol('dforms.mcpRequest');
-
-export function markMcpRequest<T extends object>(req: T): T {
-  Object.defineProperty(req, MCP_REQUEST, { value: true, enumerable: false });
-  return req;
-}
-
-export function isMcpRequest(req: object): boolean {
-  return (req as Record<symbol, unknown>)[MCP_REQUEST] === true;
-}
-
-/**
  * How a principal creates things, for `form.created_via` and the `via`
- * property of the product events: `api` with an API key, `mcp` with an API key
- * through the MCP endpoint, `web` with a session (the dashboard and the
- * onboarding).
+ * property of the product events: `api` with an API key over REST, `mcp`
+ * through the MCP endpoint (an API key or an MCP connection), `web` with a
+ * session (the dashboard and the onboarding).
  */
 export function createdVia(p: Pick<HostPrincipal, 'via' | 'channel'>): 'api' | 'mcp' | 'web' {
-  if (!isApiKeyPrincipal(p)) return 'web';
+  if (!isAgentPrincipal(p)) return 'web';
+  if (!isApiKeyPrincipal(p)) return 'mcp';
   return p.channel === 'mcp' ? 'mcp' : 'api';
 }

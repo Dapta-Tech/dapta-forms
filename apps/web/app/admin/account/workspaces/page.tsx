@@ -45,6 +45,7 @@ export default async function WorkspacesPage() {
         roleMember: s.roleMember,
         openErrorForbidden: s.manageErrorForbidden,
         openErrorFailed: s.manageErrorFailed,
+        openErrorMembershipNotActive: s.manageErrorMembershipNotActive,
         createDialog: messages.chrome.workspaces,
       }}
     />
