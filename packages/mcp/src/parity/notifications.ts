@@ -1,7 +1,7 @@
 import * as z from 'zod4';
 import type { NotificationPatch, NotificationView } from '../parity-backend';
 import { READ, actingAs, workspaceId, type ToolDef } from '../tools';
-import { CONFIRM_FIRST, FORM_MISSING, WRITE_IDEMPOTENT, attempt, emailKeyArg, formIdArg, type Missing } from './shared';
+import { CONFIRM_FIRST, DESTRUCTIVE, FORM_MISSING, attempt, emailKeyArg, formIdArg, type Missing } from './shared';
 
 /**
  * The two emails a response sends: the notice to the team and the receipt to
@@ -50,7 +50,7 @@ const TOKEN_MARKER = /\{\{\s*([A-Za-z][A-Za-z0-9_]*)\s*\}\}/g;
 const warningsOut = z
   .array(z.string())
   .optional()
-  .describe('What was saved but will not work as written (a {{token}} the emails do not know stays literal in the email). Tell the user.');
+  .describe('What was saved but will not work as written (a {{token}} the emails do not know stays literal in the email), for the user to know.');
 
 /**
  * A warning for each `{{token}}` in the subject or body sent that the emails
@@ -98,10 +98,10 @@ const updateInput = z.object({ workspace_id: workspaceId, email_key: emailKeyArg
 export const updateNotification: ToolDef = {
   name: 'update_notification',
   title: 'Edit a notification email',
-  description: `Change the workspace setting of one response email: only the fields you pass change. ${TOKENS} Forms with their own override (list_form_notifications) keep it. ${OWNERS}`,
+  description: `Change the workspace setting of one response email: only the fields you pass change, and the copy they replace is lost. ${TOKENS} Forms with their own override (list_form_notifications) keep it. ${CONFIRM_FIRST} ${OWNERS}`,
   write: true,
   workspace: 'required',
-  annotations: WRITE_IDEMPOTENT,
+  annotations: DESTRUCTIVE,
   input: updateInput,
   output: z.object({ setting: view, warnings: warningsOut }),
   async run(args: z.infer<typeof updateInput>, ctx) {
@@ -164,10 +164,10 @@ const updateFormInput = z.object({ workspace_id: workspaceId, form_id: formIdArg
 export const updateFormNotification: ToolDef = {
   name: 'update_form_notification',
   title: "Edit a form's notification email",
-  description: `Create or change this form's own override of one response email; the workspace setting is left alone. ${TOKENS} ${OWNERS}`,
+  description: `Create or change this form's own override of one response email (an upsert: the copy it replaces is lost); the workspace setting is left alone. ${TOKENS} ${CONFIRM_FIRST} ${OWNERS}`,
   write: true,
   workspace: 'required',
-  annotations: WRITE_IDEMPOTENT,
+  annotations: DESTRUCTIVE,
   input: updateFormInput,
   output: z.object({ form_id: z.string(), setting: view, warnings: warningsOut }),
   async run(args: z.infer<typeof updateFormInput>, ctx) {

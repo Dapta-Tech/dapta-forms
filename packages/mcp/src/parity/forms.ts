@@ -23,10 +23,11 @@ export const setFormSlug: ToolDef = {
   name: 'set_form_slug',
   title: 'Change a form link',
   description:
-    'Change the last segment of a form\'s public link. The old link keeps working and leads to the new one, forever, so links already shared do not break. Returns the new public_url to give the user. SLUG_TAKEN: another form of this workspace holds it (now or before); pick another.',
+    'Change the last segment of a form\'s public link. The old link keeps working and leads to the new one, forever, so links already shared do not break. Returns the new public_url to give the user. SLUG_TAKEN: another form of this workspace holds it (now or before), so a different slug is needed.',
   write: true,
   workspace: 'required',
-  annotations: WRITE_IDEMPOTENT,
+  // Changes the public link of a live form.
+  annotations: { ...WRITE_IDEMPOTENT, openWorldHint: true },
   input: setFormSlugInput,
   output: z.object({ form: formSummary }),
   async run(args: z.infer<typeof setFormSlugInput>, ctx) {
@@ -47,10 +48,11 @@ export const duplicateForm: ToolDef = {
   name: 'duplicate_form',
   title: 'Duplicate a form',
   description:
-    'Copy a form, with its live config, into a new form named "<name> (copy)", in the same folder, with its own link and no responses. The copy is live at once. Not idempotent: if the call fails or times out, call list_forms and look for the copy before trying again.',
+    'Copy a form, with its live config, into a new form named "<name> (copy)", in the same folder, with its own link and no responses. The copy is live at once. Not idempotent: after a failure or a timeout, list_forms shows whether the copy was created before a retry.',
   write: true,
   workspace: 'required',
-  annotations: WRITE,
+  // The copy is live at once at its own public link.
+  annotations: { ...WRITE, openWorldHint: true },
   input: duplicateFormInput,
   output: z.object({ form: formSummary }),
   async run(args: z.infer<typeof duplicateFormInput>, ctx) {
@@ -109,11 +111,12 @@ export const deleteForm: ToolDef = {
   description: [
     'Delete a form for good, with every response and its funnel data. Its public link stops answering. There is no undo and no trash.',
     CONFIRM_FIRST,
-    'Name the form (get_form) when you ask. NOT_FOUND after a timeout usually means the delete went through.',
+    'The confirmation usually names the form (from get_form). NOT_FOUND after a timeout usually means the delete went through.',
   ].join(' '),
   write: true,
   workspace: 'required',
-  annotations: DESTRUCTIVE,
+  // Its public link stops answering.
+  annotations: { ...DESTRUCTIVE, openWorldHint: true },
   input: deleteFormInput,
   output: z.object({ deleted: z.object({ id: z.string(), name: z.string() }) }),
   async run(args: z.infer<typeof deleteFormInput>, ctx) {

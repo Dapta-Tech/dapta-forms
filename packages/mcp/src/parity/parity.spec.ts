@@ -127,7 +127,7 @@ describe('the catalog', () => {
     for (const route of Object.keys(API_ROUTE_EXCLUSIONS)) expect(API_ROUTE_TOOLS[route], route).toBeUndefined();
   });
 
-  it('marks every delete, replace and reset destructive, and tells the agent to confirm first', () => {
+  it('marks every delete, replace, upsert and reset destructive, and describes the recommended confirmation', () => {
     const destructive = PARITY_TOOLS.filter((t) => t.annotations.destructiveHint).map((t) => t.name);
     expect(destructive.sort()).toEqual(
       [
@@ -140,13 +140,16 @@ describe('the catalog', () => {
         'reset_notification',
         'revert_brand_kit',
         'set_destinations',
+        'update_brand_kit',
+        'update_form_notification',
         'update_link_page',
+        'update_notification',
       ].sort(),
     );
     for (const t of PARITY_TOOLS.filter((x) => x.annotations.destructiveHint)) {
       expect(t.write, t.name).toBe(true);
       expect(t.annotations.readOnlyHint, t.name).toBe(false);
-      expect(t.description, t.name).toMatch(/wait for their yes/);
+      expect(t.description, t.name).toMatch(/best confirmed with the user first/);
     }
     for (const t of PARITY_TOOLS) {
       expect(t.annotations.readOnlyHint, t.name).toBe(!t.write);

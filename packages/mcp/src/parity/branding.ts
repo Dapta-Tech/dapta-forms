@@ -1,7 +1,7 @@
 import * as z from 'zod4';
 import type { BrandKitView } from '../parity-backend';
 import { READ, actingAs, workspaceId, type ToolDef } from '../tools';
-import { CONFIRM_FIRST, WRITE_IDEMPOTENT, attempt, plural } from './shared';
+import { CONFIRM_FIRST, attempt, plural } from './shared';
 
 /** The workspace brand kit: the look new forms start with, and that can be applied to existing ones. */
 
@@ -51,10 +51,11 @@ export const updateBrandKit: ToolDef = {
   name: 'update_brand_kit',
   title: 'Update the brand kit',
   description:
-    'Replace the workspace brand kit: a field left out is no longer set by the kit. Start from get_brand_kit, change only what was asked and send the whole kit. To clear a field, leave it out (logo, primaryColor, background, foreground and customFont also take null); to clear the whole kit, send {}: it then sets nothing. The kit itself is never deleted, as over the REST API. Existing forms keep their look until apply_brand_kit. Owners and admins only.',
+    `Replace the whole workspace brand kit: a field left out is no longer set by the kit. The kit sent is usually what get_brand_kit returned, with only the requested change. To clear a field, leave it out (logo, primaryColor, background, foreground and customFont also take null); to clear the whole kit, send {}: it then sets nothing. The kit itself is never deleted, as over the REST API. Existing forms keep their look until apply_brand_kit; the workspace link page is styled with the kit, so a live link page shows the change at once. ${CONFIRM_FIRST} Owners and admins only.`,
   write: true,
   workspace: 'required',
-  annotations: WRITE_IDEMPOTENT,
+  // Replaces the whole kit, and the live link page is styled with it.
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
   input: updateInput,
   output: kitOutput,
   async run(args: z.infer<typeof updateInput>, ctx) {
@@ -78,7 +79,7 @@ export const applyBrandKit: ToolDef = {
   ].join(' '),
   write: true,
   workspace: 'required',
-  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
   input: applyInput,
   output: z.object({ applied: z.array(z.string()).describe('The forms the kit was applied to. Ids of other workspaces are skipped, and nothing applies without a kit.') }),
   async run(args: z.infer<typeof applyInput>, ctx) {
@@ -107,7 +108,7 @@ export const revertBrandKit: ToolDef = {
   ].join(' '),
   write: true,
   workspace: 'required',
-  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
   input: revertInput,
   output: z.object({ reverted: z.array(z.string()).describe('The forms put back. A form the kit was never applied to is skipped.') }),
   async run(args: z.infer<typeof revertInput>, ctx) {

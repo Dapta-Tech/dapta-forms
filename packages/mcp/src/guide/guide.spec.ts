@@ -26,7 +26,7 @@ describe('formGuide', () => {
     expect(text).toContain('workspace_id');
     expect(text).toMatch(/API key/);
     expect(text).toMatch(/WORKSPACE_REQUIRED/);
-    expect(text).toMatch(/never pick one yourself/);
+    expect(text).toMatch(/the choice belongs to the user/);
   });
 
   it('names every step type the engine knows, and no other', () => {

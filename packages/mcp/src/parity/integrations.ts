@@ -9,7 +9,7 @@ import { plural } from './shared';
  * dForms dashboard.
  */
 
-const DASHBOARD_ONLY = 'Connecting or disconnecting a provider is done in the dForms dashboard, never here.';
+const DASHBOARD_ONLY = 'Connecting or disconnecting a provider happens in the dForms dashboard; no tool here does it.';
 
 /** Calls the provider (cached for a few minutes per workspace). */
 const READ_PROVIDER = { ...READ, openWorldHint: true } as const;

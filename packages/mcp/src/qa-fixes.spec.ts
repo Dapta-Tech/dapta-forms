@@ -34,7 +34,7 @@ const config = (steps: unknown[], extra: Record<string, unknown> = {}) => ({ ver
 describe('revert_form is not "undo my changes": discard_draft is', () => {
   it('says in revert_form when not to use it, and points at discard_draft', () => {
     const description = byName.revert_form!.description;
-    expect(description).toMatch(/Do NOT use it to undo edits that were saved but not published/);
+    expect(description).toMatch(/not the way to undo edits that were saved but not published/);
     expect(description).toContain('discard_draft');
     expect(byName.discard_draft!.description).toMatch(/undo or drop changes that were not published/);
   });

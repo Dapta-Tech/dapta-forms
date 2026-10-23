@@ -22,7 +22,7 @@ const viewOutput = z.object({
   public_url: z
     .string()
     .nullable()
-    .describe('The page address. Give it to users exactly as returned; null when the deployment has no public address.'),
+    .describe('The page address, to give to users exactly as returned; null when the deployment has no public address.'),
   live: z.boolean().describe('True when the page is saved with enabled: true, so public_url serves it. False: public_url answers 404.'),
   page: z
     .record(z.string(), z.unknown())
@@ -51,7 +51,7 @@ export const getLinkPage: ToolDef = {
   name: 'get_link_page',
   title: 'Get the workspace link page',
   description:
-    'The workspace public page (its link page at public_url): the stored page or null, whether it is live, the forms a button can point at and the brand kit it is styled with. Read it before update_link_page. Any member can use it.',
+    'The workspace public page (its link page at public_url): the stored page or null, whether it is live, the forms a button can point at and the brand kit it is styled with. Typically read before update_link_page, since that call replaces the whole page. Any member can use it.',
   write: false,
   workspace: 'required',
   annotations: READ,
@@ -115,11 +115,11 @@ export const updateLinkPage: ToolDef = {
   name: 'update_link_page',
   title: 'Update the workspace link page',
   description: [
-    'Replace the whole workspace link page: a field left out is no longer set. Read it first with get_link_page, change only what was asked and send the full page back.',
+    'Replace the whole workspace link page: a field left out is no longer set. The page sent is usually what get_link_page returned, with only the requested change.',
     'Fields: enabled, name, bio, logo (absent: the brand kit logo; null: none; else an http(s) URL), items (ordered, at most 30: {type:"form", formId} or {type:"link", label, url}) and socials (instagram, x, youtube, tiktok, and whatsapp with its country code).',
     'WhatsApp is stored as digits and get_link_page returns it with its + again, so send it back as read.',
     'Colors and fonts come from the workspace brand kit: change them with update_brand_kit.',
-    'With enabled false, public_url answers 404. page: null deletes the page and public_url answers 404 again: confirm with the user first.',
+    'With enabled false, public_url answers 404. page: null deletes the page and public_url answers 404 again.',
     CONFIRM_FIRST,
     'Any member can use it.',
   ].join(' '),

@@ -70,9 +70,9 @@ export const EDITOR_DEFAULT_FIELDS: Partial<Record<(typeof UNSUPPORTED_CONFIG_FI
  */
 export const KEPT_AS_READ_FIELDS: Partial<Record<(typeof UNSUPPORTED_CONFIG_FIELDS)[number], string>> = {
   'steps.[].sliderUnitLabel':
-    'Only as read: a form made from a template may carry it. Send it back unchanged; never add or change it (UNSUPPORTED_FIELD).',
+    'Only as read: a form made from a template may carry it. Accepted only as read, unchanged: adding or changing it is refused (UNSUPPORTED_FIELD).',
   'branding.clientLogos':
-    'Only as read: the brand kit writes it. Send it back unchanged; never add or change it (UNSUPPORTED_FIELD).',
+    'Only as read: the brand kit writes it. Accepted only as read, unchanged: adding or changing it is refused (UNSUPPORTED_FIELD).',
 };
 
 /**

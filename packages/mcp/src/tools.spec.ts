@@ -46,12 +46,12 @@ describe('catalog', () => {
     }
   });
 
-  it('marks reads read-only, publish and revert destructive, and takes a workspace only as an optional workspace_id', () => {
+  it('marks reads read-only, publish, revert and the whole-draft update destructive, and takes a workspace only as an optional workspace_id', () => {
     const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
     for (const name of ['whoami', 'list_my_workspaces', 'list_forms', 'get_form', 'list_responses', 'get_form_analytics', 'get_form_guide'])
       expect(byName[name]!.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
-    for (const name of ['create_form', 'update_form']) expect(byName[name]!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
-    for (const name of ['publish_form', 'revert_form', 'discard_draft'])
+    expect(byName.create_form!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, openWorldHint: true });
+    for (const name of ['update_form', 'publish_form', 'revert_form', 'discard_draft'])
       expect(byName[name]!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
     expect(TOOLS.filter((t) => t.write).map((t) => t.name)).toEqual(['create_form', 'update_form', 'publish_form', 'revert_form', 'discard_draft']);
     for (const t of TOOLS) {

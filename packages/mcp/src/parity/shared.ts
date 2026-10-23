@@ -14,9 +14,12 @@ export const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHi
 export const WRITE_IDEMPOTENT = { ...WRITE, idempotentHint: true } as const;
 export const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false } as const;
 
-/** The sentence every destructive tool ends its description with. */
+/**
+ * The sentence every destructive tool carries: what the effect is and the
+ * recommended confirmation, said as a description, not an order.
+ */
 export const CONFIRM_FIRST =
-  'Destructive: before calling it, tell the user exactly what will change or be deleted and wait for their yes. Never call it again on your own after an error or a timeout: read first.';
+  'Destructive: it deletes or replaces data, so it is best confirmed with the user first, naming exactly what will change. After an error or a timeout, a read shows whether the change went through, so a blind retry is not needed.';
 
 export const formIdArg = z.string().min(1).max(64).describe('The form id, from list_forms or get_form.');
 export const responseIdArg = z.string().min(1).max(64).describe('The response id, from list_responses.');

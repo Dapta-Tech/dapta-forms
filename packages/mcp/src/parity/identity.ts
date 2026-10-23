@@ -41,7 +41,7 @@ export const getWorkspaceLinkCode: ToolDef = {
   name: 'get_workspace_link_code',
   title: 'Get the workspace link code',
   description:
-    "The code every public form link of this workspace starts with: the custom one (vanity_slug) when the workspace claimed one, else its short code, and whether a custom one can still be claimed. Claiming one is done in the dForms dashboard. Never build a form link from it: use the public_url the form tools return.",
+    "The code every public form link of this workspace starts with: the custom one (vanity_slug) when the workspace claimed one, else its short code, and whether a custom one can still be claimed. Claiming one is done in the dForms dashboard. Form links are not built from it: the form tools return each exact public_url.",
   write: false,
   workspace: 'required',
   annotations: READ,
