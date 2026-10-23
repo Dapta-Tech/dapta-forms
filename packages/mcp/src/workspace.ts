@@ -170,9 +170,18 @@ export async function resolveWorkspace(
       STAFF_WORKSPACE_HINT,
     );
   }
-  if (workspaces.length === 1) return workspaces[0]!;
+  // A workspace reached through a staff access grant is a customer's: it is
+  // never used without being named, even when it is the only one.
+  if (workspaces.length === 1 && workspaces[0]!.access !== 'staff') return workspaces[0]!;
   if (!opts.required) return null;
   if (workspaces.length === 0) throw noWorkspace(opts.appUrl);
+  if (workspaces.length === 1) {
+    throw new ToolFailure(
+      'WORKSPACE_REQUIRED',
+      'Your only workspace here is a customer workspace you reach as staff, so every call must name it in workspace_id.',
+      'Confirm the workspace with the user by name, then repeat this call with its workspace_id from list_my_workspaces.',
+    );
+  }
   throw new ToolFailure(
     'WORKSPACE_REQUIRED',
     `You are a member of ${workspaces.length} dForms workspaces, so this call must name one in workspace_id.`,
@@ -193,7 +202,7 @@ export function bucketOf(credential: McpCredential, body: unknown): string {
   const caller =
     named !== undefined
       ? credential.workspaces.find((w) => w.accountId === named)
-      : credential.workspaces.length === 1
+      : credential.workspaces.length === 1 && credential.workspaces[0]!.access !== 'staff'
         ? credential.workspaces[0]
         : undefined;
   return caller ? caller.credentialId : `person:${credential.personId}`;

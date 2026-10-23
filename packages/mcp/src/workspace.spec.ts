@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { SEARCH_FOLD_FROM, SEARCH_FOLD_TO, foldSearchText, normalizeWorkspaceSearch } from './workspace';
+import { SEARCH_FOLD_FROM, SEARCH_FOLD_TO, foldSearchText, normalizeWorkspaceSearch, resolveWorkspace } from './workspace';
+import type { McpCaller, McpConnection } from './backend';
 
 /** What a database does with the fold table: `translate(lower_ascii(x), FROM, TO)`, then marks and ASCII punctuation dropped. */
 function foldLikeSql(text: string): string {
@@ -51,5 +52,22 @@ describe('the fold table', () => {
 
   it('is what foldSearchText applies, and folding twice changes nothing', () => {
     for (const name of ['José', 'Ødegaard', 'МОСКВА']) expect(foldSearchText(foldSearchText(name))).toBe(foldSearchText(name));
+  });
+});
+
+describe('resolveWorkspace', () => {
+  const caller = (accountId: string, access?: 'staff'): McpCaller =>
+    ({ accountId, workspaceName: accountId, memberId: `m-${accountId}`, role: 'admin', credentialId: `member:${accountId}`, label: 'oauth:p', ...(access ? { access } : {}) }) as McpCaller;
+  const connection = (workspaces: McpCaller[]): McpConnection => ({ personId: 'p', email: null, label: 'oauth:p', workspaces }) as McpConnection;
+
+  it('uses an only workspace of the person\'s own without being named', async () => {
+    expect((await resolveWorkspace(connection([caller('a')]), undefined, { required: true }))?.accountId).toBe('a');
+  });
+
+  it('never uses a customer workspace reached as staff without being named, even when it is the only one', async () => {
+    const only = connection([caller('customer', 'staff')]);
+    await expect(resolveWorkspace(only, undefined, { required: true })).rejects.toMatchObject({ code: 'WORKSPACE_REQUIRED' });
+    expect(await resolveWorkspace(only, undefined, { required: false })).toBeNull();
+    expect((await resolveWorkspace(only, 'customer', { required: true }))?.accountId).toBe('customer');
   });
 });

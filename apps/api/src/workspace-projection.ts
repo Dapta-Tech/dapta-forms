@@ -55,6 +55,19 @@ export interface ProjectionState {
   featureFlags: Record<string, unknown> | null;
   /** True when this state was served from cache past its TTL because upstream failed. */
   degraded: boolean;
+  /**
+   * True when the refresh read every membership of the person from the
+   * identity service, so the local active rows are exactly what it confirmed
+   * (it also disabled the ones it no longer names). False when a staff
+   * re-read failed or the state is degraded.
+   */
+  complete: boolean;
+  /**
+   * The local accounts the last not degraded refresh projected from what the
+   * identity service answered (empty when degraded): the memberships it
+   * confirmed, and only those.
+   */
+  confirmedAccountIds: string[];
   syncedAt: number;
 }
 
@@ -158,12 +171,19 @@ export class WorkspaceProjection {
       if (!(err instanceof IamUnavailableError)) throw err;
       if (cached) {
         this.log.warn(`IAM unavailable; serving stale projection for ${id.sub}: ${err.message}`);
-        return { ...cached, degraded: true };
+        return { ...cached, degraded: true, complete: false, confirmedAccountIds: [] };
       }
       const local = await pickHomeAccount(this.db, id.sub, null);
       if (local) {
         this.log.warn(`IAM unavailable; serving local rows for ${id.sub}: ${err.message}`);
-        const state: ProjectionState = { lastWorkspace: null, featureFlags: null, degraded: true, syncedAt: now };
+        const state: ProjectionState = {
+          lastWorkspace: null,
+          featureFlags: null,
+          degraded: true,
+          complete: false,
+          confirmedAccountIds: [],
+          syncedAt: now,
+        };
         // Do NOT cache a degraded state past this call: retry upstream next time.
         return state;
       }
@@ -235,7 +255,16 @@ export class WorkspaceProjection {
       });
     }
 
-    const state: ProjectionState = { lastWorkspace, featureFlags, degraded: false, syncedAt: now };
+    const state: ProjectionState = {
+      lastWorkspace,
+      featureFlags,
+      degraded: false,
+      complete: pruneMissing,
+      // Every account here came from what the identity service answered, even
+      // when a staff re-read failed (that only stops pruning).
+      confirmedAccountIds: [...new Set(result.accountIds)],
+      syncedAt: now,
+    };
     this.cache.set(id.sub, state);
     return state;
   }

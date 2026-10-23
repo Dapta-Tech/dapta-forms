@@ -142,8 +142,8 @@ export interface SubjectMembership {
  * member reached through it alike: this app is not told when someone is
  * removed upstream, so a member whose web login has not been verified within
  * the window is treated as gone. Rows held through a staff access grant
- * (`access_grant`) never count: they are not memberships, and staff status is
- * judged per request on the web, never over an MCP sign-in. Nor does a row
+ * (`access_grant`) never count here: they are not memberships, and the caller
+ * reads them apart (`staffGrantsBySubject`) under a much shorter window. Nor does a row
  * no login ever bound to a person (`external_id` NULL): it names nobody. Role and status
  * are returned, not filtered, so the caller applies its own rule for who may
  * act. Read on every MCP request: removing a member, disabling them or taking
@@ -174,6 +174,77 @@ export async function membershipsBySubject(db: Db, subject: string, seenSince: n
             UNION
             SELECT r.id FROM member r JOIN member l ON l.external_id = r.external_id
             WHERE l.idp_subject = ${subject} AND l.login_seen_at >= ${seenSince})
+        ORDER BY a.created_at ASC, a.id ASC
+        LIMIT 200`,
+  );
+  return rows.map((r) => ({
+    memberId: r.member_id,
+    accountId: r.account_id,
+    accountName: r.account_name,
+    externalId: r.external_id,
+    email: r.email,
+    role: r.role,
+    status: r.status,
+  }));
+}
+
+/**
+ * Stamp `login_seen_at` with `seenAt` on the person's (`external_id`) active
+ * real memberships in `accountIds`, as `noteMemberLogin` does for one: only
+ * where the stamp is missing or more than `refreshAfterMs` older, never
+ * backwards, in one statement. Never a row held through a staff access grant.
+ * The caller passes only accounts whose membership the identity service has
+ * just confirmed. Answers how many rows it stamped.
+ */
+export async function notePersonLogins(
+  db: Db,
+  externalId: string,
+  accountIds: readonly string[],
+  seenAt: number,
+  refreshAfterMs: number,
+): Promise<number> {
+  if (accountIds.length === 0) return 0;
+  const stamped = await db.all<{ id: string }>(
+    sql`UPDATE member SET login_seen_at = ${seenAt}
+        WHERE external_id = ${externalId} AND status = 'active' AND access_grant IS NULL
+          AND account_id IN (${sql.join(accountIds.map((id) => sql`${id}`), sql`, `)})
+          AND (login_seen_at IS NULL OR login_seen_at < ${seenAt - refreshAfterMs})
+        RETURNING id`,
+  );
+  return stamped.length;
+}
+
+/**
+ * The rows a sign-in with `subject` reaches through a staff access grant: the
+ * active `access_grant = 'staff'` rows of the person behind the subject (found
+ * through one of their active real members carrying it, itself seen since
+ * `linkSince`), each stamped since `grantSince` by a request that proved the
+ * person is staff and acted in that grant's workspace. Kept apart from `membershipsBySubject` because a grant is
+ * not a membership: the caller holds it to a much shorter window, so access
+ * through a grant ends soon after the person stops being staff.
+ */
+export async function staffGrantsBySubject(
+  db: Db,
+  subject: string,
+  linkSince: number,
+  grantSince: number,
+): Promise<SubjectMembership[]> {
+  const rows = await db.all<{
+    member_id: string;
+    account_id: string;
+    account_name: string;
+    external_id: string;
+    email: string | null;
+    role: string;
+    status: string;
+  }>(
+    sql`SELECT m.id AS member_id, m.account_id, a.name AS account_name, m.external_id, m.email, m.role, m.status
+        FROM member m JOIN account a ON a.id = m.account_id
+        WHERE m.access_grant = 'staff' AND m.status = 'active' AND m.login_seen_at >= ${grantSince}
+          AND m.external_id IN (
+            SELECT l.external_id FROM member l
+            WHERE l.idp_subject = ${subject} AND l.login_seen_at >= ${linkSince}
+              AND l.status = 'active' AND l.access_grant IS NULL AND l.external_id IS NOT NULL)
         ORDER BY a.created_at ASC, a.id ASC
         LIMIT 200`,
   );

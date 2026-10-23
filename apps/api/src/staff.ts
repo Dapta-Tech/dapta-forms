@@ -3,10 +3,21 @@
  * domains `IAM_STAFF_DOMAINS` lists. In the web app, staff may search every
  * workspace and enter any of them as an admin, through an access grant
  * (`member.access_grant = 'staff'`), judged on the email the identity
- * service's token carries on each request. An MCP sign-in never acts as
- * staff: it reaches the person's own memberships only (docs/adr/0003).
- * A pure function, so every surface that asks applies the same rule.
+ * service's token carries on each request. An MCP sign-in reaches only the
+ * grants such a request stamped within `STAFF_GRANT_MAX_AGE_MS`, and never
+ * searches or enters other workspaces (docs/adr/0003). A pure function, so
+ * every surface that asks applies the same rule.
  */
+
+/**
+ * How fresh a staff access grant's stamp must be for an MCP sign-in to act
+ * through it: a day. A grant reaches a customer's workspace, so access through
+ * it ends soon after the person stops being staff (or leaves), much sooner
+ * than a membership's link window. A web request that proves the person is
+ * staff re-stamps their grants at most every hour.
+ */
+export const STAFF_GRANT_MAX_AGE_MS = 86_400_000;
+export const STAFF_GRANT_REFRESH_MS = 3_600_000;
 
 /**
  * Why staff access refuses a workspace where the person holds a membership

@@ -166,7 +166,17 @@ export class WorkOsAuthProvider implements AuthProvider {
       }
       // Staff is judged again here, on the token's email, every request: the
       // auth service ignores grant rows for anyone it does not mark.
-      if (home) return { ...home, staff: this.projection.isStaff(upstream.email), ...vouchedBy(sub, claims) };
+      if (home) {
+        const vouched = vouchedBy(sub, claims);
+        return {
+          ...home,
+          staff: this.projection.isStaff(upstream.email),
+          ...vouched,
+          // The identity service just answered for these memberships: they are
+          // vouched for, not only the one this request acts in.
+          ...(!state.degraded && state.confirmedAccountIds.length > 0 ? { confirmedAccountIds: state.confirmedAccountIds } : {}),
+        };
+      }
       // Nothing upstream and nothing local. The identity service creates a
       // workspace at signup, so this is a real fault, not a first login — and
       // minting a token-account row here would recreate exactly the pre-0015

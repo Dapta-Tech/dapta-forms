@@ -48,7 +48,7 @@ const LEAD = {
 };
 
 /** The refusal a verified sign-in with no owner or admin workspace gets, at connect. */
-const NOT_LINKED = `This sign-in is not an owner or admin of any dForms workspace opened with this account in the last 30 days: open the workspace in dForms (${APP_URL}), then connect again.`;
+const NOT_LINKED = `This sign-in has no dForms workspace opened with this account in the last 30 days: open dForms (${APP_URL}) with this account, then connect again.`;
 
 type Role = 'owner' | 'admin' | 'member';
 
@@ -168,7 +168,7 @@ describe('list_my_workspaces, what it leaves out', () => {
     }
   });
 
-  it('leaves out a workspace where the person is only a member, and refuses at connect a person who is only a member everywhere', async () => {
+  it('lists a workspace where the person is a plain member, with that role, and a person who is a member everywhere connects', async () => {
     const h = await boot();
     const p = newPerson();
     // The subject lands on the member-role row (the oldest); the admin row is reached through it.
@@ -176,17 +176,20 @@ describe('list_my_workspaces, what it leaves out', () => {
     await join(h, p, h.other.accountId, 'admin');
     const c = await signIn(h, p.subject);
     const listed = structured<Listed>(await c.callTool({ name: 'list_my_workspaces', arguments: {} }));
-    expect(listed.workspaces).toEqual([{ id: h.other.accountId, name: 'Globex', account_name: null, role: 'admin', access: 'member' }]);
-    expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.accountId } }))).toMatch(
-      /^NOT_FOUND: No workspace of yours has this id\./,
+    expect(listed.workspaces).toEqual([
+      { id: h.accountId, name: 'Acme Inc.', account_name: null, role: 'member', access: 'member' },
+      { id: h.other.accountId, name: 'Globex', account_name: null, role: 'admin', access: 'member' },
+    ]);
+    // A member acts with the member role: reads work.
+    expect(structured<{ workspace: { id: string } }>(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.accountId } })).workspace.id).toBe(
+      h.accountId,
     );
 
     const q = newPerson();
     await join(h, q, h.accountId, 'member');
-    await join(h, q, h.other.accountId, 'member');
-    const refused = await connectRaw(h, await bearer(h, q.subject));
-    expect(refused).toEqual({ status: 403, message: NOT_LINKED });
-    expect(lastRefusal(h)).toEqual({ msg: 'mcp.oauth_refused', reason: 'not_active_admin' });
+    const d = await signIn(h, q.subject);
+    const who = structured<{ member: { role: string } }>(await d.callTool({ name: 'whoami', arguments: {} }));
+    expect(who.member.role).toBe('member');
   });
 });
 
@@ -357,7 +360,7 @@ describe('mid-session', () => {
     expect(acme.workspace.id).toBe(h.accountId);
   });
 
-  it('reads a changed role on the next call, drops a workspace demoted to member at once, and refuses the next request once no owner or admin workspace is left', async () => {
+  it('reads a changed role on the next call, keeps a workspace demoted to member with that role, and refuses the next request once no active workspace is left', async () => {
     const h = await boot();
     const p = await twoWorkspaces(h);
     const c = await signIn(h, p.subject);
@@ -365,18 +368,15 @@ describe('mid-session', () => {
     const listed = structured<Listed>(await c.callTool({ name: 'list_my_workspaces', arguments: {} }));
     expect(listed.workspaces.find((w) => w.id === h.other.accountId)!.role).toBe('admin');
 
-    // Every request maps the sign-in again: a workspace demoted to member is gone from the next one.
+    // Every request maps the sign-in again: a workspace demoted to member stays, with the member role.
     await h.db.run(sql`UPDATE member SET role = 'member' WHERE id = ${p.globexMember}`);
     const demoted = structured<Listed>(await c.callTool({ name: 'list_my_workspaces', arguments: {} }));
-    expect(demoted.workspaces.map((w) => w.id)).toEqual([h.accountId]);
-    expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.other.accountId } }))).toMatch(
-      /^NOT_FOUND: No workspace of yours has this id\./,
-    );
+    expect(demoted.workspaces.find((w) => w.id === h.other.accountId)!.role).toBe('member');
 
-    // The last admin workspace disabled: the next request is refused like a fresh sign-in.
-    await h.db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${p.acmeMember}`);
-    await expect(c.callTool({ name: 'list_my_workspaces', arguments: {} })).rejects.toThrow(/open the workspace in dForms/);
-    expect(lastRefusal(h)).toEqual({ msg: 'mcp.oauth_refused', reason: 'not_active_admin' });
+    // Every member disabled: the next request is refused like a fresh sign-in.
+    await h.db.run(sql`UPDATE member SET status = 'disabled' WHERE id IN (${p.acmeMember}, ${p.globexMember})`);
+    await expect(c.callTool({ name: 'list_my_workspaces', arguments: {} })).rejects.toThrow(/open dForms/);
+    expect(lastRefusal(h)).toEqual({ msg: 'mcp.oauth_refused', reason: 'no_active_membership' });
   });
 });
 
@@ -395,17 +395,17 @@ describe('one workspace, or none', () => {
     expect((forms as { content: Array<{ text: string }> }).content[0]!.text).toMatch(/^In workspace "Globex": /);
   });
 
-  it('refuses at connect, saying to open the workspace in dForms, a linked person whose only memberships are invited or disabled', async () => {
+  it('refuses at connect, saying to open dForms, a linked person whose only memberships are invited or disabled', async () => {
     const h = await boot();
     const p = newPerson();
     await join(h, p, h.accountId, 'admin', { status: 'invited' });
     await join(h, p, h.other.accountId, 'owner', { status: 'disabled' });
     const refused = await connectRaw(h, await bearer(h, p.subject));
     expect(refused).toEqual({ status: 403, message: NOT_LINKED });
-    // Logged as not_active_admin: the person is linked, only no member of theirs may act.
-    expect(lastRefusal(h)).toEqual({ msg: 'mcp.oauth_refused', reason: 'not_active_admin' });
+    // The person is linked, only no member of theirs is active.
+    expect(lastRefusal(h)).toEqual({ msg: 'mcp.oauth_refused', reason: 'no_active_membership' });
     // The official client gets the same words.
-    await expect(signIn(h, p.subject)).rejects.toThrow(/open the workspace in dForms/);
+    await expect(signIn(h, p.subject)).rejects.toThrow(/open dForms/);
   });
 });
 
@@ -512,28 +512,45 @@ describe('staff of the deployment, signed in over OAuth', () => {
     expect(h.audit.some((line) => (JSON.parse(line) as { via?: string }).via === 'staff_grant')).toBe(false);
   });
 
-  it('never lists nor uses a staff access grant the person already holds, and refuses a person who holds nothing else', async () => {
+  it('reaches a staff access grant a staff web visit stamped within a day, as staff access, and drops it once that stamp is older', async () => {
     const h = await boot({ IAM_STAFF_DOMAINS: STAFF_DOMAIN });
     const p = newPerson({ domain: STAFF_DOMAIN });
     await join(h, p, h.accountId, 'admin');
     const grant = await join(h, p, h.other.accountId, 'admin', { grant: 'staff' });
-    // As live as a membership: active, admin, carrying the subject and vouched for now.
-    await h.db.run(sql`UPDATE member SET idp_subject = ${p.subject}, login_seen_at = ${Date.now()} WHERE id = ${grant}`);
+    // What a web request that proved the person staff writes on their grants (AuthService).
+    await h.db.run(sql`UPDATE member SET login_seen_at = ${Date.now()} WHERE id = ${grant}`);
     const c = await signIn(h, p.subject);
 
     const listed = structured<Found>(await c.callTool({ name: 'list_my_workspaces', arguments: {} }));
-    expect(listed.workspaces.map((w) => [w.id, w.access])).toEqual([[h.accountId, 'member']]);
-    const searched = structured<Found>(await c.callTool({ name: 'list_my_workspaces', arguments: { search: 'globex' } }));
-    expect(searched).toMatchObject({ staff: false, workspaces: [] });
-    for (const name of ['whoami', 'list_forms'] as const) {
-      expect(errorText(await c.callTool({ name, arguments: { workspace_id: h.other.accountId } })), name).toMatch(
-        /^NOT_FOUND: No workspace of yours has this id\./,
-      );
-    }
-    const who = structured<{ workspaces: Array<{ id: string }> }>(await c.callTool({ name: 'whoami', arguments: {} }));
-    expect(who.workspaces.map((w) => w.id)).toEqual([h.accountId]);
+    expect(listed.workspaces.map((w) => [w.id, w.access])).toEqual([
+      [h.accountId, 'member'],
+      [h.other.accountId, 'staff'],
+    ]);
+    // Still no search over other workspaces from a sign-in.
+    expect(structured<Found>(await c.callTool({ name: 'list_my_workspaces', arguments: { search: 'initech' } }))).toMatchObject({ staff: false, workspaces: [] });
+    const forms = await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.other.accountId } });
+    expect(structured<{ workspace: { id: string; access: string } }>(forms).workspace).toMatchObject({ id: h.other.accountId, access: 'staff' });
+    expect((forms as { content: Array<{ text: string }> }).content[0]!.text).toMatch(/^In workspace "Globex" \(staff access\): /);
+    expect(h.audit.some((line) => (JSON.parse(line) as { via?: string }).via === 'staff_grant')).toBe(true);
 
-    // A person whose only row is such a grant reaches nothing: refused at connect.
+    // No staff web visit for more than a day: the grant drops out on the next request.
+    await h.db.run(sql`UPDATE member SET login_seen_at = ${Date.now() - 25 * 3_600_000} WHERE id = ${grant}`);
+    const later = structured<Found>(await c.callTool({ name: 'list_my_workspaces', arguments: {} }));
+    expect(later.workspaces.map((w) => w.id)).toEqual([h.accountId]);
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.other.accountId } }))).toMatch(
+      /^NOT_FOUND: No workspace of yours has this id\./,
+    );
+
+    // With their own membership disabled, a fresh grant reaches nothing either.
+    const r = newPerson({ domain: STAFF_DOMAIN });
+    const ownRow = await join(h, r, h.accountId, 'admin');
+    const theirGrant = await join(h, r, h.other.accountId, 'admin', { grant: 'staff' });
+    await link(h, r.subject);
+    await h.db.run(sql`UPDATE member SET login_seen_at = ${Date.now()} WHERE id = ${theirGrant}`);
+    await h.db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${ownRow}`);
+    expect(await connectRaw(h, { authorization: `Bearer ${idp.token(r.subject, `${h.base}/mcp`)}` })).toMatchObject({ status: 403 });
+
+    // A person whose only row is a grant has no real member to carry the link: refused at connect.
     const q = newPerson({ domain: STAFF_DOMAIN });
     const only = await join(h, q, h.other.accountId, 'owner', { grant: 'staff' });
     await h.db.run(sql`UPDATE member SET idp_subject = ${q.subject}, login_seen_at = ${Date.now()} WHERE id = ${only}`);

@@ -4,7 +4,7 @@ import {
   getFormById,
   listLiveStepCounts,
   membershipsBySubject,
-  type AccountRole,
+  staffGrantsBySubject,
   type Db,
 } from '@quill/db';
 import {
@@ -41,7 +41,7 @@ import { isKeyAllowedRoute, routeOf } from './api-key-routes';
 import type { ReqLike } from './auth.provider';
 import { inProcessRequest } from './in-process-principal';
 import { IssuerUnavailable, type McpOAuth } from './mcp-oauth';
-import { isAdmin } from './permissions';
+import { STAFF_GRANT_MAX_AGE_MS } from './staff';
 
 /**
  * forms-api's side of the MCP port (`FormsBackend` in `@quill/mcp`).
@@ -148,14 +148,13 @@ const DEFAULT_LINK_MAX_AGE_MS = 30 * 86_400_000;
 /**
  * Why a verified sign-in reaches no workspace. Signing in again would not
  * change it, so it is a 403 the person can act on, never a 401 that loops the
- * login: each workspace counts once the person opens it in dForms on the web
- * within the link window, as an owner or admin. The sibling calendars
- * product's words, in dForms' terms.
+ * login: one visit to dForms on the web, within the link window, links every
+ * workspace of theirs. The sibling calendars product's words, in dForms' terms.
  */
 function notLinked(appUrl: string, linkMaxAgeMs: number): DoorRefusal {
   const days = Math.max(1, Math.round(linkMaxAgeMs / 86_400_000));
   return new DoorRefusal(
-    `This sign-in is not an owner or admin of any dForms workspace opened with this account in the last ${days} days: open the workspace in dForms${appUrl ? ` (${appUrl})` : ''}, then connect again.`,
+    `This sign-in has no dForms workspace opened with this account in the last ${days} days: open dForms${appUrl ? ` (${appUrl})` : ''} with this account, then connect again.`,
   );
 }
 
@@ -169,17 +168,24 @@ function notLinked(appUrl: string, linkMaxAgeMs: number): DoorRefusal {
  * The token's subject maps to members here, in dForms' own database, the way
  * the sibling calendars product does it (`membershipsBySubject`): the members
  * whose verified web login recorded that subject, and the same person's
- * members in other workspaces, each only while a verified web login vouched
- * for it within the link window (`OAUTH_LINK_MAX_AGE_DAYS`), and of those only
- * active owners and admins. dForms reads no identity database and holds no
- * credential for one: the link exists because the person uses the web app,
- * and it lapses when they stop, the way their web access would.
+ * members in other workspaces, each only while a verified web request vouched
+ * for it within the link window (`OAUTH_LINK_MAX_AGE_DAYS`). Any active role
+ * connects; every tool call then applies that member's live role, as on the
+ * web. dForms reads no identity database and holds no credential for one: the
+ * link exists because the person uses the web app, and it lapses when they
+ * stop, the way their web access would.
  *
- * A token that verifies but reaches no such member is a `DoorRefusal` (403)
- * that says to open dForms on the web once; so is a subject that names more
- * than one person, which is never resolved by guessing. Nothing is matched by
- * email, and a row held through a staff access grant never counts: an MCP
- * sign-in acts in the person's own memberships only (docs/adr/0003).
+ * Staff of the deployment also reach the customer workspaces they opened on
+ * the web through a staff access grant within `STAFF_GRANT_MAX_AGE_MS` (a
+ * day), on a request that proved them staff (`staffGrantsBySubject`), and
+ * only next to an active membership of their own. Those workspaces say
+ * `access: 'staff'`, are never used without being named, and are audited as
+ * staff calls. There is no search over other workspaces from a sign-in:
+ * staff open a customer's workspace on the web first (docs/adr/0003).
+ *
+ * A token that verifies but reaches nothing is a `DoorRefusal` (403) that says
+ * to open dForms on the web; so is a subject that names more than one person,
+ * which is never resolved by guessing. Nothing is matched by email.
  *
  * Like a key, this is a lookup only, done again on every request: every tool
  * call re-reads its member through `AuthService.resolveHost`, so a member
@@ -204,24 +210,37 @@ export async function authenticateMcpConnection(
   if (!access) return null;
   const now = opts.now?.() ?? Date.now();
   const linkMaxAgeMs = opts.linkMaxAgeMs ?? DEFAULT_LINK_MAX_AGE_MS;
-  const rows = await membershipsBySubject(db, access.subject, now - linkMaxAgeMs);
+  const linkSince = now - linkMaxAgeMs;
+  const [rows, grants] = await Promise.all([
+    membershipsBySubject(db, access.subject, linkSince),
+    staffGrantsBySubject(db, access.subject, linkSince, now - STAFF_GRANT_MAX_AGE_MS),
+  ]);
   // The reason only, never the subject or the token.
-  const refuse = (reason: 'ambiguous' | 'not_linked' | 'not_active_admin'): void => log(JSON.stringify({ msg: 'mcp.oauth_refused', reason }));
-  if (new Set(rows.map((r) => r.externalId)).size > 1) {
+  const refuse = (reason: 'ambiguous' | 'not_linked' | 'no_active_membership'): void =>
+    log(JSON.stringify({ msg: 'mcp.oauth_refused', reason }));
+  if (new Set([...rows, ...grants].map((r) => r.externalId)).size > 1) {
     refuse('ambiguous');
     throw new DoorRefusal('This sign-in matches more than one dForms account, so dForms will not guess which one it is. Contact support; do not retry.');
   }
-  const allowed = rows.filter((r) => r.status === 'active' && isAdmin(r.role as AccountRole));
-  const first = allowed[0];
+  const active = rows.filter((r) => r.status === 'active');
+  // Grants only next to an active membership of the person's own (a person
+  // whose own memberships are all disabled reaches no customer either), and a
+  // workspace the person is a member of is always entered as that member.
+  const own = new Set(active.map((m) => m.accountId));
+  const throughGrant = active.length > 0 ? grants.filter((g) => !own.has(g.accountId)) : [];
+  const first = active[0];
   if (!first) {
-    refuse(rows.length === 0 ? 'not_linked' : 'not_active_admin');
+    refuse(rows.length === 0 && grants.length === 0 ? 'not_linked' : 'no_active_membership');
     throw notLinked(opts.appUrl ?? '', linkMaxAgeMs);
   }
   const person: Person = { id: first.externalId, email: first.email };
   const label = `oauth:${person.id}`;
-  const workspaces = allowed.map((m) =>
-    memberCaller(person, label, { accountId: m.accountId, accountName: m.accountName, memberId: m.memberId, role: m.role }),
-  );
+  const workspaces = [
+    ...active.map((m) => memberCaller(person, label, { accountId: m.accountId, accountName: m.accountName, memberId: m.memberId, role: m.role })),
+    ...throughGrant.map((g) =>
+      memberCaller(person, label, { accountId: g.accountId, accountName: g.accountName, memberId: g.memberId, role: g.role }, 'staff'),
+    ),
+  ];
   return { personId: person.id, email: person.email, label, workspaces };
 }
 
@@ -291,6 +310,7 @@ function memberCaller(
   person: Person,
   label: string,
   m: { accountId: string; accountName: string; memberId: string; role: string },
+  access: 'member' | 'staff' = 'member',
 ): McpCaller {
   return {
     accountId: m.accountId,
@@ -301,6 +321,7 @@ function memberCaller(
     credentialId: `member:${m.memberId}`,
     label,
     personId: person.id,
+    ...(access === 'staff' ? { access } : {}),
     context: { req: inProcessRequest({ accountId: m.accountId, memberId: m.memberId }) } satisfies ApiCallerContext,
   };
 }

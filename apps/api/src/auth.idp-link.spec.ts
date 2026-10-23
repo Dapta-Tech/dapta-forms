@@ -22,7 +22,7 @@ let db: Db;
 let homeAccountId: string;
 let homeMemberId: string;
 /** What the next session token vouches for, on top of who the dev stub resolves. */
-let vouch: Pick<ResolvedHost, 'idpSubject' | 'authenticatedAt'>;
+let vouch: Partial<Pick<ResolvedHost, 'idpSubject' | 'authenticatedAt' | 'confirmedAccountIds' | 'staff'>>;
 /** The person the session token names (undefined: a provider that names nobody). */
 let person: string | undefined;
 let audit: string[];
@@ -120,14 +120,50 @@ describe('a verified web request', () => {
     expect(await linkOf(unbound.memberId)).toEqual({ idp_subject: null, login_seen_at: null });
   });
 
-  it('never records anything on a row held through a staff access grant', async () => {
+  it('stamps a staff access grant only on a request proven staff that acts in that workspace, never with a subject', async () => {
     const grant = await otherWorkspace('Customer', 'staff');
-    const staff = new AuthService(db, {
-      name: 'spec-staff',
-      resolveHost: async () => ({ accountId: grant.accountId, memberId: grant.memberId, staff: true, personId: PERSON, ...vouch }),
-    });
-    await staff.resolveHost({ headers: {} });
+    const acting = (memberId: string, accountId: string, staff: boolean) =>
+      new AuthService(db, {
+        name: 'spec-staff',
+        resolveHost: async () => ({ accountId, memberId, staff, personId: PERSON, ...vouch }),
+      });
+    // Staff, but acting in their own workspace: the grant is not touched.
+    await acting(homeMemberId, homeAccountId, true).resolveHost({ headers: {} });
     expect(await linkOf(grant.memberId)).toEqual({ idp_subject: null, login_seen_at: null });
+    // Not staff on this request: the grant is refused, and not stamped.
+    await expect(acting(grant.memberId, grant.accountId, false).resolveHost({ headers: {} })).rejects.toThrow();
+    expect(await linkOf(grant.memberId)).toEqual({ idp_subject: null, login_seen_at: null });
+    // Staff acting in the customer's workspace: that grant is stamped, with no subject.
+    await acting(grant.memberId, grant.accountId, true).resolveHost({ headers: {} });
+    expect(await linkOf(grant.memberId)).toEqual({ idp_subject: null, login_seen_at: vouch.authenticatedAt });
+  });
+
+  it('stamps a grant reached through the workspace switch only when it is bound to the same person', async () => {
+    const mine = await otherWorkspace('Mine', 'staff');
+    // Someone else's grant that still carries this email: the switch reaches it by email.
+    const theirs = await otherWorkspace('Theirs', 'staff', 'iam_someone_else');
+    vouch = { ...vouch, staff: true };
+    await auth.resolveHost(as(mine.accountId));
+    expect((await linkOf(mine.memberId))?.login_seen_at).toBe(vouch.authenticatedAt);
+    await auth.resolveHost(as(theirs.accountId)).catch(() => undefined);
+    expect(await linkOf(theirs.memberId)).toEqual({ idp_subject: null, login_seen_at: null });
+  });
+
+  it('vouches for the active memberships the identity service just confirmed, and only those', async () => {
+    const beta = await otherWorkspace('Beta');
+    const gamma = await otherWorkspace('Gamma');
+    const delta = await otherWorkspace('Delta');
+    await db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${gamma.memberId}`);
+    const someoneElse = await otherWorkspace('Theirs', null, 'iam_someone_else');
+    await auth.resolveHost(as());
+    expect((await linkOf(beta.memberId))?.login_seen_at).toBeNull();
+    vouch = { ...vouch, confirmedAccountIds: [homeAccountId, beta.accountId, gamma.accountId, someoneElse.accountId] };
+    await auth.resolveHost(as());
+    expect((await linkOf(beta.memberId))?.login_seen_at).toBe(vouch.authenticatedAt);
+    // Never a disabled member, an account the identity service did not confirm, or someone else's row.
+    expect((await linkOf(gamma.memberId))?.login_seen_at).toBeNull();
+    expect((await linkOf(delta.memberId))?.login_seen_at).toBeNull();
+    expect((await linkOf(someoneElse.memberId))?.login_seen_at).toBeNull();
   });
 
   it('renews the stamp only once it is a refresh step old, and never moves it backwards', async () => {

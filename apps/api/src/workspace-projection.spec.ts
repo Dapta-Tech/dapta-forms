@@ -44,6 +44,7 @@ class FakeIam {
   calls: Array<{ method: string; path: string; body?: unknown }> = [];
   down = false;
   lastWorkspace: string | null = null;
+
   workspaces: IamWorkspace[] = [];
 
   fetch: typeof fetch = async (input, init) => {
@@ -292,6 +293,60 @@ describe('workspace projection (IAM-backed workspaces)', () => {
     expect(put).toBeDefined();
     expect((put!.body as { feature_flags: { last_workspace: string } }).feature_flags.last_workspace).toBe(WS_INVITED);
   });
+  it('one visit vouches for every membership the identity service confirmed, not only the one it opened', async () => {
+    const workosUser = 'user_01HONEVISITSPEC00000000000';
+    const iat = Math.floor(Date.now() / 1000) - 5;
+    const token = signJwtHs256(
+      { sub: SUB, account_id: IAM_ACCOUNT, email: 'a@example.com', name: 'Alex', iat, exp: 4102444800, workos_user_id: workosUser },
+      SECRET,
+    );
+    await auth.resolveHost(asReq(token));
+    const rows = await db.all<{ idp_subject: string | null; login_seen_at: number | string | null }>(
+      sql`SELECT idp_subject, login_seen_at FROM member WHERE external_id = ${SUB}`,
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => Number(r.login_seen_at) === iat * 1000)).toBe(true);
+    // The subject on the one the request acted in; the other is reached through it.
+    expect(rows.filter((r) => r.idp_subject === workosUser)).toHaveLength(1);
+    expect(await membershipsBySubject(db, workosUser, iat * 1000 - 1)).toHaveLength(2);
+  });
+
+  it('never trusts a session token without a usable WorkOS id: nothing is recorded, and nothing is read about the user', async () => {
+    const token = signJwtHs256(
+      { sub: SUB, account_id: IAM_ACCOUNT, email: 'a@example.com', name: 'Alex', iat: Math.floor(Date.now() / 1000), exp: 4102444800, workos_user_id: 'pending_workos_sync' },
+      SECRET,
+    );
+    await auth.resolveHost(asReq(token));
+    expect(await db.all(sql`SELECT id FROM member WHERE idp_subject IS NOT NULL`)).toHaveLength(0);
+    expect(iam.calls.some((c) => c.path.startsWith('/iam/user/'))).toBe(false);
+  });
+
+  it('vouches only for the member a request acts in while the identity service cannot be read (a degraded projection)', async () => {
+    const workosUser = 'user_01HDEGRADEDSPEC00000000000';
+    const old = Math.floor(Date.now() / 1000) - 3 * 86_400;
+    const tokenAt = (iat: number) =>
+      signJwtHs256({ sub: SUB, account_id: IAM_ACCOUNT, email: 'a@example.com', name: 'Alex', iat, exp: 4102444800, workos_user_id: workosUser }, SECRET);
+    await auth.resolveHost(asReq(tokenAt(old)));
+    const before = await db.all<{ account_id: string; login_seen_at: number | string | null }>(
+      sql`SELECT account_id, login_seen_at FROM member WHERE external_id = ${SUB}`,
+    );
+    expect(before.every((r) => Number(r.login_seen_at) === old * 1000)).toBe(true);
+    // The identity service goes down and the cached projection expires: the next request is degraded.
+    iam.down = true;
+    now += 61_000;
+    const fresh = Math.floor(Date.now() / 1000);
+    // A new AuthService, so its per-person throttle cannot hide a wrong stamp.
+    const degradedAuth = new AuthService(
+      db,
+      new WorkOsAuthProvider(db, { JWT_SECRET: SECRET, JWT_ISSUER: undefined, JWT_AUDIENCE: undefined, SEED_DEMO_FORM: false, ONBOARDING_WIZARD: false }, undefined, projection),
+    );
+    const p = await degradedAuth.resolveHost(asReq(tokenAt(fresh)));
+    const after = await db.all<{ account_id: string; login_seen_at: number | string | null }>(
+      sql`SELECT account_id, login_seen_at FROM member WHERE external_id = ${SUB}`,
+    );
+    for (const r of after) expect(Number(r.login_seen_at), r.account_id).toBe(r.account_id === p.accountId ? fresh * 1000 : old * 1000);
+  });
+
   it('records the WorkOS user id the session carries on each workspace the person opens, so an MCP sign-in reaches them', async () => {
     const workosUser = 'user_01HPROJECTIONSPEC000000000';
     const iat = Math.floor(Date.now() / 1000) - 5;

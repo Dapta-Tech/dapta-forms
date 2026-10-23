@@ -56,36 +56,47 @@ start of the text summary.
   `workspace_id` answers `WORKSPACE_REQUIRED` and tells the agent to call
   `list_my_workspaces`, ask the user which workspace by name, and repeat the
   call with that id. The agent sends it on every call of the conversation.
-- The workspaces are the person's **active owner and admin** members in
-  dForms whose web login was verified recently (see
+- The workspaces are the person's **active** members in dForms (any role)
+  whose web login was verified recently (see
   [Who it acts as](#signing-in-mcp-connections-over-oauth)), read again on
-  every request: remove, disable or demote the member and the workspace drops
-  out of `list_my_workspaces` on the next call, while the others stay.
-  Pending invitations and staff access grants are never listed.
-- A `workspace_id` the person cannot act in (never joined, removed, a plain
-  `member` role, reached only by a staff access grant, or one that does not
-  exist) answers `NOT_FOUND` with the same message in every case, so nothing
-  about that workspace leaks.
-- A workspace counts once the person opens it in dForms on the web (the
-  switcher counts) within the link window; one they have not opened there
-  answers `NOT_FOUND` like any other. A sign-in that reaches no such
-  workspace is refused at the door with a 403 that says to open the
-  workspace in dForms with that account, then connect again.
+  every request: remove or disable the member and the workspace drops out of
+  `list_my_workspaces` on the next call, while the others stay. Pending
+  invitations are never listed; staff access grants only as described in
+  [Staff](#staff).
+- A `workspace_id` the person cannot act in (never joined, removed, or one
+  that does not exist) answers `NOT_FOUND` with the same message in every
+  case, so nothing about that workspace leaks.
+- One visit to dForms on the web links every workspace of the person that the
+  identity service confirms on that visit; with local workspaces only (no
+  identity service), each workspace links when the person opens it. A sign-in
+  that reaches no workspace is refused at the door with a 403 that says to
+  open dForms with that account, then connect again.
 - The role is the member's role in the workspace the call names, read live on
   every call.
 
 ### Staff
 
-An MCP sign-in never acts as the deployment's staff (see
-[ADR 0003](adr/0003-mcp-sign-in-maps-through-web-logins.md), which supersedes
-the MCP part of [ADR 0002](adr/0002-staff-access-over-mcp.md)): it reaches the
-person's own memberships only, like anyone else's, and `list_my_workspaces`
-never searches other workspaces. Staff keep the web app's switcher
-(`IAM_STAFF_DOMAINS`) to enter a customer's workspace through a staff access
-grant, and from there can create an API key for that workspace, which works
-over MCP like any key: in that workspace only, as the grant's `admin` row,
-until someone revokes it. The workspace's owners and admins see such keys
-marked as created by Dapta staff and can revoke them at any time.
+An MCP sign-in never searches other workspaces, and never enters a new one
+(see [ADR 0003](adr/0003-mcp-sign-in-maps-through-web-logins.md), which
+supersedes the MCP part of [ADR 0002](adr/0002-staff-access-over-mcp.md)).
+Staff enter a customer's workspace in the web app's switcher
+(`IAM_STAFF_DOMAINS`), which holds them a staff access grant there. A web
+request that proves the person is staff (the email its session token carries
+is on those domains) and acts in that customer's workspace stamps that grant,
+and a sign-in then reaches it for about a day after that visit (a day from
+the issue time of that visit's session token), no longer, and only
+next to an active membership of the person's own: the workspace says
+`access: 'staff'`, is never used without being named in `workspace_id`, the
+text starts `In workspace "<name>" (staff access):`, and the audit line
+carries `via: 'staff_grant'`. A customer workspace staff have not opened on
+the web in the last day is not reachable over MCP, and a person who stops
+being staff (or leaves) loses those workspaces over MCP within a day.
+A workspace where the person is a real member is always entered as that
+member. Staff can also create an API key in a customer's workspace through
+the API (`/v1/api-keys`, with their session), which works over MCP like any
+key: in that workspace only, as the grant's `admin` row, until someone revokes
+it; the workspace's owners and admins see such keys marked as created by Dapta
+staff.
 
 ## Tools
 
@@ -373,22 +384,28 @@ the login, registers the client and issues the token; dForms verifies it.
   the session token's issue time, renewed about once a day). A sign-in maps
   to the members carrying its `sub` and the same person's members in other
   workspaces, each only while its own stamp is within
-  `OAUTH_LINK_MAX_AGE_DAYS` (30 by default), and only active owners and
-  admins. No identity database is read, and no credential for one is held:
+  `OAUTH_LINK_MAX_AGE_DAYS` (30 by default), any active role. When the
+  identity service has just confirmed the person's memberships (a fresh, not
+  degraded projection), the request stamps every one it confirmed, not only
+  the one it acts in. The subject is only ever taken from a session token the
+  identity service minted: a session whose token carries none (an older,
+  migrated or account-switched session) links nothing until the person signs
+  in again. No identity database is read, and no credential for one is held:
   dForms is not told when someone is removed upstream, so MCP access ends
   when the web's would. Each call then acts as that person's member in the
   workspace it names (see [Choosing a workspace](#choosing-a-workspace)),
   with the member's live role, under every rule an API key gets.
 - **Refusals.** A sign-in that reaches no such member (never used the web
-  app, not seen there within the window, or not an owner or admin in any
-  workspace it opened) gets a 403 that says to open the workspace in dForms
-  with that account, then connect again; a `sub` that two different people carry gets a 403 that says to
-  contact support. Never a 401, which would only loop the login. The API logs
-  one line per refusal (`mcp.oauth_refused` and the reason: `not_linked`,
-  `not_active_admin` or `ambiguous`), never the token or the `sub`.
-- **Existing members.** Nobody carries the link before the first verified web
-  request after this release. Each workspace links when the person next opens
-  it in the web app, with no new login.
+  app, not seen there within the window, or no active membership) gets a 403
+  that says to open dForms with that account, then connect again; a `sub`
+  that two different people carry gets a 403 that says to contact support.
+  Never a 401, which would only loop the login. The API logs one line per
+  refusal (`mcp.oauth_refused` and the reason: `not_linked`,
+  `no_active_membership` or `ambiguous`), never the token or the `sub`.
+- **Existing members.** A person links on their next visit to the web app,
+  with no new login, when their session token carries their WorkOS id. A
+  session whose token does not (it predates the claim, or came from an
+  account switch) needs a fresh sign-in to the web app once.
 - **Limits and audit.** The MCP buckets count per member of the workspace a
   call acts in, so one person's clients share a budget per workspace; a request
   that acts in none (the handshake, the tool list) counts against the person.

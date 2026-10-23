@@ -17,3 +17,12 @@ ADR 0001 mapped an MCP sign-in's token to a person by reading the identity servi
 - Keep reading the identity database: the dependency and the shared credential are what failed.
 - Ask the identity service over HTTP with a service key for each sign-in: dForms would hold a credential that reads every person and workspace, for a mapping the session token already gives it.
 - Staff search over the identity service's HTTP API with that key: same credential, and the door has no session email it can trust to judge staff. Left out; it can come back if staff need it, behind its own decision.
+
+## Amendment (2026-10-23, after the first day in production)
+
+Consequences above that proved wrong for customers are changed, still with no identity database and no shared credential:
+
+- **Any active role connects**, as before this ADR. Each tool call applies the member's live role, as on the web. The dashboard no longer creates API keys, so restricting sign-ins to owners and admins left plain members with no way in.
+- **One visit links every workspace.** When the identity service has just confirmed all of a person's memberships (a fresh, complete, not degraded projection), the web request stamps every one it confirmed, not only the one it acts in.
+- **Older sessions still need a fresh web sign-in.** A session token without the WorkOS id (it predates the claim, or the identity service minted it at an account switch, which drops the claim) links nothing. Reading the id from the person's user row instead was tried and dropped: users can edit that field on their own row and can see co-members' ids, so it would let one person plant another's id. The fix belongs in the identity service (carry the claim on every token it mints, and keep the field system-only).
+- **Staff reach the customer workspaces they opened as staff, for a day.** A web request that proves the person is staff and acts in a customer's workspace stamps that one grant; a sign-in reaches it while that stamp is under a day old, only next to an active membership of the person's own, and never without being named. So a person who stops being staff loses those workspaces over MCP within a day, and a customer they entered long ago is not reachable until they open it again. There is still no search over, or entry into, other workspaces from a sign-in.

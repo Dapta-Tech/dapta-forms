@@ -152,7 +152,7 @@ describe('signing in', () => {
     const h = await boot();
     const unknown = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token('user_unknown', `${h.base}/mcp`)}` });
     expect(unknown.status).toBe(403);
-    expect(((await unknown.json()) as { error: { message: string } }).error.message).toMatch(/not an owner or admin of any dForms workspace opened with this account in the last 30 days: open the workspace in dForms/i);
+    expect(((await unknown.json()) as { error: { message: string } }).error.message).toMatch(/has no dForms workspace opened with this account in the last 30 days: open dForms/i);
     expect(unknown.headers.get('www-authenticate')).toBeNull();
     expect(h.oauthLog.map((l) => JSON.parse(l) as unknown)).toEqual([{ msg: 'mcp.oauth_refused', reason: 'not_linked' }]);
     for (const line of h.oauthLog) expect(line).not.toContain('user_unknown');
@@ -171,7 +171,7 @@ describe('the link a web login records', () => {
     const unlinked = await person(h, 'admin', h.accountId, null);
     const c = await h.signIn(idp.client(linked.subject));
     expect(structured<{ member: { id: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.id).toBe(linked.memberId);
-    expect(await refused(h, unlinked.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/open the workspace in dForms/) });
+    expect(await refused(h, unlinked.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/open dForms/) });
   });
 
   it('refuses a link whose last verified web login is older than the window, and honors it again once the person comes back', async () => {
@@ -189,11 +189,14 @@ describe('the link a web login records', () => {
     expect((await refused(h, p.subject)).status).toBe(403);
   });
 
-  it('refuses a person who is only a member (not an owner or admin) anywhere', async () => {
+  it('lets a plain member connect, acting with the member role', async () => {
     const h = await boot();
     const p = await person(h, 'member');
-    expect(await refused(h, p.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/not an owner or admin/) });
-    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_refused', reason: 'not_active_admin' });
+    const c = await h.signIn(idp.client(p.subject));
+    expect(structured<{ member: { id: string; role: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member).toMatchObject({
+      id: p.memberId,
+      role: 'member',
+    });
   });
 
   it('refuses a subject two different people carry, never guessing which one it is', async () => {
@@ -368,7 +371,7 @@ describe('a signed-in member, mid-session', () => {
     // Every request maps the sign-in again: a disabled member is no workspace,
     // so the door refuses the very next one with the message to act on.
     await h.db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${p.memberId}`);
-    await expect(c.callTool({ name: 'list_forms', arguments: {} })).rejects.toThrow(/not an owner or admin of any dForms workspace/);
+    await expect(c.callTool({ name: 'list_forms', arguments: {} })).rejects.toThrow(/has no dForms workspace opened/);
   });
 });
 
