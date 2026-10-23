@@ -338,6 +338,7 @@ interface FrameProps {
 
 type Snippets = {
   url: string;
+  claudeDirectory?: string | null;
   claudeCode: string;
   codexAdd: string;
   codexLogin: string;
@@ -349,7 +350,8 @@ type Snippets = {
 };
 
 const FRAMES: Record<WalkApp, (p: FrameProps) => ReactNode> = {
-  claude: (p) => APP_FRAMES.claude({ step: p.step, m: p.m, prompt: p.prompt, url: p.snippets.url, cursorJson: p.snippets.cursorJson }),
+  claude: (p) =>
+    APP_FRAMES.claude({ step: p.step, m: p.m, prompt: p.prompt, url: p.snippets.url, cursorJson: p.snippets.cursorJson, directory: p.snippets.claudeDirectory }),
   chatgpt: (p) => APP_FRAMES.chatgpt({ step: p.step, m: p.m, prompt: p.prompt, url: p.snippets.url, cursorJson: p.snippets.cursorJson }),
   cursor: (p) => APP_FRAMES.cursor({ step: p.step, m: p.m, prompt: p.prompt, url: p.snippets.url, cursorJson: p.snippets.cursorJson }),
   'claude-code': ClaudeCodeFrame,

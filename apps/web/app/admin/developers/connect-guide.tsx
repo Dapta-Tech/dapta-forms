@@ -92,7 +92,8 @@ export function stepCount(app: McpApp): number {
 }
 
 /** The guide's step titles for an app, for the walkthrough's corner chip. */
-function captionsOf(m: ConnectMessages, app: McpApp): string[] {
+function captionsOf(m: ConnectMessages, app: McpApp, directory: boolean): string[] {
+  if (app === 'claude' && directory) return m.apps.claudeDirectory.steps.map((s) => s.title);
   const key = { claude: 'claude', chatgpt: 'chatgpt', 'claude-code': 'claudeCode', codex: 'codex', cursor: 'cursor', openclaw: 'openclaw', hermes: 'hermes' } as const;
   return m.apps[key[app]].steps.map((s) => s.title);
 }
@@ -175,7 +176,7 @@ export function ConnectGuide({ m, snippets }: { m: ConnectMessages; snippets: Mc
             <Walkthrough
               app={app}
               step={shown}
-              captions={captionsOf(m, app)}
+              captions={captionsOf(m, app, snippets.claudeDirectory !== null)}
               paused={paused}
               userPaused={userPaused}
               reduced={reduced}
@@ -366,10 +367,42 @@ function AppSteps({
     </div>
   );
 
+  // Where dForms is listed in Claude's directory, that listing leads Claude's
+  // tab and opens Claude Code's: a button straight to it.
+  const directory = snippets.claudeDirectory;
+  const directoryLink = directory ? (
+    <OpenLink href={directory} label={m.open.claudeDirectory} app="claude" testId="mcp-claude-directory" external />
+  ) : null;
+
   let steps: { copy: StepCopy; extra?: ReactNode }[];
   let note: string | null = null;
+  let lead: ReactNode = null;
+  let fallback: ReactNode = null;
   switch (app) {
     case 'claude': {
+      if (directoryLink) {
+        const d = m.apps.claudeDirectory;
+        steps = [
+          { copy: d.steps[0]!, extra: directoryLink },
+          { copy: d.steps[1]! },
+          { copy: d.steps[2]! },
+          { copy: d.steps[3]!, extra: prompt },
+        ];
+        // The custom connector stays for organizations that turned the directory off.
+        fallback = (
+          <details data-testid="mcp-claude-fallback" className="group rounded-xl border border-border bg-panel px-4 py-3 text-sm">
+            <summary className="flex cursor-pointer list-none items-center gap-2 font-medium text-foreground [&::-webkit-details-marker]:hidden">
+              <i aria-hidden className="pi pi-chevron-right text-muted-foreground transition-transform group-open:rotate-90" style={{ fontSize: 11 }} />
+              {d.fallbackTitle}
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <p className="text-muted-foreground">{stepText(d.fallbackBody)}</p>
+              {url}
+            </div>
+          </details>
+        );
+        break;
+      }
       const s = m.apps.claude.steps;
       steps = [
         {
@@ -407,7 +440,25 @@ function AppSteps({
         { copy: s[1]! },
         { copy: s[2]!, extra: prompt },
       ];
-      note = m.apps.claudeCode.note;
+      if (directoryLink) {
+        // Claude Code on the same Claude account already has the directory
+        // connector: say so first, with the way to connect it there; the
+        // note under the steps would only repeat it.
+        lead = (
+          <div data-testid="mcp-claude-code-directory" className="mb-5 flex flex-col gap-3 rounded-xl border border-signal/40 bg-signal/[0.08] p-4 text-sm">
+            <p className="flex gap-2">
+              <i aria-hidden className="pi pi-check-circle mt-0.5 shrink-0 text-signal-ink" style={{ fontSize: 15 }} />
+              <span>
+                <strong className="block font-semibold text-foreground">{m.apps.claudeCode.directoryTitle}</strong>
+                <span className="text-muted-foreground">{stepText(m.apps.claudeCode.directoryBody)}</span>
+              </span>
+            </p>
+            <div className="pl-6">{directoryLink}</div>
+          </div>
+        );
+      } else {
+        note = m.apps.claudeCode.note;
+      }
       break;
     }
     case 'codex': {
@@ -494,6 +545,7 @@ function AppSteps({
 
   return (
     <>
+      {lead}
       <ol className="flex flex-col" data-testid={`mcp-steps-${app}`}>
         {steps.map((step, i) => (
           <Step
@@ -515,6 +567,7 @@ function AppSteps({
           <span>{stepText(note)}</span>
         </p>
       ) : null}
+      {fallback ? <div className="mt-2">{fallback}</div> : null}
     </>
   );
 }

@@ -24,6 +24,13 @@ export const CLAUDE_UI = {
   toolAccess: 'Tool access',
   browseConnectors: 'Browse connectors',
   addCustomConnector: 'Add custom connector',
+  /** dForms' listing in the connectors directory, as Claude shows it. */
+  directorySearch: 'Search connectors',
+  community: 'Community',
+  listing: 'Build, publish and analyze forms, quizzes and lead qualifiers from Claude: logic, scoring, branding, responses and CSV exports.',
+  connect: 'Connect',
+  tools: 'Tools',
+  directoryApps: ['Gmail', 'HubSpot', 'Google Drive'],
   dialogBody: 'Connect Claude to your data and tools. Learn more about connectors or get started with pre-built ones.',
   shownInList: 'Shown in the connectors list.',
   urlHint: 'The HTTPS address where the server accepts MCP requests, for example https://mcp.example.com/mcp.',

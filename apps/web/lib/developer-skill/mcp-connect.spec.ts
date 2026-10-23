@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MCP_SERVER_NAME,
   claudeCodeCommand,
+  claudeDirectoryUrl,
   codexAddCommand,
   codexLoginCommand,
   openclawLoginCommand,
@@ -66,6 +67,43 @@ describe('mcpOauthEnabled', () => {
 
   it('never reads a build-time NEXT_PUBLIC_ variable', () => {
     expect(mcpOauthEnabled({ NEXT_PUBLIC_MCP_OAUTH_PROVIDER: 'workos' })).toBe(false);
+  });
+});
+
+describe('claudeDirectoryUrl', () => {
+  const LISTING = 'https://claude.ai/directory/dforms';
+
+  it('is the listing as set, cleaned', () => {
+    expect(claudeDirectoryUrl({ MCP_CLAUDE_DIRECTORY_URL: LISTING })).toBe(LISTING);
+    expect(claudeDirectoryUrl({ MCP_CLAUDE_DIRECTORY_URL: ` ${LISTING}/?ref=x#top ` })).toBe(LISTING);
+  });
+
+  it('is null when unset, blank, not a URL or not https, on an address with no listing', () => {
+    expect(claudeDirectoryUrl({})).toBeNull();
+    expect(claudeDirectoryUrl({ MCP_CLAUDE_DIRECTORY_URL: '  ' })).toBeNull();
+    expect(claudeDirectoryUrl({ MCP_CLAUDE_DIRECTORY_URL: 'dforms' })).toBeNull();
+    expect(claudeDirectoryUrl({ MCP_CLAUDE_DIRECTORY_URL: 'http://claude.ai/directory/dforms' })).toBeNull();
+  });
+
+  it('never reads a build-time NEXT_PUBLIC_ variable', () => {
+    expect(claudeDirectoryUrl({ NEXT_PUBLIC_MCP_CLAUDE_DIRECTORY_URL: LISTING })).toBeNull();
+  });
+
+  it('knows the dForms listing for the hosted MCP with no setting, and only for that address', () => {
+    expect(claudeDirectoryUrl({ MCP_PUBLIC_URL: 'https://mcp.dforms.ai/mcp' })).toBe(LISTING);
+    expect(claudeDirectoryUrl({ MCP_PUBLIC_URL: 'https://mcp.dforms.ai/mcp/' })).toBe(LISTING);
+    expect(claudeDirectoryUrl({ MCP_PUBLIC_URL: 'https://mcp.dev.dforms.ai/mcp' })).toBeNull();
+    expect(claudeDirectoryUrl({ MCP_PUBLIC_URL: 'https://mcp.forms.example.com/mcp' })).toBeNull();
+  });
+
+  it('lets a fork listed under its own address point at its own listing', () => {
+    const own = 'https://claude.ai/directory/acme-forms';
+    expect(claudeDirectoryUrl({ MCP_PUBLIC_URL: 'https://mcp.acme.example/mcp', MCP_CLAUDE_DIRECTORY_URL: own })).toBe(own);
+  });
+
+  it('rides along in the snippets, null by default', () => {
+    expect(mcpSnippets(URL_).claudeDirectory).toBeNull();
+    expect(mcpSnippets(URL_, LISTING).claudeDirectory).toBe(LISTING);
   });
 });
 

@@ -26,6 +26,20 @@ describe('the connect page', () => {
   afterEach(() => {
     delete process.env.MCP_OAUTH_PROVIDER;
     delete process.env.MCP_PUBLIC_URL;
+    delete process.env.MCP_CLAUDE_DIRECTORY_URL;
+  });
+
+  it('starts Claude at the dForms listing on the hosted MCP, with no setting', async () => {
+    process.env.MCP_PUBLIC_URL = 'https://mcp.dforms.ai/mcp';
+    expect(await render()).toMatch(/<a [^>]*href="https:\/\/claude.ai\/directory\/dforms"[^>]*data-testid="mcp-claude-directory"/);
+  });
+
+  it('starts Claude at a listing set for this deployment, and nowhere else', async () => {
+    expect(has(await render(), 'mcp-claude-directory')).toBe(false);
+    process.env.MCP_CLAUDE_DIRECTORY_URL = 'https://claude.ai/directory/dforms';
+    const html = await render();
+    expect(html).toMatch(/<a [^>]*href="https:\/\/claude.ai\/directory\/dforms"[^>]*data-testid="mcp-claude-directory"/);
+    expect(has(html, 'mcp-claude-fallback')).toBe(true);
   });
 
   it('opens with the heading, the section name above it and the way to Tools', async () => {

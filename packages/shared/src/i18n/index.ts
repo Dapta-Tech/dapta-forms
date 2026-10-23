@@ -2023,6 +2023,8 @@ export interface FormsMessages {
         open: {
           claude: string;
           claudeDesktop: string;
+          /** The button to dForms' page in Claude's connectors directory. */
+          claudeDirectory: string;
           chatgpt: string;
           copyCommand: string;
           copied: string;
@@ -2032,8 +2034,16 @@ export interface FormsMessages {
         /** One numbered list per app, in the order the app asks for things. */
         apps: {
           claude: { steps: { title: string; body: string }[] };
+          /**
+           * Claude where dForms is listed in its connectors directory (the
+           * deployment sets `MCP_CLAUDE_DIRECTORY_URL`): the listing first, the
+           * custom connector folded under it for organizations that turned the
+           * directory off.
+           */
+          claudeDirectory: { steps: { title: string; body: string }[]; fallbackTitle: string; fallbackBody: string };
           chatgpt: { steps: { title: string; body: string }[] };
-          claudeCode: { steps: { title: string; body: string }[]; note: string };
+          /** `directoryTitle`/`directoryBody`: the card above the steps when the directory listing is on. */
+          claudeCode: { steps: { title: string; body: string }[]; note: string; directoryTitle: string; directoryBody: string };
           codex: { steps: { title: string; body: string }[]; note: string };
           cursor: { steps: { title: string; body: string }[] };
           openclaw: { steps: { title: string; body: string }[] };
@@ -4157,6 +4167,7 @@ export const en: FormsMessages = {
         open: {
           claude: 'Open Claude',
           claudeDesktop: 'Open Claude Desktop',
+          claudeDirectory: 'Open in the Claude directory',
           chatgpt: 'Open ChatGPT',
           copyCommand: 'Copy command',
           copied: 'Copied',
@@ -4183,6 +4194,28 @@ export const en: FormsMessages = {
                 body: 'Open a new chat and ask, for example:',
               },
             ],
+          },
+          claudeDirectory: {
+            steps: [
+              {
+                title: 'Open dForms in the Claude directory',
+                body: 'Click the button below. Or, in Claude, click **+** in the chat box, then **Connectors → Browse connectors**, and search for `dForms`.',
+              },
+              {
+                title: 'Click Connect',
+                body: 'On the dForms page of the directory, click **Connect**. Claude opens the dForms sign-in.',
+              },
+              {
+                title: 'Log in to your account',
+                body: 'Enter your email and type the 6-digit code we send you. Back in Claude, dForms shows as **Connected**.',
+              },
+              {
+                title: 'Ask',
+                body: 'Open a new chat and ask, for example:',
+              },
+            ],
+            fallbackTitle: 'Your organization does not allow the directory?',
+            fallbackBody: 'Add dForms as a custom connector instead: in Claude click **+**, then **Connectors → Add connector → Add custom connector**. Use `dForms` as the name, paste this URL and click **Add**.',
           },
           chatgpt: {
             steps: [
@@ -4224,6 +4257,8 @@ export const en: FormsMessages = {
               },
             ],
             note: 'Already connected dForms in Claude? Claude Code logged in with the same Claude account uses that connector too: run `/mcp` to check.',
+            directoryTitle: 'Already connected dForms in Claude?',
+            directoryBody: 'Claude Code logged in with the same Claude account brings the dForms connector with it. Run `/mcp` and look for **dForms**. Not there yet? Connect it from the Claude directory, or follow the steps below.',
           },
           codex: {
             steps: [
@@ -6614,6 +6649,7 @@ export const es: FormsMessages = {
         open: {
           claude: 'Abrir Claude',
           claudeDesktop: 'Abrir Claude Desktop',
+          claudeDirectory: 'Abrir en el directorio de Claude',
           chatgpt: 'Abrir ChatGPT',
           copyCommand: 'Copiar comando',
           copied: 'Copiado',
@@ -6640,6 +6676,28 @@ export const es: FormsMessages = {
                 body: 'Abre un chat nuevo y pregunta, por ejemplo:',
               },
             ],
+          },
+          claudeDirectory: {
+            steps: [
+              {
+                title: 'Abre dForms en el directorio de Claude',
+                body: 'Haz clic en el botón de abajo. O, en Claude, haz clic en **+** en la caja del chat, luego en **Connectors → Browse connectors**, y busca `dForms`.',
+              },
+              {
+                title: 'Haz clic en Connect',
+                body: 'En la página de dForms del directorio, haz clic en **Connect**. Claude abre el inicio de sesión de dForms.',
+              },
+              {
+                title: 'Inicia sesión con tu cuenta',
+                body: 'Escribe tu correo y el código de 6 dígitos que te enviamos. De vuelta en Claude, dForms aparece como **Connected**.',
+              },
+              {
+                title: 'Pregunta',
+                body: 'Abre un chat nuevo y pregunta, por ejemplo:',
+              },
+            ],
+            fallbackTitle: '¿Tu organización no deja usar el directorio?',
+            fallbackBody: 'Agrega dForms como conector personalizado: en Claude haz clic en **+** y luego en **Connectors → Add connector → Add custom connector**. Usa `dForms` como nombre, pega esta URL y haz clic en **Add**.',
           },
           chatgpt: {
             steps: [
@@ -6681,6 +6739,8 @@ export const es: FormsMessages = {
               },
             ],
             note: '¿Ya conectaste dForms en Claude? Claude Code con la misma cuenta de Claude también usa ese conector: ejecuta `/mcp` para revisarlo.',
+            directoryTitle: '¿Ya conectaste dForms en Claude?',
+            directoryBody: 'Claude Code con la misma cuenta de Claude trae el conector de dForms. Ejecuta `/mcp` y busca **dForms**. ¿Todavía no está? Conéctalo desde el directorio de Claude o sigue los pasos de abajo.',
           },
           codex: {
             steps: [

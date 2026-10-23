@@ -59,6 +59,30 @@ export function mcpOauthEnabled(env: Record<string, string | undefined> = proces
   return cleanPublicUrl(env.MCP_PUBLIC_URL) !== null;
 }
 
+/**
+ * The connector listings in Claude's directory, by the MCP address each one
+ * connects to. dForms is listed for its hosted MCP only, so its own
+ * deployment shows the listing with no setting, while a dev or self-hosted
+ * deployment (another address) never sends people to someone else's server.
+ */
+const CLAUDE_DIRECTORY_LISTINGS: Record<string, string> = {
+  'https://mcp.dforms.ai/mcp': 'https://claude.ai/directory/dforms',
+};
+
+/**
+ * The connector's page in Claude's directory for this deployment's MCP, or
+ * null. Read at RUNTIME: `MCP_CLAUDE_DIRECTORY_URL` (https only) for a fork
+ * listed under its own address; otherwise the listing known for
+ * `MCP_PUBLIC_URL`. Null and the guide keeps the custom connector as
+ * Claude's only path.
+ */
+export function claudeDirectoryUrl(env: Record<string, string | undefined> = process.env): string | null {
+  const explicit = cleanPublicUrl(env.MCP_CLAUDE_DIRECTORY_URL);
+  if (explicit?.startsWith('https://')) return explicit;
+  const mcp = cleanPublicUrl(env.MCP_PUBLIC_URL);
+  return (mcp && CLAUDE_DIRECTORY_LISTINGS[mcp]) ?? null;
+}
+
 /** The single entry Cursor stores under `mcpServers.dforms`: the URL alone, Cursor runs the sign-in. */
 export function cursorServerEntry(mcpUrl: string): { url: string } {
   return { url: mcpUrl };
@@ -117,6 +141,8 @@ export const hermesLoginCommand = `hermes mcp login ${MCP_SERVER_NAME}`;
 /** Everything the guide prints for one address, built on the server. */
 export interface McpSnippets {
   url: string;
+  /** dForms' listing in Claude's directory, or null where it does not apply (`claudeDirectoryUrl`). */
+  claudeDirectory: string | null;
   claudeCode: string;
   codexAdd: string;
   codexLogin: string;
@@ -128,9 +154,10 @@ export interface McpSnippets {
   cursorJson: string;
 }
 
-export function mcpSnippets(mcpUrl: string): McpSnippets {
+export function mcpSnippets(mcpUrl: string, claudeDirectory: string | null = null): McpSnippets {
   return {
     url: mcpUrl,
+    claudeDirectory,
     claudeCode: claudeCodeCommand(mcpUrl),
     codexAdd: codexAddCommand(mcpUrl),
     codexLogin: codexLoginCommand,

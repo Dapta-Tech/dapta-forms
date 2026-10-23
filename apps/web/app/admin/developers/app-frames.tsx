@@ -16,6 +16,8 @@ export interface AppFrameProps {
   prompt: string;
   url: string;
   cursorJson: string;
+  /** dForms' Claude directory listing; set, Claude's first steps happen there. */
+  directory?: string | null;
 }
 
 /** The dForms tools a connected app shows: real names from the MCP catalog. */
@@ -128,7 +130,101 @@ function Toggle({ on = true }: { on?: boolean }) {
   );
 }
 
-function ClaudeFrame({ step, m, prompt, url }: AppFrameProps) {
+/** A row of the directory's search results: a mark, the name and the listing's line. */
+function DirectoryRow({ name, tile, hl, d }: { name: string; tile: ReactNode; hl?: boolean; d?: number }) {
+  return (
+    <div
+      className={cn('flex items-center gap-2.5 rounded-lg border px-2.5 py-2', hl && 'wt-hl bg-white/[0.07]')}
+      style={{ borderColor: CL_LINE, ...(hl ? at(d) : {}) }}
+    >
+      {tile}
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 font-semibold text-white">
+          {name}
+          {hl ? <span className="rounded bg-white/10 px-1 py-px text-[7.5px] font-medium text-[#c2c0b6]">{C.community}</span> : null}
+        </span>
+        {hl ? <span className="block truncate text-[8.5px] text-[#9b9890]">{C.listing}</span> : null}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Claude's connectors directory: search for dForms and open its listing
+ * (step 0), then Connect on the listing (step 1). From there the sign-in and
+ * the first question are the same as for a custom connector.
+ */
+function ClaudeDirectoryFrame({ step, url }: { step: 0 | 1; url: string }) {
+  if (step === 0) {
+    return (
+      <div className="absolute inset-0 text-[10px] text-[#e5e3dc]" style={{ background: CL_BG }}>
+        <div className="mx-auto w-[420px] pt-9">
+          <p className="font-serif text-[18px] text-[#ebe9e2]">{C.connectors}</p>
+          <div className="mt-3 flex h-7 items-center gap-2 rounded-lg border px-2.5" style={{ background: CL_INPUT, borderColor: CL_LINE }}>
+            <span className="text-[#9b9890]">⌕</span>
+            <span className="text-[10px]">
+              <Typed text="dForms" d={0.4} dur={0.6} />
+            </span>
+          </div>
+          <div className="mt-3 flex flex-col gap-1.5">
+            <div className="wt-fade" style={at(1.2)}>
+              <DirectoryRow name="dForms" tile={<FormsTile size={22} />} hl d={2.2} />
+            </div>
+            {C.directoryApps.map((x, i) => (
+              <div key={x} className="opacity-40">
+                <DirectoryRow name={x} tile={<span className="h-[22px] w-[22px] rounded-md bg-white/10" />} d={1.4 + i * 0.1} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <Pointer x={300} y={128} d={1.6} fx={-120} fy={-60} />
+      </div>
+    );
+  }
+  return (
+    <div className="absolute inset-0 text-[10px] text-[#e5e3dc]" style={{ background: CL_BG }}>
+      <div className="flex h-6 items-center justify-center bg-black/20 px-3 text-[8.5px] text-[#9a9a9a]">
+        <span className="truncate rounded bg-white/5 px-2 py-0.5 font-mono">claude.ai/directory/dforms</span>
+      </div>
+      <div className="mx-auto mt-8 w-[420px]">
+        <div className="flex items-start gap-3">
+          <FormsTile size={44} />
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-2 text-[16px] font-semibold text-white">
+              dForms
+              <span className="rounded bg-white/10 px-1.5 py-px text-[8px] font-medium text-[#c2c0b6]">{C.community}</span>
+            </p>
+            <p className="mt-1 text-[9.5px] leading-[1.45] text-[#b8b5ab]">{C.listing}</p>
+          </div>
+          <span className="wt-press shrink-0 rounded-md bg-white px-3 py-1.5 font-semibold text-black" style={at(1.6)}>
+            {C.connect}
+          </span>
+        </div>
+        <div className="mt-5 h-px" style={{ background: CL_LINE }} />
+        <p className="mt-3 text-[10px] font-semibold text-white">{C.tools}</p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {SHOWN_TOOLS.map((tool, i) => (
+            <span key={tool} className="wt-fade rounded-md border px-2 py-1 font-mono text-[8.5px] text-[#c2c0b6]" style={{ ...at(0.2 + i * 0.08), borderColor: CL_LINE }}>
+              {tool}
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 truncate font-mono text-[8.5px] text-[#9b9890]">{host(url)}</p>
+      </div>
+      <Pointer x={500} y={84} d={0.6} fx={-160} fy={120} />
+    </div>
+  );
+}
+
+function ClaudeFrame({ step, m, prompt, url, directory }: AppFrameProps) {
+  if (directory && (step === 0 || step === 1)) return <ClaudeDirectoryFrame step={step} url={url} />;
+  if (directory && step === 2) {
+    return (
+      <div className="absolute inset-0" style={{ background: CL_BG }}>
+        <SignIn m={m} app="Claude" url={url} d={0.2} />
+      </div>
+    );
+  }
   if (step === 0) {
     return (
       <div className="absolute inset-0 text-[10px] text-[#e5e3dc]" style={{ background: CL_BG }}>

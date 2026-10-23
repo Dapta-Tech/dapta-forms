@@ -29,12 +29,14 @@ function motion(reduce: boolean) {
   })) as unknown as typeof window.matchMedia;
 }
 
-async function mount(locale: Locale = 'en') {
+const LISTING = 'https://claude.ai/directory/dforms';
+
+async function mount(locale: Locale = 'en', directory: string | null = null) {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
   const msgs = getMessages(locale).admin.developers.connect;
-  await act(async () => root.render(<ConnectGuide m={msgs} snippets={mcpSnippets(URL_)} />));
+  await act(async () => root.render(<ConnectGuide m={msgs} snippets={mcpSnippets(URL_, directory)} />));
 }
 const pick = (app: string) => act(async () => $(`[data-testid="mcp-app-${app}"]`)!.click());
 const walk = () => $('[data-testid="mcp-walkthrough"]')!;
@@ -236,5 +238,80 @@ describe('ConnectGuide', () => {
     host.remove();
     await mount();
     expect($('[data-testid="mcp-app-cursor"]')!.getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+describe('ConnectGuide with the Claude directory listing', () => {
+  const steps = (app: string) => [...document.querySelectorAll(`[data-testid="mcp-steps-${app}"] [data-testid="mcp-step"] h3`)].map((h) => h.textContent);
+
+  it('leaves Claude and Claude Code exactly as before when the deployment has no listing', async () => {
+    await mount();
+    const c = getMessages('en').admin.developers.connect;
+    expect(steps('claude')).toEqual(c.apps.claude.steps.map((s) => s.title));
+    expect($('[data-testid="mcp-claude-directory"]')).toBeNull();
+    expect($('[data-testid="mcp-claude-fallback"]')).toBeNull();
+    expect($('[data-testid="mcp-open-claude"]')).not.toBeNull();
+    await pick('claude-code');
+    expect($('[data-testid="mcp-claude-code-directory"]')).toBeNull();
+    expect($('[data-testid="mcp-steps-note"]')!.textContent).toContain('/mcp');
+  });
+
+  it('starts Claude at the listing, in a new tab, with the custom connector folded under the steps', async () => {
+    await mount('en', LISTING);
+    const d = getMessages('en').admin.developers.connect.apps.claudeDirectory;
+    expect(steps('claude')).toEqual(d.steps.map((s) => s.title));
+    const link = $('[data-testid="mcp-claude-directory"]') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe(LISTING);
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toContain('noopener');
+    // The custom connector path is still there, closed, with the URL to paste.
+    const fallback = $('[data-testid="mcp-claude-fallback"]') as HTMLDetailsElement;
+    expect(fallback.open).toBe(false);
+    expect(fallback.textContent).toContain(d.fallbackTitle);
+    expect(fallback.querySelector('[data-testid="mcp-url"]')!.textContent).toContain(URL_);
+    expect($('[data-testid="mcp-open-claude"]')).toBeNull();
+  });
+
+  it('draws the listing in the walkthrough, one frame per step, dForms and never Dapta', async () => {
+    await mount('es', LISTING);
+    const d = getMessages('es').admin.developers.connect.apps.claudeDirectory;
+    expect(d.steps).toHaveLength(WALK_DURATIONS.claude.length);
+    const seen: string[] = [];
+    for (let i = 0; i < WALK_DURATIONS.claude.length; i++) {
+      await act(async () => stepButton(i).click());
+      expect(walk().textContent).toContain(d.steps[i]!.title);
+      expect(walk().textContent).not.toMatch(/Dapta/i);
+      seen.push(walk().textContent ?? '');
+    }
+    expect(seen[0]).toContain('dForms');
+    expect(seen[1]).toContain('claude.ai/directory/dforms');
+    expect(seen[1]).toContain('Connect');
+    expect(seen.join(' ')).not.toContain('Add custom connector');
+  });
+
+  it('tells Claude Code it may already have the connector, with the way to the listing, in place of the note', async () => {
+    await mount('en', LISTING);
+    await pick('claude-code');
+    const c = getMessages('en').admin.developers.connect.apps.claudeCode;
+    const card = $('[data-testid="mcp-claude-code-directory"]')!;
+    expect(card.textContent).toContain(c.directoryTitle);
+    expect(card.querySelector('a')!.getAttribute('href')).toBe(LISTING);
+    expect(steps('claude-code')).toEqual(c.steps.map((s) => s.title));
+    expect($('[data-testid="mcp-steps-note"]')).toBeNull();
+  });
+
+  it('keeps the listing button on a phone, where claude.ai opens too', async () => {
+    const ua = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
+    Object.defineProperty(window.navigator, 'userAgent', { value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile Safari', configurable: true });
+    try {
+      await mount('en', LISTING);
+      expect($('[data-testid="mcp-claude-directory"]')).not.toBeNull();
+      await pick('claude-code');
+      expect($('[data-testid="mcp-phone-note"]')).not.toBeNull();
+      expect($('[data-testid="mcp-claude-code-directory"] a')).not.toBeNull();
+    } finally {
+      if (ua) Object.defineProperty(window.navigator, 'userAgent', ua);
+      else delete (window.navigator as { userAgent?: string }).userAgent;
+    }
   });
 });

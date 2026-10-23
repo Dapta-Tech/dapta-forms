@@ -197,6 +197,27 @@ describe('a verified web request', () => {
   });
 });
 
+describe('vouching for a person after a failed write', () => {
+  it('retries on the next request instead of waiting for the throttle', async () => {
+    const beta = await otherWorkspace('Beta');
+    vouch = { idpSubject: SUBJECT, authenticatedAt: Date.now() - 1_000, confirmedAccountIds: [beta.accountId] };
+    const realAll = db.all.bind(db);
+    let fail = true;
+    // The first person-wide stamp fails once; every other query runs as usual.
+    db.all = (async (query: Parameters<typeof db.all>[0]) => {
+      if (fail && JSON.stringify(query).includes('UPDATE member SET login_seen_at')) {
+        fail = false;
+        throw Object.assign(new Error('boom'), { code: 'TEST' });
+      }
+      return realAll(query);
+    }) as typeof db.all;
+    await auth.resolveHost(as());
+    expect((await linkOf(beta.memberId))?.login_seen_at).toBeNull();
+    await auth.resolveHost(as());
+    expect((await linkOf(beta.memberId))?.login_seen_at).toBe(vouch.authenticatedAt);
+  });
+});
+
 describe('loginSeenRefreshMs', () => {
   it('is a day, or a quarter of a shorter window', () => {
     expect(loginSeenRefreshMs(30)).toBe(LOGIN_SEEN_REFRESH_MS);

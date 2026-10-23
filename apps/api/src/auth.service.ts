@@ -328,6 +328,8 @@ export class AuthService {
     try {
       await notePersonLogins(this.db, person, accounts, vouchedAt, this.loginSeenRefreshMs);
     } catch (error) {
+      // A failed write retries on the person's next request, not after the throttle.
+      this.personVouchedAt.delete(person);
       this.logger.warn(`could not vouch for the memberships of a person: ${errorCode(error)}`);
     }
   }

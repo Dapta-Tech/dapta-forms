@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getMessages } from '@quill/shared';
 import { getLocale } from '@/lib/locale';
-import { mcpOauthEnabled, mcpSnippets, publicMcpUrl } from '@/lib/developer-skill/mcp-connect';
+import { claudeDirectoryUrl, mcpOauthEnabled, mcpSnippets, publicMcpUrl } from '@/lib/developer-skill/mcp-connect';
 import { buttonVariants } from '@/components/ui/button';
 import { McpLogos } from '@/components/mcp-logos';
 import { ConnectGuide } from '../connect-guide';
@@ -21,7 +21,8 @@ export const dynamic = 'force-dynamic';
  * environment on every request. The guide shows only when the MCP takes a
  * sign-in (`mcpOauthEnabled`, which also requires that address, the audience
  * the API checks every token against); otherwise a note says the connector is
- * not available on this deployment.
+ * not available on this deployment. Where dForms' Claude directory listing
+ * connects to this MCP (`claudeDirectoryUrl`), Claude's tab starts there.
  *
  * API keys have no place in the dashboard any more: none is created, listed
  * or revoked here. Keys that already exist keep working with the REST API.
@@ -55,7 +56,7 @@ export default async function DeveloperConnectPage() {
 
       <div className="flex flex-col gap-6">
         {mcpUrl ? (
-          <ConnectGuide m={c} snippets={mcpSnippets(mcpUrl)} />
+          <ConnectGuide m={c} snippets={mcpSnippets(mcpUrl, claudeDirectoryUrl())} />
         ) : (
           <section
             data-testid="mcp-connect-unavailable"
