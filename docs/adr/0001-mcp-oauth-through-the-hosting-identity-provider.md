@@ -1,6 +1,6 @@
 # MCP connections sign in through the host's identity provider
 
-> How a token maps to a person is superseded by [0003](0003-mcp-sign-in-maps-through-web-logins.md): through the link a web login records, not the identity service's database.
+> How a token maps to a person is superseded by [0003](0003-mcp-sign-in-maps-through-web-logins.md) and then [0004](0004-mcp-sign-in-link-first-directory-fallback.md): through the link a web login records first, and the identity service's database (now optional) for whoever the link does not cover.
 
 Chat clients (browser connectors) can only reach an MCP server through OAuth, so the MCP server gains a second door beside the API key. We do not run our own authorization server: the MCP server is an OAuth resource server that verifies tokens signed by the identity provider the deployment already uses for logins, through an adapter selected by configuration (the hosted deployment uses WorkOS AuthKit, the same way its sibling MCP server does). Every issuer, domain and credential comes from the environment, so a self-hosted install without that adapter keeps working with API keys only.
 

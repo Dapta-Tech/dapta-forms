@@ -236,10 +236,17 @@ defaults below.
 | `MCP_RATE_LIMIT_CAPACITY` / `MCP_RATE_LIMIT_REFILL_PER_SEC` | `120` / `2` | per API key, every request; off with `RATE_LIMIT_ENABLED=false` | no |
 | `MCP_WRITE_RATE_LIMIT_CAPACITY` / `MCP_WRITE_RATE_LIMIT_REFILL_PER_SEC` | `20` / `0.2` | per API key, write tools only | no |
 | `MCP_TOOL_TIMEOUT_MS` | `20000` | a tool call that runs longer is abandoned | no |
-| `MCP_OAUTH_PROVIDER` | _(unset: API keys only)_ | `workos` lets chat apps sign in through your WorkOS AuthKit (see [`docs/MCP.md`](docs/MCP.md)); then the two values below are required, and a missing or malformed one refuses to boot. A token's subject maps to the members whose web login recorded it: no identity database is read | no |
+| `MCP_OAUTH_PROVIDER` | _(unset: API keys only)_ | `workos` lets chat apps sign in through your WorkOS AuthKit (see [`docs/MCP.md`](docs/MCP.md)); then the two values below are required, and a missing or malformed one refuses to boot. A token's subject maps first to the members whose web login recorded it, then through the optional person directory (`IAM_DB_*`) | no |
 | `WORKOS_AUTHKIT_DOMAIN` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: the AuthKit issuer, an https origin with no path | no |
 | `MCP_PUBLIC_URL` | _(unset)_ | `MCP_OAUTH_PROVIDER` is set: the `/mcp` endpoint customers reach, registered as a resource with AuthKit; every token's audience. The web app reads the same name | no |
-| `OAUTH_LINK_MAX_AGE_DAYS` | `30` | how many days after a member's last verified web login an MCP sign-in may still act as that member (1 to 365). Checked at boot even with `MCP_OAUTH_PROVIDER` unset, and read by the web side for how often a login renews the stamp | no |
+| `OAUTH_LINK_MAX_AGE_DAYS` | `30` | how many days after a member's last verified web login the link may still act as that member (1 to 365). Checked at boot even with `MCP_OAUTH_PROVIDER` unset, and read by the web side for how often a login renews the stamp | no |
+| `IAM_DB_HOST` | _(unset: no person directory)_ | `MCP_OAUTH_PROVIDER` is set and you want sign-ins the link does not cover, and staff search: host of the identity service's database, read-only. A bare host name; TLS is required unless it is a loopback host. With it or any value below missing or malformed, the API still boots and logs one warning | no |
+| `IAM_DB_PORT` | `5432` | that database listens elsewhere | no |
+| `IAM_DB_NAME` | _(unset)_ | with `IAM_DB_HOST`: the database | no |
+| `IAM_DB_SCHEMA` | _(unset)_ | with `IAM_DB_HOST`: the schema holding its `users`, `sessions`, `workspaces`, `accounts` and `workspace_users` tables | no |
+| `IAM_DB_USER` | _(unset)_ | with `IAM_DB_HOST`: a role that can only read those tables | no |
+| `IAM_DB_PASS` | _(unset)_ | with `IAM_DB_HOST`: that role's password | yes |
+| `IAM_DB_SSL_CA` | _(unset: encrypted, certificate not verified, logged once at boot)_ | you have that database's CA: the PEM itself or the path of a file holding it. The certificate and its host name are then verified (verify-full) and TLS is on even on a loopback host; anything that is not a certificate turns the directory off with a warning | no |
 
 ### Deprecated API hosts (API, optional)
 

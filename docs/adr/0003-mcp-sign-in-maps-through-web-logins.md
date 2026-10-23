@@ -1,5 +1,7 @@
 # MCP sign-ins map to people through web logins, not the identity database
 
+> Partly superseded by [0004](0004-mcp-sign-in-link-first-directory-fallback.md): the link stays and is tried first, the person directory comes back as an optional fallback that never blocks the boot, any active role connects, and staff reach any workspace again.
+
 ADR 0001 mapped an MCP sign-in's token to a person by reading the identity service's database (the person directory), and ADR 0002 used the same database to let the deployment's staff search and enter any workspace over MCP. That made the API depend on another service's database and on a credential borrowed from another product, and a missing key in one environment kept the API from booting. We now map the sign-in the way the sibling calendars product does: the identity service's session token already carries the person's WorkOS user id (`workos_user_id`), every verified web request records it on the member it acts as (`member.idp_subject`) together with when the identity service vouched for that member (`member.login_seen_at`, the token's issue time), and the MCP door finds the token's `sub` among those members, honoring only links vouched for within `OAUTH_LINK_MAX_AGE_DAYS` and only active owners and admins. dForms reads no identity database and holds no credential for one. This supersedes the person directory in 0001 and the MCP part of 0002; everything else in them holds.
 
 ## Consequences

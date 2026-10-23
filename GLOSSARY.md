@@ -40,6 +40,14 @@ _Avoid_: Token, PAT
 An agent client (a chat app or a coding agent) signed in to the MCP server as a person through OAuth. Unlike an API key it is not tied to one workspace: each call names the workspace it acts in.
 _Avoid_: OAuth key, integration
 
+**Sign-in link**:
+The mark a verified web login leaves on a member (the person's id at the identity provider, and when the identity service last vouched for them). An MCP connection is mapped through it first; it lapses after the link window.
+_Avoid_: Binding, session
+
+**Person directory**:
+Optional read-only access to the identity service's own records, used to name the person behind an MCP connection the sign-in link does not cover, and to let staff find any workspace. Without it the API still runs, on the sign-in link alone.
+_Avoid_: IAM lookup, user service
+
 **Identity provider**:
 The login service that signs an MCP connection's token. dForms only verifies its tokens; it never sees a password.
 _Avoid_: Auth server, SSO
