@@ -15,3 +15,5 @@ export const STORAGE = Symbol('STORAGE');
 export const CAPTCHA = Symbol('CAPTCHA');
 /** The MCP OAuth adapter (`McpOAuth`), or null with MCP_OAUTH_PROVIDER unset. */
 export const MCP_OAUTH = Symbol('MCP_OAUTH');
+/** The person directory (`PersonDirectory`), or null with MCP OAuth off. */
+export const PERSON_DIRECTORY = Symbol('PERSON_DIRECTORY');

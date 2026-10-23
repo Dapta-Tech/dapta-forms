@@ -16,6 +16,8 @@ import { configureCors } from './cors';
 import { configureDeprecatedHosts } from './deprecated-hosts';
 import { linkPageBodyParser } from './link-page-body';
 import { McpController } from './mcp.controller';
+import { normalizeWorkspaceSearch } from '@quill/mcp';
+import type { EstateWorkspace, Person, PersonDirectory } from './person-directory';
 
 /**
  * A real API for the MCP specs: the whole `AppModule` (so every `@Inject` and
@@ -60,6 +62,23 @@ export interface Harness {
   link(subject: string, personId: string, opts?: { seenAt?: number }): Promise<void>;
   /** The lines the API logged for refused MCP sign-ins. */
   oauthLog: string[];
+  /**
+   * The fake person directory (only with `oauth` on and its `directory` not
+   * off): register who a token's subject is.
+   */
+  people: Map<string, Person>;
+  /**
+   * The identity service's live workspaces, by id, as the fake directory
+   * answers staff lookups; `members` are the people (`Person.id`) holding a
+   * live membership there.
+   */
+  estate: Map<string, EstateWorkspace & { members?: string[] }>;
+  /** The lines the API logged for staff calls outside the person's own workspaces. */
+  staffLog: string[];
+  /** How many times the API asked the person directory. */
+  directoryLookups(): number;
+  /** Whether the API closed the person directory (it does when it shuts down). */
+  directoryClosed(): boolean;
   post(body: unknown, headers?: Record<string, string>, path?: string): Promise<Response>;
   close(): Promise<void>;
 }
@@ -91,6 +110,12 @@ const ENV_KEYS = [
   'WORKOS_AUTHKIT_DOMAIN',
   'MCP_PUBLIC_URL',
   'OAUTH_LINK_MAX_AGE_DAYS',
+  'IAM_DB_HOST',
+  'IAM_DB_PORT',
+  'IAM_DB_NAME',
+  'IAM_DB_SCHEMA',
+  'IAM_DB_USER',
+  'IAM_DB_PASS',
   'IAM_STAFF_DOMAINS',
   'JWT_SECRET',
   'JWT_ISSUER',
@@ -102,6 +127,38 @@ export const APP_URL = 'https://forms.example.test';
 export interface HarnessOAuth {
   /** The issuer the API trusts (a `FakeIdentityProvider`'s). */
   issuer: string;
+  /**
+   * The person directory the app gets: the specs' table (the default), or
+   * `'configured'` for the one the API builds from `IAM_DB_*` itself (none
+   * when they are unset, as in an environment without the secret).
+   */
+  directory?: 'table' | 'configured';
+}
+
+/**
+ * The person directory of the specs: a table from token subject to person,
+ * and one of live workspaces for the staff lookups (the IAM adapter is
+ * separate).
+ */
+function tableDirectory(
+  people: Map<string, Person>,
+  estate: Map<string, EstateWorkspace & { members?: string[] }>,
+  counter: { lookups: number; closed: boolean },
+): PersonDirectory {
+  const squash = (s: string | null) => normalizeWorkspaceSearch(s ?? '');
+  return {
+    personOf: async (subject) => {
+      counter.lookups += 1;
+      return people.get(subject) ?? null;
+    },
+    workspaceOf: async (id) => estate.get(id.toLowerCase()) ?? null,
+    holdsMembership: async (workspaceId, personId) => estate.get(workspaceId)?.members?.includes(personId) ?? false,
+    searchWorkspaces: async (needle, limit) =>
+      [...estate.values()].filter((w) => squash(w.name).includes(needle) || squash(w.accountName).includes(needle)).slice(0, limit),
+    close: async () => {
+      counter.closed = true;
+    },
+  };
 }
 
 /**
@@ -122,6 +179,9 @@ export async function bootHarness(
 ): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'forms-mcp-spec-'));
   const { server, port } = await boundServer();
+  const people = new Map<string, Person>();
+  const estate = new Map<string, EstateWorkspace & { members?: string[] }>();
+  const counter = { lookups: 0, closed: false };
   const oauthEnv = opts.oauth
     ? {
         MCP_OAUTH_PROVIDER: 'workos',
@@ -155,7 +215,8 @@ export async function bootHarness(
   let app: INestApplication;
   try {
     // abortOnError off: a refused boot rejects here instead of exiting the process.
-    app = await NestFactory.create(AppModule, {
+    const table = opts.oauth && (opts.oauth.directory ?? 'table') === 'table';
+    app = await NestFactory.create(table ? AppModule.withPersonDirectory(tableDirectory(people, estate, counter)) : AppModule, {
       logger: false,
       abortOnError: false,
     });
@@ -181,6 +242,8 @@ export async function bootHarness(
   app.get(McpController).server.auditSink = (line) => audit.push(line);
   const oauthLog: string[] = [];
   app.get(McpController).oauthLogSink = (line) => oauthLog.push(line);
+  const staffLog: string[] = [];
+  app.get(McpController).staffLogSink = (line) => staffLog.push(line);
   const base = `http://127.0.0.1:${port}`;
 
   const mint = async (account: string, memberId: string): Promise<string> => {
@@ -255,6 +318,11 @@ export async function bootHarness(
       await db.run(sql`UPDATE member SET login_seen_at = ${seenAt} WHERE external_id = ${personId} AND access_grant IS NULL`);
     },
     oauthLog,
+    people,
+    estate,
+    staffLog,
+    directoryLookups: () => counter.lookups,
+    directoryClosed: () => counter.closed,
     post: (body, headers = {}, path = '/mcp') =>
       fetch(`${base}${path}`, {
         method: 'POST',

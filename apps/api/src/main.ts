@@ -15,7 +15,7 @@ async function bootstrap() {
   const env = loadServerEnv();
   const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
   // On SIGTERM, close the app so its destroy hooks run: the outbox worker
-  // stops polling.
+  // stops polling and the person directory closes its identity database pool.
   app.enableShutdownHooks();
   // Deprecated API hosts (off unless API_DEPRECATED_HOSTS is set): mounted
   // first, so every response on a listed host carries the headers, errors and

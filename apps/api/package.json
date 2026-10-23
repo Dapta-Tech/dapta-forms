@@ -30,6 +30,7 @@
     "@quill/shared": "workspace:*",
     "@quill/types": "workspace:*",
     "file-type": "^22.0.2",
+    "postgres": "^3.4.9",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "tsx": "^4.19.2",

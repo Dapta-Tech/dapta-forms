@@ -177,11 +177,11 @@ describe('nothing from outside can produce it', () => {
 });
 
 describe('the upstream identity service', () => {
-  // An MCP sign-in reaches only the person's own memberships, decided at the
-  // door (`authenticateMcpConnection`); see mcp-workspaces.integration.spec.ts.
-  // The web app's workspace service, which reads staff off the upstream
-  // session, never answers staff for an in-process request, and never calls
-  // upstream for one.
+  // Staff over MCP is decided at the door (`authenticateMcpConnection`), from
+  // the person directory's email, and reaches a workspace through the caller
+  // the door builds; see mcp-workspaces.integration.spec.ts. The web app's
+  // workspace service, which reads staff off the upstream session, never
+  // answers staff for an in-process request, and never calls upstream for one.
   it('is never asked about an in-process request: it carries no session to forward', async () => {
     const memberId = await addMember('owner');
     let upstreamCalls = 0;

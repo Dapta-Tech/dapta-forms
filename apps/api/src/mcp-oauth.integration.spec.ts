@@ -3,16 +3,19 @@
  * the official MCP client discovering the login from a 401 and signing in
  * against a stand-in identity provider (a key pair generated here, served as
  * the issuer's JWKS). The token's subject maps to members through dForms' own
- * database: the link a verified web login records (`member.idp_subject`,
- * `member.login_seen_at`), honored within the link window, for active owners
- * and admins only. No identity database is read.
+ * database first: the link a verified web login records (`member.idp_subject`,
+ * `member.login_seen_at`), honored within the link window, for an active
+ * member of any role. The specs' person directory (a table, empty unless a
+ * spec registers someone) stands in for the identity database the API asks
+ * when the link does not cover a person; see mcp-workspaces.integration.spec.ts
+ * for that path and for staff (docs/adr/0004).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from '@quill/db';
 import { signJwtHs256 } from './jwt';
 import { CATALOG } from '@quill/mcp';
-import { bootHarness, initialize, structured, type Harness } from './mcp-harness';
+import { bootHarness, errorText, initialize, structured, type Harness } from './mcp-harness';
 import { startFakeIdentityProvider, type FakeIdentityProvider } from './fake-identity-provider';
 
 let idp: FakeIdentityProvider;
@@ -152,7 +155,9 @@ describe('signing in', () => {
     const h = await boot();
     const unknown = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token('user_unknown', `${h.base}/mcp`)}` });
     expect(unknown.status).toBe(403);
-    expect(((await unknown.json()) as { error: { message: string } }).error.message).toMatch(/not an owner or admin of any dForms workspace opened with this account in the last 30 days: open the workspace in dForms/i);
+    expect(((await unknown.json()) as { error: { message: string } }).error.message).toMatch(
+      /does not reach any dForms workspace yet: open dForms on the web \(https:\/\/forms\.example\.test\), or log out there and back in, then connect again/i,
+    );
     expect(unknown.headers.get('www-authenticate')).toBeNull();
     expect(h.oauthLog.map((l) => JSON.parse(l) as unknown)).toEqual([{ msg: 'mcp.oauth_refused', reason: 'not_linked' }]);
     for (const line of h.oauthLog) expect(line).not.toContain('user_unknown');
@@ -171,7 +176,7 @@ describe('the link a web login records', () => {
     const unlinked = await person(h, 'admin', h.accountId, null);
     const c = await h.signIn(idp.client(linked.subject));
     expect(structured<{ member: { id: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.id).toBe(linked.memberId);
-    expect(await refused(h, unlinked.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/open the workspace in dForms/) });
+    expect(await refused(h, unlinked.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/open dForms on the web/) });
   });
 
   it('refuses a link whose last verified web login is older than the window, and honors it again once the person comes back', async () => {
@@ -189,11 +194,18 @@ describe('the link a web login records', () => {
     expect((await refused(h, p.subject)).status).toBe(403);
   });
 
-  it('refuses a person who is only a member (not an owner or admin) anywhere', async () => {
+  it('connects a person who is only a member, and the role still decides what they may write', async () => {
     const h = await boot();
     const p = await person(h, 'member');
-    expect(await refused(h, p.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/not an owner or admin/) });
-    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_refused', reason: 'not_active_admin' });
+    const c = await h.signIn(idp.client(p.subject));
+    expect(structured<{ workspaces: Array<{ id: string; role: string }> }>(await c.callTool({ name: 'list_my_workspaces', arguments: {} })).workspaces).toEqual([
+      { id: h.accountId, name: 'Acme Inc.', account_name: null, role: 'member', access: 'member' },
+    ]);
+    // A form of their own: allowed. The workspace brand kit: admin only, the
+    // same role check the web applies.
+    structured(await c.callTool({ name: 'create_form', arguments: { name: 'Mine', config: LEAD } }));
+    expect(errorText(await c.callTool({ name: 'update_brand_kit', arguments: { kit: { primaryColor: '#111111' } } }))).toMatch(/FORBIDDEN/);
+    expect(h.oauthLog).toEqual([]);
   });
 
   it('refuses a subject two different people carry, never guessing which one it is', async () => {
@@ -368,7 +380,7 @@ describe('a signed-in member, mid-session', () => {
     // Every request maps the sign-in again: a disabled member is no workspace,
     // so the door refuses the very next one with the message to act on.
     await h.db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${p.memberId}`);
-    await expect(c.callTool({ name: 'list_forms', arguments: {} })).rejects.toThrow(/not an owner or admin of any dForms workspace/);
+    await expect(c.callTool({ name: 'list_forms', arguments: {} })).rejects.toThrow(/does not reach any dForms workspace yet/);
   });
 });
 

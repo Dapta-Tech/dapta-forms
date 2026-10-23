@@ -32,8 +32,9 @@ import { ApiMcpBackend, MCP_PARITY_HANDLERS, type McpParityHandlers } from './mc
 import { noteApiKeyCall } from './deprecated-hosts';
 import { API_KEY_PREFIX } from './api-keys';
 import type { McpOAuth } from './mcp-oauth';
+import { cachePersonDirectory, type PersonDirectory } from './person-directory';
 import { TokenBucketRateLimiter, clientKey, resolveTrustProxyHops } from './rate-limit';
-import { DB, ENV, MCP_OAUTH, RATE_LIMITER } from './tokens';
+import { DB, ENV, MCP_OAUTH, PERSON_DIRECTORY, RATE_LIMITER } from './tokens';
 
 function csv(value: string | undefined): string[] {
   return (value ?? '')
@@ -76,6 +77,8 @@ export class McpController implements OnModuleInit {
   private parityHandlers: McpParityHandlers | null = null;
   /** Where a refused MCP sign-in is logged (one JSON line, the reason only). A field so specs can read it. */
   oauthLogSink: (line: string) => void = (line) => this.logger.log(line);
+  /** Where each staff call outside the person's own workspaces is logged (one JSON line). A field so specs can read it. */
+  staffLogSink: (line: string) => void = (line) => this.logger.log(line);
 
   constructor(
     @Inject(ENV) env: ServerEnv,
@@ -83,8 +86,11 @@ export class McpController implements OnModuleInit {
     // The public per-IP bucket: requests without a valid key are charged to it.
     @Inject(RATE_LIMITER) ipLimiter: RateLimiter,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
-    // MCP connections over OAuth: null unless MCP_OAUTH_PROVIDER is set.
+    // MCP connections over OAuth: null unless MCP_OAUTH_PROVIDER is set. The
+    // directory is null too when IAM_DB_* is missing or incomplete: sign-ins
+    // then map through the link a web login records alone.
     @Inject(MCP_OAUTH) oauth: McpOAuth | null,
+    @Inject(PERSON_DIRECTORY) directory: PersonDirectory | null,
     // Product analytics: one `$mcp_tool_call` per tool call, only with PRODUCT_ANALYTICS_KEY set.
     @Inject(AnalyticsEffects) analytics: AnalyticsEffects,
   ) {
@@ -92,11 +98,16 @@ export class McpController implements OnModuleInit {
     const bucket = (capacity: number, refill: number): RateLimiter =>
       env.RATE_LIMIT_ENABLED ? new TokenBucketRateLimiter(capacity, refill) : unlimited;
     this.usage = new McpUsageReporter(db, analytics, env.IAM_STAFF_DOMAINS);
-    if (oauth) this.logger.log(`MCP OAuth on: resource ${oauth.resource}, link window ${env.OAUTH_LINK_MAX_AGE_DAYS} days`);
-    // The person directory is gone (a sign-in maps through dForms' own
-    // members): its settings are ignored, never a refused boot.
-    const leftover = Object.keys(process.env).filter((name) => name.startsWith('IAM_DB_'));
-    if (leftover.length > 0) this.logger.warn(`${leftover.join(', ')} are set but no longer read; remove them from the environment.`);
+    if (oauth) {
+      this.logger.log(
+        `MCP OAuth on: resource ${oauth.resource}, link window ${env.OAUTH_LINK_MAX_AGE_DAYS} days, person directory ${directory ? 'on' : 'off'}`,
+      );
+    }
+    // The identity database is read before any member bucket is known, so it
+    // sits behind a per-pod cache, and a lookup the cache cannot answer takes
+    // a token keyed by the token's verified subject first: a burst of 10, then
+    // one every 6 seconds, ample for a cache that asks once a minute.
+    const people = directory ? cachePersonDirectory(directory, { limiter: bucket(10, 1 / 6) }) : null;
     this.server = new FormsMcpServer({
       backend: new ApiMcpBackend(
         db,
@@ -125,10 +136,13 @@ export class McpController implements OnModuleInit {
         ? {
             isApiKey: (token) => token.startsWith(API_KEY_PREFIX),
             authenticate: (token) =>
-              authenticateMcpConnection(db, oauth, token, {
+              authenticateMcpConnection(db, oauth, people, token, {
                 appUrl: env.PUBLIC_APP_URL,
                 linkMaxAgeMs: env.OAUTH_LINK_MAX_AGE_DAYS * 86_400_000,
                 log: (line) => this.oauthLogSink(line),
+                // Staff of the deployment: the same list, and the same rule, as the web app's switcher.
+                staffDomains: env.IAM_STAFF_DOMAINS,
+                staffLog: (line) => this.staffLogSink(line),
               }),
             resourceMetadataUrl: oauth.resourceMetadataUrl,
           }
