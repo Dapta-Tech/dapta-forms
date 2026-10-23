@@ -8,7 +8,7 @@
  */
 import { createSign, generateKeyPairSync, type KeyObject } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { IssuerUnavailable, RemoteJwks, verifyRs256 } from './jwt-rs256';
+import { IssuerUnavailable, MAX_ISSUER_BODY_BYTES, RemoteJwks, readBoundedJson, verifyRs256 } from './jwt-rs256';
 
 interface TestKey {
   kid: string;
@@ -154,5 +154,51 @@ describe('verifyRs256', () => {
         throw new Error('boom');
       })),
     ).toBeNull();
+  });
+});
+
+describe('readBoundedJson', () => {
+  const chunked = (bytes: number) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let sent = 0; sent < bytes; sent += 1024) controller.enqueue(new Uint8Array(Math.min(1024, bytes - sent)).fill(0x20));
+          controller.close();
+        },
+      }),
+    );
+
+  it('reads a body within the cap as JSON', async () => {
+    expect(await readBoundedJson(new Response(JSON.stringify({ keys: [] })))).toEqual({ keys: [] });
+  });
+
+  it('refuses a declared content-length over the cap without reading the body', async () => {
+    const res = new Response('{}', { headers: { 'content-length': String(MAX_ISSUER_BODY_BYTES + 1) } });
+    await expect(readBoundedJson(res)).rejects.toThrow(/too large/);
+  });
+
+  it('refuses a streamed body that runs past the cap, whatever it declared', async () => {
+    await expect(readBoundedJson(chunked(MAX_ISSUER_BODY_BYTES + 2048))).rejects.toThrow(/too large/);
+  });
+
+  it('throws on an empty or non-JSON body', async () => {
+    await expect(readBoundedJson(new Response(''))).rejects.toThrow();
+    await expect(readBoundedJson(new Response('<html>'))).rejects.toThrow();
+  });
+});
+
+describe('RemoteJwks, bounded', () => {
+  it('asks for no redirect, and keeps nothing from a set past the cap or a redirect, reporting the issuer unavailable', async () => {
+    const seen: RequestInit[] = [];
+    const tooLarge = (async (_url: string, init: RequestInit) => {
+      seen.push(init);
+      return new Response(JSON.stringify({ keys: [KEY_A.jwk], pad: 'x'.repeat(MAX_ISSUER_BODY_BYTES) }));
+    }) as unknown as typeof fetch;
+    await expect(new RemoteJwks('https://issuer.example.test/jwks', { fetch: tooLarge }).keyFor('kid-a')).rejects.toBeInstanceOf(IssuerUnavailable);
+    expect(seen[0]?.redirect).toBe('error');
+    const redirected = (async () => {
+      throw new TypeError('fetch failed: redirect mode is set to error');
+    }) as unknown as typeof fetch;
+    await expect(new RemoteJwks('https://issuer.example.test/jwks', { fetch: redirected }).keyFor('kid-a')).rejects.toBeInstanceOf(IssuerUnavailable);
   });
 });

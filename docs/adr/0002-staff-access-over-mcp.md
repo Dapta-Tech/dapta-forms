@@ -1,5 +1,7 @@
 # Staff reach any workspace over MCP, the way they do in the web app
 
+> Superseded for MCP sign-ins by [0003](0003-mcp-sign-in-maps-through-web-logins.md): a sign-in reaches the person's own memberships only. The web switcher's staff rule and the rule for API keys a grant creates still hold.
+
 ADR 0001 said an MCP connection acts only in workspaces where the person has an active member, so the deployment's staff could not reach a customer's workspace over MCP although the web app's switcher lets them search and enter any workspace. We now give MCP connections the same staff rule: a person whose email, as the person directory holds it, is on one of the domains in `IAM_STAFF_DOMAINS` can search every workspace with `list_my_workspaces(search)` and act in any live one as an admin, through the same staff access grant (`member.access_grant = 'staff'`) the switcher mints. Because an MCP connection carries no session bearer to the identity service, the workspace is read from the identity service's database (read-only, the adapter that already maps a token to a person) instead of over its HTTP API. This supersedes 0001's consequence that a connection reaches only the person's own workspaces; everything else in 0001 holds.
 
 ## Consequences

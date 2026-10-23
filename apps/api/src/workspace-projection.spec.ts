@@ -19,7 +19,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
-import { createDb, migrate, sql, type Db } from '@quill/db';
+import { createDb, membershipsBySubject, migrate, sql, type Db } from '@quill/db';
 import { AuthService, WORKSPACE_HEADER } from './auth.service';
 import { WorkOsAuthProvider } from './auth.provider.workos';
 import { WorkspaceProjection } from './workspace-projection';
@@ -291,6 +291,27 @@ describe('workspace projection (IAM-backed workspaces)', () => {
     const put = iam.calls.find((c) => c.method === 'PUT' && c.path === `/iam/account/${IAM_ACCOUNT}`);
     expect(put).toBeDefined();
     expect((put!.body as { feature_flags: { last_workspace: string } }).feature_flags.last_workspace).toBe(WS_INVITED);
+  });
+  it('records the WorkOS user id the session carries on each workspace the person opens, so an MCP sign-in reaches them', async () => {
+    const workosUser = 'user_01HPROJECTIONSPEC000000000';
+    const iat = Math.floor(Date.now() / 1000) - 5;
+    const token = signJwtHs256(
+      { sub: SUB, account_id: IAM_ACCOUNT, email: 'a@example.com', name: 'Alex', iat, exp: 4102444800, workos_user_id: workosUser },
+      SECRET,
+    );
+    const home = await auth.resolveHost(asReq(token));
+    const invited = (await db.get<{ id: string }>(sql`SELECT id FROM account WHERE external_id = ${WS_INVITED}`))!.id;
+    await auth.resolveHost(asReq(token, invited));
+    const rows = await db.all<{ account_id: string; idp_subject: string | null; login_seen_at: number | string | null }>(
+      sql`SELECT account_id, idp_subject, login_seen_at FROM member WHERE external_id = ${SUB} ORDER BY account_id`,
+    );
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      expect(r.idp_subject).toBe(workosUser);
+      expect(Number(r.login_seen_at)).toBe(iat * 1000);
+    }
+    const reached = await membershipsBySubject(db, workosUser, iat * 1000 - 1);
+    expect(reached.map((m) => m.accountId).sort()).toEqual([home.accountId, invited].sort());
   });
 });
 

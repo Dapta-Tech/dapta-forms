@@ -1,13 +1,11 @@
 /**
  * Who the deployment's STAFF are: people whose email is on one of the
- * domains `IAM_STAFF_DOMAINS` lists. Staff may search every workspace and
- * enter any of them as an admin, through an access grant
- * (`member.access_grant = 'staff'`).
- *
- * The one rule every surface applies: the web app's workspace switcher (the
- * email the identity service's token carries) and MCP connections (the email
- * the person directory holds for the person). A pure function, so the rule
- * cannot drift between them.
+ * domains `IAM_STAFF_DOMAINS` lists. In the web app, staff may search every
+ * workspace and enter any of them as an admin, through an access grant
+ * (`member.access_grant = 'staff'`), judged on the email the identity
+ * service's token carries on each request. An MCP sign-in never acts as
+ * staff: it reaches the person's own memberships only (docs/adr/0003).
+ * A pure function, so every surface that asks applies the same rule.
  */
 
 /**

@@ -11,7 +11,7 @@
  * environment; no host or id of the hosted deployment is written here.
  */
 import type { McpOAuthConfig } from '@quill/config/env';
-import { IssuerUnavailable, RemoteJwks, verifyRs256 } from './jwt-rs256';
+import { IssuerUnavailable, RemoteJwks, readBoundedJson, verifyRs256 } from './jwt-rs256';
 import type { McpOAuth, McpOAuthDeps } from './mcp-oauth';
 
 /** How long the authorization server metadata is reused before it is read again. */
@@ -27,11 +27,13 @@ export function createWorkosAuthKit(config: McpOAuthConfig, deps: McpOAuthDeps =
   /** AuthKit's own metadata document, read once and reused; a stale copy is served while AuthKit cannot be read. */
   async function readAsMetadata(): Promise<Record<string, unknown>> {
     try {
+      // A time limit, no redirect followed, and a body cap, like the key set.
       const res = await (deps.fetch ?? fetch)(`${config.issuer}/.well-known/oauth-authorization-server`, {
         headers: { accept: 'application/json' },
+        redirect: 'error',
         signal: AbortSignal.timeout(5_000),
       });
-      const body: unknown = res.ok ? await res.json() : null;
+      const body: unknown = res.ok ? await readBoundedJson(res) : null;
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new IssuerUnavailable();
       asMetadata = { at: Date.now(), body: body as Record<string, unknown> };
       return asMetadata.body;

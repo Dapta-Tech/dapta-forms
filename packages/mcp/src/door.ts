@@ -105,7 +105,7 @@ export class DoorRefusal extends Error {
 
 /**
  * A credential the door cannot check right now, because something it depends
- * on is down (the host's person directory, say). The door answers it 503 with
+ * on is down (the identity provider's signing keys, say). The door answers it 503 with
  * its message and a `Retry-After`, never a 401: the person's sign-in is fine,
  * and sending the client into a new login would not help. The message must
  * not carry the dependency's internals.

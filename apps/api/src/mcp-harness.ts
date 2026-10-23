@@ -8,7 +8,7 @@ import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { createServer, type Server } from 'node:http';
 import { Client, ClientCredentialsProvider, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { createDb, insertApiKey, migrate, seed, sql, type Db } from '@quill/db';
+import { createDb, insertApiKey, migrate, recordMemberIdpSubject, seed, sql, type Db } from '@quill/db';
 import { loadServerEnv } from '@quill/config/env';
 import { AppModule } from './app.module';
 import { generateApiKey } from './api-keys';
@@ -16,8 +16,6 @@ import { configureCors } from './cors';
 import { configureDeprecatedHosts } from './deprecated-hosts';
 import { linkPageBodyParser } from './link-page-body';
 import { McpController } from './mcp.controller';
-import { normalizeWorkspaceSearch } from '@quill/mcp';
-import type { EstateWorkspace, Person, PersonDirectory } from './person-directory';
 
 /**
  * A real API for the MCP specs: the whole `AppModule` (so every `@Inject` and
@@ -50,20 +48,18 @@ export interface Harness {
    * in with these client credentials. Only with `oauth` on.
    */
   signIn(credentials: { clientId: string; clientSecret: string }): Promise<Client>;
-  /** The fake person directory (only with `oauth` on): register who a token's subject is. */
-  people: Map<string, Person>;
   /**
-   * The identity service's live workspaces, by id, as the fake directory
-   * answers staff lookups; `members` are the people (`Person.id`) holding a
-   * live membership there.
+   * What the person's verified web requests record (see `AuthService`) once
+   * they have opened EVERY workspace of theirs on the web: the sign-in
+   * `subject` on their oldest real member, and every real member of theirs
+   * (`external_id = personId`) stamped as vouched for at `seenAt` (now by
+   * default; an old one makes a stale link). A person who opened only some of
+   * them is a spec of its own, through the web path. Throws when the person
+   * has no member yet.
    */
-  estate: Map<string, EstateWorkspace & { members?: string[] }>;
-  /** The lines the API logged for staff calls outside the person's own workspaces. */
-  staffLog: string[];
-  /** How many times the API asked the person directory. */
-  directoryLookups(): number;
-  /** Whether the API closed the person directory (it does when it shuts down). */
-  directoryClosed(): boolean;
+  link(subject: string, personId: string, opts?: { seenAt?: number }): Promise<void>;
+  /** The lines the API logged for refused MCP sign-ins. */
+  oauthLog: string[];
   post(body: unknown, headers?: Record<string, string>, path?: string): Promise<Response>;
   close(): Promise<void>;
 }
@@ -94,13 +90,11 @@ const ENV_KEYS = [
   'MCP_OAUTH_PROVIDER',
   'WORKOS_AUTHKIT_DOMAIN',
   'MCP_PUBLIC_URL',
-  'IAM_DB_HOST',
-  'IAM_DB_PORT',
-  'IAM_DB_NAME',
-  'IAM_DB_SCHEMA',
-  'IAM_DB_USER',
-  'IAM_DB_PASS',
+  'OAUTH_LINK_MAX_AGE_DAYS',
   'IAM_STAFF_DOMAINS',
+  'JWT_SECRET',
+  'JWT_ISSUER',
+  'JWT_AUDIENCE',
 ] as const;
 
 export const APP_URL = 'https://forms.example.test';
@@ -122,41 +116,12 @@ async function boundServer(): Promise<{ server: Server; port: number }> {
   return { server, port: (server.address() as AddressInfo).port };
 }
 
-/**
- * The person directory of the specs: a table from token subject to person,
- * and one of live workspaces for the staff lookups (the IAM adapter is
- * separate).
- */
-function tableDirectory(
-  people: Map<string, Person>,
-  estate: Map<string, EstateWorkspace & { members?: string[] }>,
-  counter: { lookups: number; closed: boolean },
-): PersonDirectory {
-  const squash = (s: string | null) => normalizeWorkspaceSearch(s ?? '');
-  return {
-    personOf: async (subject) => {
-      counter.lookups += 1;
-      return people.get(subject) ?? null;
-    },
-    workspaceOf: async (id) => estate.get(id.toLowerCase()) ?? null,
-    holdsMembership: async (workspaceId, personId) => estate.get(workspaceId)?.members?.includes(personId) ?? false,
-    searchWorkspaces: async (needle, limit) =>
-      [...estate.values()].filter((w) => squash(w.name).includes(needle) || squash(w.accountName).includes(needle)).slice(0, limit),
-    close: async () => {
-      counter.closed = true;
-    },
-  };
-}
-
 export async function bootHarness(
   env: Partial<Record<(typeof ENV_KEYS)[number], string>> = {},
   opts: { oauth?: HarnessOAuth } = {},
 ): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'forms-mcp-spec-'));
   const { server, port } = await boundServer();
-  const people = new Map<string, Person>();
-  const estate = new Map<string, EstateWorkspace & { members?: string[] }>();
-  const counter = { lookups: 0, closed: false };
   const oauthEnv = opts.oauth
     ? {
         MCP_OAUTH_PROVIDER: 'workos',
@@ -190,7 +155,7 @@ export async function bootHarness(
   let app: INestApplication;
   try {
     // abortOnError off: a refused boot rejects here instead of exiting the process.
-    app = await NestFactory.create(opts.oauth ? AppModule.withPersonDirectory(tableDirectory(people, estate, counter)) : AppModule, {
+    app = await NestFactory.create(AppModule, {
       logger: false,
       abortOnError: false,
     });
@@ -214,8 +179,8 @@ export async function bootHarness(
   restoreEnv(saved);
   const audit: string[] = [];
   app.get(McpController).server.auditSink = (line) => audit.push(line);
-  const staffLog: string[] = [];
-  app.get(McpController).staffLogSink = (line) => staffLog.push(line);
+  const oauthLog: string[] = [];
+  app.get(McpController).oauthLogSink = (line) => oauthLog.push(line);
   const base = `http://127.0.0.1:${port}`;
 
   const mint = async (account: string, memberId: string): Promise<string> => {
@@ -280,11 +245,16 @@ export async function bootHarness(
       clients.push(client);
       return client;
     },
-    people,
-    estate,
-    staffLog,
-    directoryLookups: () => counter.lookups,
-    directoryClosed: () => counter.closed,
+    async link(subject, personId, { seenAt = Date.now() } = {}) {
+      const members = await db.all<{ id: string; account_id: string }>(
+        sql`SELECT id, account_id FROM member WHERE external_id = ${personId} AND access_grant IS NULL ORDER BY created_at ASC, id ASC`,
+      );
+      const first = members[0];
+      if (!first) throw new Error(`link: ${personId} has no member yet`);
+      await recordMemberIdpSubject(db, first.account_id, first.id, subject, seenAt);
+      await db.run(sql`UPDATE member SET login_seen_at = ${seenAt} WHERE external_id = ${personId} AND access_grant IS NULL`);
+    },
+    oauthLog,
     post: (body, headers = {}, path = '/mcp') =>
       fetch(`${base}${path}`, {
         method: 'POST',

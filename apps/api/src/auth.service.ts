@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, Optional, UnauthorizedException } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
   activateInvitedMember,
@@ -6,16 +6,20 @@ import {
   getAccountMember,
   getMemberIdentity,
   listWorkspacesForIdentity,
+  memberIdpLink,
+  noteMemberLogin,
+  recordMemberIdpSubject,
   touchMemberLastSeen,
   type MemberIdentity,
   type WorkspaceRow,
 } from '@quill/db';
+import type { ServerEnv } from '@quill/config/env';
 import { AnalyticsEffects } from './analytics-effects';
 import { apiKeyFromRequest } from './api-keys';
 import { ApiKeyAuthenticator, createApiKeyRateLimiter } from './api-key-auth';
 import type { RateLimiter } from './rate-limit';
-import { API_KEY_RATE_LIMITER, AUTH_PROVIDER, DB } from './tokens';
-import { header, type AuthProvider, type HostPrincipal, type ReqLike } from './auth.provider';
+import { API_KEY_RATE_LIMITER, AUTH_PROVIDER, DB, ENV } from './tokens';
+import { header, type AuthProvider, type HostPrincipal, type ReqLike, type ResolvedHost } from './auth.provider';
 import { inProcessPrincipalOf, oncePerCall, type InProcessPrincipal } from './in-process-principal';
 
 export type { HostPrincipal, PrincipalVia, ReqLike } from './auth.provider';
@@ -23,6 +27,25 @@ export { isAgentPrincipal, isApiKeyPrincipal } from './auth.provider';
 
 /** The header the web app uses to ask for a workspace other than the home one. */
 export const WORKSPACE_HEADER = 'x-quill-workspace';
+
+/** How stale `member.login_seen_at` may get before a verified login stamps it again, at most. */
+export const LOGIN_SEEN_REFRESH_MS = 86_400_000;
+
+/**
+ * The refresh step for a link window of `maxAgeDays`: a day, or a quarter of
+ * the window when that is shorter. A whole day against a one-day window would
+ * let a person who signs in every 23 hours fall out of it between stamps.
+ */
+export function loginSeenRefreshMs(maxAgeDays: number): number {
+  return Math.min(LOGIN_SEEN_REFRESH_MS, (maxAgeDays * 86_400_000) / 4);
+}
+
+/** The error code a failed write carries (the driver's, under the query builder's wrapper), never its message. */
+function errorCode(error: unknown): string {
+  const e = error as { code?: unknown; cause?: { code?: unknown } } | undefined;
+  const code = e?.code ?? e?.cause?.code;
+  return typeof code === 'string' ? code : 'error';
+}
 
 function workspaceForbidden(): ForbiddenException {
   return new ForbiddenException({
@@ -70,11 +93,19 @@ export class AuthService {
     // The per-key limiter (120 a minute). Optional for the same reason; absent,
     // each AuthService gets its own in-memory one.
     @Optional() @Inject(API_KEY_RATE_LIMITER) keyLimiter?: RateLimiter,
+    // The MCP sign-in link window, for the refresh step of `login_seen_at`.
+    // Optional for the same reason; absent, the default window (30 days).
+    @Optional() @Inject(ENV) env?: Pick<ServerEnv, 'OAUTH_LINK_MAX_AGE_DAYS'>,
   ) {
     this.apiKeys = new ApiKeyAuthenticator(db, keyLimiter ?? createApiKeyRateLimiter());
+    this.loginSeenRefreshMs = loginSeenRefreshMs(env?.OAUTH_LINK_MAX_AGE_DAYS ?? 30);
   }
 
   private readonly apiKeys: ApiKeyAuthenticator;
+  private readonly loginSeenRefreshMs: number;
+  private readonly logger = new Logger('Auth');
+  /** Where audit lines go (one JSON object per line). A field so specs can read it. */
+  auditSink: (line: string) => void = (line) => this.logger.log(line);
 
   /**
    * Resolve the authenticated host, and then the account they are acting in.
@@ -148,6 +179,7 @@ export class AuthService {
     if (!requested || requested === home.accountId) {
       const member = await getAccountMember(this.db, home.accountId, home.memberId);
       if (member?.accessGrant === 'staff' && !staff) throw workspaceForbidden();
+      if (member && member.accessGrant === null) await this.noteVerifiedLogin(home, home.accountId, home.memberId);
       return {
         accountId: home.accountId,
         memberId: home.memberId,
@@ -166,6 +198,9 @@ export class AuthService {
     // Opening a workspace you were invited to IS accepting the invitation, the
     // same transition the home account gets above, for the same reason.
     await activateInvitedMember(this.db, membership.accountId, membership.memberId);
+    // Checked against the person the token names: the switch also matches a
+    // row by email, and such a row may belong to someone else.
+    if (membership.accessGrant === null) await this.noteVerifiedLogin(home, membership.accountId, membership.memberId);
     return {
       accountId: membership.accountId,
       memberId: membership.memberId,
@@ -173,6 +208,63 @@ export class AuthService {
       via: 'session',
       ...(membership.accessGrant === 'staff' ? { accessGrant: 'staff' as const } : {}),
     };
+  }
+
+  /**
+   * What a verified web request proves about the member it acts as, recorded
+   * for MCP sign-ins (see `@quill/db` idp-subject):
+   *
+   *   - the person's user id at the external authorization server
+   *     (`member.idp_subject`), written only when missing or different, so
+   *     every person links on their next web request with no new login. The
+   *     latest request takes it from any other member of the account, in one
+   *     transaction, and says so in an audit line;
+   *   - when the identity service vouched for the member
+   *     (`member.login_seen_at`): the token's issue time, never the request
+   *     time, so a token minted before someone was removed upstream cannot
+   *     keep the stamp fresh. Renewed once it is older than the refresh step
+   *     (a day, or a quarter of a shorter link window), never backwards. A
+   *     token that does not say when it was issued stamps nothing, and a
+   *     provider that vouches for nothing (the dev stub) touches nothing.
+   *
+   * Never for a staff access grant (the caller skips those): a grant is not a
+   * membership. Only on a row bound to the person the token names
+   * (`external_id` = `home.personId`), on the home member and on a workspace
+   * the request switched to alike: the switch matches rows by email too, and
+   * the token vouches for its own person, never for whoever else holds a row
+   * with that address. A provider that names no person writes nothing. Never costs the request: a failure is logged by its code and
+   * the next request tries again.
+   */
+  private async noteVerifiedLogin(home: ResolvedHost, accountId: string, memberId: string): Promise<void> {
+    const person = home.personId;
+    const subject = home.idpSubject;
+    const vouchedAt = typeof home.authenticatedAt === 'number' ? Math.min(home.authenticatedAt, Date.now()) : null;
+    if (!person || (!subject && vouchedAt === null)) return;
+    try {
+      const link = await memberIdpLink(this.db, accountId, memberId);
+      // A row no login bound to a person names nobody (an MCP sign-in never
+      // reaches it), and a row bound to someone else is theirs to vouch for.
+      if (!link || link.externalId !== person) return;
+      if (subject && subject !== link.idpSubject) {
+        const out = await recordMemberIdpSubject(this.db, accountId, memberId, subject, vouchedAt);
+        if (out.written) {
+          const line = JSON.stringify({ msg: 'auth.idp_subject_recorded', accountId, memberId, takenFrom: out.clearedMemberIds });
+          try {
+            this.auditSink(line);
+          } catch {
+            /* logging must never break a login */
+          }
+        }
+        return;
+      }
+      const step = this.loginSeenRefreshMs;
+      if (vouchedAt !== null && (link.loginSeenAt === null || vouchedAt - link.loginSeenAt >= step)) {
+        await noteMemberLogin(this.db, accountId, memberId, vouchedAt, step);
+      }
+    } catch (error) {
+      // The code only: a constraint message would carry the subject itself.
+      this.logger.warn(`could not record the sign-in link of member ${memberId}: ${errorCode(error)}`);
+    }
   }
 
   private async resolveInProcess(req: ReqLike, principal: InProcessPrincipal): Promise<HostPrincipal> {

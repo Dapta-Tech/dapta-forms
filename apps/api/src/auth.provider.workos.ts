@@ -3,11 +3,15 @@
  *
  * It does NOT talk to WorkOS. Login (hosted AuthKit, social providers) lives in
  * the upstream identity service, which after login mints an HS256 platform JWT
- * (shared secret; claims `sub`, `account_id`, `email`, `name`). This provider is
- * the DOWNSTREAM validator only — it verifies that token and projects its claims
- * onto a local `{accountId, memberId}`. This is the exact split the predecessor
- * service used, and it is what makes local and remote behave identically: the
- * secret is symmetric, so there is nothing environment-specific to fetch.
+ * (shared secret; claims `sub`, `account_id`, `email`, `name`, and
+ * `workos_user_id` when the login came through WorkOS). This provider is the
+ * DOWNSTREAM validator only: it verifies that token and projects its claims
+ * onto a local `{accountId, memberId}`, and hands `AuthService` the token's
+ * issue time and `workos_user_id`, which it records on the member
+ * (`member.idp_subject`, `member.login_seen_at`) so an MCP sign-in through the
+ * same identity can find it. This is the exact split the predecessor service
+ * used, and it is what makes local and remote behave identically: the secret
+ * is symmetric, so there is nothing environment-specific to fetch.
  *
  * Because it only ever *validates* tokens (never issues them, never calls the
  * identity service or WorkOS), it cannot affect the upstream login in any way —
@@ -43,6 +47,31 @@ type WorkOsEnv = Pick<
 
 function unauthenticated(message: string): UnauthorizedException {
   return new UnauthorizedException({ error: 'UNAUTHENTICATED', message });
+}
+
+/**
+ * A WorkOS user id: `user_` and its ULID. The identity service writes a shared
+ * placeholder (`pending_workos_sync`) on some migrated sessions; anything that
+ * is not a real id is never recorded, so no placeholder can link two people.
+ */
+const WORKOS_USER_ID = /^user_[0-9A-Za-z]{10,64}$/;
+
+/**
+ * What the token vouches for, and for whom: the person it names (`sub`, the
+ * id members carry), when the identity service minted it (never later than
+ * now; null without `iat`), and the person's WorkOS user id when it carries a
+ * real one.
+ */
+function vouchedBy(
+  sub: string,
+  claims: JwtClaims,
+): { personId: string; authenticatedAt: number | null; idpSubject?: string } {
+  const authenticatedAt =
+    typeof claims.iat === 'number' && Number.isFinite(claims.iat) ? Math.min(claims.iat * 1000, Date.now()) : null;
+  const subject = claims.workos_user_id;
+  return typeof subject === 'string' && WORKOS_USER_ID.test(subject)
+    ? { personId: sub, authenticatedAt, idpSubject: subject }
+    : { personId: sub, authenticatedAt };
 }
 
 // Account codes are 6-char short codes from @quill/db (generateUniqueShortCode)
@@ -137,7 +166,7 @@ export class WorkOsAuthProvider implements AuthProvider {
       }
       // Staff is judged again here, on the token's email, every request: the
       // auth service ignores grant rows for anyone it does not mark.
-      if (home) return { ...home, staff: this.projection.isStaff(upstream.email) };
+      if (home) return { ...home, staff: this.projection.isStaff(upstream.email), ...vouchedBy(sub, claims) };
       // Nothing upstream and nothing local. The identity service creates a
       // workspace at signup, so this is a real fault, not a first login — and
       // minting a token-account row here would recreate exactly the pre-0015
@@ -151,7 +180,7 @@ export class WorkOsAuthProvider implements AuthProvider {
 
     const accountId = await this.resolveAccount(accountExtId, claims);
     const memberId = await this.resolveMember(accountId, sub, claims);
-    return { accountId, memberId };
+    return { accountId, memberId, ...vouchedBy(sub, claims) };
   }
 
   /** Find (or JIT-create) the local account projected from the token's account_id. */
@@ -192,12 +221,19 @@ export class WorkOsAuthProvider implements AuthProvider {
             WHERE account_id = ${accountId} AND external_id IS NULL AND lower(email) = lower(${email})
             ORDER BY created_at ASC LIMIT 1`,
       );
-      if (invited) {
-        await this.db.run(
-          sql`UPDATE member SET external_id = ${sub}, status = 'active',
-                display_name = COALESCE(display_name, ${displayName})
-              WHERE id = ${invited.id}`,
-        );
+      // Still unbound at the write: a concurrent login of someone else with
+      // the same address may have adopted it since the read, and a bound row
+      // (with the sign-in link its owner recorded) is never rebound. Lost:
+      // this login gets a member of its own below.
+      const adopted = invited
+        ? await this.db.get<{ id: string }>(
+            sql`UPDATE member SET external_id = ${sub}, status = 'active',
+                  display_name = COALESCE(display_name, ${displayName})
+                WHERE id = ${invited.id} AND account_id = ${accountId} AND external_id IS NULL
+                RETURNING id`,
+          )
+        : undefined;
+      if (invited && adopted) {
         // An adopted invite IS a signup — this is the person's first login, and
         // the only difference is that a teammate created the row ahead of them.
         // The role is whatever the invite granted, so it is read back rather

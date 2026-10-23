@@ -85,10 +85,16 @@ export const member = pgTable(
     iamWorkspaceUserId: text('iam_workspace_user_id'),
     /** NULL for a real membership; 'staff' for a domain-based access grant (0016). */
     accessGrant: text('access_grant'),
+    /** The `sub` of the external authorization server MCP clients sign in with; NULL until a web login records it (0026). */
+    idpSubject: text('idp_subject'),
+    /** Epoch-ms the identity service last vouched for this member at a verified web login (0026). */
+    loginSeenAt: bigint('login_seen_at', { mode: 'number' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },
   (t) => ({
     memberAccountExternalUq: uniqueIndex('member_account_external_uq').on(t.accountId, t.externalId),
+    memberIdpSubjectAccountIdx: uniqueIndex('member_idp_subject_account_idx').on(t.idpSubject, t.accountId),
+    memberExternalIdIdx: index('member_external_id_idx').on(t.externalId),
   }),
 );
 

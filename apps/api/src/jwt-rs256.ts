@@ -99,6 +99,35 @@ export async function verifyRs256(token: string, options: Rs256Options): Promise
   }
 }
 
+/** The most an issuer document (a key set, its metadata) may weigh: far above any real one. */
+export const MAX_ISSUER_BODY_BYTES = 64 * 1024;
+
+/**
+ * A response body as JSON, read up to `maxBytes` and refused past it, so an
+ * issuer (or whatever answers in its place) cannot make the API buffer an
+ * unbounded body. Throws on a body too large or not JSON.
+ */
+export async function readBoundedJson(res: Response, maxBytes = MAX_ISSUER_BODY_BYTES): Promise<unknown> {
+  if (Number(res.headers.get('content-length') ?? 0) > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error('response too large');
+  }
+  const reader = res.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error('response too large');
+    }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+}
+
 export interface RemoteJwksOptions {
   /** How long a fetched key set is trusted before it is fetched again. */
   maxAgeMs?: number;
@@ -179,12 +208,15 @@ export class RemoteJwks {
   private async load(): Promise<void> {
     this.attemptedAt = this.now();
     try {
+      // Bounded like every request to the issuer: a time limit, no redirect
+      // followed (the configured URL is the only one), and a body cap.
       const res = await (this.options.fetch ?? fetch)(this.url, {
         headers: { accept: 'application/json' },
+        redirect: 'error',
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 5_000),
       });
       if (!res.ok) return;
-      const body = (await res.json()) as { keys?: unknown };
+      const body = ((await readBoundedJson(res)) ?? {}) as { keys?: unknown };
       if (!Array.isArray(body.keys)) return;
       const keys = new Map<string, KeyObject>();
       for (const jwk of body.keys as Array<Record<string, unknown>>) {
@@ -200,7 +232,7 @@ export class RemoteJwks {
       this.keys = keys;
       this.fetchedAt = this.now();
     } catch {
-      /* unreachable or not JSON: keep what was cached; unknown keys stay unknown */
+      /* unreachable, redirected, too large or not JSON: keep what was cached; unknown keys stay unknown */
     }
   }
 }

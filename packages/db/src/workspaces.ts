@@ -396,15 +396,20 @@ export async function projectMemberships(
                 ORDER BY created_at ASC LIMIT 1`,
           )
         : null;
-      if (invited) {
-        await db.run(
-          sql`UPDATE member SET external_id = ${identity.externalId}, status = 'active', role = ${role},
-                iam_workspace_user_id = COALESCE(${m.workspaceUserId}, iam_workspace_user_id),
-                access_grant = ${grant},
-                display_name = COALESCE(display_name, ${identity.displayName})
-              WHERE id = ${invited.id} AND account_id = ${account.id}`,
-        );
-      } else {
+      // Still unbound at the write: a concurrent login of someone else with
+      // the same address may have adopted it since the read, and a bound row
+      // (with the sign-in link its owner recorded) is never rebound.
+      const adopted = invited
+        ? await db.get<{ id: string }>(
+            sql`UPDATE member SET external_id = ${identity.externalId}, status = 'active', role = ${role},
+                  iam_workspace_user_id = COALESCE(${m.workspaceUserId}, iam_workspace_user_id),
+                  access_grant = ${grant},
+                  display_name = COALESCE(display_name, ${identity.displayName})
+                WHERE id = ${invited.id} AND account_id = ${account.id} AND external_id IS NULL
+                RETURNING id`,
+          )
+        : undefined;
+      if (!adopted) {
         // "First member" counts real memberships only: a staff grant that got
         // here first must not steal the owner's welcome (demo form, signup).
         const others = await db.get<{ id: string }>(
@@ -624,15 +629,18 @@ export async function projectRoster(
               ORDER BY created_at ASC LIMIT 1`,
         )
       : null;
-    if (invited) {
-      await db.run(
-        sql`UPDATE member SET external_id = ${r.externalId}, role = ${role}, status = ${status},
-              iam_workspace_user_id = COALESCE(${r.workspaceUserId}, iam_workspace_user_id),
-              display_name = COALESCE(display_name, ${r.displayName})
-            WHERE id = ${invited.id} AND account_id = ${accountId}`,
-      );
-      continue;
-    }
+    // Still unbound at the write, as in `projectMemberships`: a row someone
+    // else adopted since the read is never rebound.
+    const adopted = invited
+      ? await db.get<{ id: string }>(
+          sql`UPDATE member SET external_id = ${r.externalId}, role = ${role}, status = ${status},
+                iam_workspace_user_id = COALESCE(${r.workspaceUserId}, iam_workspace_user_id),
+                display_name = COALESCE(display_name, ${r.displayName})
+              WHERE id = ${invited.id} AND account_id = ${accountId} AND external_id IS NULL
+              RETURNING id`,
+        )
+      : undefined;
+    if (adopted) continue;
     const handle = await deriveUniqueHandle(db, accountId, r.displayName, r.email);
     await db.run(
       sql`INSERT INTO member (id, account_id, external_id, email, display_name, handle, role, status,

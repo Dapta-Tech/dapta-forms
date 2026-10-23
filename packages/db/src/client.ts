@@ -20,8 +20,12 @@ export type Dialect = 'sqlite' | 'postgres';
 /** Native SQLite handles for the synchronous atomic path. */
 export interface SqliteNative {
   drizzle: BetterSQLite3Database;
-  /** better-sqlite3 Database — used for its synchronous `.transaction()`. */
-  txn: <T>(fn: () => T) => T;
+  /**
+   * better-sqlite3 Database, used for its synchronous `.transaction()`.
+   * `immediate` takes the write lock up front (BEGIN IMMEDIATE), for a
+   * read-then-write that must not race another connection's write.
+   */
+  txn: <T>(fn: () => T, opts?: { immediate?: boolean }) => T;
   exec(script: string): void;
 }
 
@@ -133,7 +137,8 @@ async function createSqliteDb(url: string): Promise<Db> {
     },
     sqlite: {
       drizzle: db,
-      txn: <T>(fn: () => T): T => sqlite.transaction(fn)(),
+      txn: <T>(fn: () => T, opts?: { immediate?: boolean }): T =>
+        opts?.immediate ? sqlite.transaction(fn).immediate() : sqlite.transaction(fn)(),
       exec: (script: string): void => {
         sqlite.exec(script);
       },

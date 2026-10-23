@@ -109,13 +109,6 @@ jobs:
         run: pnpm --filter @quill/db test
         env:
           DATABASE_URL: postgres://quill:quill@localhost:5432/quill
-      - name: Person directory on real Postgres (identity database adapter)
-        # person-directory.iam.spec.ts creates a minimal users + sessions schema
-        # of its own and reads it the way the API reads the identity database.
-        # It is skipped on the SQLite run, which has no Postgres.
-        run: pnpm --filter @quill/api exec vitest run src/person-directory.iam.spec.ts
-        env:
-          DATABASE_URL: postgres://quill:quill@localhost:5432/quill
 
   publish-gate:
     name: Publish gate (secret scan)

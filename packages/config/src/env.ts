@@ -257,29 +257,15 @@ export const serverEnvSchema = z.object({
   WORKOS_AUTHKIT_DOMAIN: z.string().optional(),
   MCP_PUBLIC_URL: z.string().optional(),
 
-  // The person directory of MCP connections: read-only access to the identity
-  // service's database, where the API translates the person a token names into
-  // the user id members carry. Read only with MCP_OAUTH_PROVIDER set, and then
-  // all required but the port (checked when the API boots); ignored otherwise.
-  //   IAM_DB_HOST    the database host. TLS is required unless it is a loopback host.
-  //   IAM_DB_PORT    the port, 5432 when unset.
-  //   IAM_DB_NAME    the database.
-  //   IAM_DB_SCHEMA  the schema that holds its users and sessions.
-  //   IAM_DB_USER    a role that can only read.
-  //   IAM_DB_PASS    its password (a secret).
-  //   IAM_DB_SSL_CA  optional: the CA that signs the database's certificate,
-  //                  as the PEM itself or the path of a file holding it. Set,
-  //                  the certificate and its host name are verified
-  //                  (verify-full) and TLS is on even on a loopback host.
-  //                  Unset, the connection is encrypted but the certificate
-  //                  is not verified, and the API logs so once at boot.
-  IAM_DB_HOST: z.string().optional(),
-  IAM_DB_PORT: z.string().optional(),
-  IAM_DB_NAME: z.string().optional(),
-  IAM_DB_SCHEMA: z.string().optional(),
-  IAM_DB_USER: z.string().optional(),
-  IAM_DB_PASS: z.string().optional(),
-  IAM_DB_SSL_CA: z.string().optional(),
+  // How long after the identity service last vouched for a member at a
+  // verified web login (the issue time of that login's token, stamped on the
+  // member) an MCP sign-in may still act as that member. dForms is not told
+  // when someone is removed upstream, so this is when MCP access ends for a
+  // person who stops coming to the web app. Checked at boot whatever
+  // MCP_OAUTH_PROVIDER says: the web side reads it too, for how often a login
+  // renews that stamp. 1 to 365 days, 30 when unset (the sibling calendars
+  // product's name and default).
+  OAUTH_LINK_MAX_AGE_DAYS: blankAsUnset(z.coerce.number().int().min(1).max(365).default(30)),
 
   // Product analytics — OUR OWN telemetry about the people who USE Dapta Forms
   // (signup, publish, activation), drained from the outbox by AnalyticsCapture.

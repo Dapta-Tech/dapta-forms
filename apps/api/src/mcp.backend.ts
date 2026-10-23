@@ -1,14 +1,10 @@
 import { HttpException, Logger } from '@nestjs/common';
 import {
   findApiKeyPrincipal,
-  getAccountByExternalId,
   getFormById,
-  grantStaffAccess,
   listLiveStepCounts,
-  listWorkspacesForIdentity,
-  searchProjectedAccounts,
-  sql,
-  StaffGrantRefused,
+  membershipsBySubject,
+  type AccountRole,
   type Db,
 } from '@quill/db';
 import {
@@ -24,11 +20,6 @@ import {
   BackendError,
   DoorRefusal,
   DoorUnavailable,
-  ToolFailure,
-  normalizeWorkspaceSearch,
-  openDFormsOnce,
-  type McpStaffAccess,
-  type StaffWorkspaceHit,
   type AnalyticsQuery,
   type CoreFormsBackend,
   type CreateFormInput,
@@ -50,8 +41,7 @@ import { isKeyAllowedRoute, routeOf } from './api-key-routes';
 import type { ReqLike } from './auth.provider';
 import { inProcessRequest } from './in-process-principal';
 import { IssuerUnavailable, type McpOAuth } from './mcp-oauth';
-import { lookUpPerson, type Person, type PersonDirectory } from './person-directory';
-import { isStaffEmail, MEMBERSHIP_NOT_ACTIVE_MESSAGE, upstreamWorkspaceIdOf } from './staff';
+import { isAdmin } from './permissions';
 
 /**
  * forms-api's side of the MCP port (`FormsBackend` in `@quill/mcp`).
@@ -152,27 +142,44 @@ export async function authenticateMcpKey(db: Db, token: string): Promise<McpCall
   };
 }
 
+/** The default link window (`OAUTH_LINK_MAX_AGE_DAYS`, 30 days). */
+const DEFAULT_LINK_MAX_AGE_MS = 30 * 86_400_000;
+
+/**
+ * Why a verified sign-in reaches no workspace. Signing in again would not
+ * change it, so it is a 403 the person can act on, never a 401 that loops the
+ * login: each workspace counts once the person opens it in dForms on the web
+ * within the link window, as an owner or admin. The sibling calendars
+ * product's words, in dForms' terms.
+ */
+function notLinked(appUrl: string, linkMaxAgeMs: number): DoorRefusal {
+  const days = Math.max(1, Math.round(linkMaxAgeMs / 86_400_000));
+  return new DoorRefusal(
+    `This sign-in is not an owner or admin of any dForms workspace opened with this account in the last ${days} days: open the workspace in dForms${appUrl ? ` (${appUrl})` : ''}, then connect again.`,
+  );
+}
+
 /**
  * Resolve an access token to an MCP connection: the person it signs in, with
- * one caller per workspace where they hold an active member (each acting as
- * that member through its own in-process principal). Null when the token does
- * not verify (a 401 that points at the login again), and `DoorUnavailable`
- * (a 503) while the identity provider's keys cannot be read.
+ * one caller per workspace where they may act (each acting as that member
+ * through its own in-process principal). Null when the token does not verify
+ * (a 401 that points at the login again), and `DoorUnavailable` (a 503) while
+ * the identity provider's keys cannot be read.
  *
- * A token that verifies but names nobody the directory knows is a
- * `DoorRefusal` (403) with a message the person can act on, because signing
- * in again would not change it. A person with no workspace yet is let in with
- * none: their tools answer NO_WORKSPACE, which the agent can explain.
+ * The token's subject maps to members here, in dForms' own database, the way
+ * the sibling calendars product does it (`membershipsBySubject`): the members
+ * whose verified web login recorded that subject, and the same person's
+ * members in other workspaces, each only while a verified web login vouched
+ * for it within the link window (`OAUTH_LINK_MAX_AGE_DAYS`), and of those only
+ * active owners and admins. dForms reads no identity database and holds no
+ * credential for one: the link exists because the person uses the web app,
+ * and it lapses when they stop, the way their web access would.
  *
- * The workspaces are dForms' own active members, matched by the person's
- * identity-service id, or by email on a member no other person holds yet,
- * never the identity provider's view. Rows held by a staff access grant are
- * never listed there. A person who is STAFF of the deployment on this request
- * (their directory email on one of `staffDomains`, the rule the web app
- * applies) also gets `staff`: a search over every workspace, and a way into
- * any live one through a staff access grant (see `staffAccessFor`). Grant
- * rows are never revoked, so staff is judged again on every request: a person
- * who stops being staff reaches none of them on the next call.
+ * A token that verifies but reaches no such member is a `DoorRefusal` (403)
+ * that says to open dForms on the web once; so is a subject that names more
+ * than one person, which is never resolved by guessing. Nothing is matched by
+ * email, and a row held through a staff access grant never counts: an MCP
+ * sign-in acts in the person's own memberships only (docs/adr/0003).
  *
  * Like a key, this is a lookup only, done again on every request: every tool
  * call re-reads its member through `AuthService.resolveHost`, so a member
@@ -181,11 +188,10 @@ export async function authenticateMcpKey(db: Db, token: string): Promise<McpCall
 export async function authenticateMcpConnection(
   db: Db,
   oauth: McpOAuth,
-  directory: PersonDirectory,
   token: string,
   opts: McpConnectionOptions = {},
 ): Promise<McpConnection | null> {
-  const appUrl = opts.appUrl ?? '';
+  const log = opts.log ?? defaultConnectionLog;
   let access;
   try {
     access = await oauth.verify(token);
@@ -196,23 +202,27 @@ export async function authenticateMcpConnection(
     throw error;
   }
   if (!access) return null;
-  const person = await lookUpPerson(directory, access.subject);
-  if (!person) {
-    throw new DoorRefusal(`This sign-in has no dForms account yet: ${openDFormsOnce(appUrl, 'connect again')}`);
+  const now = opts.now?.() ?? Date.now();
+  const linkMaxAgeMs = opts.linkMaxAgeMs ?? DEFAULT_LINK_MAX_AGE_MS;
+  const rows = await membershipsBySubject(db, access.subject, now - linkMaxAgeMs);
+  // The reason only, never the subject or the token.
+  const refuse = (reason: 'ambiguous' | 'not_linked' | 'not_active_admin'): void => log(JSON.stringify({ msg: 'mcp.oauth_refused', reason }));
+  if (new Set(rows.map((r) => r.externalId)).size > 1) {
+    refuse('ambiguous');
+    throw new DoorRefusal('This sign-in matches more than one dForms account, so dForms will not guess which one it is. Contact support; do not retry.');
   }
+  const allowed = rows.filter((r) => r.status === 'active' && isAdmin(r.role as AccountRole));
+  const first = allowed[0];
+  if (!first) {
+    refuse(rows.length === 0 ? 'not_linked' : 'not_active_admin');
+    throw notLinked(opts.appUrl ?? '', linkMaxAgeMs);
+  }
+  const person: Person = { id: first.externalId, email: first.email };
   const label = `oauth:${person.id}`;
-  // An email match counts only on a member nobody holds yet, or this person:
-  // the email comes from the identity service, and must never reach a member
-  // another person already signed in as.
-  const rows = await listWorkspacesForIdentity(db, { externalId: person.id, email: person.email }, { emailOnlyWhenUnbound: true });
-  const workspaces = rows
-    .filter((w) => w.status === 'active' && w.accessGrant === null)
-    .map((w) => memberCaller(person, label, { accountId: w.accountId, accountName: w.accountName, memberId: w.memberId, role: w.role }));
-  const connection: McpConnection = { personId: person.id, email: person.email, label, workspaces };
-  if (isStaffEmail(person.email, opts.staffDomains) && directory.workspaceOf && directory.searchWorkspaces) {
-    connection.staff = staffAccessFor(db, directory as StaffDirectory, person, label, workspaces, opts.staffLog ?? defaultStaffLog);
-  }
-  return connection;
+  const workspaces = allowed.map((m) =>
+    memberCaller(person, label, { accountId: m.accountId, accountName: m.accountName, memberId: m.memberId, role: m.role }),
+  );
+  return { personId: person.id, email: person.email, label, workspaces };
 }
 
 /** Longest stored answer a leftover row carries (the summary rows' own cap); the tool cuts again for the model. */
@@ -257,26 +267,30 @@ export function outcomeOf(config: EngineConfig, score: number | null, data: Answ
 
 /** What `authenticateMcpConnection` needs beyond the token. */
 export interface McpConnectionOptions {
-  /** The dForms address a person with no workspace yet opens, named in the refusal. */
+  /** The dForms address a person who is not linked yet opens, named in the refusal. */
   appUrl?: string;
-  /** Email domains whose people are staff of the deployment (`IAM_STAFF_DOMAINS`). Empty: nobody. */
-  staffDomains?: readonly string[];
-  /** Where a staff call outside the person's own workspaces is logged, one JSON line each. */
-  staffLog?: (line: string) => void;
+  /** How long after a verified web login a member stays reachable (`OAUTH_LINK_MAX_AGE_DAYS`); 30 days when unset. */
+  linkMaxAgeMs?: number;
+  /** Where a refused sign-in is logged, one JSON line each. */
+  log?: (line: string) => void;
+  /** The clock (specs). */
+  now?: () => number;
 }
 
-const staffLogger = new Logger('McpStaffAccess');
-const defaultStaffLog = (line: string): void => staffLogger.log(line);
+const connectionLogger = new Logger('McpOAuth');
+const defaultConnectionLog = (line: string): void => connectionLogger.log(line);
 
-/** A directory that answers the staff lookups. */
-type StaffDirectory = PersonDirectory & Required<Pick<PersonDirectory, 'workspaceOf' | 'searchWorkspaces'>>;
+/** The person an MCP sign-in acts as: their upstream user id and the email their member carries. */
+interface Person {
+  id: string;
+  email: string | null;
+}
 
 /** The caller for one member row of this person. */
 function memberCaller(
   person: Person,
   label: string,
   m: { accountId: string; accountName: string; memberId: string; role: string },
-  access: 'member' | 'staff' = 'member',
 ): McpCaller {
   return {
     accountId: m.accountId,
@@ -287,170 +301,7 @@ function memberCaller(
     credentialId: `member:${m.memberId}`,
     label,
     personId: person.id,
-    ...(access === 'staff' ? { access } : {}),
     context: { req: inProcessRequest({ accountId: m.accountId, memberId: m.memberId }) } satisfies ApiCallerContext,
-  };
-}
-
-const UUID_SHAPED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Staff named a workspace where their own membership is not active: never turned into a grant. */
-function membershipNotActive(): ToolFailure {
-  return new ToolFailure(
-    'MEMBERSHIP_NOT_ACTIVE',
-    MEMBERSHIP_NOT_ACTIVE_MESSAGE,
-    'Tell the user. Only the workspace owner can restore the membership (or the user can accept the invitation in dForms); do not retry.',
-  );
-}
-
-/** A directory call made for staff, as a tool failure the agent can act on when the directory cannot be read. */
-async function fromDirectory<T>(read: () => Promise<T>): Promise<T> {
-  try {
-    return await read();
-  } catch (error) {
-    const name = error instanceof Error ? error.name : typeof error;
-    const code = (error as { code?: unknown } | null)?.code;
-    staffLogger.error(`workspace directory unreadable: ${name}${typeof code === 'string' ? ` ${code}` : ''}`);
-    throw new ToolFailure('UNAVAILABLE', 'dForms cannot read the workspace directory right now.', 'Wait a minute, then retry.', 60);
-  }
-}
-
-/**
- * What a staff person can do beyond their own workspaces, the way the web
- * app's switcher lets them (`WorkspaceService.search` and
- * `enterEstateWorkspace`), but read from the identity database instead of
- * with a bearer, which an MCP connection does not carry.
- *
- *   - `search`: the accounts this database already knows (by workspace name,
- *     a member's email or a form name) that are still live workspaces of the
- *     identity service, and the identity service's live workspaces (by
- *     workspace or account name), at most `limit`, each named by the
- *     identity service's workspace id (stable before and after dForms first
- *     projects it), with what it matched on. Only what `enter` would take.
- *   - `enter`: either id, in any letter case. The workspace must be live in
- *     the identity service now (read through the directory's cache). A
- *     workspace of the person's own is entered as that member. Otherwise the
- *     person acts as the `admin` row `grantStaffAccess` mints (or finds) with
- *     `access_grant = 'staff'`, exactly as the web app does; where the
- *     identity service names them a member that dForms has not projected yet,
- *     that row becomes the membership on their next projection.
- */
-function staffAccessFor(
-  db: Db,
-  directory: StaffDirectory,
-  person: Person,
-  label: string,
-  own: McpCaller[],
-  log: (line: string) => void,
-): McpStaffAccess {
-  return {
-    async search(query, limit) {
-      const needle = normalizeWorkspaceSearch(query);
-      const [local, estate] = await Promise.all([
-        searchProjectedAccounts(db, query.trim().toLowerCase(), { limit }),
-        fromDirectory(() => directory.searchWorkspaces(needle, limit)),
-      ]);
-      // A local hit counts only when it is still a live workspace upstream
-      // (read through the cache), so nothing listed is refused by `enter`.
-      const grantable = local.filter((hit) => upstreamWorkspaceIdOf(hit.workspaceId) !== null);
-      const live = await fromDirectory(() => Promise.all(grantable.map((hit) => directory.workspaceOf(hit.workspaceId))));
-      const known = await Promise.all(estate.map((ws) => getAccountByExternalId(db, ws.id)));
-      // Keyed by the identity service's workspace id, so one workspace found
-      // both ways is listed once, and always NAMED by that id: it exists
-      // before dForms first projects the workspace and stays the same after,
-      // so a search never answers with one id before a call and another one
-      // after it (the local id is kept apart, only to tell the person's own
-      // workspaces from the rest). Either id still enters it.
-      const hits = new Map<string, StaffWorkspaceHit>();
-      estate.forEach((ws, i) => {
-        if (hits.has(ws.id)) return;
-        const matchedOn = normalizeWorkspaceSearch(ws.name).includes(needle) ? 'name' : 'account_name';
-        hits.set(ws.id, { id: ws.id, localId: known[i]?.id ?? null, name: ws.name, accountName: ws.accountName, role: 'admin', access: 'staff', matchedOn });
-      });
-      grantable.forEach((hit, i) => {
-        const ws = live[i];
-        if (!ws || hits.has(ws.id)) return;
-        const matchedOn = hit.hint?.kind === 'email' ? 'member_email' : hit.hint?.kind === 'form' ? 'form_name' : 'name';
-        hits.set(ws.id, { id: ws.id, localId: hit.id, name: ws.name, accountName: ws.accountName, role: 'admin', access: 'staff', matchedOn });
-      });
-      return [...hits.values()].slice(0, limit);
-    },
-
-    async enter(workspaceId) {
-      const raw = workspaceId.trim();
-      // Ids are stored lowercase; an upper-case copy names the same workspace.
-      const id = UUID_SHAPED.test(raw) ? raw.toLowerCase() : raw;
-      const local = await db.get<{ id: string; external_id: string | null }>(
-        sql`SELECT id, external_id FROM account WHERE id = ${id} OR external_id = ${id} LIMIT 1`,
-      );
-      if (local) {
-        // Named by the identity service's id, but a workspace of their own: as that member.
-        const mine = own.find((w) => w.accountId === local.id);
-        if (mine) return mine;
-      }
-      // A local-only account belongs to nobody upstream: nobody is granted into it.
-      const upstreamId = local ? upstreamWorkspaceIdOf(local.external_id) : UUID_SHAPED.test(id) ? id : null;
-      if (!upstreamId) return null;
-      const ws = await fromDirectory(() => directory.workspaceOf(upstreamId));
-      if (!ws) return null;
-
-      const held = local
-        ? await db.get<{ id: string; role: string; status: string; access_grant: string | null }>(
-            sql`SELECT id, role, status, access_grant FROM member WHERE account_id = ${local.id} AND external_id = ${person.id} LIMIT 1`,
-          )
-        : undefined;
-      if (local && held && held.status === 'active' && held.access_grant === null) {
-        // A real membership is never turned into a grant.
-        return memberCaller(person, label, { accountId: local.id, accountName: ws.name, memberId: held.id, role: held.role });
-      }
-      if (held && held.access_grant === null) {
-        // Nor is one that is not active: a member the owner disabled stays
-        // disabled, and an invitation stays an invitation.
-        throw membershipNotActive();
-      }
-      let accountId: string;
-      let memberId: string;
-      let granted = false;
-      let upstreamMember = false;
-      if (local && held && held.status === 'active' && held.access_grant === 'staff') {
-        accountId = local.id;
-        memberId = held.id;
-      } else {
-        // A membership upstream that dForms has not projected yet is not a
-        // reason to refuse: staff may act as an admin here anyway, and the
-        // grant row becomes that membership (with its upstream role) the next
-        // time the person's memberships are projected (the web app on their
-        // next visit). Refusing left the agent stuck on a workspace the
-        // search had just offered it.
-        upstreamMember = await fromDirectory(async () => (await directory.holdsMembership?.(ws.id, person.id)) ?? false);
-        try {
-          ({ accountId, memberId } = await grantStaffAccess(
-            db,
-            { externalId: person.id, email: person.email, displayName: null },
-            { workspaceId: ws.id, workspaceName: ws.name, iamAccountId: ws.accountId },
-          ));
-        } catch (error) {
-          // A membership appeared between the read above and the grant.
-          if (error instanceof StaffGrantRefused) throw membershipNotActive();
-          throw error;
-        }
-        granted = true;
-      }
-      log(
-        JSON.stringify({
-          msg: 'mcp.staff_access',
-          channel: 'mcp',
-          via: 'staff_grant',
-          personId: person.id,
-          accountId,
-          memberId,
-          workspaceId: ws.id,
-          granted,
-          ...(granted && upstreamMember ? { upstreamMember: true } : {}),
-        }),
-      );
-      return memberCaller(person, label, { accountId, accountName: ws.name, memberId, role: 'admin' }, 'staff');
-    },
   };
 }
 

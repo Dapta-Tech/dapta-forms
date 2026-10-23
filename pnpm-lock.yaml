@@ -77,9 +77,6 @@ importers:
       file-type:
         specifier: ^22.0.2
         version: 22.0.2
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2

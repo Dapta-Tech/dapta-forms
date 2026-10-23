@@ -2,13 +2,17 @@
  * MCP connections over OAuth, end to end over HTTP: the whole API on SQLite,
  * the official MCP client discovering the login from a 401 and signing in
  * against a stand-in identity provider (a key pair generated here, served as
- * the issuer's JWKS), and a table as the person directory.
+ * the issuer's JWKS). The token's subject maps to members through dForms' own
+ * database: the link a verified web login records (`member.idp_subject`,
+ * `member.login_seen_at`), honored within the link window, for active owners
+ * and admins only. No identity database is read.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from '@quill/db';
+import { signJwtHs256 } from './jwt';
 import { CATALOG } from '@quill/mcp';
-import { bootHarness, errorText, initialize, structured, type Harness } from './mcp-harness';
+import { bootHarness, initialize, structured, type Harness } from './mcp-harness';
 import { startFakeIdentityProvider, type FakeIdentityProvider } from './fake-identity-provider';
 
 let idp: FakeIdentityProvider;
@@ -35,12 +39,20 @@ const LEAD = {
   ],
 };
 
+const DAY = 86_400_000;
+
 /**
  * A person with an active member in `accountId` (the seeded workspace unless
- * given), known to the directory under a fresh subject. Returns the subject,
- * the person and the member.
+ * given) under a fresh subject, linked by a verified web login `seenAt` (now
+ * unless given; `null` leaves them unlinked). Returns the subject, the person
+ * and the member.
  */
-async function person(h: Harness, role: 'owner' | 'admin' | 'member' = 'admin', accountId = h.accountId) {
+async function person(
+  h: Harness,
+  role: 'owner' | 'admin' | 'member' = 'admin',
+  accountId = h.accountId,
+  seenAt: number | null = Date.now(),
+) {
   const subject = `user_${randomUUID().slice(0, 8)}`;
   const personId = randomUUID();
   const memberId = randomUUID();
@@ -50,7 +62,7 @@ async function person(h: Harness, role: 'owner' | 'admin' | 'member' = 'admin', 
         VALUES (${memberId}, ${accountId}, ${`p-${memberId.slice(0, 8)}`}, ${'Spec Person'}, ${email}, ${role}, ${'active'},
           ${personId}, ${Date.now()})`,
   );
-  h.people.set(subject, { id: personId, email });
+  if (seenAt !== null) await h.link(subject, personId, { seenAt });
   return { subject, personId, memberId, email };
 }
 
@@ -136,12 +148,148 @@ describe('signing in', () => {
     expect((await h.post(initialize('2025-06-18'), { authorization: `Bearer ${forged}` })).status).toBe(401);
   });
 
-  it('refuses with a message to act on, never a login loop, when the directory does not know the person', async () => {
+  it('refuses with a message to act on, never a login loop, a subject no web login ever recorded', async () => {
     const h = await boot();
     const unknown = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token('user_unknown', `${h.base}/mcp`)}` });
     expect(unknown.status).toBe(403);
-    expect(((await unknown.json()) as { error: { message: string } }).error.message).toMatch(/open dForms once/i);
+    expect(((await unknown.json()) as { error: { message: string } }).error.message).toMatch(/not an owner or admin of any dForms workspace opened with this account in the last 30 days: open the workspace in dForms/i);
     expect(unknown.headers.get('www-authenticate')).toBeNull();
+    expect(h.oauthLog.map((l) => JSON.parse(l) as unknown)).toEqual([{ msg: 'mcp.oauth_refused', reason: 'not_linked' }]);
+    for (const line of h.oauthLog) expect(line).not.toContain('user_unknown');
+  });
+});
+
+describe('the link a web login records', () => {
+  const refused = async (h: Harness, subject: string) => {
+    const res = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token(subject, `${h.base}/mcp`)}` });
+    return { status: res.status, message: ((await res.json()) as { error?: { message?: string } }).error?.message ?? '' };
+  };
+
+  it('maps a linked person, and refuses a member of the same workspace who never signed in on the web', async () => {
+    const h = await boot();
+    const linked = await person(h, 'admin');
+    const unlinked = await person(h, 'admin', h.accountId, null);
+    const c = await h.signIn(idp.client(linked.subject));
+    expect(structured<{ member: { id: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.id).toBe(linked.memberId);
+    expect(await refused(h, unlinked.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/open the workspace in dForms/) });
+  });
+
+  it('refuses a link whose last verified web login is older than the window, and honors it again once the person comes back', async () => {
+    const h = await boot();
+    const stale = await person(h, 'admin', h.accountId, Date.now() - 31 * DAY);
+    expect(await refused(h, stale.subject)).toMatchObject({ status: 403 });
+    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_refused', reason: 'not_linked' });
+    await h.link(stale.subject, stale.personId);
+    expect((await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token(stale.subject, `${h.base}/mcp`)}` })).status).toBe(200);
+  });
+
+  it('takes the window from OAUTH_LINK_MAX_AGE_DAYS', async () => {
+    const h = await boot({ OAUTH_LINK_MAX_AGE_DAYS: '1' });
+    const p = await person(h, 'admin', h.accountId, Date.now() - 2 * DAY);
+    expect((await refused(h, p.subject)).status).toBe(403);
+  });
+
+  it('refuses a person who is only a member (not an owner or admin) anywhere', async () => {
+    const h = await boot();
+    const p = await person(h, 'member');
+    expect(await refused(h, p.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/not an owner or admin/) });
+    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_refused', reason: 'not_active_admin' });
+  });
+
+  it('refuses a subject two different people carry, never guessing which one it is', async () => {
+    const h = await boot();
+    const a = await person(h, 'admin');
+    const b = await person(h, 'admin', h.other.accountId);
+    await h.link(a.subject, b.personId);
+    expect(await refused(h, a.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/more than one dForms account/) });
+    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_refused', reason: 'ambiguous' });
+  });
+});
+
+describe('a web login, then an MCP sign-in, end to end', () => {
+  const SECRET = 'spec-platform-secret-0123456789abcdef';
+  const workos = { AUTH_PROVIDER: 'workos', JWT_SECRET: SECRET, JWT_ISSUER: 'spec-iam', JWT_AUDIENCE: 'spec-apps' };
+  const session = (claims: Record<string, unknown>) =>
+    signJwtHs256({ iss: 'spec-iam', aud: 'spec-apps', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 600, ...claims }, SECRET);
+
+  it('records the WorkOS user id the session token carries on any verified web request, and the sign-in then acts as that member', async () => {
+    const h = await boot(workos);
+    const iamUser = randomUUID();
+    const workosUser = `user_01${randomUUID().replaceAll('-', '').slice(0, 24).toUpperCase()}`;
+    // Before the person ever uses the web app: not linked.
+    expect((await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token(workosUser, `${h.base}/mcp`)}` })).status).toBe(403);
+    const me = await fetch(`${h.base}/v1/me`, {
+      headers: { authorization: `Bearer ${session({ sub: iamUser, account_id: randomUUID(), email: 'web@example.com', name: 'Web', workos_user_id: workosUser })}` },
+    });
+    expect(me.status).toBe(200);
+    const row = await h.db.get<{ id: string; account_id: string; role: string; idp_subject: string; login_seen_at: number }>(
+      sql`SELECT id, account_id, role, idp_subject, login_seen_at FROM member WHERE external_id = ${iamUser}`,
+    );
+    expect(row).toMatchObject({ role: 'owner', idp_subject: workosUser });
+    expect(Number(row!.login_seen_at)).toBeGreaterThan(Date.now() - 60_000);
+    const c = await h.signIn(idp.client(workosUser));
+    const who = structured<{ workspace: { id: string }; member: { id: string } }>(await c.callTool({ name: 'whoami', arguments: {} }));
+    expect(who).toMatchObject({ workspace: { id: row!.account_id }, member: { id: row!.id } });
+  });
+
+  it("reaches a second workspace the person opened on the web, not one they never opened, never someone else's row that shares their email", async () => {
+    const h = await boot(workos);
+    const iamUser = randomUUID();
+    const workosUser = `user_01${randomUUID().replaceAll('-', '').slice(0, 24).toUpperCase()}`;
+    const email = `${randomUUID().slice(0, 8)}@example.com`;
+    const auth = { authorization: `Bearer ${session({ sub: iamUser, account_id: randomUUID(), email, name: 'Web', workos_user_id: workosUser })}` };
+    expect((await fetch(`${h.base}/v1/me`, { headers: auth })).status).toBe(200);
+    // Globex: the person's own admin row. Its owner row (Bo) is someone else.
+    const own = randomUUID();
+    await h.db.run(
+      sql`INSERT INTO member (id, account_id, external_id, email, role, status, created_at)
+          VALUES (${own}, ${h.other.accountId}, ${iamUser}, ${email}, 'admin', 'active', ${Date.now()})`,
+    );
+    // Initech: the person's own admin row, never opened on the web.
+    const initech = randomUUID();
+    await h.db.run(sql`INSERT INTO account (id, code, name, created_at) VALUES (${initech}, ${`i${initech.slice(0, 6)}`}, 'Initech', ${Date.now()})`);
+    await h.db.run(
+      sql`INSERT INTO member (id, account_id, external_id, email, role, status, created_at)
+          VALUES (${randomUUID()}, ${initech}, ${iamUser}, ${email}, 'admin', 'active', ${Date.now()})`,
+    );
+    // Acme: a row bound to another person that still carries this email.
+    const theirs = randomUUID();
+    await h.db.run(
+      sql`INSERT INTO member (id, account_id, external_id, email, role, status, created_at)
+          VALUES (${theirs}, ${h.accountId}, ${`iam-someone-else-${randomUUID()}`}, ${email}, 'owner', 'active', ${Date.now()})`,
+    );
+    for (const workspace of [h.other.accountId, h.accountId]) {
+      expect((await fetch(`${h.base}/v1/me`, { headers: { ...auth, 'x-quill-workspace': workspace } })).status).toBe(200);
+    }
+    const link = await h.db.get<{ idp_subject: string | null; login_seen_at: number | null }>(
+      sql`SELECT idp_subject, login_seen_at FROM member WHERE id = ${theirs}`,
+    );
+    expect(link).toEqual({ idp_subject: null, login_seen_at: null });
+    const c = await h.signIn(idp.client(workosUser));
+    const listed = structured<{ workspaces: Array<{ id: string }> }>(await c.callTool({ name: 'list_my_workspaces', arguments: {} }));
+    expect(listed.workspaces.map((w) => w.id)).not.toContain(h.accountId);
+    expect(listed.workspaces.map((w) => w.id)).toContain(h.other.accountId);
+    // A workspace of theirs never opened on the web is not reached yet.
+    expect(listed.workspaces.map((w) => w.id)).not.toContain(initech);
+    expect(listed.workspaces).toHaveLength(2);
+  });
+
+  it('records nothing for a placeholder id or a token without one, and a token without an issue time stamps nothing', async () => {
+    const h = await boot(workos);
+    const placeholder = randomUUID();
+    const bare = randomUUID();
+    const undated = randomUUID();
+    const get = (token: string) => fetch(`${h.base}/v1/me`, { headers: { authorization: `Bearer ${token}` } });
+    expect((await get(session({ sub: placeholder, account_id: randomUUID(), workos_user_id: 'pending_workos_sync' }))).status).toBe(200);
+    expect((await get(session({ sub: bare, account_id: randomUUID() }))).status).toBe(200);
+    expect((await get(session({ sub: undated, account_id: randomUUID(), iat: undefined }))).status).toBe(200);
+    const rows = await h.db.all<{ external_id: string; idp_subject: string | null; login_seen_at: number | null }>(
+      sql`SELECT external_id, idp_subject, login_seen_at FROM member WHERE external_id IN (${placeholder}, ${bare}, ${undated})`,
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.idp_subject === null)).toBe(true);
+    expect(rows.find((r) => r.external_id === undated)?.login_seen_at ?? null).toBeNull();
+    expect(rows.find((r) => r.external_id === bare)?.login_seen_at).not.toBeNull();
   });
 });
 
@@ -174,31 +322,13 @@ describe('discovery for clients that look at the root', () => {
   });
 });
 
-describe('shutting down', () => {
-  it('closes the person directory, so the identity database pool does not outlive the API', async () => {
-    const h = await bootHarness({}, { oauth: { issuer: idp.issuer } });
-    expect(h.directoryClosed()).toBe(false);
-    await h.close();
-    expect(h.directoryClosed()).toBe(true);
-  });
-});
-
 describe('a flood', () => {
-  it('with one valid token asks the person directory once, not per request', async () => {
+  it('with one valid token keeps answering from dForms own database, no identity database involved', async () => {
     const h = await boot();
     const p = await person(h);
     const auth = { authorization: `Bearer ${idp.token(p.subject, `${h.base}/mcp`)}` };
     const codes = await Promise.all(Array.from({ length: 10 }, () => h.post(initialize('2025-06-18'), auth).then((r) => r.status)));
-    for (let i = 0; i < 10; i += 1) codes.push((await h.post(initialize('2025-06-18'), auth)).status);
     expect(codes.every((c) => c === 200)).toBe(true);
-    expect(h.directoryLookups()).toBe(1);
-  });
-
-  it('with a token for nobody asks the directory once too, and keeps refusing', async () => {
-    const h = await boot();
-    const auth = { authorization: `Bearer ${idp.token('user_nobody', `${h.base}/mcp`)}` };
-    for (let i = 0; i < 5; i += 1) expect((await h.post(initialize('2025-06-18'), auth)).status).toBe(403);
-    expect(h.directoryLookups()).toBe(1);
   });
 });
 
@@ -210,7 +340,6 @@ describe('an identity provider that cannot be reached', () => {
     expect(res.status).toBe(503);
     expect(res.headers.get('retry-after')).toBe('30');
     expect(res.headers.get('www-authenticate')).toBeNull();
-    expect(down.directoryLookups()).toBe(0);
   });
 });
 
@@ -231,13 +360,15 @@ describe('next to API keys', () => {
 describe('a signed-in member, mid-session', () => {
   it('reads the role live, and loses access on the next call once deactivated', async () => {
     const h = await boot();
-    const p = await person(h, 'member');
+    const p = await person(h, 'admin');
     const c = await h.signIn(idp.client(p.subject));
-    expect(structured<{ member: { role: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.role).toBe('member');
+    expect(structured<{ member: { role: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.role).toBe('admin');
     await h.db.run(sql`UPDATE member SET role = 'owner' WHERE id = ${p.memberId}`);
     expect(structured<{ member: { role: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.role).toBe('owner');
+    // Every request maps the sign-in again: a disabled member is no workspace,
+    // so the door refuses the very next one with the message to act on.
     await h.db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${p.memberId}`);
-    expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toMatch(/^NO_WORKSPACE/);
+    await expect(c.callTool({ name: 'list_forms', arguments: {} })).rejects.toThrow(/not an owner or admin of any dForms workspace/);
   });
 });
 

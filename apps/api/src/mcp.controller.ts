@@ -32,9 +32,8 @@ import { ApiMcpBackend, MCP_PARITY_HANDLERS, type McpParityHandlers } from './mc
 import { noteApiKeyCall } from './deprecated-hosts';
 import { API_KEY_PREFIX } from './api-keys';
 import type { McpOAuth } from './mcp-oauth';
-import { cachePersonDirectory, type PersonDirectory } from './person-directory';
 import { TokenBucketRateLimiter, clientKey, resolveTrustProxyHops } from './rate-limit';
-import { DB, ENV, MCP_OAUTH, PERSON_DIRECTORY, RATE_LIMITER } from './tokens';
+import { DB, ENV, MCP_OAUTH, RATE_LIMITER } from './tokens';
 
 function csv(value: string | undefined): string[] {
   return (value ?? '')
@@ -75,8 +74,8 @@ export class McpController implements OnModuleInit {
   readonly usage: McpUsageReporter;
   private handlers: McpHandlers | null = null;
   private parityHandlers: McpParityHandlers | null = null;
-  /** Where each staff call outside the person's own workspaces is logged (one JSON line). A field so specs can read it. */
-  staffLogSink: (line: string) => void = (line) => this.logger.log(line);
+  /** Where a refused MCP sign-in is logged (one JSON line, the reason only). A field so specs can read it. */
+  oauthLogSink: (line: string) => void = (line) => this.logger.log(line);
 
   constructor(
     @Inject(ENV) env: ServerEnv,
@@ -84,21 +83,20 @@ export class McpController implements OnModuleInit {
     // The public per-IP bucket: requests without a valid key are charged to it.
     @Inject(RATE_LIMITER) ipLimiter: RateLimiter,
     @Inject(ModuleRef) private readonly moduleRef: ModuleRef,
-    // MCP connections over OAuth: both null unless MCP_OAUTH_PROVIDER is set.
+    // MCP connections over OAuth: null unless MCP_OAUTH_PROVIDER is set.
     @Inject(MCP_OAUTH) oauth: McpOAuth | null,
-    @Inject(PERSON_DIRECTORY) directory: PersonDirectory | null,
     // Product analytics: one `$mcp_tool_call` per tool call, only with PRODUCT_ANALYTICS_KEY set.
     @Inject(AnalyticsEffects) analytics: AnalyticsEffects,
   ) {
     this.trustProxyHops = resolveTrustProxyHops(env);
     const bucket = (capacity: number, refill: number): RateLimiter =>
       env.RATE_LIMIT_ENABLED ? new TokenBucketRateLimiter(capacity, refill) : unlimited;
-    // The identity database is read before any member bucket is known, so it
-    // sits behind a per-pod cache, and a lookup the cache cannot answer takes
-    // a token keyed by the token's verified subject first: a burst of 10, then
-    // one every 6 seconds, ample for a cache that asks once a minute.
     this.usage = new McpUsageReporter(db, analytics, env.IAM_STAFF_DOMAINS);
-    const people = directory ? cachePersonDirectory(directory, { limiter: bucket(10, 1 / 6) }) : null;
+    if (oauth) this.logger.log(`MCP OAuth on: resource ${oauth.resource}, link window ${env.OAUTH_LINK_MAX_AGE_DAYS} days`);
+    // The person directory is gone (a sign-in maps through dForms' own
+    // members): its settings are ignored, never a refused boot.
+    const leftover = Object.keys(process.env).filter((name) => name.startsWith('IAM_DB_'));
+    if (leftover.length > 0) this.logger.warn(`${leftover.join(', ')} are set but no longer read; remove them from the environment.`);
     this.server = new FormsMcpServer({
       backend: new ApiMcpBackend(
         db,
@@ -123,20 +121,18 @@ export class McpController implements OnModuleInit {
       authenticate: (token) => authenticateMcpKey(db, token),
       // A `dforms_` bearer takes the key path above; any other is an access
       // token of the identity provider. Off: every bearer is a key, as before.
-      oauth:
-        oauth && people
-          ? {
-              isApiKey: (token) => token.startsWith(API_KEY_PREFIX),
-              authenticate: (token) =>
-                authenticateMcpConnection(db, oauth, people, token, {
-                  appUrl: env.PUBLIC_APP_URL,
-                  // Staff of the deployment: the same list, and the same rule, as the web app's switcher.
-                  staffDomains: env.IAM_STAFF_DOMAINS,
-                  staffLog: (line) => this.staffLogSink(line),
-                }),
-              resourceMetadataUrl: oauth.resourceMetadataUrl,
-            }
-          : undefined,
+      oauth: oauth
+        ? {
+            isApiKey: (token) => token.startsWith(API_KEY_PREFIX),
+            authenticate: (token) =>
+              authenticateMcpConnection(db, oauth, token, {
+                appUrl: env.PUBLIC_APP_URL,
+                linkMaxAgeMs: env.OAUTH_LINK_MAX_AGE_DAYS * 86_400_000,
+                log: (line) => this.oauthLogSink(line),
+              }),
+            resourceMetadataUrl: oauth.resourceMetadataUrl,
+          }
+        : undefined,
       // A key call on a deprecated API host is logged by key id, like REST.
       onAuthenticated: (req, credential) => {
         if (!isConnection(credential)) noteApiKeyCall(req, credential.credentialId, credential.accountId);
