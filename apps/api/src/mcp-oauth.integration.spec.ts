@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from '@quill/db';
 import { signJwtHs256 } from './jwt';
 import { CATALOG } from '@quill/mcp';
+import type { PersonDirectory } from './person-directory';
 import { bootHarness, initialize, structured, type Harness } from './mcp-harness';
 import { startFakeIdentityProvider, type FakeIdentityProvider } from './fake-identity-provider';
 
@@ -25,8 +26,8 @@ afterAll(async () => {
   await idp.close();
 });
 
-async function boot(env: Parameters<typeof bootHarness>[0] = {}) {
-  const h = await bootHarness(env, { oauth: { issuer: idp.issuer } });
+async function boot(env: Parameters<typeof bootHarness>[0] = {}, directory?: PersonDirectory) {
+  const h = await bootHarness(env, { oauth: { issuer: idp.issuer }, directory });
   open.push(h);
   return h;
 }
@@ -206,6 +207,75 @@ describe('the link a web login records', () => {
     await h.link(a.subject, b.personId);
     expect(await refused(h, a.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/more than one dForms account/) });
     expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_refused', reason: 'ambiguous' });
+  });
+});
+
+describe('a person the link does not reach yet, named by the person directory', () => {
+  /** A directory that knows `people` by subject, and counts its lookups. */
+  const directoryOf = (people: Record<string, { id: string; email: string | null }>) => {
+    const asked: string[] = [];
+    const directory: PersonDirectory = {
+      personOf: async (subject) => {
+        asked.push(subject);
+        return people[subject] ?? null;
+      },
+    };
+    return { directory, asked };
+  };
+
+  it('connects at the first try with no web visit, in every active workspace the person holds, with their role', async () => {
+    const pending: Record<string, { id: string; email: string | null }> = {};
+    const { directory, asked } = directoryOf(pending);
+    const h = await boot({}, directory);
+    const p = await person(h, 'member', h.accountId, null);
+    pending[p.subject] = { id: p.personId, email: p.email };
+    const c = await h.signIn(idp.client(p.subject));
+    const me = structured<{ member: { id: string; role: string } }>(await c.callTool({ name: 'whoami', arguments: {} }));
+    expect(me.member).toMatchObject({ id: p.memberId, role: 'member' });
+    expect(asked).toContain(p.subject);
+    expect(h.oauthLog).toEqual([]);
+  });
+
+  it('takes an unbound invitation by email, never a row someone else already holds with that email', async () => {
+    const pending: Record<string, { id: string; email: string | null }> = {};
+    const { directory } = directoryOf(pending);
+    const h = await boot({}, directory);
+    const subject = 'user_invited';
+    const email = 'invited@example.com';
+    const invite = randomUUID();
+    await h.db.run(
+      sql`INSERT INTO member (id, account_id, handle, display_name, email, role, status, external_id, created_at)
+          VALUES (${invite}, ${h.accountId}, ${'p-invite'}, ${'Invited'}, ${email}, ${'admin'}, ${'active'}, ${null}, ${Date.now()})`,
+    );
+    const held = await person(h, 'owner', h.other.accountId, null);
+    await h.db.run(sql`UPDATE member SET email = ${email} WHERE id = ${held.memberId}`);
+    pending[subject] = { id: randomUUID(), email };
+    const c = await h.signIn(idp.client(subject));
+    const who = structured<{ workspaces: Array<{ id: string }> }>(await c.callTool({ name: 'whoami', arguments: {} }));
+    expect(who.workspaces.map((w) => w.id)).toEqual([h.accountId]);
+  });
+
+  it('still refuses, with the same message, a subject the directory does not know', async () => {
+    const { directory } = directoryOf({});
+    const h = await boot({}, directory);
+    const res = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token('user_nobody', `${h.base}/mcp`)}` });
+    expect(res.status).toBe(403);
+    expect(h.oauthLog.map((l) => JSON.parse(l) as unknown)).toEqual([{ msg: 'mcp.oauth_refused', reason: 'not_linked' }]);
+  });
+
+  it('answers 503 to retry, never a refusal or a way in, while the directory cannot be read', async () => {
+    const h = await boot({}, { personOf: async () => { throw Object.assign(new Error('down'), { code: 'ECONNREFUSED' }); } });
+    const res = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token('user_outage', `${h.base}/mcp`)}` });
+    expect(res.status).toBe(503);
+  });
+
+  it('never asks the directory for a person the link already reaches', async () => {
+    const { directory, asked } = directoryOf({});
+    const h = await boot({}, directory);
+    const p = await person(h, 'admin');
+    const c = await h.signIn(idp.client(p.subject));
+    await c.callTool({ name: 'whoami', arguments: {} });
+    expect(asked).toEqual([]);
   });
 });
 
