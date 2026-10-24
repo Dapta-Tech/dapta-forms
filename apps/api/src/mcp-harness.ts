@@ -58,7 +58,7 @@ export interface Harness {
    * has no member yet.
    */
   link(subject: string, personId: string, opts?: { seenAt?: number }): Promise<void>;
-  /** The lines the API logged for refused MCP sign-ins. */
+  /** The lines the API logged for MCP sign-ins that reach no workspace, or are refused. */
   oauthLog: string[];
   post(body: unknown, headers?: Record<string, string>, path?: string): Promise<Response>;
   close(): Promise<void>;
@@ -95,6 +95,7 @@ const ENV_KEYS = [
   'JWT_SECRET',
   'JWT_ISSUER',
   'JWT_AUDIENCE',
+  'PRODUCT_ANALYTICS_KEY',
 ] as const;
 
 export const APP_URL = 'https://forms.example.test';

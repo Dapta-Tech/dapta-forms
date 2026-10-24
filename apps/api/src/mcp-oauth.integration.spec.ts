@@ -7,9 +7,9 @@
  * `member.login_seen_at`), honored within the link window, for active owners
  * and admins only. No identity database is read.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { sql } from '@quill/db';
+import { listOutbox, sql } from '@quill/db';
 import { signJwtHs256 } from './jwt';
 import { CATALOG } from '@quill/mcp';
 import { APP_URL, bootHarness, errorText, initialize, structured, type Harness } from './mcp-harness';
@@ -158,7 +158,7 @@ describe('signing in', () => {
     const c = await h.signIn(idp.client('user_unknown'));
     const who = (await c.callTool({ name: 'whoami', arguments: {} })) as { content: Array<{ text: string }> };
     expect(who.content[0]!.text).toBe(
-      `Signed in as this person, who is not an active member of any dForms workspace yet. Ask the user to open dForms once with this account (${APP_URL}), then try again.`,
+      `Signed in as this person; this sign-in reaches no dForms workspace yet. Ask the user to open dForms once with this account (${APP_URL}), signing in again if it is already open, then try again.`,
     );
     expect(structured<{ workspaces: unknown[] }>(await c.callTool({ name: 'list_my_workspaces', arguments: {} })).workspaces).toEqual([]);
     // Nothing that reads a workspace runs: not the seeded workspace's forms, not another tenant's form.
@@ -166,7 +166,8 @@ describe('signing in', () => {
     expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.accountId } }))).toMatch(/^NO_WORKSPACE/);
     expect(errorText(await c.callTool({ name: 'get_form', arguments: { form_id: h.other.formId } }))).toMatch(/^NO_WORKSPACE/);
     // The reason only: never the subject or the token.
-    expect(new Set(h.oauthLog)).toEqual(new Set([JSON.stringify({ msg: 'mcp.oauth_no_workspace', reason: 'not_linked' })]));
+    expect(new Set(h.oauthLog).size).toBe(1);
+    expect(JSON.parse(h.oauthLog[0]!)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'not_linked', person: expect.stringMatching(/^unlinked:[0-9a-f]{24}$/) });
     for (const line of h.oauthLog) expect(line).not.toContain('user_unknown');
   });
 });
@@ -191,7 +192,7 @@ describe('the link a web login records', () => {
     const stale = await person(h, 'admin', h.accountId, Date.now() - 31 * DAY);
     const c = await h.signIn(idp.client(stale.subject));
     expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toMatch(/^NO_WORKSPACE/);
-    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'not_linked' });
+    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'not_linked', person: expect.stringMatching(/^unlinked:/) });
     await h.link(stale.subject, stale.personId);
     // No new login and no reconnect: the next call already maps the sign-in again.
     expect(structured<{ member: { id: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.id).toBe(stale.memberId);
@@ -405,6 +406,34 @@ describe('limits and audit', () => {
     for (const auth of [first, second, first, second]) codes.push((await h.post(initialize('2025-06-18'), auth)).status);
     expect(codes).toEqual([200, 200, 200, 429]);
     expect((await h.post(initialize('2025-06-18'), bearer(q.subject))).status).toBe(200);
+  });
+
+  it('counts two tokens of the same sign-in with no workspace against one bucket, apart from another such sign-in', async () => {
+    const h = await boot({ MCP_RATE_LIMIT_CAPACITY: '3', MCP_RATE_LIMIT_REFILL_PER_SEC: '0.001' });
+    const bearer = (subject: string) => ({ authorization: `Bearer ${idp.token(subject, `${h.base}/mcp`, { jti: randomUUID() })}` });
+    const first = bearer('user_unlinked_a');
+    const second = bearer('user_unlinked_a');
+    const codes = [];
+    for (const auth of [first, second, first, second]) codes.push((await h.post(initialize('2025-06-18'), auth)).status);
+    expect(codes).toEqual([200, 200, 200, 429]);
+    expect((await h.post(initialize('2025-06-18'), bearer('user_unlinked_b'))).status).toBe(200);
+  });
+
+  it('names a sign-in with no workspace by a digest only: never the subject in a log, audit or analytics line', async () => {
+    const h = await boot({ PRODUCT_ANALYTICS_KEY: 'phc_spec_key' });
+    const sent = async () =>
+      (await listOutbox(h.db, { kind: 'analytics' })).map((r) => JSON.parse(String(r.payload)) as { distinctId: string; event: string });
+    const c = await h.signIn(idp.client('user_secret_subject'));
+    await c.callTool({ name: 'list_forms', arguments: {} });
+    await c.callTool({ name: 'whoami', arguments: {} });
+    const line = JSON.parse(h.audit.at(-1)!) as Record<string, unknown>;
+    expect(line).toMatchObject({ tool: 'whoami', personId: expect.stringMatching(/^unlinked:[0-9a-f]{24}$/), caller: `oauth:${String(line.personId)}` });
+    // The same sign-in is the same digest on every request.
+    expect(new Set(h.audit.map((l) => (JSON.parse(l) as { personId: string }).personId)).size).toBe(1);
+    await vi.waitFor(async () => expect((await sent()).filter((e) => e.event === '$mcp_tool_call')).toHaveLength(2));
+    const events = await sent();
+    expect(events.filter((e) => e.event === '$mcp_tool_call').every((e) => e.distinctId === line.personId)).toBe(true);
+    for (const l of [...h.oauthLog, ...h.audit, ...events.map((e) => JSON.stringify(e))]) expect(l).not.toContain('user_secret_subject');
   });
 
   it('writes member, person and workspace to the audit line, never the token', async () => {

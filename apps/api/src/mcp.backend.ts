@@ -237,8 +237,10 @@ export async function authenticateMcpConnection(
   const first = active[0];
   if (!first) {
     const reason = rows.length === 0 && grants.length === 0 ? 'not_linked' : 'no_active_membership';
-    log(JSON.stringify({ msg: 'mcp.oauth_no_workspace', reason }));
-    return notLinkedYet(access.subject);
+    const connection = notLinkedYet(access.subject);
+    // The digest counts distinct sign-ins and joins the audit line; it is not the subject.
+    log(JSON.stringify({ msg: 'mcp.oauth_no_workspace', reason, person: connection.personId }));
+    return connection;
   }
   const person: Person = { id: first.externalId, email: first.email };
   const label = `oauth:${person.id}`;

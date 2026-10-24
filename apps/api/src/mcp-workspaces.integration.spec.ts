@@ -48,7 +48,7 @@ const LEAD = {
 };
 
 /** What every workspace tool answers a verified sign-in that reaches no workspace yet. */
-const NO_WORKSPACE = `You are not an active member of any dForms workspace yet. Ask the user to open dForms once with this account (${APP_URL}), then try again.`;
+const NO_WORKSPACE = `This sign-in reaches no dForms workspace yet. Ask the user to open dForms once with this account (${APP_URL}), signing in again if it is already open, then try again.`;
 
 type Role = 'owner' | 'admin' | 'member';
 
@@ -379,7 +379,7 @@ describe('mid-session', () => {
     expect(none.workspaces).toEqual([]);
     expect(none.next_step).toMatch(/open dForms once/);
     expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.accountId } }))).toMatch(/^NO_WORKSPACE/);
-    expect(lastLine(h)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'no_active_membership' });
+    expect(lastLine(h)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'no_active_membership', person: expect.stringMatching(/^unlinked:/) });
   });
 });
 
@@ -405,7 +405,7 @@ describe('one workspace, or none', () => {
     await join(h, p, h.other.accountId, 'owner', { status: 'disabled' });
     expect(await connectRaw(h, await bearer(h, p.subject))).toEqual({ status: 200, message: undefined });
     // The person is linked, only no member of theirs is active.
-    expect(lastLine(h)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'no_active_membership' });
+    expect(lastLine(h)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'no_active_membership', person: expect.stringMatching(/^unlinked:/) });
     const c = await signIn(h, p.subject);
     expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toBe(`NO_WORKSPACE: ${NO_WORKSPACE}`);
     expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.other.accountId } }))).toBe(`NO_WORKSPACE: ${NO_WORKSPACE}`);
@@ -562,7 +562,7 @@ describe('staff of the deployment, signed in over OAuth', () => {
     await h.db.run(sql`UPDATE member SET idp_subject = ${q.subject}, login_seen_at = ${Date.now()} WHERE id = ${only}`);
     const qc = await h.signIn(idp.client(q.subject));
     expect(errorText(await qc.callTool({ name: 'list_forms', arguments: { workspace_id: h.other.accountId } }))).toBe(`NO_WORKSPACE: ${NO_WORKSPACE}`);
-    expect(lastLine(h)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'not_linked' });
+    expect(lastLine(h)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'not_linked', person: expect.stringMatching(/^unlinked:/) });
 
     // The grant rows stay as they were: nothing turned them into memberships.
     const grants = await h.db.all<{ id: string; access_grant: string | null }>(

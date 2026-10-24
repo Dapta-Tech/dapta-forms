@@ -408,9 +408,10 @@ the login, registers the client and issues the token; dForms verifies it.
 - **Refusals.** A `sub` that two different people carry gets a 403 that says
   to contact support. Never a 401, which would only loop the login.
 - **Logs.** One line per request of a sign-in with no workspace
-  (`mcp.oauth_no_workspace` and the reason: `not_linked` or
-  `no_active_membership`) and per refusal (`mcp.oauth_refused`, reason
-  `ambiguous`), never the token or the `sub`.
+  (`mcp.oauth_no_workspace`, the reason: `not_linked` or
+  `no_active_membership`, and `person`: the same digest the audit line
+  carries) and per refusal (`mcp.oauth_refused`, reason `ambiguous`), never
+  the token or the `sub`.
 - **Existing members.** A person links on their next visit to the web app,
   with no new login, when their session token carries their WorkOS id. A
   session whose token does not (it predates the claim, or came from an

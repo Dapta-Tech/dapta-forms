@@ -74,7 +74,7 @@ export class McpController implements OnModuleInit {
   readonly usage: McpUsageReporter;
   private handlers: McpHandlers | null = null;
   private parityHandlers: McpParityHandlers | null = null;
-  /** Where a refused MCP sign-in is logged (one JSON line, the reason only). A field so specs can read it. */
+  /** Where an MCP sign-in that reaches no workspace, or is refused, is logged (one JSON line, never the subject). A field so specs can read it. */
   oauthLogSink: (line: string) => void = (line) => this.logger.log(line);
 
   constructor(

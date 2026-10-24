@@ -338,7 +338,7 @@ const whoami: ToolDef = {
               workspaces.length > 0 ? ` Your own: ${listed(workspaces)}.` : ''
             } ${nextStep}`
           : workspaces.length === 0
-            ? `Signed in as ${who}, who is not an active member of any dForms workspace yet. ${nextStep}`
+            ? `Signed in as ${who}; this sign-in reaches no dForms workspace yet. ${nextStep}`
             : `Signed in as ${who}, a member of ${workspaces.length} workspaces: ${listed(workspaces)}. ${nextStep}`,
       };
     }

@@ -53,7 +53,7 @@ export const GUIDE_WORKSPACES: readonly string[] = [
   'Several workspaces: the user chooses one by its name (the choice belongs to the user, who is not asked for ids), and its id goes as workspace_id on every call of the conversation. A call without it answers WORKSPACE_REQUIRED, and the same call with workspace_id goes through.',
   'When the user switches workspace, the new id applies from then on. Form ids belong to one workspace: a form from another workspace answers NOT_FOUND.',
   'Every result names the workspace it acted in (`workspace`), so a mismatch with the one the user means shows at once.',
-  'No workspace yet (NO_WORKSPACE): the person has never opened dForms with this account. Opening it once creates the first workspace.',
+  'No workspace yet (NO_WORKSPACE): this sign-in reaches no dForms workspace. The person has no dForms account yet, has not opened dForms with this account recently, or has a web session too old to link. The step is the same: open dForms once with this account (signing in again if it is already open), then try again in the same conversation; there is no need to reconnect.',
   "Staff of the deployment (whoami and list_my_workspaces say staff: true) can act in any workspace, as an admin, through a staff access grant. list_my_workspaces(search=<part of its name, a member email or a form name>; at least 3 letters or digits, at most 20 results) finds a customer's workspace; the matches are shown by name and account, and the exact workspace is confirmed with the user before the first call that reads or changes anything in it, even when only one matches. Staff calls carry workspace_id, even with one workspace of their own.",
 ];
 
