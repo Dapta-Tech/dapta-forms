@@ -3,6 +3,7 @@ import {
   findApiKeyPrincipal,
   getFormById,
   listLiveStepCounts,
+  listWorkspacesForIdentity,
   membershipsBySubject,
   staffGrantsBySubject,
   type Db,
@@ -41,6 +42,7 @@ import { isKeyAllowedRoute, routeOf } from './api-key-routes';
 import type { ReqLike } from './auth.provider';
 import { inProcessRequest } from './in-process-principal';
 import { IssuerUnavailable, type McpOAuth } from './mcp-oauth';
+import { lookUpPerson, type PersonDirectory } from './person-directory';
 import { STAFF_GRANT_MAX_AGE_MS } from './staff';
 
 /**
@@ -230,6 +232,12 @@ export async function authenticateMcpConnection(
   const throughGrant = active.length > 0 ? grants.filter((g) => !own.has(g.accountId)) : [];
   const first = active[0];
   if (!first) {
+    // The link has not reached this person yet (no web visit with this
+    // account in the window, or a session older than the claim). The person
+    // directory names them instead, the way the first version did, so
+    // connecting never waits on the web app.
+    const named = opts.directory ? await connectionFromDirectory(db, opts.directory, access.subject) : null;
+    if (named) return named;
     refuse(rows.length === 0 && grants.length === 0 ? 'not_linked' : 'no_active_membership');
     throw notLinked(opts.appUrl ?? '', linkMaxAgeMs);
   }
@@ -290,6 +298,8 @@ export interface McpConnectionOptions {
   appUrl?: string;
   /** How long after a verified web login a member stays reachable (`OAUTH_LINK_MAX_AGE_DAYS`); 30 days when unset. */
   linkMaxAgeMs?: number;
+  /** The person directory, asked when the link reaches nobody yet; null or unset: the link alone. */
+  directory?: PersonDirectory | null;
   /** Where a refused sign-in is logged, one JSON line each. */
   log?: (line: string) => void;
   /** The clock (specs). */
@@ -298,6 +308,31 @@ export interface McpConnectionOptions {
 
 const connectionLogger = new Logger('McpOAuth');
 const defaultConnectionLog = (line: string): void => connectionLogger.log(line);
+
+/**
+ * A connection for a person the web login link does not reach yet, named by
+ * the person directory: their workspaces are dForms' own active members,
+ * matched by the person's identity-service id, or by email on a member no
+ * other person holds yet. Null when the directory does not know the subject
+ * or the person has no active member here (the caller then refuses as
+ * before). A directory that cannot be read is a 503 to retry, and a person it
+ * refuses is a 403 (see `lookUpPerson`), never a quiet way in.
+ */
+async function connectionFromDirectory(db: Db, directory: PersonDirectory, subject: string): Promise<McpConnection | null> {
+  const found = await lookUpPerson(directory, subject);
+  if (!found) return null;
+  const person: Person = { id: found.id, email: found.email };
+  const rows = await listWorkspacesForIdentity(db, { externalId: person.id, email: person.email }, { emailOnlyWhenUnbound: true });
+  const active = rows.filter((r) => r.status === 'active' && !r.accessGrant);
+  if (active.length === 0) return null;
+  const label = `oauth:${person.id}`;
+  return {
+    personId: person.id,
+    email: person.email,
+    label,
+    workspaces: active.map((r) => memberCaller(person, label, { accountId: r.accountId, accountName: r.accountName, memberId: r.memberId, role: r.role })),
+  };
+}
 
 /** The person an MCP sign-in acts as: their upstream user id and the email their member carries. */
 interface Person {

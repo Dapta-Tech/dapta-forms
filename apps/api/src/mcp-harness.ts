@@ -10,6 +10,7 @@ import { createServer, type Server } from 'node:http';
 import { Client, ClientCredentialsProvider, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { createDb, insertApiKey, migrate, recordMemberIdpSubject, seed, sql, type Db } from '@quill/db';
 import { loadServerEnv } from '@quill/config/env';
+import type { PersonDirectory } from './person-directory';
 import { AppModule } from './app.module';
 import { generateApiKey } from './api-keys';
 import { configureCors } from './cors';
@@ -118,7 +119,11 @@ async function boundServer(): Promise<{ server: Server; port: number }> {
 
 export async function bootHarness(
   env: Partial<Record<(typeof ENV_KEYS)[number], string>> = {},
-  opts: { oauth?: HarnessOAuth } = {},
+  opts: {
+    oauth?: HarnessOAuth;
+    /** A person directory in place of the configured one (none by default: IAM_DB_* is unset). */
+    directory?: PersonDirectory;
+  } = {},
 ): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'forms-mcp-spec-'));
   const { server, port } = await boundServer();
@@ -155,7 +160,7 @@ export async function bootHarness(
   let app: INestApplication;
   try {
     // abortOnError off: a refused boot rejects here instead of exiting the process.
-    app = await NestFactory.create(AppModule, {
+    app = await NestFactory.create(opts.directory ? AppModule.withPersonDirectory(opts.directory) : AppModule, {
       logger: false,
       abortOnError: false,
     });

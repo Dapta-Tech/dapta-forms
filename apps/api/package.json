@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Quill API — NestJS forms service over @quill/engine + @quill/db.",
+  "description": "Quill API \u2014 NestJS forms service over @quill/engine + @quill/db.",
   "license": "MIT",
   "scripts": {
     "dev": "tsx watch src/main.ts",
@@ -30,6 +30,7 @@
     "@quill/shared": "workspace:*",
     "@quill/types": "workspace:*",
     "file-type": "^22.0.2",
+    "postgres": "^3.4.9",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "tsx": "^4.19.2",
