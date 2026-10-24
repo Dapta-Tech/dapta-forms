@@ -65,12 +65,16 @@ start of the text summary.
   [Staff](#staff).
 - A `workspace_id` the person cannot act in (never joined, removed, or one
   that does not exist) answers `NOT_FOUND` with the same message in every
-  case, so nothing about that workspace leaks.
+  case, so nothing about that workspace leaks. A person with no workspace at
+  all gets `NO_WORKSPACE` instead, also the same whatever the id names.
 - One visit to dForms on the web links every workspace of the person that the
   identity service confirms on that visit; with local workspaces only (no
   identity service), each workspace links when the person opens it. A sign-in
-  that reaches no workspace is refused at the door with a 403 that says to
-  open dForms with that account, then connect again.
+  that reaches no workspace still connects, and acts nowhere: every tool that
+  reads a workspace answers `NO_WORKSPACE` (whatever `workspace_id` it names),
+  and `whoami` and `list_my_workspaces` say to open dForms once with that
+  account. The first call after that visit already acts in the person's
+  workspaces, with no new login and no reconnect.
 - The role is the member's role in the workspace the call names, read live on
   every call.
 
@@ -335,8 +339,9 @@ const forms = await client.callTool({ name: 'list_forms', arguments: {} });
   flag and lowercased error code, duration, protocol version, client name,
   version and user agent, `credential_type` (`api_key` or `oauth`) and
   `staff_access`, grouped by `forms_account` and sent under the member's email
-  (a connection with no workspace yet: under the person, with no person
-  profile). Never the arguments, the result, an error message, or a workspace
+  (a connection with no workspace yet: under its digest, `unlinked:<hex>`,
+  with no person profile, so it counts apart from the same person once
+  linked). Never the arguments, the result, an error message, or a workspace
   or form name. Reporting is never awaited by the tool call, and without the
   key nothing is enqueued.
 - **Error logs.** An unexpected failure is logged with its error class and
@@ -395,13 +400,23 @@ the login, registers the client and issues the token; dForms verifies it.
   when the web's would. Each call then acts as that person's member in the
   workspace it names (see [Choosing a workspace](#choosing-a-workspace)),
   with the member's live role, under every rule an API key gets.
-- **Refusals.** A sign-in that reaches no such member (never used the web
-  app, not seen there within the window, or no active membership) gets a 403
-  that says to open dForms with that account, then connect again; a `sub`
-  that two different people carry gets a 403 that says to contact support.
-  Never a 401, which would only loop the login. The API logs one line per
-  refusal (`mcp.oauth_refused` and the reason: `not_linked`,
-  `no_active_membership` or `ambiguous`), never the token or the `sub`.
+- **No workspace yet.** A sign-in that reaches no such member (never used
+  the web app, not seen there within the window, or no active membership)
+  connects with no workspace, and its tools say to open dForms with that
+  account (see [Choosing a workspace](#choosing-a-workspace)). It is never
+  refused at `initialize`: chat apps show a refused connect as their own
+  error ("Automatic client registration isn't supported"), never our words.
+  Its id and rate-limit bucket are a digest of the `sub` (a pseudonym: the
+  `sub` itself never reaches a log or analytics line). Unlike the old
+  refusal, it no longer charges the per-address bucket: each such sign-in
+  has its own bucket, as a linked one does.
+- **Refusals.** A `sub` that two different people carry gets a 403 that says
+  to contact support. Never a 401, which would only loop the login.
+- **Logs.** One line per request of a sign-in with no workspace
+  (`mcp.oauth_no_workspace`, the reason: `not_linked` or
+  `no_active_membership`, and `person`: the same digest the audit line
+  carries) and per refusal (`mcp.oauth_refused`, reason `ambiguous`), never
+  the token or the `sub`.
 - **Existing members.** A person links on their next visit to the web app,
   with no new login, when their session token carries their WorkOS id. A
   session whose token does not (it predates the claim, or came from an
