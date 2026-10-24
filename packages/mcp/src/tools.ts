@@ -324,7 +324,8 @@ const whoami: ToolDef = {
     const key = isConnection(credential) ? null : { prefix: credential.label };
     const staff = isStaffConnection(credential);
     if (!caller) {
-      const who = person?.email ?? person?.id ?? 'this person';
+      // A sign-in that reaches no workspace yet names nobody the user would know by its id.
+      const who = person?.email ?? (workspaces.length > 0 ? person?.id : undefined) ?? 'this person';
       const nextStep = staff
         ? 'Before the first call that reads or changes anything, find the workspace the user means with list_my_workspaces(search=<part of its name>), confirm it with the user by name and account (even when only one matches), and send its id as workspace_id on every call, even for a workspace of your own.'
         : workspaces.length === 0
@@ -337,7 +338,7 @@ const whoami: ToolDef = {
               workspaces.length > 0 ? ` Your own: ${listed(workspaces)}.` : ''
             } ${nextStep}`
           : workspaces.length === 0
-            ? `Signed in as ${who}, who is not an active member of any dForms workspace yet. ${nextStep}`
+            ? `Signed in as ${who}; this sign-in reaches no dForms workspace yet. ${nextStep}`
             : `Signed in as ${who}, a member of ${workspaces.length} workspaces: ${listed(workspaces)}. ${nextStep}`,
       };
     }
@@ -439,6 +440,12 @@ const listMyWorkspaces: ToolDef = {
             ? `No workspace${staff ? ' of your own' : ' yet'}. ${step}`
             : `${workspaces.length} workspace${workspaces.length === 1 ? '' : 's'}: ${listed(workspaces)}. ${step}`,
       };
+    }
+
+    // No workspace at all: the step to take, whatever was searched.
+    if (isConnection(credential) && !staff && own.length === 0) {
+      const step = `Ask the user to ${openDFormsOnce(appUrl)}`;
+      return { data: { workspaces: [], staff, truncated: false, next_step: step }, summary: `No workspace yet. ${step}` };
     }
 
     const needle = normalizeWorkspaceSearch(query);
