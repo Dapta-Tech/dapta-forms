@@ -156,6 +156,8 @@ export async function resolveWorkspace(
       if (entered) return entered;
       throw new ToolFailure('NOT_FOUND', 'No live workspace has this id. As staff of this deployment you can act in any live one.', STAFF_WORKSPACE_HINT);
     }
+    // With no workspace at all, whatever the id names: the step to take, never a hint about the id.
+    if (workspaces.length === 0) throw noWorkspace(opts.appUrl);
     throw new ToolFailure(
       'NOT_FOUND',
       'No workspace of yours has this id.',

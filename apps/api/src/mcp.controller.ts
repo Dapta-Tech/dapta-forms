@@ -126,7 +126,6 @@ export class McpController implements OnModuleInit {
             isApiKey: (token) => token.startsWith(API_KEY_PREFIX),
             authenticate: (token) =>
               authenticateMcpConnection(db, oauth, token, {
-                appUrl: env.PUBLIC_APP_URL,
                 linkMaxAgeMs: env.OAUTH_LINK_MAX_AGE_DAYS * 86_400_000,
                 log: (line) => this.oauthLogSink(line),
               }),

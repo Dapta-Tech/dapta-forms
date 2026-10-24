@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { HttpException, Logger } from '@nestjs/common';
 import {
   findApiKeyPrincipal,
@@ -146,16 +147,22 @@ export async function authenticateMcpKey(db: Db, token: string): Promise<McpCall
 const DEFAULT_LINK_MAX_AGE_MS = 30 * 86_400_000;
 
 /**
- * Why a verified sign-in reaches no workspace. Signing in again would not
- * change it, so it is a 403 the person can act on, never a 401 that loops the
- * login: one visit to dForms on the web, within the link window, links every
- * workspace of theirs. The sibling calendars product's words, in dForms' terms.
+ * The connection of a verified sign-in that reaches no workspace yet. It
+ * connects, so the chat app shows the person the next step instead of a
+ * failed login (a 403 on `initialize` reaches people as the app's own error,
+ * "Automatic client registration isn't supported", never as our words). It
+ * acts nowhere: every tool that reads a workspace answers NO_WORKSPACE, and
+ * `whoami` and `list_my_workspaces` say to open dForms once on the web. The
+ * server keeps nothing between requests, so the first request after that
+ * visit already acts in the person's workspaces, with no new login.
+ *
+ * It names nobody: `personId` is a digest of the subject, so the rate-limit
+ * bucket stays per sign-in and no log line or analytics event carries the
+ * subject itself.
  */
-function notLinked(appUrl: string, linkMaxAgeMs: number): DoorRefusal {
-  const days = Math.max(1, Math.round(linkMaxAgeMs / 86_400_000));
-  return new DoorRefusal(
-    `This sign-in has no dForms workspace opened with this account in the last ${days} days: open dForms${appUrl ? ` (${appUrl})` : ''} with this account, then connect again.`,
-  );
+function notLinkedYet(subject: string): McpConnection {
+  const personId = `unlinked:${createHash('sha256').update(subject, 'utf8').digest('hex').slice(0, 24)}`;
+  return { personId, email: null, label: `oauth:${personId}`, workspaces: [] };
 }
 
 /**
@@ -183,9 +190,10 @@ function notLinked(appUrl: string, linkMaxAgeMs: number): DoorRefusal {
  * staff calls. There is no search over other workspaces from a sign-in:
  * staff open a customer's workspace on the web first (docs/adr/0003).
  *
- * A token that verifies but reaches nothing is a `DoorRefusal` (403) that says
- * to open dForms on the web; so is a subject that names more than one person,
- * which is never resolved by guessing. Nothing is matched by email.
+ * A token that verifies but reaches nothing connects with no workspace, and
+ * its tools say to open dForms on the web (`notLinkedYet`). A subject that
+ * names more than one person is a `DoorRefusal` (403), never resolved by
+ * guessing. Nothing is matched by email.
  *
  * Like a key, this is a lookup only, done again on every request: every tool
  * call re-reads its member through `AuthService.resolveHost`, so a member
@@ -216,10 +224,8 @@ export async function authenticateMcpConnection(
     staffGrantsBySubject(db, access.subject, linkSince, now - STAFF_GRANT_MAX_AGE_MS),
   ]);
   // The reason only, never the subject or the token.
-  const refuse = (reason: 'ambiguous' | 'not_linked' | 'no_active_membership'): void =>
-    log(JSON.stringify({ msg: 'mcp.oauth_refused', reason }));
   if (new Set([...rows, ...grants].map((r) => r.externalId)).size > 1) {
-    refuse('ambiguous');
+    log(JSON.stringify({ msg: 'mcp.oauth_refused', reason: 'ambiguous' }));
     throw new DoorRefusal('This sign-in matches more than one dForms account, so dForms will not guess which one it is. Contact support; do not retry.');
   }
   const active = rows.filter((r) => r.status === 'active');
@@ -230,8 +236,9 @@ export async function authenticateMcpConnection(
   const throughGrant = active.length > 0 ? grants.filter((g) => !own.has(g.accountId)) : [];
   const first = active[0];
   if (!first) {
-    refuse(rows.length === 0 && grants.length === 0 ? 'not_linked' : 'no_active_membership');
-    throw notLinked(opts.appUrl ?? '', linkMaxAgeMs);
+    const reason = rows.length === 0 && grants.length === 0 ? 'not_linked' : 'no_active_membership';
+    log(JSON.stringify({ msg: 'mcp.oauth_no_workspace', reason }));
+    return notLinkedYet(access.subject);
   }
   const person: Person = { id: first.externalId, email: first.email };
   const label = `oauth:${person.id}`;
@@ -286,11 +293,9 @@ export function outcomeOf(config: EngineConfig, score: number | null, data: Answ
 
 /** What `authenticateMcpConnection` needs beyond the token. */
 export interface McpConnectionOptions {
-  /** The dForms address a person who is not linked yet opens, named in the refusal. */
-  appUrl?: string;
   /** How long after a verified web login a member stays reachable (`OAUTH_LINK_MAX_AGE_DAYS`); 30 days when unset. */
   linkMaxAgeMs?: number;
-  /** Where a refused sign-in is logged, one JSON line each. */
+  /** Where a sign-in that reaches no workspace, or is refused, is logged: one JSON line each. */
   log?: (line: string) => void;
   /** The clock (specs). */
   now?: () => number;

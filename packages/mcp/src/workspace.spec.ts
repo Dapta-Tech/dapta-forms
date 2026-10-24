@@ -70,4 +70,14 @@ describe('resolveWorkspace', () => {
     expect(await resolveWorkspace(only, undefined, { required: false })).toBeNull();
     expect((await resolveWorkspace(only, 'customer', { required: true }))?.accountId).toBe('customer');
   });
+
+  it('answers a person with no workspace the step to take, whatever id the call names, and NOT_FOUND once they have one', async () => {
+    const none = connection([]);
+    for (const named of [undefined, 'a', 'b'])
+      await expect(resolveWorkspace(none, named, { required: true, appUrl: 'https://app.example' })).rejects.toMatchObject({
+        code: 'NO_WORKSPACE',
+        hint: expect.stringContaining('open dForms once with this account (https://app.example)'),
+      });
+    await expect(resolveWorkspace(connection([caller('a')]), 'b', { required: true })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
 });

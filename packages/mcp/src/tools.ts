@@ -324,7 +324,8 @@ const whoami: ToolDef = {
     const key = isConnection(credential) ? null : { prefix: credential.label };
     const staff = isStaffConnection(credential);
     if (!caller) {
-      const who = person?.email ?? person?.id ?? 'this person';
+      // A sign-in that reaches no workspace yet names nobody the user would know by its id.
+      const who = person?.email ?? (workspaces.length > 0 ? person?.id : undefined) ?? 'this person';
       const nextStep = staff
         ? 'Before the first call that reads or changes anything, find the workspace the user means with list_my_workspaces(search=<part of its name>), confirm it with the user by name and account (even when only one matches), and send its id as workspace_id on every call, even for a workspace of your own.'
         : workspaces.length === 0

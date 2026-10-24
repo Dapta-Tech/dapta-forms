@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from '@quill/db';
 import { signJwtHs256 } from './jwt';
 import { CATALOG } from '@quill/mcp';
-import { bootHarness, initialize, structured, type Harness } from './mcp-harness';
+import { APP_URL, bootHarness, errorText, initialize, structured, type Harness } from './mcp-harness';
 import { startFakeIdentityProvider, type FakeIdentityProvider } from './fake-identity-provider';
 
 let idp: FakeIdentityProvider;
@@ -148,45 +148,59 @@ describe('signing in', () => {
     expect((await h.post(initialize('2025-06-18'), { authorization: `Bearer ${forged}` })).status).toBe(401);
   });
 
-  it('refuses with a message to act on, never a login loop, a subject no web login ever recorded', async () => {
+  it('connects a subject no web login ever recorded, acting nowhere, and every tool says to open dForms on the web', async () => {
     const h = await boot();
-    const unknown = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token('user_unknown', `${h.base}/mcp`)}` });
-    expect(unknown.status).toBe(403);
-    expect(((await unknown.json()) as { error: { message: string } }).error.message).toMatch(/has no dForms workspace opened with this account in the last 30 days: open dForms/i);
-    expect(unknown.headers.get('www-authenticate')).toBeNull();
-    expect(h.oauthLog.map((l) => JSON.parse(l) as unknown)).toEqual([{ msg: 'mcp.oauth_refused', reason: 'not_linked' }]);
+    const auth = { authorization: `Bearer ${idp.token('user_unknown', `${h.base}/mcp`)}` };
+    // The chat app's connect succeeds, so it shows the person the tools' words, never its own failed-login error.
+    const connect = await h.post(initialize('2025-06-18'), auth);
+    expect(connect.status).toBe(200);
+    expect(connect.headers.get('www-authenticate')).toBeNull();
+    const c = await h.signIn(idp.client('user_unknown'));
+    const who = (await c.callTool({ name: 'whoami', arguments: {} })) as { content: Array<{ text: string }> };
+    expect(who.content[0]!.text).toBe(
+      `Signed in as this person, who is not an active member of any dForms workspace yet. Ask the user to open dForms once with this account (${APP_URL}), then try again.`,
+    );
+    expect(structured<{ workspaces: unknown[] }>(await c.callTool({ name: 'list_my_workspaces', arguments: {} })).workspaces).toEqual([]);
+    // Nothing that reads a workspace runs: not the seeded workspace's forms, not another tenant's form.
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toMatch(/^NO_WORKSPACE: .*open dForms once with this account/);
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.accountId } }))).toMatch(/^NO_WORKSPACE/);
+    expect(errorText(await c.callTool({ name: 'get_form', arguments: { form_id: h.other.formId } }))).toMatch(/^NO_WORKSPACE/);
+    // The reason only: never the subject or the token.
+    expect(new Set(h.oauthLog)).toEqual(new Set([JSON.stringify({ msg: 'mcp.oauth_no_workspace', reason: 'not_linked' })]));
     for (const line of h.oauthLog) expect(line).not.toContain('user_unknown');
   });
 });
 
 describe('the link a web login records', () => {
-  const refused = async (h: Harness, subject: string) => {
-    const res = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token(subject, `${h.base}/mcp`)}` });
-    return { status: res.status, message: ((await res.json()) as { error?: { message?: string } }).error?.message ?? '' };
-  };
+  /** The workspaces a sign-in reaches, through the official client. */
+  const reached = async (h: Harness, subject: string) =>
+    structured<{ workspaces: Array<{ id: string }> }>(await (await h.signIn(idp.client(subject))).callTool({ name: 'list_my_workspaces', arguments: {} }))
+      .workspaces.map((w) => w.id);
 
-  it('maps a linked person, and refuses a member of the same workspace who never signed in on the web', async () => {
+  it('maps a linked person, and reaches nothing for a member of the same workspace who never signed in on the web', async () => {
     const h = await boot();
     const linked = await person(h, 'admin');
     const unlinked = await person(h, 'admin', h.accountId, null);
     const c = await h.signIn(idp.client(linked.subject));
     expect(structured<{ member: { id: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.id).toBe(linked.memberId);
-    expect(await refused(h, unlinked.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/open dForms/) });
+    expect(await reached(h, unlinked.subject)).toEqual([]);
   });
 
-  it('refuses a link whose last verified web login is older than the window, and honors it again once the person comes back', async () => {
+  it('reaches nothing through a link older than the window, and the same connection acts again once the person comes back to the web', async () => {
     const h = await boot();
     const stale = await person(h, 'admin', h.accountId, Date.now() - 31 * DAY);
-    expect(await refused(h, stale.subject)).toMatchObject({ status: 403 });
-    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_refused', reason: 'not_linked' });
+    const c = await h.signIn(idp.client(stale.subject));
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toMatch(/^NO_WORKSPACE/);
+    expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_no_workspace', reason: 'not_linked' });
     await h.link(stale.subject, stale.personId);
-    expect((await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token(stale.subject, `${h.base}/mcp`)}` })).status).toBe(200);
+    // No new login and no reconnect: the next call already maps the sign-in again.
+    expect(structured<{ member: { id: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.id).toBe(stale.memberId);
   });
 
   it('takes the window from OAUTH_LINK_MAX_AGE_DAYS', async () => {
     const h = await boot({ OAUTH_LINK_MAX_AGE_DAYS: '1' });
     const p = await person(h, 'admin', h.accountId, Date.now() - 2 * DAY);
-    expect((await refused(h, p.subject)).status).toBe(403);
+    expect(await reached(h, p.subject)).toEqual([]);
   });
 
   it('lets a plain member connect, acting with the member role', async () => {
@@ -204,7 +218,9 @@ describe('the link a web login records', () => {
     const a = await person(h, 'admin');
     const b = await person(h, 'admin', h.other.accountId);
     await h.link(a.subject, b.personId);
-    expect(await refused(h, a.subject)).toMatchObject({ status: 403, message: expect.stringMatching(/more than one dForms account/) });
+    const res = await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token(a.subject, `${h.base}/mcp`)}` });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toMatch(/more than one dForms account/);
     expect(JSON.parse(h.oauthLog.at(-1)!)).toEqual({ msg: 'mcp.oauth_refused', reason: 'ambiguous' });
   });
 });
@@ -219,8 +235,9 @@ describe('a web login, then an MCP sign-in, end to end', () => {
     const h = await boot(workos);
     const iamUser = randomUUID();
     const workosUser = `user_01${randomUUID().replaceAll('-', '').slice(0, 24).toUpperCase()}`;
-    // Before the person ever uses the web app: not linked.
-    expect((await h.post(initialize('2025-06-18'), { authorization: `Bearer ${idp.token(workosUser, `${h.base}/mcp`)}` })).status).toBe(403);
+    // Before the person ever uses the web app: connected, acting nowhere yet.
+    const c = await h.signIn(idp.client(workosUser));
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toMatch(/^NO_WORKSPACE/);
     const me = await fetch(`${h.base}/v1/me`, {
       headers: { authorization: `Bearer ${session({ sub: iamUser, account_id: randomUUID(), email: 'web@example.com', name: 'Web', workos_user_id: workosUser })}` },
     });
@@ -230,7 +247,7 @@ describe('a web login, then an MCP sign-in, end to end', () => {
     );
     expect(row).toMatchObject({ role: 'owner', idp_subject: workosUser });
     expect(Number(row!.login_seen_at)).toBeGreaterThan(Date.now() - 60_000);
-    const c = await h.signIn(idp.client(workosUser));
+    // The same connection, with no new login: the visit to the web is enough.
     const who = structured<{ workspace: { id: string }; member: { id: string } }>(await c.callTool({ name: 'whoami', arguments: {} }));
     expect(who).toMatchObject({ workspace: { id: row!.account_id }, member: { id: row!.id } });
   });
@@ -369,9 +386,10 @@ describe('a signed-in member, mid-session', () => {
     await h.db.run(sql`UPDATE member SET role = 'owner' WHERE id = ${p.memberId}`);
     expect(structured<{ member: { role: string } }>(await c.callTool({ name: 'whoami', arguments: {} })).member.role).toBe('owner');
     // Every request maps the sign-in again: a disabled member is no workspace,
-    // so the door refuses the very next one with the message to act on.
+    // so the very next call acts nowhere, even naming the workspace it had.
     await h.db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${p.memberId}`);
-    await expect(c.callTool({ name: 'list_forms', arguments: {} })).rejects.toThrow(/has no dForms workspace opened/);
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toMatch(/^NO_WORKSPACE/);
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.accountId } }))).toMatch(/^NO_WORKSPACE/);
   });
 });
 

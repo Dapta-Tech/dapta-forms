@@ -69,8 +69,11 @@ start of the text summary.
 - One visit to dForms on the web links every workspace of the person that the
   identity service confirms on that visit; with local workspaces only (no
   identity service), each workspace links when the person opens it. A sign-in
-  that reaches no workspace is refused at the door with a 403 that says to
-  open dForms with that account, then connect again.
+  that reaches no workspace still connects, and acts nowhere: every tool that
+  reads a workspace answers `NO_WORKSPACE` (whatever `workspace_id` it names),
+  and `whoami` and `list_my_workspaces` say to open dForms once with that
+  account. The first call after that visit already acts in the person's
+  workspaces, with no new login and no reconnect.
 - The role is the member's role in the workspace the call names, read live on
   every call.
 
@@ -395,13 +398,19 @@ the login, registers the client and issues the token; dForms verifies it.
   when the web's would. Each call then acts as that person's member in the
   workspace it names (see [Choosing a workspace](#choosing-a-workspace)),
   with the member's live role, under every rule an API key gets.
-- **Refusals.** A sign-in that reaches no such member (never used the web
-  app, not seen there within the window, or no active membership) gets a 403
-  that says to open dForms with that account, then connect again; a `sub`
-  that two different people carry gets a 403 that says to contact support.
-  Never a 401, which would only loop the login. The API logs one line per
-  refusal (`mcp.oauth_refused` and the reason: `not_linked`,
-  `no_active_membership` or `ambiguous`), never the token or the `sub`.
+- **No workspace yet.** A sign-in that reaches no such member (never used
+  the web app, not seen there within the window, or no active membership)
+  connects with no workspace, and its tools say to open dForms with that
+  account (see [Choosing a workspace](#choosing-a-workspace)). It is never
+  refused at `initialize`: chat apps show a refused connect as their own
+  error ("Automatic client registration isn't supported"), never our words.
+  Its rate-limit bucket is a digest of the `sub`, so it names nobody.
+- **Refusals.** A `sub` that two different people carry gets a 403 that says
+  to contact support. Never a 401, which would only loop the login.
+- **Logs.** One line per request of a sign-in with no workspace
+  (`mcp.oauth_no_workspace` and the reason: `not_linked` or
+  `no_active_membership`) and per refusal (`mcp.oauth_refused`, reason
+  `ambiguous`), never the token or the `sub`.
 - **Existing members.** A person links on their next visit to the web app,
   with no new login, when their session token carries their WorkOS id. A
   session whose token does not (it predates the claim, or came from an
