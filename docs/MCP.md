@@ -65,7 +65,8 @@ start of the text summary.
   [Staff](#staff).
 - A `workspace_id` the person cannot act in (never joined, removed, or one
   that does not exist) answers `NOT_FOUND` with the same message in every
-  case, so nothing about that workspace leaks.
+  case, so nothing about that workspace leaks. A person with no workspace at
+  all gets `NO_WORKSPACE` instead, also the same whatever the id names.
 - One visit to dForms on the web links every workspace of the person that the
   identity service confirms on that visit; with local workspaces only (no
   identity service), each workspace links when the person opens it. A sign-in
@@ -338,8 +339,9 @@ const forms = await client.callTool({ name: 'list_forms', arguments: {} });
   flag and lowercased error code, duration, protocol version, client name,
   version and user agent, `credential_type` (`api_key` or `oauth`) and
   `staff_access`, grouped by `forms_account` and sent under the member's email
-  (a connection with no workspace yet: under the person, with no person
-  profile). Never the arguments, the result, an error message, or a workspace
+  (a connection with no workspace yet: under its digest, `unlinked:<hex>`,
+  with no person profile, so it counts apart from the same person once
+  linked). Never the arguments, the result, an error message, or a workspace
   or form name. Reporting is never awaited by the tool call, and without the
   key nothing is enqueued.
 - **Error logs.** An unexpected failure is logged with its error class and
@@ -404,7 +406,10 @@ the login, registers the client and issues the token; dForms verifies it.
   account (see [Choosing a workspace](#choosing-a-workspace)). It is never
   refused at `initialize`: chat apps show a refused connect as their own
   error ("Automatic client registration isn't supported"), never our words.
-  Its rate-limit bucket is a digest of the `sub`, so it names nobody.
+  Its id and rate-limit bucket are a digest of the `sub` (a pseudonym: the
+  `sub` itself never reaches a log or analytics line). Unlike the old
+  refusal, it no longer charges the per-address bucket: each such sign-in
+  has its own bucket, as a linked one does.
 - **Refusals.** A `sub` that two different people carry gets a 403 that says
   to contact support. Never a 401, which would only loop the login.
 - **Logs.** One line per request of a sign-in with no workspace

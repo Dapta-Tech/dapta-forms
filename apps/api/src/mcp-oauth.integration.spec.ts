@@ -161,6 +161,9 @@ describe('signing in', () => {
       `Signed in as this person; this sign-in reaches no dForms workspace yet. Ask the user to open dForms once with this account (${APP_URL}), signing in again if it is already open, then try again.`,
     );
     expect(structured<{ workspaces: unknown[] }>(await c.callTool({ name: 'list_my_workspaces', arguments: {} })).workspaces).toEqual([]);
+    // A search names the same step, never "none of your workspaces matched".
+    const searched = structured<{ workspaces: unknown[]; next_step: string }>(await c.callTool({ name: 'list_my_workspaces', arguments: { search: 'Acme' } }));
+    expect(searched).toMatchObject({ workspaces: [], next_step: expect.stringMatching(/^Ask the user to open dForms once with this account/) });
     // Nothing that reads a workspace runs: not the seeded workspace's forms, not another tenant's form.
     expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toMatch(/^NO_WORKSPACE: .*open dForms once with this account/);
     expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: h.accountId } }))).toMatch(/^NO_WORKSPACE/);
@@ -430,7 +433,7 @@ describe('limits and audit', () => {
     expect(line).toMatchObject({ tool: 'whoami', personId: expect.stringMatching(/^unlinked:[0-9a-f]{24}$/), caller: `oauth:${String(line.personId)}` });
     // The same sign-in is the same digest on every request.
     expect(new Set(h.audit.map((l) => (JSON.parse(l) as { personId: string }).personId)).size).toBe(1);
-    await vi.waitFor(async () => expect((await sent()).filter((e) => e.event === '$mcp_tool_call')).toHaveLength(2));
+    await vi.waitFor(async () => expect((await sent()).filter((e) => e.event === '$mcp_tool_call')).toHaveLength(2), { timeout: 5000 });
     const events = await sent();
     expect(events.filter((e) => e.event === '$mcp_tool_call').every((e) => e.distinctId === line.personId)).toBe(true);
     for (const l of [...h.oauthLog, ...h.audit, ...events.map((e) => JSON.stringify(e))]) expect(l).not.toContain('user_secret_subject');

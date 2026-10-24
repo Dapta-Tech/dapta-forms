@@ -442,6 +442,12 @@ const listMyWorkspaces: ToolDef = {
       };
     }
 
+    // No workspace at all: the step to take, whatever was searched.
+    if (isConnection(credential) && !staff && own.length === 0) {
+      const step = `Ask the user to ${openDFormsOnce(appUrl)}`;
+      return { data: { workspaces: [], staff, truncated: false, next_step: step }, summary: `No workspace yet. ${step}` };
+    }
+
     const needle = normalizeWorkspaceSearch(query);
     const lowered = query.toLowerCase();
     const mine = own

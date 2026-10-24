@@ -156,7 +156,7 @@ const DEFAULT_LINK_MAX_AGE_MS = 30 * 86_400_000;
  * server keeps nothing between requests, so the first request after that
  * visit already acts in the person's workspaces, with no new login.
  *
- * It names nobody: `personId` is a digest of the subject, so the rate-limit
+ * Its `personId` is a digest of the subject (a pseudonym), so the rate-limit
  * bucket stays per sign-in and no log line or analytics event carries the
  * subject itself.
  */
