@@ -1419,10 +1419,12 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
     value == null ||
     value === '' ||
     (Array.isArray(value) && value.length === 0);
+  // Spaces are not an answer to a required question. An optional one of only
+  // spaces is not `empty`, so it still reaches its type's checks (`minChars`).
+  const blank = empty || (typeof value === 'string' && value.trim() === '');
 
-  if (empty) {
-    return step.required ? { ok: false, error: 'This field is required.' } : { ok: true };
-  }
+  if (blank && step.required) return { ok: false, error: 'This field is required.' };
+  if (empty) return { ok: true };
 
   if (step.type === 'file' && !parseFileAnswer(value)) {
     return { ok: false, error: 'Upload a file to continue.' };
@@ -2037,7 +2039,10 @@ export function validateAnswerCode(
 
   const empty =
     value == null || value === '' || (Array.isArray(value) && value.length === 0);
-  if (empty) return step.required ? { ok: false, code: 'required' } : { ok: true };
+  // Same rule as `validateAnswer`: a required answer of only spaces is missing.
+  const blank = empty || (typeof value === 'string' && value.trim() === '');
+  if (blank && step.required) return { ok: false, code: 'required' };
+  if (empty) return { ok: true };
 
   switch (step.type) {
     case 'email': {

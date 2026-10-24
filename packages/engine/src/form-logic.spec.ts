@@ -700,6 +700,18 @@ describe('validateAnswerCode', () => {
     // `min`/`max` on the step are the SLIDER's bounds and must never leak here.
     expect(validateAnswerCode(step({ key: 'w', type: 'textarea', min: 50, max: 60 }), 'hi').ok).toBe(true);
   });
+  it('refuses a required text answer of only spaces, like an empty one', () => {
+    const text = step({ key: 'company', type: 'text', required: true });
+    const long = step({ key: 'why', type: 'textarea', required: true });
+    expect(validateAnswerCode(text, '   ').code).toBe('required');
+    expect(validateAnswerCode(long, ' \n\t ').code).toBe('required');
+    expect(validateAnswerCode(text, ' Acme ').ok).toBe(true);
+    // English twin agrees.
+    expect(validateAnswer(text, '   ').ok).toBe(false);
+    expect(validateAnswer(long, ' \n ').ok).toBe(false);
+    // An optional blank is still no answer to require.
+    expect(validateAnswerCode(step({ key: 'c', type: 'text' }), '   ').ok).toBe(true);
+  });
   it('checks both name sub-fields', () => {
     const s = step({ key: 'name', type: 'name', required: true });
     expect(validateAnswerCode(s, undefined, { firstname: 'Ada', lastname: '' }).ok).toBe(false);
