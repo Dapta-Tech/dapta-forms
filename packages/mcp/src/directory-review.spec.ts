@@ -49,6 +49,7 @@ describe('connector directory review', () => {
         'apply_brand_kit',
         'delete_folder',
         'delete_form',
+        'delete_link_page',
         'delete_response',
         'delete_responses',
         'discard_draft',
@@ -72,7 +73,9 @@ describe('connector directory review', () => {
       [
         'apply_brand_kit',
         'create_form',
+        'create_link_page',
         'delete_form',
+        'delete_link_page',
         'duplicate_form',
         'list_calendly_event_types',
         'list_hubspot_properties',

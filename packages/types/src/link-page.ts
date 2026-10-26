@@ -1,11 +1,13 @@
 /**
- * The WORKSPACE LINK PAGE: one public page per workspace at `/{accountCode}`,
- * a column of buttons (forms the team chose, mixed with custom links), a row
- * of social icons and the workspace's logo, name and bio.
+ * The WORKSPACE LINK PAGES: up to `LINK_PAGE_MAX_PAGES` public pages per
+ * workspace, each a column of buttons (forms the team chose, mixed with custom
+ * links), a row of social icons and a logo, name and bio. The default page
+ * answers at `/{accountCode}`, every other one at `/{accountCode}/p/{slug}`.
  *
- * Stored as one JSON blob on `account.link_page` (migration 0025), versioned
- * like the form config and extended the same way: add optional fields, never
- * repurpose one.
+ * Each page's content is one JSON blob (a `link_page` row's `config`,
+ * migration 0027; the single page before it lived on `account.link_page`,
+ * 0025), versioned like the form config and extended the same way: add
+ * optional fields, never repurpose one.
  *
  * `enabled` defaults to FALSE and the column defaults to NULL, so the page
  * answers 404 until someone in the workspace turns it on.
@@ -15,7 +17,7 @@
  * for its live preview, so the two cannot disagree.
  */
 import { z } from 'zod';
-import { isSafeHttpUrl, withNewFormBranding, type FormBranding } from '@quill/engine';
+import { isSafeHttpUrl, validateVanitySlug, withNewFormBranding, type FormBranding } from '@quill/engine';
 import type { BrandKit } from './index';
 
 // --- Socials -------------------------------------------------------------------
@@ -214,6 +216,24 @@ export function isLinkPageLogo(value: string): boolean {
   return v.length <= 2048 && isSafeHttpUrl(v);
 }
 
+// --- Colours -------------------------------------------------------------------
+
+/** A colour a page sets for itself: `#rgb` or `#rrggbb`, what a colour picker gives. */
+const PAGE_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/**
+ * The colours one page sets for itself, over the brand kit. Each field is
+ * optional: ABSENT (or null) takes the brand kit's, the same rule as the logo,
+ * so a page that never set one keeps following the kit when the kit changes.
+ */
+export const linkPageColorsSchema = z.object({
+  primaryColor: z.string().regex(PAGE_COLOR, 'Colors must be hex, like #3DDC84.').nullable().optional(),
+  background: z.string().regex(PAGE_COLOR, 'Colors must be hex, like #3DDC84.').nullable().optional(),
+  foreground: z.string().regex(PAGE_COLOR, 'Colors must be hex, like #3DDC84.').nullable().optional(),
+});
+export type LinkPageColors = z.infer<typeof linkPageColorsSchema>;
+export const LINK_PAGE_COLOR_FIELDS = ['primaryColor', 'background', 'foreground'] as const;
+
 // --- Buttons -------------------------------------------------------------------
 
 /** How many buttons a page holds. A page is a short list, not a sitemap. */
@@ -253,6 +273,8 @@ export const linkPageSchema = z.object({
   /** Forms and links in ONE ordered list: the order here is the order on the page. */
   items: z.array(linkPageItemSchema).max(LINK_PAGE_MAX_ITEMS).optional(),
   socials: linkPageSocialsSchema.optional(),
+  /** This page's own colours over the brand kit. Absent = the brand kit's. */
+  colors: linkPageColorsSchema.optional(),
 });
 export type LinkPage = z.infer<typeof linkPageSchema>;
 /** What a client sends; `linkPageSchema` normalizes it into `LinkPage`. */
@@ -316,6 +338,14 @@ export interface PublicLinkPage {
   buttons: PublicLinkPageButton[];
   socials: Array<{ network: LinkPageSocial; href: string }>;
   branding: FormBranding;
+  /**
+   * Which of the workspace's pages this is. Set by the API on the public read
+   * (the editor's preview does not need them): the page's CURRENT slug, which
+   * differs from a requested one when the request used a retired slug, and
+   * whether it is the default page served at `/{accountCode}`.
+   */
+  pageSlug?: string;
+  isDefault?: boolean;
 }
 
 /** The brand kit fields that style the page. The kit's logo is handled apart. */
@@ -331,14 +361,23 @@ const KIT_STYLE_FIELDS = [
 
 /**
  * The page's design: the workspace brand kit, read LIVE (not snapshotted the
- * way forms are), on top of the dForms colours a new form is born with. A
- * workspace with no kit gets the same look a brand new form gets.
+ * way forms are), on top of the dForms colours a new form is born with, with
+ * the page's own colours (if it set any) on top of both. A workspace with no
+ * kit and a page with no colours get the same look a brand new form gets.
  */
-export function linkPageBranding(kit: BrandKit | null | undefined): FormBranding {
+export function linkPageBranding(
+  kit: BrandKit | null | undefined,
+  colors?: LinkPageColors | null,
+): FormBranding {
   const own: Record<string, unknown> = {};
   for (const field of KIT_STYLE_FIELDS) {
     const value = kit?.[field];
     if (value != null) own[field] = value;
+  }
+  // The page's own colours win over the kit's, field by field.
+  for (const field of LINK_PAGE_COLOR_FIELDS) {
+    const value = colors?.[field];
+    if (value) own[field] = value;
   }
   const config = withNewFormBranding({ version: 1, steps: [], branding: own });
   return (config.branding ?? {}) as FormBranding;
@@ -389,7 +428,7 @@ export function resolveLinkPage(
     logo: logo && logo.trim() ? logo : null,
     buttons,
     socials,
-    branding: linkPageBranding(ctx.brandKit),
+    branding: linkPageBranding(ctx.brandKit, page.colors),
   };
 }
 
@@ -417,3 +456,123 @@ export const linkPageEventSchema = z.discriminatedUnion('type', [
   }),
 ]);
 export type LinkPageEvent = z.infer<typeof linkPageEventSchema>;
+
+
+// --- Several pages per workspace ---------------------------------------------
+
+/** How many pages one workspace keeps. A page per fair, per channel or per country. */
+export const LINK_PAGE_MAX_PAGES = 20;
+
+/** The slug the existing page got when workspaces went from one page to several (0027). */
+export const LINK_PAGE_DEFAULT_SLUG = 'main';
+
+/** The fixed segment extra pages live under: `/{accountCode}/p/{slug}`, like `/f/` for forms. */
+export const LINK_PAGE_SEGMENT = 'p';
+
+/** Internal label of a page ("Expo 2026"). Blank is allowed: the admin shows a default. */
+export const linkPageNameSchema = z.string().trim().max(80);
+
+export const LINK_PAGE_SLUG_MESSAGES = {
+  invalid: 'Use 3 to 30 lowercase letters, numbers or single hyphens, starting and ending with a letter or number.',
+  reserved: 'That address is reserved. Pick another one.',
+} as const;
+
+/**
+ * A page's slug: the same shape and blocklist as a workspace's vanity code
+ * (`validateVanitySlug`), lowercased on the way in.
+ */
+export const linkPageSlugSchema = z
+  .string()
+  .trim()
+  .transform((v) => v.toLowerCase())
+  .superRefine((v, ctx) => {
+    const issue = validateVanitySlug(v);
+    if (issue) ctx.addIssue({ code: z.ZodIssueCode.custom, message: LINK_PAGE_SLUG_MESSAGES[issue] });
+  });
+
+/**
+ * A slug made from a page's name: lowercase ASCII letters and digits joined by
+ * single hyphens, cut to fit. Null when the name gives nothing usable (too
+ * short once cleaned, or a reserved word); the caller picks a fallback.
+ */
+export function slugFromName(name: string): string | null {
+  const base = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 30)
+    .replace(/-+$/g, '');
+  return validateVanitySlug(base) ? null : base;
+}
+
+/**
+ * The first free slug for `base`: `base` itself, else `base-2`, `base-3`...
+ * kept within the 30 characters a slug allows. `taken` holds every slug the
+ * workspace uses (its pages' slugs; retired ones may be reclaimed).
+ */
+export function uniqueLinkPageSlug(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base) && !validateVanitySlug(base)) return base;
+  for (let n = 2; n < 1000; n += 1) {
+    const suffix = `-${n}`;
+    const candidate = `${base.slice(0, 30 - suffix.length).replace(/-+$/g, '')}${suffix}`;
+    if (!taken.has(candidate) && !validateVanitySlug(candidate)) return candidate;
+  }
+  return `page-${Date.now().toString(36)}`;
+}
+
+/** One page in the workspace's list. */
+export interface LinkPageSummary {
+  id: string;
+  slug: string;
+  /** The internal label; blank when nobody named it (the admin shows a default). */
+  name: string;
+  isDefault: boolean;
+  /** Saved with `enabled: true`: its address serves it. */
+  live: boolean;
+  /** How many buttons the page holds (forms and links). */
+  buttons: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** The public path of a page: the default at `/{code}`, the others under `/p/`. */
+export function linkPagePath(accountCode: string, page: { slug: string; isDefault: boolean }): string {
+  const code = encodeURIComponent(accountCode);
+  return page.isDefault ? `/${code}` : `/${code}/${LINK_PAGE_SEGMENT}/${encodeURIComponent(page.slug)}`;
+}
+
+/**
+ * Body of `POST /v1/link-pages`. The slug is optional: absent, one is made
+ * from the name. The page content is optional too: absent, the new page is
+ * empty and unpublished.
+ */
+export const linkPageCreateSchema = z.object({
+  name: linkPageNameSchema.optional(),
+  slug: linkPageSlugSchema.optional(),
+  page: linkPageSchema.optional(),
+});
+export type LinkPageCreateInput = z.input<typeof linkPageCreateSchema>;
+
+/**
+ * Body of `PUT /v1/link-pages/:id`: every field optional, an absent one stays
+ * as it is. `page` replaces the whole content when present (like
+ * `PUT /v1/link-page`). `isDefault: true` makes this page the default; there
+ * is no `false`, since a workspace always has one default: make another page
+ * the default instead.
+ */
+export const linkPageUpdateSchema = z.object({
+  name: linkPageNameSchema.optional(),
+  slug: linkPageSlugSchema.optional(),
+  isDefault: z.literal(true).optional(),
+  page: linkPageSchema.optional(),
+});
+export type LinkPageUpdateInput = z.input<typeof linkPageUpdateSchema>;
+
+/** Body of `POST /v1/link-pages/:id/duplicate`: both optional. */
+export const linkPageDuplicateSchema = z.object({
+  name: linkPageNameSchema.optional(),
+  slug: linkPageSlugSchema.optional(),
+});
+export type LinkPageDuplicateInput = z.input<typeof linkPageDuplicateSchema>;

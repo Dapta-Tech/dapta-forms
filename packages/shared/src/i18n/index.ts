@@ -264,6 +264,80 @@ export interface FormsMessages {
       saved: string;
       error: string;
       fixErrors: string;
+      /** Several pages per workspace: which page this editor is on. */
+      back: string;
+      pageSection: string;
+      pageName: string;
+      pageNameHint: string;
+      pageNamePlaceholder: string;
+      slug: string;
+      /** // {base} is the address up to `/p/`. */
+      slugHint: string;
+      slugInvalid: string;
+      slugReserved: string;
+      slugTaken: string;
+      defaultBadge: string;
+      /** // {url} */
+      defaultHint: string;
+      makeDefault: string;
+      madeDefault: string;
+      colorsSection: string;
+      colorsHint: string;
+      colorPrimary: string;
+      colorBackground: string;
+      colorForeground: string;
+      colorFromKit: string;
+      colorReset: string;
+    };
+    /** Account settings, Public page: the list of the workspace's link pages. */
+    linkPages: {
+      heading: string;
+      subtitle: string;
+      anyMember: string;
+      newPage: string;
+      /** // {n} {max} */
+      count: string;
+      /** // {max} */
+      limitReached: string;
+      emptyTitle: string;
+      emptyBody: string;
+      defaultName: string;
+      defaultBadge: string;
+      live: string;
+      off: string;
+      /** Accessible name of a row's publish switch. // {name} */
+      toggleLabel: string;
+      /** // {n} */
+      buttons: string;
+      /** // {date} */
+      edited: string;
+      edit: string;
+      duplicate: string;
+      duplicated: string;
+      /** The copy's name. // {name} */
+      copyName: string;
+      copyLink: string;
+      copied: string;
+      qr: string;
+      makeDefault: string;
+      madeDefault: string;
+      remove: string;
+      removeTitle: string;
+      /** // {name} */
+      removeBody: string;
+      removeConfirm: string;
+      removed: string;
+      cannotRemoveDefault: string;
+      published: string;
+      unpublished: string;
+      createTitle: string;
+      createName: string;
+      createNamePlaceholder: string;
+      createSlug: string;
+      create: string;
+      creating: string;
+      cancel: string;
+      error: string;
     };
     /** Branded combobox (`components/ui/select`) that replaces native selects. */
     select: {
@@ -2664,6 +2738,69 @@ export const en: FormsMessages = {
       saved: 'Page saved.',
       error: 'Could not save the page.',
       fixErrors: 'Fix the highlighted fields first.',
+      back: 'All pages',
+      pageSection: 'Page',
+      pageName: 'Internal name',
+      pageNameHint: 'To tell your pages apart. Visitors never see it.',
+      pageNamePlaceholder: 'Expo 2026',
+      slug: 'Address',
+      slugHint: 'The page lives at {base}/ followed by this.',
+      slugInvalid: 'Use 3 to 30 lowercase letters, numbers or single hyphens, starting and ending with a letter or number.',
+      slugReserved: 'That address is reserved. Pick another one.',
+      slugTaken: 'Another of your pages already uses that address.',
+      defaultBadge: 'Main page',
+      defaultHint: 'This is your main page: it opens at {url}.',
+      makeDefault: 'Make main page',
+      madeDefault: 'This is now your main page.',
+      colorsSection: 'Colors',
+      colorsHint: 'By default the page uses your brand kit. Pick a color here to use another one on this page only.',
+      colorPrimary: 'Buttons',
+      colorBackground: 'Background',
+      colorForeground: 'Text',
+      colorFromKit: 'From your brand kit',
+      colorReset: 'Use brand kit',
+    },
+    linkPages: {
+      heading: 'Your workspace pages',
+      subtitle: 'Pages with your logo, your forms and your links: one for each event, channel or country, each with its own link and QR code.',
+      anyMember: 'Anyone in this workspace can create and edit these pages.',
+      newPage: 'New page',
+      count: '{n} of {max} pages',
+      limitReached: 'A workspace holds up to {max} pages. Delete one to add another.',
+      emptyTitle: 'No pages yet',
+      emptyBody: 'Create a page to share your forms and links from one place, with its own link and QR code.',
+      defaultName: 'Main page',
+      defaultBadge: 'Main',
+      live: 'Published',
+      off: 'Not published',
+      toggleLabel: 'Publish {name}',
+      buttons: '{n} buttons',
+      edited: 'Edited {date}',
+      edit: 'Edit',
+      duplicate: 'Duplicate',
+      duplicated: 'Page duplicated. The copy is not published yet.',
+      copyName: '{name} (copy)',
+      copyLink: 'Copy link',
+      copied: 'Copied',
+      qr: 'QR code',
+      makeDefault: 'Make main page',
+      madeDefault: 'This is now your main page.',
+      remove: 'Delete',
+      removeTitle: 'Delete this page?',
+      removeBody: '“{name}” and its link stop working, printed QR codes included. This cannot be undone.',
+      removeConfirm: 'Delete page',
+      removed: 'Page deleted.',
+      cannotRemoveDefault: 'Your main page cannot be deleted. Make another page the main one first.',
+      published: 'Page published.',
+      unpublished: 'Page unpublished.',
+      createTitle: 'New page',
+      createName: 'Internal name',
+      createNamePlaceholder: 'Expo 2026',
+      createSlug: 'Address',
+      create: 'Create page',
+      creating: 'Creating…',
+      cancel: 'Cancel',
+      error: 'Something went wrong. Try again.',
     },
     select: {
       search: 'Search…',
@@ -4400,7 +4537,7 @@ export const en: FormsMessages = {
           analytics: { title: 'Analytics', body: 'Views, starts, completions, drop-off by step and a summary of each form.' },
           folders: { title: 'Folders', body: 'Create, rename and delete folders, and move forms between them.' },
           brandKit: { title: 'Brand kit', body: 'Read and edit the brand kit and apply it to your forms.' },
-          linkPage: { title: 'Link page', body: 'Read and edit the workspace’s public page with your forms and links.' },
+          linkPage: { title: 'Link pages', body: 'Read, add and edit the workspace’s public pages with your forms and links.' },
           notifications: { title: 'Emails', body: 'Edit the notification emails of the workspace and of each form.' },
           integrations: { title: 'Integrations', body: 'Webhooks, HubSpot and Calendly: where responses go, tests and deliveries.' },
           account: { title: 'Account and workspaces', body: 'Who is connected, the workspaces you can work in and your profile.' },
@@ -4436,8 +4573,12 @@ export const en: FormsMessages = {
           update_brand_kit: { what: 'Change the brand kit.', ask: 'Make my brand color green' },
           apply_brand_kit: { what: 'Apply the brand kit to a form.', ask: 'Apply my brand kit to the survey' },
           revert_brand_kit: { what: 'Take a form back to the design it had before the brand kit.', ask: 'Undo the brand kit on my survey' },
-          get_link_page: { what: 'Read the workspace’s public page: its buttons, socials and link.', ask: 'What does my workspace page show?' },
-          update_link_page: { what: 'Edit, publish or delete the workspace’s public page.', ask: 'Add my contact form to the workspace page and publish it' },
+          get_link_page: { what: 'Read one of the workspace’s public pages (the default one unless you name another): its buttons, socials and link.', ask: 'What does my workspace page show?' },
+          update_link_page: { what: 'Edit, rename, publish or delete a public page, or make it the default.', ask: 'Add my contact form to the workspace page and publish it' },
+          list_link_pages: { what: 'List the workspace’s public pages with their links and whether each is live.', ask: 'Which link pages does my workspace have?' },
+          create_link_page: { what: 'Add a public page, for an event, a channel or a country.', ask: 'Create a page for Expo 2026 with my demo form' },
+          duplicate_link_page: { what: 'Copy a page under a new address, unpublished.', ask: 'Copy my Expo page for next year’s fair' },
+          delete_link_page: { what: 'Delete a page that is not the default.', ask: 'Delete the old Expo page' },
           list_notifications: { what: 'See the workspace\'s notification emails.', ask: 'Which emails does dForms send?' },
           update_notification: { what: 'Edit a notification email for the whole workspace.', ask: 'Change the subject of the new response email' },
           reset_notification: { what: 'Put a workspace email back to its default.', ask: 'Reset the new response email' },
@@ -4566,8 +4707,8 @@ export const en: FormsMessages = {
           intro: 'The workspace’s logo, colours and type, and applying them to forms.',
         },
         linkPage: {
-          title: 'Link page',
-          intro: 'The workspace’s public page at `/{accountCode}`: its forms and links in one place. Any member can read and edit it.',
+          title: 'Link pages',
+          intro: 'The workspace’s public pages, up to 20: the default one at `/{accountCode}`, the others at `/{accountCode}/p/{slug}`. Each holds its forms and links in one place. Any member can read and edit them.',
         },
         notifications: {
           title: 'Notifications',
@@ -4632,8 +4773,14 @@ export const en: FormsMessages = {
           'Replaces the brand kit. New forms take it at once; existing forms only when you apply it.',
         'POST /v1/branding/apply': 'Applies the brand kit to the forms you name.',
         'POST /v1/branding/revert': 'Puts back the look the forms had before the brand kit was applied.',
-        'GET /v1/link-page': 'The stored page (`page`, null when there is none), the workspace’s forms and brand kit, the page’s `publicUrl` and whether it is `live`. A stored WhatsApp number comes back as digits; send it back with a leading `+`.',
-        'PUT /v1/link-page': 'Replaces the whole page: read it first and send it back complete. Colors and type come from the brand kit. `{ "page": null }` deletes the page and its URL answers 404 again.',
+        'GET /v1/link-page': 'The default page (`page`, null when there is none) with its `id` and `slug`, the workspace’s forms and brand kit, the page’s `publicUrl` and whether it is `live`. A stored WhatsApp number comes back as digits; send it back with a leading `+`.',
+        'PUT /v1/link-page': 'Replaces the whole default page: read it first and send it back complete. Colors and type come from the brand kit unless the page sets its own `colors`. `{ "page": null }` deletes the page and its URL answers 404 again, when it is the workspace’s only page.',
+        'GET /v1/link-pages': 'Every page of the workspace, the default first: its `id`, `slug`, internal `name`, whether it is the default and `live`, how many `buttons` it holds and its `publicUrl`.',
+        'POST /v1/link-pages': 'Adds a page, up to 20 per workspace. Without a `slug` one is made from the name; without a `page` it starts empty and unpublished. The workspace’s first page becomes its default.',
+        'GET /v1/link-pages/:id': 'One page, with the workspace’s forms and brand kit, its `publicUrl` and whether it is `live`.',
+        'PUT /v1/link-pages/:id': 'Changes a page. Only the fields sent change; `page` replaces the whole content. A new `slug` keeps the old address redirecting to the new one. `isDefault: true` makes it the page at `/{accountCode}`.',
+        'POST /v1/link-pages/:id/duplicate': 'Copies a page under a new slug, unpublished, so it can be edited for the next event before it goes live.',
+        'DELETE /v1/link-pages/:id': 'Deletes a page; its address answers 404. The default page answers 409 `DEFAULT_PAGE`: make another page the default first.',
         'GET /v1/notifications':
           'The two emails dForms sends on each response: the notice to your team and the receipt to the person who answered.',
         'PUT /v1/notifications/:emailKey': 'Turns an email on or off, changes its text or who gets the notice.',
@@ -4706,6 +4853,14 @@ export const en: FormsMessages = {
         linkPageLogo: 'Absent uses the brand kit logo, `null` shows none, an http(s) URL shows that image.',
         linkPageItems: 'The buttons, in order, up to 30: `{ "type": "form", "formId" }` or `{ "type": "link", "label", "url" }`. A form of another workspace is dropped.',
         linkPageSocials: '`instagram`, `x`, `youtube` and `tiktok` (a link or a handle) and `whatsapp` (the number with its country code, starting with `+`).',
+        linkPageColors: 'This page’s own `primaryColor`, `background` and `foreground`, as hex. An absent one takes the brand kit’s.',
+        linkPagePathId: 'The page’s `id`, from `GET /v1/link-pages`.',
+        linkPagePageName: 'An internal name to tell pages apart, up to 80 characters. Visitors never see it.',
+        linkPageSlug: 'The address after `/p/`: 3 to 30 lowercase letters, numbers or hyphens. Unique in the workspace.',
+        linkPageIsDefault: '`true` makes this the page at `/{accountCode}`; the previous default keeps its `/p/` address.',
+        linkPageContent: 'The whole page content, the same shape `PUT /v1/link-page` takes.',
+        linkPageCopyName: 'The copy’s internal name. Absent keeps the original’s.',
+        linkPageCopySlug: 'The copy’s slug. Absent takes the original’s with `-2`, `-3` and so on.',
         notificationEnabled: 'Whether the email is sent.',
         notificationSubject: 'The subject, with `{{token}}` markers such as `{{formName}}`. `null` puts the default back.',
         notificationBody: 'The body as plain text, with `{{token}}` markers. `null` puts the default back.',
@@ -5135,6 +5290,69 @@ export const es: FormsMessages = {
       saved: 'Página guardada.',
       error: 'No se pudo guardar la página.',
       fixErrors: 'Primero corrige los campos marcados.',
+      back: 'Todas las páginas',
+      pageSection: 'Página',
+      pageName: 'Nombre interno',
+      pageNameHint: 'Para distinguir tus páginas. Los visitantes no lo ven.',
+      pageNamePlaceholder: 'Expo 2026',
+      slug: 'Dirección',
+      slugHint: 'La página queda en {base}/ seguido de esto.',
+      slugInvalid: 'Usa de 3 a 30 letras minúsculas, números o guiones sueltos, empezando y terminando con una letra o un número.',
+      slugReserved: 'Esa dirección está reservada. Elige otra.',
+      slugTaken: 'Otra de tus páginas ya usa esa dirección.',
+      defaultBadge: 'Página principal',
+      defaultHint: 'Esta es tu página principal: se abre en {url}.',
+      makeDefault: 'Hacer página principal',
+      madeDefault: 'Ahora esta es tu página principal.',
+      colorsSection: 'Colores',
+      colorsHint: 'Por defecto la página usa tu brand kit. Elige un color aquí para usar otro solo en esta página.',
+      colorPrimary: 'Botones',
+      colorBackground: 'Fondo',
+      colorForeground: 'Texto',
+      colorFromKit: 'Del brand kit',
+      colorReset: 'Usar el brand kit',
+    },
+    linkPages: {
+      heading: 'Las páginas de tu workspace',
+      subtitle: 'Páginas con tu logo, tus formularios y tus enlaces: una por evento, canal o país, cada una con su propio link y código QR.',
+      anyMember: 'Cualquier persona de este workspace puede crear y editar estas páginas.',
+      newPage: 'Nueva página',
+      count: '{n} de {max} páginas',
+      limitReached: 'Un workspace admite hasta {max} páginas. Borra una para agregar otra.',
+      emptyTitle: 'Todavía no hay páginas',
+      emptyBody: 'Crea una página para compartir tus formularios y enlaces desde un solo lugar, con su propio link y código QR.',
+      defaultName: 'Página principal',
+      defaultBadge: 'Principal',
+      live: 'Publicada',
+      off: 'Sin publicar',
+      toggleLabel: 'Publicar {name}',
+      buttons: '{n} botones',
+      edited: 'Editada {date}',
+      edit: 'Editar',
+      duplicate: 'Duplicar',
+      duplicated: 'Página duplicada. La copia todavía no está publicada.',
+      copyName: '{name} (copia)',
+      copyLink: 'Copiar link',
+      copied: 'Copiado',
+      qr: 'Código QR',
+      makeDefault: 'Hacer página principal',
+      madeDefault: 'Ahora esta es tu página principal.',
+      remove: 'Borrar',
+      removeTitle: '¿Borrar esta página?',
+      removeBody: '«{name}» y su link dejan de funcionar, incluidos los códigos QR impresos. No se puede deshacer.',
+      removeConfirm: 'Borrar página',
+      removed: 'Página borrada.',
+      cannotRemoveDefault: 'Tu página principal no se puede borrar. Primero haz principal otra página.',
+      published: 'Página publicada.',
+      unpublished: 'Página despublicada.',
+      createTitle: 'Nueva página',
+      createName: 'Nombre interno',
+      createNamePlaceholder: 'Expo 2026',
+      createSlug: 'Dirección',
+      create: 'Crear página',
+      creating: 'Creando…',
+      cancel: 'Cancelar',
+      error: 'Algo salió mal. Inténtalo de nuevo.',
     },
     select: {
       search: 'Buscar…',
@@ -6882,7 +7100,7 @@ export const es: FormsMessages = {
           analytics: { title: 'Analíticas', body: 'Visitas, inicios, completados, abandono por paso y un resumen de cada formulario.' },
           folders: { title: 'Carpetas', body: 'Crea, renombra y borra carpetas, y mueve formularios entre ellas.' },
           brandKit: { title: 'Kit de marca', body: 'Lee y edita el kit de marca y aplícalo a tus formularios.' },
-          linkPage: { title: 'Página del workspace', body: 'Lee y edita la página pública del workspace con tus formularios y enlaces.' },
+          linkPage: { title: 'Páginas del workspace', body: 'Lee, agrega y edita las páginas públicas del workspace con tus formularios y enlaces.' },
           notifications: { title: 'Correos', body: 'Edita los correos de notificación del workspace y de cada formulario.' },
           integrations: { title: 'Integraciones', body: 'Webhooks, HubSpot y Calendly: a dónde van las respuestas, pruebas y entregas.' },
           account: { title: 'Cuenta y workspaces', body: 'Quién está conectado, en qué workspaces puedes trabajar y tu perfil.' },
@@ -6918,8 +7136,12 @@ export const es: FormsMessages = {
           update_brand_kit: { what: 'Cambia el kit de marca.', ask: 'Pon verde el color de mi marca' },
           apply_brand_kit: { what: 'Aplica el kit de marca a un formulario.', ask: 'Aplica mi kit de marca a la encuesta' },
           revert_brand_kit: { what: 'Devuelve un formulario al diseño que tenía antes del kit de marca.', ask: 'Quita el kit de marca de mi encuesta' },
-          get_link_page: { what: 'Lee la página pública del workspace: sus botones, redes y su enlace.', ask: '¿Qué muestra la página de mi workspace?' },
-          update_link_page: { what: 'Edita, publica o borra la página pública del workspace.', ask: 'Agrega mi formulario de contacto a la página del workspace y publícala' },
+          get_link_page: { what: 'Lee una de las páginas públicas del workspace (la principal, si no nombras otra): sus botones, redes y su enlace.', ask: '¿Qué muestra la página de mi workspace?' },
+          update_link_page: { what: 'Edita, renombra, publica o borra una página pública, o la vuelve la principal.', ask: 'Agrega mi formulario de contacto a la página del workspace y publícala' },
+          list_link_pages: { what: 'Lista las páginas públicas del workspace con sus enlaces y si cada una está publicada.', ask: '¿Qué páginas tiene mi workspace?' },
+          create_link_page: { what: 'Agrega una página pública, para un evento, un canal o un país.', ask: 'Crea una página para la Expo 2026 con mi formulario de demo' },
+          duplicate_link_page: { what: 'Copia una página con una dirección nueva, sin publicar.', ask: 'Copia mi página de la Expo para la feria del próximo año' },
+          delete_link_page: { what: 'Borra una página que no sea la principal.', ask: 'Borra la página vieja de la Expo' },
           list_notifications: { what: 'Ve los correos de notificación del workspace.', ask: '¿Qué correos envía dForms?' },
           update_notification: { what: 'Edita un correo de notificación de todo el workspace.', ask: 'Cambia el asunto del correo de respuesta nueva' },
           reset_notification: { what: 'Devuelve un correo del workspace a su versión original.', ask: 'Restablece el correo de respuesta nueva' },
@@ -7048,8 +7270,8 @@ export const es: FormsMessages = {
           intro: 'El logo, los colores y la tipografía del workspace, y cómo aplicarlos a los forms.',
         },
         linkPage: {
-          title: 'Página del workspace',
-          intro: 'La página pública del workspace en `/{accountCode}`: sus forms y enlaces en un solo lugar. Cualquier miembro puede leerla y editarla.',
+          title: 'Páginas del workspace',
+          intro: 'Las páginas públicas del workspace, hasta 20: la principal en `/{accountCode}` y las demás en `/{accountCode}/p/{slug}`. Cada una reúne sus forms y enlaces. Cualquier miembro puede leerlas y editarlas.',
         },
         notifications: {
           title: 'Notificaciones',
@@ -7114,8 +7336,14 @@ export const es: FormsMessages = {
           'Reemplaza el brand kit. Los forms nuevos lo toman de inmediato; los que ya existen, solo cuando lo aplicas.',
         'POST /v1/branding/apply': 'Aplica el brand kit a los forms que indiques.',
         'POST /v1/branding/revert': 'Devuelve a los forms el estilo que tenían antes de aplicar el brand kit.',
-        'GET /v1/link-page': 'La página guardada (`page`, null si no hay), los forms y el brand kit del workspace, el `publicUrl` de la página y si está publicada (`live`). Un número de WhatsApp guardado vuelve como dígitos; envíalo de vuelta con un `+` adelante.',
-        'PUT /v1/link-page': 'Reemplaza la página completa: léela primero y envíala entera. Los colores y la tipografía vienen del brand kit. `{ "page": null }` borra la página y su URL vuelve a dar 404.',
+        'GET /v1/link-page': 'La página principal (`page`, null si no hay) con su `id` y su `slug`, los forms y el brand kit del workspace, el `publicUrl` de la página y si está publicada (`live`). Un número de WhatsApp guardado vuelve como dígitos; envíalo de vuelta con un `+` adelante.',
+        'PUT /v1/link-page': 'Reemplaza la página principal completa: léela primero y envíala entera. Los colores y la tipografía vienen del brand kit, salvo que la página tenga sus propios `colors`. `{ "page": null }` borra la página y su URL vuelve a dar 404, si es la única página del workspace.',
+        'GET /v1/link-pages': 'Todas las páginas del workspace, la principal primero: su `id`, su `slug`, su nombre interno (`name`), si es la principal y si está publicada (`live`), cuántos botones tiene (`buttons`) y su `publicUrl`.',
+        'POST /v1/link-pages': 'Agrega una página, hasta 20 por workspace. Sin `slug` se arma uno a partir del nombre; sin `page` empieza vacía y sin publicar. La primera página del workspace queda como principal.',
+        'GET /v1/link-pages/:id': 'Una página, con los forms y el brand kit del workspace, su `publicUrl` y si está publicada (`live`).',
+        'PUT /v1/link-pages/:id': 'Cambia una página. Solo cambian los campos que envías; `page` reemplaza todo el contenido. Un `slug` nuevo deja la dirección anterior redirigiendo a la nueva. `isDefault: true` la vuelve la página de `/{accountCode}`.',
+        'POST /v1/link-pages/:id/duplicate': 'Copia una página con un slug nuevo y sin publicar, para editarla para el próximo evento antes de publicarla.',
+        'DELETE /v1/link-pages/:id': 'Borra una página; su dirección da 404. La página principal responde 409 `DEFAULT_PAGE`: primero haz principal otra página.',
         'GET /v1/notifications':
           'Los dos correos que dForms manda con cada respuesta: el aviso para tu equipo y el comprobante para quien respondió.',
         'PUT /v1/notifications/:emailKey': 'Activa o desactiva un correo, cambia su texto o quién recibe el aviso.',
@@ -7188,6 +7416,14 @@ export const es: FormsMessages = {
         linkPageLogo: 'Ausente usa el logo del brand kit, `null` no muestra ninguno, una URL http(s) muestra esa imagen.',
         linkPageItems: 'Los botones, en orden, hasta 30: `{ "type": "form", "formId" }` o `{ "type": "link", "label", "url" }`. Un form de otro workspace se descarta.',
         linkPageSocials: '`instagram`, `x`, `youtube` y `tiktok` (un link o un usuario) y `whatsapp` (el número con su código de país, empezando por `+`).',
+        linkPageColors: 'Los colores propios de la página, `primaryColor`, `background` y `foreground`, en hex. Si falta uno, se usa el del brand kit.',
+        linkPagePathId: 'El `id` de la página, de `GET /v1/link-pages`.',
+        linkPagePageName: 'Un nombre interno para distinguir las páginas, hasta 80 caracteres. Los visitantes no lo ven.',
+        linkPageSlug: 'La dirección después de `/p/`: de 3 a 30 letras minúsculas, números o guiones. Única en el workspace.',
+        linkPageIsDefault: '`true` la vuelve la página de `/{accountCode}`; la principal anterior conserva su dirección con `/p/`.',
+        linkPageContent: 'Todo el contenido de la página, con la misma forma que recibe `PUT /v1/link-page`.',
+        linkPageCopyName: 'El nombre interno de la copia. Si falta, conserva el del original.',
+        linkPageCopySlug: 'El slug de la copia. Si falta, se usa el del original con `-2`, `-3` y así sucesivamente.',
         notificationEnabled: 'Si el correo se manda.',
         notificationSubject: 'El asunto, con marcadores `{{token}}` como `{{formName}}`. `null` vuelve al texto por defecto.',
         notificationBody: 'El cuerpo en texto plano, con marcadores `{{token}}`. `null` vuelve al texto por defecto.',

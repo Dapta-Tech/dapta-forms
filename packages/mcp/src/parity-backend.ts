@@ -144,8 +144,15 @@ export interface LinkPageFormRef {
   title: string | null;
 }
 
-/** The workspace link page and what its editor reads with it. */
+/** One of the workspace's link pages and what its editor reads with it. */
 export interface LinkPageView {
+  /** Which page: null on a workspace with no page at all (the default page was asked for). */
+  id: string | null;
+  slug: string | null;
+  /** The internal label; blank when nobody named the page. */
+  name: string | null;
+  /** The page at `/{accountCode}`; every other page lives at `/{accountCode}/p/{slug}`. */
+  isDefault: boolean;
   accountCode: string;
   accountName: string;
   /**
@@ -159,6 +166,32 @@ export interface LinkPageView {
   publicUrl: string | null;
   /** Saved with `enabled: true`: the public address serves it. */
   live: boolean;
+}
+
+/** One page in the workspace's list. */
+export interface LinkPageListItem {
+  id: string;
+  slug: string;
+  name: string;
+  isDefault: boolean;
+  live: boolean;
+  buttons: number;
+  publicUrl: string | null;
+  updatedAt: number;
+}
+
+export interface LinkPageList {
+  accountCode: string;
+  max: number;
+  pages: LinkPageListItem[];
+}
+
+/** Which page a write is about, and what else changes on it besides the content. */
+export interface LinkPageTarget {
+  pageId: string;
+  name?: string;
+  slug?: string;
+  makeDefault?: boolean;
 }
 
 /** A notification email as the Settings screen reads it. */
@@ -225,13 +258,22 @@ export interface ApiParityBackend {
   applyBrandKit(caller: McpCaller, formIds: string[]): Promise<{ applied: string[] }>;
   revertBrandKit(caller: McpCaller, formIds: string[]): Promise<{ reverted: string[] }>;
 
-  // Link page (any member, as the REST routes)
-  getLinkPage(caller: McpCaller): Promise<LinkPageView>;
+  // Link pages (any member, as the REST routes)
+  /** The default page, or the page `pageId` names (404 `PAGE_NOT_FOUND` when it is not this workspace's). */
+  getLinkPage(caller: McpCaller, pageId?: string): Promise<LinkPageView>;
   /**
-   * Replaces the whole page; null deletes it. A form button naming a form the
-   * workspace does not have is a 404, not a silent drop.
+   * Without `target`: replaces the whole DEFAULT page; null deletes it. With
+   * `target`: changes that page (its content when `page` is an object, and
+   * its name, slug or default flag). A form button naming a form the
+   * workspace does not have is a 404, not a silent drop; an unknown page is
+   * a 404 `PAGE_NOT_FOUND`.
    */
-  updateLinkPage(caller: McpCaller, page: Record<string, unknown> | null): Promise<LinkPageView>;
+  updateLinkPage(caller: McpCaller, page: Record<string, unknown> | null | undefined, target?: LinkPageTarget): Promise<LinkPageView>;
+  listLinkPages(caller: McpCaller): Promise<LinkPageList>;
+  createLinkPage(caller: McpCaller, input: { name?: string; slug?: string; page?: Record<string, unknown> }): Promise<LinkPageView>;
+  duplicateLinkPage(caller: McpCaller, pageId: string, input: { name?: string; slug?: string }): Promise<LinkPageView>;
+  /** 409 `DEFAULT_PAGE` for the default page. */
+  deleteLinkPage(caller: McpCaller, pageId: string): Promise<{ id: string; slug: string }>;
 
   // Notifications
   listNotifications(caller: McpCaller): Promise<NotificationView[]>;

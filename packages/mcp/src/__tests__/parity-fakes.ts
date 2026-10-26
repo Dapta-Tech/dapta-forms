@@ -15,6 +15,10 @@ function needForm(id: string): void {
   if (id !== 'form-1') throw missing();
 }
 
+function needPage(id: string): void {
+  if (id !== 'page-1' && id !== 'page-2') throw new BackendError(404, 'PAGE_NOT_FOUND', 'Not found.');
+}
+
 function needAdmin(caller: McpCaller): void {
   if (caller.role !== 'owner' && caller.role !== 'admin') throw new BackendError(403, 'FORBIDDEN', 'Requires an admin or owner.');
 }
@@ -30,7 +34,11 @@ const notification = (emailKey: string): NotificationView => ({
   updatedAt: NOW,
 });
 
-const linkPage = (page: Record<string, unknown> | null): LinkPageView => ({
+const linkPage = (page: Record<string, unknown> | null, id: string | null = page ? 'page-1' : null): LinkPageView => ({
+  id,
+  slug: id === 'page-2' ? 'expo-2026' : id ? 'main' : null,
+  name: id === 'page-2' ? 'Expo 2026' : id ? '' : null,
+  isDefault: id !== 'page-2',
   accountCode: 'acme',
   accountName: 'Acme',
   page,
@@ -209,11 +217,37 @@ export function parityFakes(): ApiParityBackend {
       return { reverted: ids.filter((id) => id === 'form-1') };
     },
 
-    getLinkPage: async () => linkPage(null),
-    updateLinkPage: async (_c, page) => {
+    getLinkPage: async (_c, pageId) => {
+      if (pageId !== undefined) needPage(pageId);
+      return pageId ? linkPage({ version: 1, enabled: true }, pageId) : linkPage(null);
+    },
+    updateLinkPage: async (_c, page, target) => {
+      if (target) needPage(target.pageId);
       const items = (page?.items ?? []) as Array<{ type: string; formId?: string }>;
       for (const item of items) if (item.type === 'form') needForm(item.formId ?? '');
-      return linkPage(page);
+      return linkPage(page ?? { version: 1 }, target?.pageId ?? (page ? 'page-1' : null));
+    },
+    listLinkPages: async () => ({
+      accountCode: 'acme',
+      max: 20,
+      pages: [
+        { id: 'page-1', slug: 'main', name: '', isDefault: true, live: true, buttons: 2, publicUrl: 'https://forms.example.test/acme', updatedAt: NOW },
+        { id: 'page-2', slug: 'expo-2026', name: 'Expo 2026', isDefault: false, live: false, buttons: 1, publicUrl: 'https://forms.example.test/acme/p/expo-2026', updatedAt: NOW },
+      ],
+    }),
+    createLinkPage: async (_c, input) => {
+      const items = (input.page?.items ?? []) as Array<{ type: string; formId?: string }>;
+      for (const item of items) if (item.type === 'form') needForm(item.formId ?? '');
+      return linkPage(input.page ?? { version: 1, enabled: false }, 'page-2');
+    },
+    duplicateLinkPage: async (_c, pageId) => {
+      needPage(pageId);
+      return linkPage({ version: 1, enabled: false }, 'page-2');
+    },
+    deleteLinkPage: async (_c, pageId) => {
+      needPage(pageId);
+      if (pageId === 'page-1') throw new BackendError(409, 'DEFAULT_PAGE', 'The default page cannot be deleted.');
+      return { id: pageId, slug: 'expo-2026' };
     },
 
     listNotifications: async (c) => {
