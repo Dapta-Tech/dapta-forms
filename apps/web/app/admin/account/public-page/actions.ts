@@ -73,8 +73,10 @@ export async function makeDefaultPageAction(id: string): Promise<LinkPageActionR
 export async function setPagePublishedAction(id: string, enabled: boolean): Promise<LinkPageActionResult> {
   return attempt(async () => {
     const view = await adminApi.linkPageById(id);
-    const page: LinkPageInput = view.page ? { ...linkPageToInput(view.page), enabled } : { version: 1, enabled };
-    return adminApi.updateLinkPage(id, { page });
+    // A stored page that no longer parses is never overwritten from here:
+    // only its editor can replace it, with the person looking at it.
+    if (!view.page) throw new ApiError(409, 'PAGE_UNREADABLE', 'PAGE_UNREADABLE');
+    return adminApi.updateLinkPage(id, { page: { ...linkPageToInput(view.page), enabled } });
   }, id);
 }
 

@@ -26,7 +26,6 @@ SELECT 'lp-' || a.id, a.id, 'main', '', a.link_page, 1,
        CAST(strftime('%s', 'now') AS INTEGER) * 1000, CAST(strftime('%s', 'now') AS INTEGER) * 1000
 FROM account a
 WHERE a.link_page IS NOT NULL
-  AND json_valid(a.link_page)
-  AND json_type(a.link_page) = 'object'
+  AND json_type(CASE WHEN json_valid(a.link_page) THEN a.link_page END) = 'object'
   AND NOT EXISTS (SELECT 1 FROM link_page p WHERE p.account_id = a.id)
 ON CONFLICT DO NOTHING;

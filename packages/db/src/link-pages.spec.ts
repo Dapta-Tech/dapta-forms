@@ -133,6 +133,20 @@ describe('link pages', () => {
     expect(defaults).toHaveLength(1);
   });
 
+  it('keeps a default when a page is made default while it is being deleted, and leaves no alias behind', async () => {
+    await create('main');
+    const expo = await create('expo');
+    // Both read the page before either writes: the race the in-transaction guard closes.
+    await Promise.all([
+      deleteLinkPage(db, accountId, expo.id),
+      updateLinkPage(db, accountId, expo.id, { makeDefault: true, slug: 'expo-2026' }),
+    ]);
+    const pages = await listLinkPages(db, accountId);
+    expect(pages.filter((p) => p.isDefault)).toHaveLength(1);
+    const aliases = await db.all(sql`SELECT slug FROM link_page_alias WHERE account_id = ${accountId}`);
+    expect(aliases).toEqual([]);
+  });
+
   it('redirects a renamed slug to the new one, and lets a page take back a retired slug', async () => {
     const main = await create('main');
     const expo = await create('expo');

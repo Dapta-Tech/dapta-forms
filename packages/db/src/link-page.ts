@@ -322,11 +322,16 @@ export async function updateLinkPage(
   const now = patch.now ?? Date.now();
   const statements: SQL[] = [];
   const nextSlug = patch.slug !== undefined && patch.slug !== current.slug ? patch.slug : null;
+  // Every statement re-checks that the page still exists INSIDE the
+  // transaction: it was read before the lock, and a concurrent delete must
+  // not leave the workspace without a default or an alias pointing nowhere.
+  const stillThere = sql`EXISTS (SELECT 1 FROM link_page WHERE account_id = ${accountId} AND id = ${id})`;
   if (nextSlug) {
     statements.push(
       sql`DELETE FROM link_page_alias WHERE account_id = ${accountId} AND slug = ${nextSlug}`,
       sql`INSERT INTO link_page_alias (account_id, slug, page_id, created_at)
-          VALUES (${accountId}, ${current.slug}, ${id}, ${now})
+          SELECT ${accountId}, ${current.slug}, ${id}, ${now}
+          WHERE ${stillThere}
           ON CONFLICT (account_id, slug) DO UPDATE SET page_id = ${id}, created_at = ${now}`,
       sql`UPDATE link_page SET slug = ${nextSlug} WHERE account_id = ${accountId} AND id = ${id}`,
       sql`DELETE FROM link_page_alias WHERE account_id = ${accountId} AND page_id = ${id}
@@ -347,7 +352,8 @@ export async function updateLinkPage(
   if (patch.makeDefault && !current.isDefault) {
     // Unset first: the partial unique index allows one default at a time.
     statements.push(
-      sql`UPDATE link_page SET is_default = 0 WHERE account_id = ${accountId} AND is_default = 1 AND id <> ${id}`,
+      sql`UPDATE link_page SET is_default = 0
+          WHERE account_id = ${accountId} AND is_default = 1 AND id <> ${id} AND ${stillThere}`,
       sql`UPDATE link_page SET is_default = 1 WHERE account_id = ${accountId} AND id = ${id}`,
     );
   }
@@ -400,10 +406,13 @@ export async function setLinkPage(db: Db, accountId: string, page: unknown | nul
     const count = (await listLinkPages(db, accountId)).length;
     if (count > 1) return { ok: false, reason: 'OTHER_PAGES' };
     await writeAtomically(db, accountId, [
-      sql`DELETE FROM link_page_alias WHERE account_id = ${accountId} AND page_id = ${current.id}`,
+      sql`DELETE FROM link_page_alias WHERE account_id = ${accountId} AND page_id = ${current.id}
+            AND (SELECT COUNT(*) FROM link_page WHERE account_id = ${accountId}) = 1`,
       sql`DELETE FROM link_page WHERE account_id = ${accountId} AND id = ${current.id}
             AND (SELECT COUNT(*) FROM link_page WHERE account_id = ${accountId}) = 1`,
     ]);
+    // A page created in between keeps the default page alive: say so.
+    if (await getLinkPageRow(db, accountId, current.id)) return { ok: false, reason: 'OTHER_PAGES' };
     return { ok: true, value: null };
   }
   if (current) return updateLinkPage(db, accountId, current.id, { config: page });

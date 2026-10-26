@@ -407,7 +407,7 @@ export class ApiMcpBackend extends ApiFormsBackend implements FormsBackend {
         const before = this.linkPageView(await this.parity().linkPage.get(req));
         this.assertOwnForms(page, before.forms);
         const out = await this.parity().linkPage.put(req, { page: page ?? null });
-        if (!out.page) return { ...before, page: null, live: false };
+        if (!out.page) return { ...before, id: null, slug: null, name: null, isDefault: false, page: null, live: false };
         // A first save creates the page: read it back for its id and slug.
         return this.linkPageView(await this.parity().linkPage.get(req));
       }
@@ -419,7 +419,7 @@ export class ApiMcpBackend extends ApiFormsBackend implements FormsBackend {
         ...(target.makeDefault ? { isDefault: true } : {}),
         ...(page ? { page } : {}),
       };
-      return this.linkPageView(await this.parity().linkPage.update(req, target.pageId, body));
+      return this.linkPageView(await pageOrMissing(this.parity().linkPage.update(req, target.pageId, body)));
     });
   }
 

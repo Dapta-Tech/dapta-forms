@@ -86,6 +86,8 @@ export function LinkPagesList({
         router.refresh();
       } else if (!isTransportError(res) && res.code === 'DEFAULT_PAGE') {
         error(m.cannotRemoveDefault);
+      } else if (!isTransportError(res) && res.code === 'PAGE_UNREADABLE') {
+        error(m.error);
       } else {
         error((isTransportError(res) ? null : res.message) ?? m.error);
       }
@@ -122,7 +124,9 @@ export function LinkPagesList({
     setNewError(null);
     start(async () => {
       const res = await callAction<LinkPageActionResult>(() =>
-        createPageAction({ name: newName.trim(), ...(newSlug ? { slug: newSlug } : {}) }),
+        // A slug the person typed is theirs (a clash is a 409 to fix); one made
+        // from the name is left to the API, which makes it unique.
+        createPageAction({ name: newName.trim(), ...(newSlug && slugTouched ? { slug: newSlug } : {}) }),
       );
       if (res.ok && res.id) {
         router.push(`/admin/account/public-page/${encodeURIComponent(res.id)}`);
@@ -169,7 +173,11 @@ export function LinkPagesList({
             }}
             data-testid="link-pages-new-slug"
           />
-          <span className="truncate">{`${origin.replace(/^https?:\/\//, '')}/${initial.accountCode}/p/${newSlug}`}</span>
+          <span className="truncate">
+            {pages.length === 0
+              ? `${origin.replace(/^https?:\/\//, '')}/${initial.accountCode}`
+              : `${origin.replace(/^https?:\/\//, '')}/${initial.accountCode}/p/${newSlug}`}
+          </span>
         </label>
       </div>
       {newError ? (
@@ -321,7 +329,9 @@ export function LinkPagesList({
                     className={iconButton}
                     aria-label={m.duplicate}
                     title={m.duplicate}
-                    onClick={() => run(() => duplicatePageAction(p.id, t(m.copyName, { name })), m.duplicated)}
+                    onClick={() =>
+                      run(() => duplicatePageAction(p.id, p.name.trim() ? t(m.copyName, { name: p.name.trim() }) : undefined), m.duplicated)
+                    }
                     disabled={pending || atMax}
                     data-testid="link-pages-duplicate"
                   >

@@ -432,7 +432,11 @@ export function LinkPageEditor({
               </SettingsRow>
               <SettingsRow
                 title={m.slug}
-                hint={t(m.slugHint, { base: `${(origin || '').replace(/^https?:\/\//, '')}/${initial.accountCode}/p` })}
+                hint={
+                  isDefault
+                    ? t(m.defaultHint, { url: url.replace(/^https?:\/\//, '') })
+                    : t(m.slugHint, { base: `${(origin || '').replace(/^https?:\/\//, '')}/${initial.accountCode}/p` })
+                }
                 testId="link-page-meta-slug-row"
               >
                 <div className="flex flex-col gap-1">
