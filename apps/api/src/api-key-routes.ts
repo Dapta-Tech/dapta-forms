@@ -6,7 +6,7 @@
  * needs to build and run forms: forms (create, read, edit, slug, duplicate,
  * publish, revert, delete, file into a folder), folders, destinations,
  * responses and their files, CSV, analytics, brand kit, the workspace link
- * page, notifications, `GET /v1/me`, reading the profile and the public page,
+ * pages, notifications, `GET /v1/me`, reading the profile and the public page,
  * and reading integrations.
  *
  * Everything else is a 403 `KEY_NOT_ALLOWED` with a key: the key routes
@@ -84,9 +84,16 @@ export const API_KEY_ALLOWED_ROUTES: ReadonlySet<string> = new Set([
   'POST /v1/branding/apply',
   'POST /v1/branding/revert',
 
-  // The workspace link page (any member, as in the dashboard).
+  // The workspace link pages (any member, as in the dashboard). `/v1/link-page`
+  // is the default page, as it was when a workspace had one.
   'GET /v1/link-page',
   'PUT /v1/link-page',
+  'GET /v1/link-pages',
+  'POST /v1/link-pages',
+  'GET /v1/link-pages/:id',
+  'PUT /v1/link-pages/:id',
+  'DELETE /v1/link-pages/:id',
+  'POST /v1/link-pages/:id/duplicate',
 
   // Notifications, workspace-wide and per form.
   'GET /v1/notifications',

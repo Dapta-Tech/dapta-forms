@@ -364,6 +364,41 @@ export const accountIntegration = sqliteTable(
   }),
 );
 
+/** A workspace link page (see 0027). Mirrors schema.pg.ts; config is TEXT JSON. */
+export const linkPage = sqliteTable(
+  'link_page',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    slug: text('slug').notNull(),
+    name: text('name').notNull().default(''),
+    config: text('config').notNull(),
+    isDefault: integer('is_default').notNull().default(0),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => ({
+    linkPageAccountSlugUq: uniqueIndex('link_page_account_slug_uq').on(t.accountId, t.slug),
+  }),
+);
+
+/** A renamed link page's old slug (see 0027). */
+export const linkPageAlias = sqliteTable(
+  'link_page_alias',
+  {
+    accountId: text('account_id').notNull(),
+    slug: text('slug').notNull(),
+    pageId: text('page_id')
+      .notNull()
+      .references(() => linkPage.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.accountId, t.slug] }),
+    linkPageAliasPageIdx: index('link_page_alias_page_idx').on(t.pageId),
+  }),
+);
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -378,4 +413,6 @@ export const sqliteSchema = {
   formEvent,
   bookingEvent,
   accountIntegration,
+  linkPage,
+  linkPageAlias,
 };

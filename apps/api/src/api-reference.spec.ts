@@ -265,6 +265,7 @@ describe('every API_REFERENCE example, through the real handlers with an API key
     for (const p of e.params ?? []) {
       if (p.in !== 'path') continue;
       if (p.name === 'id' && e.area === 'folders') params.id = ids[API_EXAMPLE_IDS.folder]!;
+      else if (p.name === 'id' && e.area === 'linkPage') params.id = ids[API_EXAMPLE_IDS.linkPage]!;
       else if (p.name === 'id' && e.path.startsWith('/v1/submissions/')) params.id = ids[API_EXAMPLE_IDS.submission]!;
       else if (p.name === 'id') params.id = formId;
       else if (p.name === 'submissionId') params.submissionId = ids[API_EXAMPLE_IDS.submission]!;
@@ -392,10 +393,18 @@ describe('every API_REFERENCE example, through the real handlers with an API key
       now: Date.UTC(2026, 9, 5, 15, 1),
     });
     ids[API_EXAMPLE_IDS.submission] = row.id;
+    // The workspace's default page first (the legacy one-page write), then the
+    // second page the `/v1/link-pages/:id` examples read, edit, copy and delete.
+    await run(byRoute.get('PUT /v1/link-page')!);
+    await run(byRoute.get('POST /v1/link-pages')!);
+    const page = answers.get('POST /v1/link-pages')?.body as { id: string } | undefined;
+    if (!page) throw failures.get('POST /v1/link-pages');
+    ids[API_EXAMPLE_IDS.linkPage] = page.id;
 
     // Everything else in reading order, then what deletes, last.
     const deletes = (e: ApiEndpoint) => e.destructive === true;
-    const rest = endpoints.filter((e) => e.route !== 'POST /v1/forms' && e.route !== 'POST /v1/folders');
+    const early = new Set(['POST /v1/forms', 'POST /v1/folders', 'PUT /v1/link-page', 'POST /v1/link-pages']);
+    const rest = endpoints.filter((e) => !early.has(e.route));
     for (const e of rest.filter((x) => !deletes(x))) await run(e);
     // The form goes last: the other deletes hang off it.
     const lastly = (e: ApiEndpoint) => (e.route === 'DELETE /v1/forms/:id' ? 1 : 0);

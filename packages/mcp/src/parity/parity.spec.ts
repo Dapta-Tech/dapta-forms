@@ -65,12 +65,28 @@ const CASES: Case[] = [
   { tool: 'apply_brand_kit', ok: { form_ids: ['form-1'] }, adminOnly: true, invalid: { form_ids: [] } },
   { tool: 'revert_brand_kit', ok: { form_ids: ['form-1'] }, adminOnly: true, invalid: { form_ids: [] } },
   { tool: 'get_link_page', ok: {}, invalid: { workspace_id: 3 } },
+  { tool: 'get_link_page', ok: { page_id: 'page-2' }, missing: { page_id: 'nope' }, invalid: { page_id: '' } },
   {
     tool: 'update_link_page',
     ok: { page: { enabled: true, items: [{ type: 'form', formId: 'form-1' }, { type: 'link', label: 'Site', url: 'https://example.test' }] } },
     missing: { page: { items: [{ type: 'form', formId: 'nope' }] } },
     invalid: { page: { items: [{ type: 'button' }] } },
   },
+  {
+    tool: 'update_link_page',
+    ok: { page_id: 'page-2', name: 'Expo', slug: 'expo-2027', page: { enabled: true, colors: { primaryColor: '#3DDC84' } } },
+    missing: { page_id: 'nope', name: 'Expo' },
+    invalid: { page_id: 'page-2', page: { colors: { primaryColor: 'red' } } },
+  },
+  { tool: 'list_link_pages', ok: {}, invalid: { workspace_id: 3 } },
+  {
+    tool: 'create_link_page',
+    ok: { name: 'Expo 2026', slug: 'expo-2026', page: { enabled: true, items: [{ type: 'form', formId: 'form-1' }] } },
+    missing: { name: 'Expo', page: { items: [{ type: 'form', formId: 'nope' }] } },
+    invalid: { slug: 'x' },
+  },
+  { tool: 'duplicate_link_page', ok: { page_id: 'page-2' }, missing: { page_id: 'nope' }, invalid: {} },
+  { tool: 'delete_link_page', ok: { page_id: 'page-2' }, missing: { page_id: 'nope' }, invalid: {} },
   { tool: 'list_notifications', ok: {}, adminOnly: true, invalid: { workspace_id: 3 } },
   { tool: 'update_notification', ok: { email_key: 'submission_received', enabled: false }, adminOnly: true, invalid: { email_key: 'digest' } },
   { tool: 'reset_notification', ok: { email_key: 'submission_received' }, adminOnly: true, invalid: {} },
@@ -116,7 +132,7 @@ describe('the catalog', () => {
     expect(names).toEqual(CATALOG.map((t) => t.name));
     expect(names.slice(0, TOOLS.length)).toEqual(TOOLS.map((t) => t.name));
     expect(new Set(names).size).toBe(names.length);
-    expect(PARITY_TOOLS.map((t) => t.name).sort()).toEqual(CASES.map((c) => c.tool).sort());
+    expect(PARITY_TOOLS.map((t) => t.name).sort()).toEqual([...new Set(CASES.map((c) => c.tool))].sort());
   });
 
   it('maps every reference route to a registered tool, and every new tool to a route', () => {
@@ -134,6 +150,7 @@ describe('the catalog', () => {
         'apply_brand_kit',
         'delete_folder',
         'delete_form',
+        'delete_link_page',
         'delete_response',
         'delete_responses',
         'reset_form_notification',

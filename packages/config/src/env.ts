@@ -257,6 +257,12 @@ export const serverEnvSchema = z.object({
   WORKOS_AUTHKIT_DOMAIN: z.string().optional(),
   MCP_PUBLIC_URL: z.string().optional(),
 
+  // The domain-verification token OpenAI issues for an app (plugin) built on
+  // this MCP server, served as plain text at
+  // /.well-known/openai-apps-challenge on the MCP host. Public by design: it
+  // only proves control of the domain. Unset (the default): that path is 404.
+  OPENAI_APPS_CHALLENGE_TOKEN: z.string().optional(),
+
   // How long after the identity service last vouched for a member at a
   // verified web login (the issue time of that login's token, stamped on the
   // member) an MCP sign-in may still act as that member. dForms is not told

@@ -54,6 +54,7 @@ import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { McpController } from './mcp.controller';
 import { McpOAuthMetadataController } from './mcp-oauth.controller';
+import { OpenAiAppsChallengeController } from './openai-apps-challenge.controller';
 import { createMcpOAuth, mcpOAuthSettings } from './mcp-oauth';
 import {
   CalendlyEventTypesService,
@@ -97,6 +98,9 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // GET /.well-known/oauth-protected-resource/mcp: where an MCP client finds
     // the login (RFC 9728). 404 unless MCP_OAUTH_PROVIDER is set.
     McpOAuthMetadataController,
+    // GET /.well-known/openai-apps-challenge: OpenAI's domain-verification
+    // token for the ChatGPT app. 404 unless OPENAI_APPS_CHALLENGE_TOKEN is set.
+    OpenAiAppsChallengeController,
   ],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },

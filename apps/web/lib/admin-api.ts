@@ -11,6 +11,7 @@ import type {
   FormConfig,
   LinkPage,
   LinkPageFormRef,
+  LinkPageSummary,
   FormDestination,
   MemberProfile,
   SubmissionFile,
@@ -302,13 +303,27 @@ export interface Folder {
   updatedAt: number;
 }
 
-/** GET /v1/link-page: the stored page and everything its editor's preview needs. */
+/** GET /v1/link-page (the default page) and GET /v1/link-pages/:id: a page and everything its editor's preview needs. */
 export interface LinkPageEditorView {
+  /** Which page; null on `/v1/link-page` while the workspace has none. */
+  id: string | null;
+  slug: string | null;
+  name: string | null;
+  isDefault: boolean;
   accountCode: string;
   accountName: string;
   page: LinkPage | null;
   forms: LinkPageFormRef[];
   brandKit: BrandKit | null;
+  publicUrl: string | null;
+  live: boolean;
+}
+
+/** GET /v1/link-pages: every page of the workspace, the default first. */
+export interface LinkPagesListView {
+  accountCode: string;
+  max: number;
+  pages: Array<LinkPageSummary & { publicUrl: string | null }>;
 }
 
 /** GET/PUT /v1/branding — the workspace brand kit (null = none saved yet). */
@@ -779,6 +794,22 @@ export const adminApi = {
   /** Replace the workspace link page; null removes it. Any member may. */
   saveLinkPage: (page: unknown | null) =>
     req<{ ok: boolean; page: LinkPage | null }>('PUT', '/v1/link-page', { page }),
+  /** Every page of the workspace, the default first. */
+  linkPages: () => req<LinkPagesListView>('GET', '/v1/link-pages'),
+  /** One page and what its editor needs. */
+  linkPageById: (id: string) => req<LinkPageEditorView>('GET', `/v1/link-pages/${encodeURIComponent(id)}`),
+  /** Add a page. */
+  createLinkPage: (body: { name?: string; slug?: string; page?: unknown }) =>
+    req<LinkPageEditorView>('POST', '/v1/link-pages', body),
+  /** Change a page: only the fields sent change. */
+  updateLinkPage: (id: string, body: { name?: string; slug?: string; isDefault?: true; page?: unknown }) =>
+    req<LinkPageEditorView>('PUT', `/v1/link-pages/${encodeURIComponent(id)}`, body),
+  /** Copy a page, unpublished, under a new slug. */
+  duplicateLinkPage: (id: string, body: { name?: string; slug?: string }) =>
+    req<LinkPageEditorView>('POST', `/v1/link-pages/${encodeURIComponent(id)}/duplicate`, body),
+  /** Delete a page that is not the default. */
+  deleteLinkPage: (id: string) =>
+    req<{ ok: boolean; id: string; slug: string }>('DELETE', `/v1/link-pages/${encodeURIComponent(id)}`),
   /** The caller's own public page config (raw blob or null). */
   myProfile: () => req<{ handle: string | null; profile: MemberProfile | null }>('GET', '/v1/me/profile'),
   /** Replace the caller's own public page; null removes it. */

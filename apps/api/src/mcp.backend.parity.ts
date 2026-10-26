@@ -1,3 +1,4 @@
+import { HttpException } from '@nestjs/common';
 import { getFormById, type Db } from '@quill/db';
 import { linkPageToInput } from '@quill/types';
 import {
@@ -19,6 +20,8 @@ import {
   type FolderItem,
   type FormDetail,
   type FormsBackend,
+  type LinkPageList,
+  type LinkPageTarget,
   type LinkPageView,
   type McpCaller,
   type MemberProfile,
@@ -57,6 +60,19 @@ import type { FilterQuery } from './submission-filter';
  * per tool call.
  */
 
+/**
+ * A link page route's answer, with its 404 renamed `PAGE_NOT_FOUND`, so the
+ * tool can tell "no such page" from "no such form" in the page's buttons.
+ */
+async function pageOrMissing<T>(work: Promise<T>): Promise<T> {
+  try {
+    return await work;
+  } catch (err) {
+    if (err instanceof HttpException && err.getStatus() === 404) throw new BackendError(404, 'PAGE_NOT_FOUND', 'Not found.');
+    throw err;
+  }
+}
+
 /** Every handler the parity tools call, by controller. Each is checked against the API-key allowlist at boot. */
 export const MCP_PARITY_HANDLERS = {
   forms: [
@@ -83,7 +99,7 @@ export const MCP_PARITY_HANDLERS = {
   analytics: ['submission', 'exportCsv', 'deleteSubmission', 'deleteSubmissions', 'formSummary', 'submissionFacets', 'summaryAnswers'],
   destinations: ['putDestinations', 'pingWebhook'],
   branding: ['get', 'put', 'apply', 'revert'],
-  linkPage: ['get', 'put'],
+  linkPage: ['get', 'put', 'list', 'create', 'one', 'update', 'remove', 'duplicate'],
   integrations: ['list', 'webhooks', 'hubspotProperties', 'calendlyEventTypes'],
 } as const;
 
@@ -349,8 +365,25 @@ export class ApiMcpBackend extends ApiFormsBackend implements FormsBackend {
 
   // --- Link page --------------------------------------------------------------
 
-  getLinkPage(caller: McpCaller): Promise<LinkPageView> {
-    return run(async () => this.linkPageView(await this.parity().linkPage.get(reqOf(caller))));
+  getLinkPage(caller: McpCaller, pageId?: string): Promise<LinkPageView> {
+    return run(async () =>
+      this.linkPageView(
+        pageId === undefined
+          ? await this.parity().linkPage.get(reqOf(caller))
+          : await pageOrMissing(this.parity().linkPage.one(reqOf(caller), pageId)),
+      ),
+    );
+  }
+
+  /** Every form id of the page's buttons must be the workspace's own: NOT_FOUND names the form, before anything is written. */
+  private assertOwnForms(page: Record<string, unknown> | null | undefined, forms: { id: string }[]): void {
+    const own = new Set(forms.map((f) => f.id));
+    const items = Array.isArray(page?.items) ? (page.items as unknown[]) : [];
+    for (const item of items) {
+      if (isRecord(item) && item.type === 'form' && typeof item.formId === 'string' && !own.has(item.formId.trim())) {
+        throw new BackendError(404, 'NOT_FOUND', 'Not found.');
+      }
+    }
   }
 
   /**
@@ -359,21 +392,73 @@ export class ApiMcpBackend extends ApiFormsBackend implements FormsBackend {
    * first (the same handler as `getLinkPage`, on the same `callRequest`, so
    * one tool call is one key call) and every form id is checked against the
    * workspace's forms before anything is written.
+   *
+   * Without `target` this is `PUT /v1/link-page` (the default page); with it,
+   * `PUT /v1/link-pages/:id`, and an unknown page is `PAGE_NOT_FOUND`.
    */
-  updateLinkPage(caller: McpCaller, page: Record<string, unknown> | null): Promise<LinkPageView> {
+  updateLinkPage(
+    caller: McpCaller,
+    page: Record<string, unknown> | null | undefined,
+    target?: LinkPageTarget,
+  ): Promise<LinkPageView> {
     return run(async () => {
       const req = callRequest(reqOf(caller));
-      const before = this.linkPageView(await this.parity().linkPage.get(req));
-      const own = new Set(before.forms.map((f) => f.id));
-      const items = Array.isArray(page?.items) ? (page.items as unknown[]) : [];
-      for (const item of items) {
-        if (isRecord(item) && item.type === 'form' && typeof item.formId === 'string' && !own.has(item.formId.trim())) {
-          throw new BackendError(404, 'NOT_FOUND', 'Not found.');
-        }
+      if (!target) {
+        const before = this.linkPageView(await this.parity().linkPage.get(req));
+        this.assertOwnForms(page, before.forms);
+        const out = await this.parity().linkPage.put(req, { page: page ?? null });
+        if (!out.page) return { ...before, id: null, slug: null, name: null, isDefault: false, page: null, live: false };
+        // A first save creates the page: read it back for its id and slug.
+        return this.linkPageView(await this.parity().linkPage.get(req));
       }
-      const out = await this.parity().linkPage.put(req, { page });
-      const saved = out.page ? (linkPageToInput(out.page) as Record<string, unknown>) : null;
-      return { ...before, page: saved, live: out.page?.enabled === true };
+      const before = this.linkPageView(await pageOrMissing(this.parity().linkPage.one(req, target.pageId)));
+      this.assertOwnForms(page, before.forms);
+      const body = {
+        ...(target.name !== undefined ? { name: target.name } : {}),
+        ...(target.slug !== undefined ? { slug: target.slug } : {}),
+        ...(target.makeDefault ? { isDefault: true } : {}),
+        ...(page ? { page } : {}),
+      };
+      return this.linkPageView(await pageOrMissing(this.parity().linkPage.update(req, target.pageId, body)));
+    });
+  }
+
+  listLinkPages(caller: McpCaller): Promise<LinkPageList> {
+    return run(async () => {
+      const l = await this.parity().linkPage.list(reqOf(caller));
+      return {
+        accountCode: l.accountCode,
+        max: l.max,
+        pages: l.pages.map((p) => ({
+          id: p.id,
+          slug: p.slug,
+          name: p.name,
+          isDefault: p.isDefault,
+          live: p.live,
+          buttons: p.buttons,
+          publicUrl: p.publicUrl,
+          updatedAt: p.updatedAt,
+        })),
+      };
+    });
+  }
+
+  createLinkPage(caller: McpCaller, input: { name?: string; slug?: string; page?: Record<string, unknown> }): Promise<LinkPageView> {
+    return run(async () => {
+      const req = callRequest(reqOf(caller));
+      if (input.page) this.assertOwnForms(input.page, (await this.parity().linkPage.get(req)).forms);
+      return this.linkPageView(await this.parity().linkPage.create(req, input));
+    });
+  }
+
+  duplicateLinkPage(caller: McpCaller, pageId: string, input: { name?: string; slug?: string }): Promise<LinkPageView> {
+    return run(async () => this.linkPageView(await pageOrMissing(this.parity().linkPage.duplicate(reqOf(caller), pageId, input))));
+  }
+
+  deleteLinkPage(caller: McpCaller, pageId: string): Promise<{ id: string; slug: string }> {
+    return run(async () => {
+      const out = await pageOrMissing(this.parity().linkPage.remove(reqOf(caller), pageId));
+      return { id: out.id, slug: out.slug };
     });
   }
 
@@ -439,6 +524,10 @@ export class ApiMcpBackend extends ApiFormsBackend implements FormsBackend {
   /** The route's answer, with a stored page put back in the shape the write takes (WhatsApp with its `+`). */
   private linkPageView(v: Awaited<ReturnType<LinkPageController['get']>>): LinkPageView {
     return {
+      id: v.id,
+      slug: v.slug,
+      name: v.name,
+      isDefault: v.isDefault,
       accountCode: v.accountCode,
       accountName: v.accountName,
       page: v.page ? (linkPageToInput(v.page) as Record<string, unknown>) : null,

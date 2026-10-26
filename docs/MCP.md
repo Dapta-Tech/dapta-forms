@@ -149,8 +149,14 @@ its REST route, with the same role rule and the same masking.
 | Brand kit | `PUT /v1/branding` | `update_brand_kit` | write, owners and admins |
 | Brand kit | `POST /v1/branding/apply` | `apply_brand_kit` | **destructive**, owners and admins |
 | Brand kit | `POST /v1/branding/revert` | `revert_brand_kit` | **destructive**, owners and admins |
-| Link page | `GET /v1/link-page` | `get_link_page` | read (the stored page or null, the workspace's forms, the brand kit, `public_url` and `live`) |
-| Link page | `PUT /v1/link-page` | `update_link_page` | **destructive**, open world (replaces the whole page; `page: null` deletes it and the URL answers 404 again; any member) |
+| Link pages | `GET /v1/link-page` | `get_link_page` | read (the default page, or the one `page_id` names: the stored page or null, the workspace's forms, the brand kit, `public_url` and `live`) |
+| Link pages | `GET /v1/link-pages/:id` | `get_link_page` (with `page_id`) | read |
+| Link pages | `PUT /v1/link-page` | `update_link_page` | **destructive**, open world (replaces the whole default page; `page: null` deletes it when it is the only page; any member) |
+| Link pages | `PUT /v1/link-pages/:id` | `update_link_page` (with `page_id`) | **destructive**, open world (content, `name`, `slug` with a redirect from the old one, `make_default`) |
+| Link pages | `GET /v1/link-pages` | `list_link_pages` | read (every page, the default first, with `page_id`, `public_url` and `live`) |
+| Link pages | `POST /v1/link-pages` | `create_link_page` | write, open world (at most 20 pages; the first one becomes the default) |
+| Link pages | `POST /v1/link-pages/:id/duplicate` | `duplicate_link_page` | write (the copy is unpublished) |
+| Link pages | `DELETE /v1/link-pages/:id` | `delete_link_page` | **destructive**, open world (never the default page) |
 | Notifications | `GET /v1/notifications` | `list_notifications` | read, owners and admins |
 | Notifications | `PUT /v1/notifications/:emailKey` | `update_notification` | write, owners and admins |
 | Notifications | `POST /v1/notifications/:emailKey/reset` | `reset_notification` | **destructive**, owners and admins |
@@ -445,6 +451,7 @@ All optional; unset (or blank) means the safe default. See
 | `WORKOS_AUTHKIT_DOMAIN` | API | unset (required with `MCP_OAUTH_PROVIDER`) |
 | `OAUTH_LINK_MAX_AGE_DAYS` | API | `30` (days after a member's last verified web login that a sign-in may act as it) |
 | `IAM_STAFF_DOMAINS` | API (the web app's switcher; never an MCP sign-in) | unset (nobody is staff) |
+| `OPENAI_APPS_CHALLENGE_TOKEN` | API (served at `/.well-known/openai-apps-challenge`, OpenAI's domain check for a ChatGPT app) | unset (404) |
 
 ## Check it yourself
 

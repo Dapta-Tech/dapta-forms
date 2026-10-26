@@ -74,13 +74,23 @@ export function formLinks(
   };
 }
 
+/** The fixed segment a workspace's extra link pages live under: `/{accountCode}/p/{slug}`. */
+export const LINK_PAGE_PUBLIC_SEGMENT = 'p';
+
 /**
- * The workspace link page's absolute public URL (`/{accountCode}`) on the
- * deployment's public address, or null when there is no `PUBLIC_APP_URL` to
- * promise. Built here like a form's link, so the API hands agents the same
- * address the editor shows.
+ * A workspace link page's absolute public URL on the deployment's public
+ * address, or null when there is no `PUBLIC_APP_URL` to promise. The default
+ * page (or a call without `page`) is `/{accountCode}`; any other page is
+ * `/{accountCode}/p/{slug}`. Built here like a form's link, so the API hands
+ * agents the same address the editor shows.
  */
-export function linkPageUrl(appUrl: string | null | undefined, accountCode: string): string | null {
+export function linkPageUrl(
+  appUrl: string | null | undefined,
+  accountCode: string,
+  page?: { slug: string; isDefault: boolean } | null,
+): string | null {
   const base = trimTrailing((appUrl ?? '').trim(), '/');
-  return base ? `${base}/${encodeURIComponent(accountCode)}` : null;
+  if (!base) return null;
+  const root = `${base}/${encodeURIComponent(accountCode)}`;
+  return !page || page.isDefault ? root : `${root}/${LINK_PAGE_PUBLIC_SEGMENT}/${encodeURIComponent(page.slug)}`;
 }
