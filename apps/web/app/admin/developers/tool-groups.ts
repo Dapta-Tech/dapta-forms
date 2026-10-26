@@ -35,7 +35,7 @@ export const TOOL_GROUPS = {
   analytics: ['get_form_analytics', 'get_form_summary'],
   folders: ['list_folders', 'create_folder', 'rename_folder', 'delete_folder', 'move_form'],
   brandKit: ['get_brand_kit', 'update_brand_kit', 'apply_brand_kit', 'revert_brand_kit'],
-  linkPage: ['get_link_page', 'update_link_page'],
+  linkPage: ['list_link_pages', 'get_link_page', 'create_link_page', 'update_link_page', 'duplicate_link_page', 'delete_link_page'],
   notifications: [
     'list_notifications',
     'update_notification',

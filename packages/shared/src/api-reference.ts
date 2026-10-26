@@ -120,6 +120,14 @@ export type ApiParamDoc =
   | 'linkPageLogo'
   | 'linkPageItems'
   | 'linkPageSocials'
+  | 'linkPageColors'
+  | 'linkPagePathId'
+  | 'linkPagePageName'
+  | 'linkPageSlug'
+  | 'linkPageIsDefault'
+  | 'linkPageContent'
+  | 'linkPageCopyName'
+  | 'linkPageCopySlug'
   // Notifications
   | 'notificationEnabled'
   | 'notificationSubject'
@@ -170,6 +178,8 @@ export const API_EXAMPLE_IDS = {
   member: '2d4f6a8c-1b3e-4d5f-a7c9-e1f3a5c7e9b2',
   account: '5e7a9c1e-3f5b-4d7f-b9e1-a3c5e7f9b1d4',
   webhook: 'c3e5a7f9-1b3d-4f5a-8c7e-9a1b3c5d7e9f',
+  linkPage: '9b1d3f5a-7c9e-4b1d-8f3a-5c7e9b1d3f5a',
+  linkPageCopy: 'a2c4e6f8-0b2d-4f6a-9c8e-0a2c4e6f8b0d',
 } as const;
 
 /**
@@ -384,6 +394,43 @@ const LINK_PAGE = {
 const LINK_PAGE_SAVED = {
   ...LINK_PAGE,
   socials: { instagram: 'https://www.instagram.com/acme', whatsapp: '573001234567' },
+};
+
+/** A second page, for a trade fair: its own button and its own colours. */
+const EXPO_PAGE = {
+  version: 1,
+  enabled: true,
+  name: 'Acme at Expo 2026',
+  items: [{ type: 'form', formId: ID.form }],
+  colors: { primaryColor: '#3DDC84' },
+};
+
+const LINK_PAGE_FORMS = [{ id: ID.form, slug: 'talk-to-sales', name: 'Talk to sales', title: 'Talk to sales' }];
+
+/** One page of several as `GET /v1/link-pages/:id` and the writes answer it. */
+const EXPO_VIEW = {
+  id: ID.linkPage,
+  slug: 'expo-2026',
+  name: 'Expo 2026',
+  isDefault: false,
+  createdAt: STAMP,
+  updatedAt: STAMP,
+  accountCode: 'acme',
+  accountName: 'Acme Inc.',
+  page: EXPO_PAGE,
+  forms: LINK_PAGE_FORMS,
+  brandKit: BRAND_KIT,
+  publicUrl: 'https://forms.example.com/acme/p/expo-2026',
+  live: true,
+};
+
+const LINK_PAGE_PATH: ApiParamSpec = {
+  name: 'id',
+  in: 'path',
+  type: 'string',
+  required: true,
+  doc: 'linkPagePathId',
+  example: '$PAGE_ID',
 };
 
 export const API_REFERENCE = {
@@ -775,10 +822,14 @@ export const API_REFERENCE = {
     area: 'linkPage',
     status: 200,
     response: {
+      id: ID.linkPage,
+      slug: 'main',
+      name: '',
+      isDefault: true,
       accountCode: 'acme',
       accountName: 'Acme Inc.',
       page: LINK_PAGE_SAVED,
-      forms: [{ id: ID.form, slug: 'talk-to-sales', name: 'Talk to sales', title: 'Talk to sales' }],
+      forms: LINK_PAGE_FORMS,
       brandKit: BRAND_KIT,
       publicUrl: 'https://forms.example.com/acme',
       live: true,
@@ -799,6 +850,85 @@ export const API_REFERENCE = {
     status: 200,
     destructive: true,
     response: { ok: true, page: LINK_PAGE_SAVED },
+  },
+  'GET /v1/link-pages': {
+    area: 'linkPage',
+    status: 200,
+    response: {
+      accountCode: 'acme',
+      max: 20,
+      pages: [
+        {
+          id: ID.linkPage,
+          slug: 'expo-2026',
+          name: 'Expo 2026',
+          isDefault: false,
+          live: true,
+          buttons: 1,
+          createdAt: STAMP,
+          updatedAt: STAMP,
+          publicUrl: 'https://forms.example.com/acme/p/expo-2026',
+        },
+      ],
+    },
+  },
+  'POST /v1/link-pages': {
+    area: 'linkPage',
+    params: [
+      { name: 'name', in: 'body', type: 'string', doc: 'linkPagePageName' },
+      { name: 'slug', in: 'body', type: 'string', doc: 'linkPageSlug' },
+      { name: 'page', in: 'body', type: 'object', doc: 'linkPageContent' },
+      { name: 'page.colors', in: 'body', type: 'object', doc: 'linkPageColors' },
+    ],
+    body: { name: 'Expo 2026', slug: 'expo-2026', page: EXPO_PAGE },
+    status: 201,
+    response: EXPO_VIEW,
+  },
+  'GET /v1/link-pages/:id': {
+    area: 'linkPage',
+    params: [LINK_PAGE_PATH],
+    status: 200,
+    response: EXPO_VIEW,
+  },
+  'PUT /v1/link-pages/:id': {
+    area: 'linkPage',
+    params: [
+      LINK_PAGE_PATH,
+      { name: 'name', in: 'body', type: 'string', doc: 'linkPagePageName' },
+      { name: 'slug', in: 'body', type: 'string', doc: 'linkPageSlug' },
+      { name: 'isDefault', in: 'body', type: 'true', doc: 'linkPageIsDefault' },
+      { name: 'page', in: 'body', type: 'object', doc: 'linkPageContent' },
+    ],
+    body: { name: 'Expo 2026', page: EXPO_PAGE },
+    status: 200,
+    destructive: true,
+    response: EXPO_VIEW,
+  },
+  'POST /v1/link-pages/:id/duplicate': {
+    area: 'linkPage',
+    params: [
+      LINK_PAGE_PATH,
+      { name: 'name', in: 'body', type: 'string', doc: 'linkPageCopyName' },
+      { name: 'slug', in: 'body', type: 'string', doc: 'linkPageCopySlug' },
+    ],
+    body: { name: 'Expo 2027' },
+    status: 201,
+    response: {
+      ...EXPO_VIEW,
+      id: ID.linkPageCopy,
+      slug: 'expo-2026-2',
+      name: 'Expo 2027',
+      page: { ...EXPO_PAGE, enabled: false },
+      publicUrl: 'https://forms.example.com/acme/p/expo-2026-2',
+      live: false,
+    },
+  },
+  'DELETE /v1/link-pages/:id': {
+    area: 'linkPage',
+    params: [LINK_PAGE_PATH],
+    status: 200,
+    destructive: true,
+    response: { ok: true, id: ID.linkPage, slug: 'expo-2026' },
   },
 
   // Notifications

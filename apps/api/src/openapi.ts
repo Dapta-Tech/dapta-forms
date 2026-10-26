@@ -134,20 +134,103 @@ export const openapiSpec = {
         responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' }, '404': { description: 'Not found' } },
       },
     },
+    '/v1/public/pages/{accountCode}/{slug}': {
+      get: {
+        summary: 'Fetch one of a workspace\'s other link pages (public)',
+        description:
+          'The page served at /{accountCode}/p/{slug}, in the same body as the default page, plus `pageSlug` (the page\'s CURRENT slug: a retired slug answers the page that used to have it, so the caller can redirect) and `isDefault`. Slugs are matched without regard to case. 404 for an unknown slug and for a page that is not published.',
+        parameters: [
+          { name: 'accountCode', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'The published page' }, '404': { description: 'Not found' } },
+      },
+    },
+    '/v1/public/pages/{accountCode}/{slug}/events': {
+      post: {
+        summary: 'Record a view of, or a click on, one of a workspace\'s other link pages',
+        description: 'Same body as /v1/public/pages/{accountCode}/events. The capture carries `page_slug` and `page_id`.',
+        parameters: [
+          { name: 'accountCode', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' }, '404': { description: 'Not found' } },
+      },
+    },
     '/v1/link-page': {
       get: {
-        summary: 'Read the workspace link page (host session only)',
+        summary: 'Read the workspace default link page',
         description:
-          'Body { accountCode, accountName, page, forms: [{ id, slug, name, title }], brandKit }. `page` is null until one is saved. Any member of the workspace may call it.',
+          'Body { id, slug, name, isDefault, accountCode, accountName, page, forms: [{ id, slug, name, title }], brandKit, publicUrl, live }. The DEFAULT page, the one at /{accountCode}, as when a workspace had a single page; `page` (and `id`, `slug`, `name`) is null until one is saved. Any member of the workspace may call it.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'The page and what the editor needs' } },
       },
       put: {
-        summary: 'Replace the workspace link page (host session only)',
+        summary: 'Replace the workspace default link page',
         description:
-          'Body { page: { version: 1, enabled, name?, bio?, logo?, items?: [{ type: "form", formId } | { type: "link", label, url }], socials?: { instagram?, x?, youtube?, tiktok?, whatsapp? } } | null }. Socials are normalized to https links on their own network (a handle such as @yourbrand works too). WhatsApp must carry its country code, starting with + or 00 (a number without it is refused), and is stored as digits. `logo` absent uses the brand kit logo, null shows none. `{ page: null }` removes the page. Form buttons for forms outside the workspace are dropped. Any member of the workspace may call it.',
+          'Body { page: { version: 1, enabled, name?, bio?, logo?, items?: [{ type: "form", formId } | { type: "link", label, url }], socials?: { instagram?, x?, youtube?, tiktok?, whatsapp? } } | null }. Socials are normalized to https links on their own network (a handle such as @yourbrand works too). WhatsApp must carry its country code, starting with + or 00 (a number without it is refused), and is stored as digits. `logo` absent uses the brand kit logo, null shows none. `colors?: { primaryColor?, background?, foreground? }` (hex) override the brand kit for this page. Writes the DEFAULT page, creating it as `main` when the workspace has none. `{ page: null }` removes it when it is the workspace\'s only page, else 409 DEFAULT_PAGE. Form buttons for forms outside the workspace are dropped. Any member of the workspace may call it.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'Saved' }, '400': { description: 'BAD_REQUEST with issues' } },
+      },
+    },
+    '/v1/link-pages': {
+      get: {
+        summary: 'List the workspace link pages',
+        description:
+          'Body { accountCode, max, pages: [{ id, slug, name, isDefault, live, buttons, createdAt, updatedAt, publicUrl }] }, the default page first. A workspace keeps up to `max` (20) pages. Any member of the workspace may call it.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'The pages' } },
+      },
+      post: {
+        summary: 'Add a link page',
+        description:
+          'Body { name?, slug?, page? }. `slug` follows the vanity rules (3 to 30 lowercase letters, digits or single hyphens, not a reserved word) and is unique in the workspace; absent, one is made from the name. `page` is the same content PUT /v1/link-page takes; absent, the page starts empty and unpublished. The workspace\'s first page becomes its default. Answers the page as GET /v1/link-pages/{id} does. 409 SLUG_TAKEN, 409 PAGE_LIMIT past 20 pages.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '201': { description: 'Created' },
+          '400': { description: 'BAD_REQUEST with issues' },
+          '409': { description: 'SLUG_TAKEN or PAGE_LIMIT' },
+        },
+      },
+    },
+    '/v1/link-pages/{id}': {
+      get: {
+        summary: 'Read one link page',
+        description:
+          'Body { id, slug, name, isDefault, createdAt, updatedAt, accountCode, accountName, page, forms, brandKit, publicUrl, live }. 404 for an id outside the workspace.',
+        security: [{ hostSession: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'The page' }, '404': { description: 'Not found' } },
+      },
+      put: {
+        summary: 'Change a link page',
+        description:
+          'Body { name?, slug?, isDefault?: true, page? }: only the fields sent change, and `page` replaces the whole content. A new slug keeps the old one redirecting to it. `isDefault: true` makes this the page at /{accountCode}, and only a published page can be (409 PAGE_NOT_PUBLISHED); there is no false (make another page the default instead).',
+        security: [{ hostSession: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Saved' },
+          '400': { description: 'BAD_REQUEST with issues' },
+          '404': { description: 'Not found' },
+          '409': { description: 'SLUG_TAKEN or PAGE_NOT_PUBLISHED' },
+        },
+      },
+      delete: {
+        summary: 'Delete a link page',
+        description: 'Body { ok, id, slug }. The default page answers 409 DEFAULT_PAGE: make another page the default first.',
+        security: [{ hostSession: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Deleted' }, '404': { description: 'Not found' }, '409': { description: 'DEFAULT_PAGE' } },
+      },
+    },
+    '/v1/link-pages/{id}/duplicate': {
+      post: {
+        summary: 'Duplicate a link page',
+        description:
+          'Body { name?, slug? }. The copy has the same content, switched off, never the default, under the given slug or the original\'s with -2, -3 and so on. Answers the copy as GET /v1/link-pages/{id} does.',
+        security: [{ hostSession: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '201': { description: 'Created' }, '404': { description: 'Not found' }, '409': { description: 'SLUG_TAKEN or PAGE_LIMIT' } },
       },
     },
     '/v1/api-keys': {

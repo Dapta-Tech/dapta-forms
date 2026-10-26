@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { FormsMessages } from '@quill/shared';
 import { t } from '@quill/shared';
 import {
+  LINK_PAGE_COLOR_FIELDS,
   LINK_PAGE_LOGO_MAX_CHARS,
   LINK_PAGE_MAX_ITEMS,
   LINK_PAGE_SOCIALS,
@@ -12,11 +13,13 @@ import {
   normalizeSocial,
   resolveLinkPage,
   type LinkPage,
+  type LinkPageColors,
   type LinkPageInput,
   type LinkPageItem,
   type LinkPageSocial,
 } from '@quill/types';
-import { isSafeHttpUrl } from '@quill/engine';
+import { isSafeHttpUrl, validateVanitySlug } from '@quill/engine';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -26,9 +29,9 @@ import { useToast } from '@/components/toast';
 import { LinkPageView } from '@/components/link-page/link-page-view';
 import { QrModal } from '@/app/admin/forms/[id]/edit/qr-modal';
 import { callAction, isTransportError } from '@/lib/call-action';
-import { workspacePagePath } from '@/lib/public-page';
+import { linkPagePublicPath, workspacePagePath } from '@/lib/public-page';
 import type { LinkPageEditorView } from '@/lib/admin-api';
-import { saveLinkPageAction } from './actions';
+import { makeDefaultPageAction, saveLinkPageAction, savePageAction, type LinkPageActionResult } from './actions';
 import { downscaleLogo } from './logo-upload';
 import { savedBody, unpublishBody } from './unpublish';
 
@@ -48,6 +51,24 @@ const newKey = () => `row-${(nextKey += 1)}`;
 function socialDisplay(network: LinkPageSocial, stored: string | null | undefined): string {
   if (!stored) return '';
   return network === 'whatsapp' ? `+${stored}` : stored;
+}
+
+type ColorField = (typeof LINK_PAGE_COLOR_FIELDS)[number];
+
+/** What the colour pickers start from when a field follows the kit: the kit's colour, else a neutral one. */
+const PICKER_FALLBACK: Record<ColorField, string> = { primaryColor: '#3ddc84', background: '#ffffff', foreground: '#1a1a1c' };
+
+/** A colour the native picker can show (`#rrggbb`), or null. */
+function pickerValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (/^#[0-9a-fA-F]{6}$/.test(value)) return value.toLowerCase();
+  const short = /^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/.exec(value);
+  return short ? `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`.toLowerCase() : null;
+}
+
+/** Which slug message to show for a value, or null when it is fine. */
+function slugIssue(value: string): 'invalid' | 'reserved' | null {
+  return validateVanitySlug(value.trim().toLowerCase());
 }
 
 function linkValid(row: Extract<Row, { type: 'link' }>): boolean {
@@ -86,6 +107,18 @@ export function LinkPageEditor({
   const kitLogo = initial.brandKit?.logo ?? null;
 
   const [enabled, setEnabled] = useState(stored?.enabled ?? false);
+  // Which page this is. The address shown is the SAVED one: a slug typed but
+  // not saved does not answer yet.
+  const [pageName, setPageName] = useState(initial.name ?? '');
+  const [slug, setSlug] = useState(initial.slug ?? '');
+  const [savedSlug, setSavedSlug] = useState(initial.slug);
+  const [isDefault, setIsDefault] = useState(initial.isDefault);
+  const [slugTaken, setSlugTaken] = useState(false);
+  const [colors, setColors] = useState<Record<ColorField, string>>(() => ({
+    primaryColor: stored?.colors?.primaryColor ?? '',
+    background: stored?.colors?.background ?? '',
+    foreground: stored?.colors?.foreground ?? '',
+  }));
   const [name, setName] = useState(stored?.name ?? '');
   const [bio, setBio] = useState(stored?.bio ?? '');
   const [logoMode, setLogoMode] = useState<LogoMode>(
@@ -114,8 +147,12 @@ export function LinkPageEditor({
 
   useEffect(() => setOrigin(window.location.origin), []);
 
-  const path = workspacePagePath(initial.accountCode);
+  const path = savedSlug
+    ? linkPagePublicPath(initial.accountCode, { slug: savedSlug, isDefault })
+    : workspacePagePath(initial.accountCode);
   const url = `${origin}${path}`;
+  const slugProblem = initial.id ? slugIssue(slug) : null;
+  const slugMessage = slugProblem === 'invalid' ? m.slugInvalid : slugProblem === 'reserved' ? m.slugReserved : slugTaken ? m.slugTaken : null;
   const formsById = useMemo(() => new Map(initial.forms.map((f) => [f.id, f])), [initial.forms]);
   // A stored button whose form was deleted since is shown nowhere: the public
   // page drops it, so the editor does too, and the next save forgets it.
@@ -132,6 +169,13 @@ export function LinkPageEditor({
     return out;
   }, [socials]);
   const logoInvalid = logoMode === 'custom' && (!logo.trim() || !isLinkPageLogo(logo));
+
+  /** The page's own colours, only the ones set; undefined when it follows the kit entirely. */
+  function colorsOut(): LinkPageColors | undefined {
+    const out: LinkPageColors = {};
+    for (const f of LINK_PAGE_COLOR_FIELDS) if (colors[f]) out[f] = colors[f];
+    return Object.keys(out).length ? out : undefined;
+  }
 
   /** The draft as the API takes it. */
   function draft(nextEnabled = enabled): LinkPageInput {
@@ -150,6 +194,7 @@ export function LinkPageEditor({
       ...(logoMode === 'kit' ? {} : { logo: logoMode === 'none' ? null : logo.trim() }),
       items,
       socials: socialsOut,
+      ...(colorsOut() ? { colors: colorsOut() } : {}),
     };
   }
 
@@ -167,6 +212,7 @@ export function LinkPageEditor({
         return linkValid(r) ? [{ type: 'link', label: r.label.trim(), url: r.url.trim() }] : [];
       }),
       socials: Object.fromEntries(LINK_PAGE_SOCIALS.map((n) => [n, normalizeSocial(n, socials[n])])),
+      ...(colorsOut() ? { colors: colorsOut() } : {}),
     };
     return resolveLinkPage(page, {
       accountCode: initial.accountCode,
@@ -174,16 +220,32 @@ export function LinkPageEditor({
       forms: initial.forms,
       brandKit: initial.brandKit,
     });
-  }, [name, bio, logoMode, logo, rows, socials, initial]);
+  }, [name, bio, logoMode, logo, rows, socials, colors, initial]);
 
-  function persist(body: LinkPageInput, nextEnabled: boolean) {
+  /**
+   * Write the page. `withMeta` also sends the internal name and the slug:
+   * the Save button does, the Published switch does not (unpublishing must
+   * work whatever state the rest of the form is in).
+   */
+  function persist(body: LinkPageInput, nextEnabled: boolean, withMeta: boolean) {
+    const meta = withMeta && initial.id ? { name: pageName.trim(), slug: slug.trim().toLowerCase() } : {};
     start(async () => {
-      const res = await callAction(() => saveLinkPageAction(body));
+      const res = await callAction<LinkPageActionResult>(() =>
+        initial.id ? savePageAction(initial.id, { ...meta, page: body }) : saveLinkPageAction(body),
+      );
       if (res.ok) {
         setEnabled(nextEnabled);
         setLastSaved(body);
+        if ('slug' in meta && meta.slug) setSavedSlug(meta.slug);
+        setSlugTaken(false);
         success(m.saved);
       } else {
+        const code = isTransportError(res) ? null : res.code;
+        if (code === 'SLUG_TAKEN') {
+          setSlugTaken(true);
+          error(m.slugTaken);
+          return;
+        }
         error((isTransportError(res) ? null : res.message) ?? m.error);
       }
     });
@@ -191,19 +253,35 @@ export function LinkPageEditor({
 
   /** Unpublish: always possible, whatever state the draft is in. */
   function unpublish() {
-    persist(unpublishBody(lastSaved), false);
+    persist(unpublishBody(lastSaved), false, false);
   }
 
   function save(nextEnabled = enabled) {
     const body = draft(nextEnabled);
     const parsed = linkPageSchema.safeParse(body);
-    if (!parsed.success) {
+    if (!parsed.success || slugProblem) {
       setShowErrors(true);
       error(m.fixErrors);
       return false;
     }
-    persist(body, nextEnabled);
+    persist(body, nextEnabled, true);
     return true;
+  }
+
+  function makeDefault() {
+    if (!initial.id) return;
+    const id = initial.id;
+    start(async () => {
+      const res = await callAction<LinkPageActionResult>(() => makeDefaultPageAction(id));
+      if (res.ok) {
+        setIsDefault(true);
+        success(m.madeDefault);
+      } else if (!isTransportError(res) && res.code === 'PAGE_NOT_PUBLISHED') {
+        error(m.makeDefaultNeedsPublish);
+      } else {
+        error((isTransportError(res) ? null : res.message) ?? m.error);
+      }
+    });
   }
 
   function move(index: number, by: -1 | 1) {
@@ -253,9 +331,29 @@ export function LinkPageEditor({
 
   return (
     <section data-testid="public-page-settings" className="mb-10">
+      {initial.id ? (
+        <Link
+          href="/admin/account/public-page"
+          className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          data-testid="link-page-back"
+        >
+          <i aria-hidden className="pi pi-arrow-left" style={{ fontSize: 12 }} />
+          {m.back}
+        </Link>
+      ) : null}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-xl font-semibold tracking-tight">{m.heading}</h2>
+          <h2 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
+            <span className="min-w-0 break-words">{initial.id ? pageName.trim() || (isDefault ? m.defaultBadge : m.heading) : m.heading}</span>
+            {initial.id && isDefault ? (
+              <span
+                className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+                data-testid="link-page-default-badge"
+              >
+                {m.defaultBadge}
+              </span>
+            ) : null}
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">{m.subtitle}</p>
           <p className="mt-1 text-xs text-muted-foreground">{m.anyMember}</p>
         </div>
@@ -302,7 +400,31 @@ export function LinkPageEditor({
             {m.open}
           </a>
         ) : null}
+        {initial.id && !isDefault ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={makeDefault}
+            disabled={pending || !enabled}
+            title={enabled ? undefined : m.makeDefaultNeedsPublish}
+            aria-label={enabled ? undefined : `${m.makeDefault}. ${m.makeDefaultNeedsPublish}`}
+            data-testid="link-page-make-default"
+          >
+            <i aria-hidden className="pi pi-star" style={{ fontSize: 12 }} />
+            {m.makeDefault}
+          </Button>
+        ) : null}
       </div>
+      {initial.id && !isDefault && !enabled ? (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="link-page-make-default-note">
+          {m.makeDefaultNeedsPublish}
+        </p>
+      ) : null}
+      {initial.id && isDefault && origin ? (
+        <p className="mt-3 text-xs text-muted-foreground" data-testid="link-page-default-hint">
+          {t(m.defaultHint, { url: url.replace(/^https?:\/\//, '') })}
+        </p>
+      ) : null}
       {!enabled ? (
         <p className="mt-3 text-sm text-muted-foreground" data-testid="link-page-off-note">
           {m.offNote}
@@ -311,8 +433,54 @@ export function LinkPageEditor({
 
       <div className="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
         <div className="min-w-0 border-t border-border">
+          {initial.id ? (
+            <>
+              <SettingsRow title={m.pageName} hint={m.pageNameHint} first testId="link-page-meta-name-row">
+                <Input
+                  value={pageName}
+                  maxLength={80}
+                  aria-label={m.pageName}
+                  placeholder={m.pageNamePlaceholder}
+                  onChange={(e) => setPageName(e.target.value)}
+                  data-testid="link-page-page-name"
+                />
+              </SettingsRow>
+              <SettingsRow
+                title={m.slug}
+                hint={
+                  isDefault
+                    ? t(m.defaultHint, { url: url.replace(/^https?:\/\//, '') })
+                    : t(m.slugHint, { base: `${(origin || '').replace(/^https?:\/\//, '')}/${initial.accountCode}/p` })
+                }
+                testId="link-page-meta-slug-row"
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    value={slug}
+                    maxLength={30}
+                    aria-label={m.slug}
+                    aria-invalid={Boolean(slugMessage)}
+                    className={slugMessage ? inputError : undefined}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onChange={(e) => {
+                      setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'));
+                      setSlugTaken(false);
+                    }}
+                    data-testid="link-page-slug"
+                  />
+                  {slugMessage ? (
+                    <p className="text-xs text-destructive" role="alert" data-testid="link-page-slug-error">
+                      {slugMessage}
+                    </p>
+                  ) : null}
+                </div>
+              </SettingsRow>
+            </>
+          ) : null}
           {/* ── Header ── */}
-          <SettingsRow title={m.logo} hint={m.logoHint} first testId="link-page-logo-row">
+          <SettingsRow title={m.logo} hint={m.logoHint} first={!initial.id} testId="link-page-logo-row">
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <input
@@ -573,6 +741,44 @@ export function LinkPageEditor({
             </div>
           </SettingsRow>
 
+          {/* ── Colours: this page over the brand kit ── */}
+          <SettingsRow title={m.colorsSection} hint={m.colorsHint} testId="link-page-colors-row">
+            <div className="grid gap-3">
+              {LINK_PAGE_COLOR_FIELDS.map((f) => {
+                const label = f === 'primaryColor' ? m.colorPrimary : f === 'background' ? m.colorBackground : m.colorForeground;
+                const own = colors[f];
+                const shown = pickerValue(own) ?? pickerValue(initial.brandKit?.[f] ?? null) ?? PICKER_FALLBACK[f];
+                return (
+                  <div key={f} className="flex flex-col gap-1 text-xs text-muted-foreground" data-testid={`link-page-color-${f}`}>
+                    <span>{label}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="color"
+                        value={shown}
+                        aria-label={label}
+                        onChange={(e) => setColors((c) => ({ ...c, [f]: e.target.value }))}
+                        className="h-9 w-12 shrink-0 cursor-pointer rounded-md border border-input bg-background p-1"
+                        data-testid={`link-page-color-input-${f}`}
+                      />
+                      {own ? (
+                        <button
+                          type="button"
+                          className="whitespace-nowrap text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                          onClick={() => setColors((c) => ({ ...c, [f]: '' }))}
+                          data-testid={`link-page-color-reset-${f}`}
+                        >
+                          {m.colorReset}
+                        </button>
+                      ) : (
+                        <span className="whitespace-nowrap">{m.colorFromKit}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </SettingsRow>
+
           <div className="flex items-center gap-3 border-t border-border pt-6">
             <Button onClick={() => save()} disabled={pending} data-testid="link-page-save">
               {pending ? m.saving : m.save}
@@ -598,7 +804,7 @@ export function LinkPageEditor({
       {qrOpen && origin ? (
         <QrModal
           url={url}
-          slug={initial.accountCode}
+          slug={savedSlug && !isDefault ? `${initial.accountCode}-${savedSlug}` : initial.accountCode}
           copied={copied}
           onCopy={() => void copy()}
           labels={{

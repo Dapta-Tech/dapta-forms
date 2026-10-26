@@ -26,9 +26,37 @@ export function publishedWorkspacePagePath(
   return page?.enabled ? workspacePagePath(accountCode) : null;
 }
 
-/** The share card of a workspace's page (`app/api/public/pages/[accountCode]/og`). */
-export function linkPageOgPath(accountCode: string): string {
-  return `/api/public/pages/${encodeURIComponent(accountCode)}/og`;
+/**
+ * Where one of the workspace's pages lives: the default page at
+ * `/{accountCode}`, every other one at `/{accountCode}/p/{slug}`.
+ */
+export function linkPagePublicPath(accountCode: string, page: { slug: string; isDefault: boolean }): string {
+  return page.isDefault
+    ? workspacePagePath(accountCode)
+    : `/${encodeURIComponent(accountCode)}/p/${encodeURIComponent(page.slug)}`;
+}
+
+/**
+ * The share card of a workspace's page: the default page's at
+ * `app/api/public/pages/[accountCode]/og`, any other page's one level down.
+ */
+export function linkPageOgPath(accountCode: string, pageSlug?: string | null): string {
+  const base = `/api/public/pages/${encodeURIComponent(accountCode)}`;
+  return pageSlug ? `${base}/${encodeURIComponent(pageSlug)}/og` : `${base}/og`;
+}
+
+/** Where a page's views and clicks are sent (`app/api/public/pages/...`). */
+export function linkPageEventsPath(accountCode: string, pageSlug?: string | null): string {
+  const base = `/api/public/pages/${encodeURIComponent(accountCode)}`;
+  return pageSlug ? `${base}/${encodeURIComponent(pageSlug)}/events` : `${base}/events`;
+}
+
+/**
+ * Could this be a page slug? The vanity shape, without regard to case (the
+ * API lowercases). Anything else is a 404 without a call to the API.
+ */
+export function plausiblePageSlug(slug: string): boolean {
+  return /^[A-Za-z0-9](?:[A-Za-z0-9-]{1,28})[A-Za-z0-9]$/.test(slug);
 }
 
 /**

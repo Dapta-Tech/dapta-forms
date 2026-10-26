@@ -4,7 +4,7 @@ import { pingWebhook, setDestinations } from './destinations';
 import { createFolder, deleteFolder, listFolders, renameFolder } from './folders';
 import { deleteForm, duplicateForm, moveForm, setFormSlug } from './forms';
 import { getMyProfile, getWorkspaceLinkCode } from './identity';
-import { getLinkPage, updateLinkPage } from './link-page';
+import { createLinkPage, deleteLinkPage, duplicateLinkPage, getLinkPage, listLinkPages, updateLinkPage } from './link-page';
 import { getFormSummary, getResponseFacets, searchAnswers } from './insights';
 import { listCalendlyEventTypes, listHubspotProperties, listIntegrations, listWebhooks } from './integrations';
 import {
@@ -52,9 +52,13 @@ export const PARITY_TOOLS: readonly ToolDef[] = [
   updateBrandKit,
   applyBrandKit,
   revertBrandKit,
-  // Link page
+  // Link pages
+  listLinkPages,
   getLinkPage,
+  createLinkPage,
   updateLinkPage,
+  duplicateLinkPage,
+  deleteLinkPage,
   // Notifications
   listNotifications,
   updateNotification,
@@ -121,6 +125,12 @@ export const API_ROUTE_TOOLS: Readonly<Record<string, string>> = {
 
   'GET /v1/link-page': 'get_link_page',
   'PUT /v1/link-page': 'update_link_page',
+  'GET /v1/link-pages': 'list_link_pages',
+  'POST /v1/link-pages': 'create_link_page',
+  'GET /v1/link-pages/:id': 'get_link_page',
+  'PUT /v1/link-pages/:id': 'update_link_page',
+  'POST /v1/link-pages/:id/duplicate': 'duplicate_link_page',
+  'DELETE /v1/link-pages/:id': 'delete_link_page',
 
   'GET /v1/notifications': 'list_notifications',
   'PUT /v1/notifications/:emailKey': 'update_notification',

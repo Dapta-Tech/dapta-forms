@@ -1,7 +1,8 @@
 import { LINK_PAGE_MAX_BODY_BYTES } from '@quill/types';
 
 /**
- * A JSON body reader for `PUT /v1/link-page` and the MCP endpoint
+ * A JSON body reader for the link page writes (`PUT /v1/link-page`,
+ * `POST /v1/link-pages`, `PUT /v1/link-pages/:id`) and the MCP endpoint
  * (`POST /mcp`) alone, mounted in `main.ts` before Nest's own parser.
  *
  * Nest parses every JSON body with body-parser's default 100 KB ceiling, and
@@ -45,8 +46,16 @@ type Head = Pick<BodyReq, 'method' | 'url' | 'headers'>;
 const pathOf = (req: Head) => (req.url ?? '').split('?')[0]?.replace(/\/+$/, '');
 const isJson = (req: Head) => String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json');
 
+/** `PUT /v1/link-pages/:id`: one page of several, by id. */
+const LINK_PAGES_ONE = /^\/v1\/link-pages\/[^/]+$/;
+export const LINK_PAGES_BODY_PATH = '/v1/link-pages';
+
+/** A write that carries a whole link page: the default page, a new page, or one page by id. */
 export function isLinkPageWrite(req: Head): boolean {
-  return req.method === 'PUT' && pathOf(req) === LINK_PAGE_BODY_PATH && isJson(req);
+  if (!isJson(req)) return false;
+  const path = pathOf(req) ?? '';
+  if (req.method === 'PUT') return path === LINK_PAGE_BODY_PATH || LINK_PAGES_ONE.test(path);
+  return req.method === 'POST' && path === LINK_PAGES_BODY_PATH;
 }
 
 export function isMcpPost(req: Head): boolean {

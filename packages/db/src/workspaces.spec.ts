@@ -264,9 +264,19 @@ describe('rebindLegacyAccount', () => {
     await db.run(sql`INSERT INTO account (id, code, name, external_id, created_at) VALUES (${legacy2}, ${'m' + legacy2.slice(0, 5)}, 'Old2', ${acct2}, 1)`);
     await db.run(sql`INSERT INTO account (id, code, name, external_id, created_at) VALUES (${projected2}, ${'p' + projected2.slice(0, 5)}, 'W2', ${ws2}, 2)`);
     created.push(legacy2, projected2);
+    // The empty projected row has a link page (and a retired slug): they go with it.
+    await db.run(
+      sql`INSERT INTO link_page (id, account_id, slug, name, config, is_default, created_at, updated_at)
+          VALUES (${`lp-${projected2}`}, ${projected2}, 'main', '', ${'{"version":1}'}, 1, 1, 1)`,
+    );
+    await db.run(
+      sql`INSERT INTO link_page_alias (account_id, slug, page_id, created_at) VALUES (${projected2}, 'old', ${`lp-${projected2}`}, 1)`,
+    );
     const r2 = await rebindLegacyAccount(db, { iamAccountId: acct2, workspaceId: ws2, workspaceName: 'W2' });
     expect(r2).toEqual({ accountId: legacy2, parkedLegacyId: null });
     expect(await db.get(sql`SELECT id FROM account WHERE id = ${projected2}`)).toBeUndefined();
+    expect(await db.get(sql`SELECT id FROM link_page WHERE account_id = ${projected2}`)).toBeUndefined();
+    expect(await db.get(sql`SELECT slug FROM link_page_alias WHERE account_id = ${projected2}`)).toBeUndefined();
 
     // Park: the projected row already has a form.
     const acct3 = `acct-${randomUUID()}`, ws3 = `ws-${randomUUID()}`;

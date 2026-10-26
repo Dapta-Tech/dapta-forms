@@ -41,6 +41,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await db.run(sql`DELETE FROM link_page WHERE account_id IN (${accountId}, ${otherId})`);
   await db.run(sql`DELETE FROM form WHERE account_id IN (${accountId}, ${otherId})`);
   await db.run(sql`DELETE FROM account WHERE id IN (${accountId}, ${otherId})`);
   await db.close();

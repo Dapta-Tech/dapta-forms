@@ -370,6 +370,49 @@ export const accountIntegration = pgTable(
   }),
 );
 
+/**
+ * A workspace link page (see 0027): up to 20 per workspace, the same
+ * `linkPageSchema` blob `account.link_page` held (0025). Exactly one row per
+ * workspace is the default and answers at `/{accountCode}`; the others at
+ * `/{accountCode}/p/{slug}`. The "at most one default" partial unique index
+ * lives in the migration only (Drizzle cannot express its predicate here).
+ */
+export const linkPage = pgTable(
+  'link_page',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    slug: text('slug').notNull(),
+    /** Internal label ("Expo 2026"); blank shows a localized default in the admin. */
+    name: text('name').notNull().default(''),
+    config: jsonb('config').notNull(),
+    /** 0/1. One per workspace (partial unique index in 0027). */
+    isDefault: integer('is_default').notNull().default(0),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    linkPageAccountSlugUq: uniqueIndex('link_page_account_slug_uq').on(t.accountId, t.slug),
+  }),
+);
+
+/** A renamed link page's old slug (see 0027): it redirects to the page's current one. */
+export const linkPageAlias = pgTable(
+  'link_page_alias',
+  {
+    accountId: text('account_id').notNull(),
+    slug: text('slug').notNull(),
+    pageId: text('page_id')
+      .notNull()
+      .references(() => linkPage.id, { onDelete: 'cascade' }),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.accountId, t.slug] }),
+    linkPageAliasPageIdx: index('link_page_alias_page_idx').on(t.pageId),
+  }),
+);
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -384,4 +427,6 @@ export const pgSchema = {
   formEvent,
   bookingEvent,
   accountIntegration,
+  linkPage,
+  linkPageAlias,
 };
