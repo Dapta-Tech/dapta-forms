@@ -451,6 +451,7 @@ All optional; unset (or blank) means the safe default. See
 | `WORKOS_AUTHKIT_DOMAIN` | API | unset (required with `MCP_OAUTH_PROVIDER`) |
 | `OAUTH_LINK_MAX_AGE_DAYS` | API | `30` (days after a member's last verified web login that a sign-in may act as it) |
 | `IAM_STAFF_DOMAINS` | API (the web app's switcher; never an MCP sign-in) | unset (nobody is staff) |
+| `OPENAI_APPS_CHALLENGE_TOKEN` | API (served at `/.well-known/openai-apps-challenge`, OpenAI's domain check for a ChatGPT app) | unset (404) |
 
 ## Check it yourself
 
