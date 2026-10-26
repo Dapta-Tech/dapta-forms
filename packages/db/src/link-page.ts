@@ -28,8 +28,12 @@ import { LINK_PAGE_DEFAULT_SLUG, LINK_PAGE_MAX_PAGES, type LinkPageFormRef } fro
 import type { Db } from './client';
 import { getAccountByCode, jsonParam, parseJsonColumn } from './forms';
 
-/** How many retired slugs one page keeps redirecting. Older ones are forgotten. */
-export const LINK_PAGE_MAX_ALIASES = 10;
+/**
+ * How many retired slugs one page keeps redirecting. Past it, the NEWEST
+ * retired slug is the one dropped: the oldest ones are the ones most likely
+ * printed on a QR code, a banner or a business card.
+ */
+export const LINK_PAGE_MAX_ALIASES = 50;
 
 /** One stored page. */
 export interface LinkPageRow {
@@ -99,6 +103,16 @@ function isSlugConflict(error: unknown, depth = 0): boolean {
  * last free slot or for the first page) run one after the other and each
  * sees the other's result. SQLite runs one write transaction at a time anyway.
  */
+//
+// The `account.link_page` mirror is ONE-WAY: this release writes it, and never
+// reads it back while the workspace has rows (only `ensureLegacyLinkPage` does,
+// for a workspace with none). So during a rolling deploy or after a rollback,
+// an edit an instance of the PREVIOUS release saves to the old column is not
+// seen by this release once the workspace has pages, and is overwritten by the
+// next write here. A rollback shows the default page as of the last write by
+// this release; edits made on the old release are lost if this release is
+// deployed again. Keep the deploy window short and avoid editing link pages
+// while two releases serve traffic.
 async function writeAtomically(db: Db, accountId: string, statements: SQL[]): Promise<void> {
   const all = [
     ...statements,
@@ -181,9 +195,18 @@ export async function getLinkPageRaw(db: Db, accountId: string): Promise<unknown
   return (await getDefaultLinkPageRow(db, accountId))?.config ?? null;
 }
 
-/** Every slug the workspace's pages use right now. */
+/**
+ * Every slug the workspace holds: its pages' current slugs AND the retired
+ * slugs that still redirect. A slug made up automatically (from a name, for
+ * a copy, for the default page) must avoid both, or it would silently take
+ * over a redirect that printed QR codes rely on. A slug a person types
+ * explicitly may still reclaim a retired one (`createLinkPage`).
+ */
 async function slugsInUse(db: Db, accountId: string): Promise<Set<string>> {
-  const rows = await db.all<{ slug: string }>(sql`SELECT slug FROM link_page WHERE account_id = ${accountId}`);
+  const rows = await db.all<{ slug: string }>(
+    sql`SELECT slug FROM link_page WHERE account_id = ${accountId}
+        UNION SELECT slug FROM link_page_alias WHERE account_id = ${accountId}`,
+  );
   return new Set(rows.map((r) => String(r.slug)));
 }
 
@@ -308,7 +331,7 @@ export interface LinkPagePatch {
 /**
  * Change a page. A new slug retires the old one into the alias ledger (it
  * redirects to the new one) and takes the new one out of it, so no slug ever
- * redirects to the page that holds it. Only the newest
+ * redirects to the page that holds it. Only the oldest
  * `LINK_PAGE_MAX_ALIASES` retired slugs of a page are kept.
  */
 export async function updateLinkPage(
@@ -329,15 +352,23 @@ export async function updateLinkPage(
   if (nextSlug) {
     statements.push(
       sql`DELETE FROM link_page_alias WHERE account_id = ${accountId} AND slug = ${nextSlug}`,
+      // `created_at` is strictly increasing per page (two renames in one
+      // millisecond still get distinct, ordered stamps), so "oldest" below is
+      // always well defined and never falls back to an alphabetical order.
       sql`INSERT INTO link_page_alias (account_id, slug, page_id, created_at)
-          SELECT ${accountId}, ${current.slug}, ${id}, ${now}
+          SELECT ${accountId}, ${current.slug}, ${id},
+                 CASE WHEN COALESCE((SELECT MAX(created_at) FROM link_page_alias
+                                     WHERE account_id = ${accountId} AND page_id = ${id}), 0) >= ${now}
+                      THEN (SELECT MAX(created_at) FROM link_page_alias
+                            WHERE account_id = ${accountId} AND page_id = ${id}) + 1
+                      ELSE ${now} END
           WHERE ${stillThere}
-          ON CONFLICT (account_id, slug) DO UPDATE SET page_id = ${id}, created_at = ${now}`,
+          ON CONFLICT (account_id, slug) DO UPDATE SET page_id = ${id}`,
       sql`UPDATE link_page SET slug = ${nextSlug} WHERE account_id = ${accountId} AND id = ${id}`,
       sql`DELETE FROM link_page_alias WHERE account_id = ${accountId} AND page_id = ${id}
             AND slug NOT IN (
               SELECT slug FROM link_page_alias WHERE account_id = ${accountId} AND page_id = ${id}
-              ORDER BY created_at DESC, slug ASC LIMIT ${LINK_PAGE_MAX_ALIASES}
+              ORDER BY created_at ASC LIMIT ${LINK_PAGE_MAX_ALIASES}
             )`,
     );
   }

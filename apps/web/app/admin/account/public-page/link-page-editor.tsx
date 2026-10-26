@@ -276,6 +276,8 @@ export function LinkPageEditor({
       if (res.ok) {
         setIsDefault(true);
         success(m.madeDefault);
+      } else if (!isTransportError(res) && res.code === 'PAGE_NOT_PUBLISHED') {
+        error(m.makeDefaultNeedsPublish);
       } else {
         error((isTransportError(res) ? null : res.message) ?? m.error);
       }
@@ -399,12 +401,25 @@ export function LinkPageEditor({
           </a>
         ) : null}
         {initial.id && !isDefault ? (
-          <Button variant="ghost" size="sm" onClick={makeDefault} disabled={pending} data-testid="link-page-make-default">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={makeDefault}
+            disabled={pending || !enabled}
+            title={enabled ? undefined : m.makeDefaultNeedsPublish}
+            aria-label={enabled ? undefined : `${m.makeDefault}. ${m.makeDefaultNeedsPublish}`}
+            data-testid="link-page-make-default"
+          >
             <i aria-hidden className="pi pi-star" style={{ fontSize: 12 }} />
             {m.makeDefault}
           </Button>
         ) : null}
       </div>
+      {initial.id && !isDefault && !enabled ? (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="link-page-make-default-note">
+          {m.makeDefaultNeedsPublish}
+        </p>
+      ) : null}
       {initial.id && isDefault && origin ? (
         <p className="mt-3 text-xs text-muted-foreground" data-testid="link-page-default-hint">
           {t(m.defaultHint, { url: url.replace(/^https?:\/\//, '') })}

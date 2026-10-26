@@ -40,6 +40,7 @@ async function attemptPage<T>(work: Promise<T>, missing = PAGE_MISSING): Promise
       SLUG_TAKEN: 'Pick another slug: list_link_pages shows the ones in use.',
       PAGE_LIMIT: 'A workspace keeps up to 20 pages: delete_link_page one first.',
       DEFAULT_PAGE: 'Make another page the default first: update_link_page with page_id and make_default true.',
+      PAGE_NOT_PUBLISHED: 'Publish the page first (page.enabled true), then make it the default.',
     });
   }
 }
@@ -171,7 +172,10 @@ const updateInput = z.object({
     .describe('The whole page content, as get_link_page returned it with your changes. Without page_id, null deletes the default page (only when it is the workspace\'s only page). With page_id, absent keeps the content as it is.'),
   name: nameArg.optional(),
   slug: slugArg.optional().describe('A new address after /p/. The old one keeps redirecting to it. Needs page_id.'),
-  make_default: z.literal(true).optional().describe('true makes this page the one at /{accountCode}. Needs page_id.'),
+  make_default: z
+    .literal(true)
+    .optional()
+    .describe('true makes this page the one at /{accountCode}. Needs page_id, and the page must be published (enabled true).'),
 });
 
 export const updateLinkPage: ToolDef = {

@@ -205,14 +205,14 @@ export const openapiSpec = {
       put: {
         summary: 'Change a link page',
         description:
-          'Body { name?, slug?, isDefault?: true, page? }: only the fields sent change, and `page` replaces the whole content. A new slug keeps the old one redirecting to it. `isDefault: true` makes this the page at /{accountCode}; there is no false (make another page the default instead).',
+          'Body { name?, slug?, isDefault?: true, page? }: only the fields sent change, and `page` replaces the whole content. A new slug keeps the old one redirecting to it. `isDefault: true` makes this the page at /{accountCode}, and only a published page can be (409 PAGE_NOT_PUBLISHED); there is no false (make another page the default instead).',
         security: [{ hostSession: [] }],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Saved' },
           '400': { description: 'BAD_REQUEST with issues' },
           '404': { description: 'Not found' },
-          '409': { description: 'SLUG_TAKEN' },
+          '409': { description: 'SLUG_TAKEN or PAGE_NOT_PUBLISHED' },
         },
       },
       delete: {

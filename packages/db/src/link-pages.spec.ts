@@ -14,6 +14,8 @@ import { migrate } from './migrate';
 import {
   createLinkPage,
   deleteLinkPage,
+  LINK_PAGE_MAX_ALIASES,
+  linkPageSlugsInUse,
   findPublicLinkPage,
   getDefaultLinkPageRow,
   getLinkPageRow,
@@ -162,6 +164,33 @@ describe('link pages', () => {
     const fair = await create('expo-2026');
     expect((await findPublicLinkPage(db, code, 'expo-2026'))!.page!.id).toBe(fair.id);
     expect(main.isDefault).toBe(true);
+  });
+
+  it('counts retired slugs as taken, so a made-up slug never takes over a redirect', async () => {
+    await create('main');
+    const expo = await create('expo');
+    await updateLinkPage(db, accountId, expo.id, { slug: 'expo-2026' });
+    expect([...(await linkPageSlugsInUse(db, accountId))].sort()).toEqual(['expo', 'expo-2026', 'main']);
+    // setLinkPage picks `main` for a new default page the same way.
+    expect((await linkPageSlugsInUse(db, otherId)).size).toBe(0);
+  });
+
+  it(`keeps the OLDEST ${LINK_PAGE_MAX_ALIASES} retired slugs of a page, in rename order even within one millisecond`, async () => {
+    await create('main');
+    const page = await create('slug-0');
+    const renames = LINK_PAGE_MAX_ALIASES + 5;
+    for (let i = 1; i <= renames; i += 1) {
+      // Every rename in the same millisecond: order must still be the rename order.
+      const r = await updateLinkPage(db, accountId, page.id, { slug: `slug-${i}`, now: 1_000 });
+      expect(r.ok).toBe(true);
+    }
+    const kept = await db.all<{ slug: string }>(
+      sql`SELECT slug FROM link_page_alias WHERE page_id = ${page.id} ORDER BY created_at ASC`,
+    );
+    expect(kept.map((r) => r.slug)).toEqual(Array.from({ length: LINK_PAGE_MAX_ALIASES }, (_, i) => `slug-${i}`));
+    // The first slug ever printed still redirects; the newest beyond the cap does not.
+    expect((await findPublicLinkPage(db, code, 'slug-0'))!.page!.id).toBe(page.id);
+    expect((await findPublicLinkPage(db, code, `slug-${renames - 1}`))!.page).toBeNull();
   });
 
   it('keeps account.link_page in step with the default page', async () => {

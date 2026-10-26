@@ -226,6 +226,11 @@ export async function rebindLegacyAccount(
       revokeKeysOfInactiveMembersSql(projected.id),
     ]);
     await db.run(sql`DELETE FROM account_alias WHERE account_id = ${projected.id}`);
+    // Its link pages go with it: a page row must not outlive its workspace.
+    await runAtomically(db, [
+      sql`DELETE FROM link_page_alias WHERE account_id = ${projected.id}`,
+      sql`DELETE FROM link_page WHERE account_id = ${projected.id}`,
+    ]);
     await db.run(sql`DELETE FROM account WHERE id = ${projected.id}`);
     await db.run(
       sql`UPDATE account SET external_id = ${args.workspaceId}, iam_account_id = ${args.iamAccountId}

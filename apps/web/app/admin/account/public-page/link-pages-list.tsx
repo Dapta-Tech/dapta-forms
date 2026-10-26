@@ -15,6 +15,7 @@ import { useToast } from '@/components/toast';
 import { QrModal } from '@/app/admin/forms/[id]/edit/qr-modal';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { linkPagePublicPath } from '@/lib/public-page';
+import { copyNameFor } from './copy-name';
 import type { LinkPagesListView } from '@/lib/admin-api';
 import {
   createPageAction,
@@ -86,6 +87,8 @@ export function LinkPagesList({
         router.refresh();
       } else if (!isTransportError(res) && res.code === 'DEFAULT_PAGE') {
         error(m.cannotRemoveDefault);
+      } else if (!isTransportError(res) && res.code === 'PAGE_NOT_PUBLISHED') {
+        error(m.makeDefaultNeedsPublish);
       } else if (!isTransportError(res) && res.code === 'PAGE_UNREADABLE') {
         error(m.error);
       } else {
@@ -277,7 +280,7 @@ export function LinkPagesList({
                     {(origin ? urlOf(p) : pathOf(p)).replace(/^https?:\/\//, '')}
                   </p>
                   <p className="mt-0.5 text-xs text-faint">
-                    {t(m.buttons, { n: String(p.buttons) })}
+                    {p.buttons === 1 ? m.buttonsOne : t(m.buttons, { n: String(p.buttons) })}
                     {' · '}
                     {t(m.edited, { date: formatDate(p.updatedAt, { locale, timeZone }) })}
                   </p>
@@ -330,7 +333,7 @@ export function LinkPagesList({
                     aria-label={m.duplicate}
                     title={m.duplicate}
                     onClick={() =>
-                      run(() => duplicatePageAction(p.id, p.name.trim() ? t(m.copyName, { name: p.name.trim() }) : undefined), m.duplicated)
+                      run(() => duplicatePageAction(p.id, p.name.trim() ? copyNameFor(m.copyName, p.name) : undefined), m.duplicated)
                     }
                     disabled={pending || atMax}
                     data-testid="link-pages-duplicate"
@@ -339,17 +342,21 @@ export function LinkPagesList({
                   </button>
                   {!p.isDefault ? (
                     <>
-                      <button
-                        type="button"
-                        className={iconButton}
-                        aria-label={m.makeDefault}
-                        title={m.makeDefault}
-                        onClick={() => run(() => makeDefaultPageAction(p.id), m.madeDefault)}
-                        disabled={pending}
-                        data-testid="link-pages-make-default"
-                      >
-                        <i aria-hidden className="pi pi-star" style={{ fontSize: 13 }} />
-                      </button>
+                      {/* An unpublished main page would make the workspace link a 404: publish first.
+                          The tooltip sits on a wrapper because a disabled button gets no hover. */}
+                      <span title={p.live ? undefined : m.makeDefaultNeedsPublish} className="inline-flex" data-testid="link-pages-make-default-wrap">
+                        <button
+                          type="button"
+                          className={iconButton}
+                          aria-label={p.live ? m.makeDefault : `${m.makeDefault}. ${m.makeDefaultNeedsPublish}`}
+                          title={p.live ? m.makeDefault : m.makeDefaultNeedsPublish}
+                          onClick={() => run(() => makeDefaultPageAction(p.id), m.madeDefault)}
+                          disabled={pending || !p.live}
+                          data-testid="link-pages-make-default"
+                        >
+                          <i aria-hidden className="pi pi-star" style={{ fontSize: 13 }} />
+                        </button>
+                      </span>
                       <button
                         type="button"
                         className={`${iconButton} hover:text-destructive`}

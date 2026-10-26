@@ -88,6 +88,16 @@ const FAILURES: Record<LinkPageWriteFailure, ServiceError> = {
   },
 };
 
+/**
+ * The default page answers at `/{accountCode}`, so making an UNPUBLISHED page
+ * the default would turn that address into a 404 in one click. Publish first.
+ */
+export const NOT_PUBLISHED: ServiceError = {
+  error: 'PAGE_NOT_PUBLISHED',
+  message: 'Publish this page before making it the default: the default page is the one at the workspace address, and an unpublished one answers 404 there.',
+  status: 409,
+};
+
 export function failure(reason: LinkPageWriteFailure): ServiceError {
   return FAILURES[reason];
 }
@@ -260,6 +270,14 @@ export class LinkPageService {
   /** Change a page's name, slug, content, or make it the default. */
   async update(accountId: string, id: string, input: LinkPageUpdate): Promise<LinkPageRow | ServiceError> {
     const config = input.page ? await this.ownFormsOnly(accountId, input.page) : undefined;
+    if (input.isDefault) {
+      // Judged on the page as it will be after this write: the content sent
+      // with the request, else the stored one.
+      const row = await getLinkPageRow(this.db, accountId, id);
+      if (!row) return failure('NOT_FOUND');
+      const enabled = config ? config.enabled === true : parseStoredLinkPage(row.config)?.enabled === true;
+      if (!row.isDefault && !enabled) return NOT_PUBLISHED;
+    }
     const r = await updateLinkPage(this.db, accountId, id, {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.slug !== undefined ? { slug: input.slug } : {}),

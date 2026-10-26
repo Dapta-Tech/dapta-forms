@@ -281,6 +281,8 @@ export interface FormsMessages {
       defaultHint: string;
       makeDefault: string;
       madeDefault: string;
+      /** Why "Make main page" is off on an unpublished page. */
+      makeDefaultNeedsPublish: string;
       colorsSection: string;
       colorsHint: string;
       colorPrimary: string;
@@ -309,6 +311,8 @@ export interface FormsMessages {
       toggleLabel: string;
       /** // {n} */
       buttons: string;
+      /** The same, for exactly one button. */
+      buttonsOne: string;
       /** // {date} */
       edited: string;
       edit: string;
@@ -321,6 +325,8 @@ export interface FormsMessages {
       qr: string;
       makeDefault: string;
       madeDefault: string;
+      /** Why "Make main page" is off on an unpublished page. */
+      makeDefaultNeedsPublish: string;
       remove: string;
       removeTitle: string;
       /** // {name} */
@@ -2752,6 +2758,7 @@ export const en: FormsMessages = {
       defaultHint: 'This is your main page: it opens at {url}.',
       makeDefault: 'Make main page',
       madeDefault: 'This is now your main page.',
+      makeDefaultNeedsPublish: 'Publish this page first. Your main page opens at your workspace link, so it has to be published.',
       colorsSection: 'Colors',
       colorsHint: 'By default the page uses your brand kit. Pick a color here to use another one on this page only.',
       colorPrimary: 'Buttons',
@@ -2775,6 +2782,7 @@ export const en: FormsMessages = {
       off: 'Not published',
       toggleLabel: 'Publish {name}',
       buttons: '{n} buttons',
+      buttonsOne: '1 button',
       edited: 'Edited {date}',
       edit: 'Edit',
       duplicate: 'Duplicate',
@@ -2785,6 +2793,7 @@ export const en: FormsMessages = {
       qr: 'QR code',
       makeDefault: 'Make main page',
       madeDefault: 'This is now your main page.',
+      makeDefaultNeedsPublish: 'Publish this page first. Your main page opens at your workspace link, so it has to be published.',
       remove: 'Delete',
       removeTitle: 'Delete this page?',
       removeBody: '“{name}” and its link stop working, printed QR codes included. This cannot be undone.',
@@ -4857,7 +4866,7 @@ export const en: FormsMessages = {
         linkPagePathId: 'The page’s `id`, from `GET /v1/link-pages`.',
         linkPagePageName: 'An internal name to tell pages apart, up to 80 characters. Visitors never see it.',
         linkPageSlug: 'The address after `/p/`: 3 to 30 lowercase letters, numbers or hyphens. Unique in the workspace.',
-        linkPageIsDefault: '`true` makes this the page at `/{accountCode}`; the previous default keeps its `/p/` address.',
+        linkPageIsDefault: '`true` makes this the page at `/{accountCode}`; the previous default keeps its `/p/` address. Only a published page can be the default (409 `PAGE_NOT_PUBLISHED`).',
         linkPageContent: 'The whole page content, the same shape `PUT /v1/link-page` takes.',
         linkPageCopyName: 'The copy’s internal name. Absent keeps the original’s.',
         linkPageCopySlug: 'The copy’s slug. Absent takes the original’s with `-2`, `-3` and so on.',
@@ -5304,6 +5313,7 @@ export const es: FormsMessages = {
       defaultHint: 'Esta es tu página principal: se abre en {url}.',
       makeDefault: 'Hacer página principal',
       madeDefault: 'Ahora esta es tu página principal.',
+      makeDefaultNeedsPublish: 'Primero publica esta página. Tu página principal se abre en el link de tu workspace, así que tiene que estar publicada.',
       colorsSection: 'Colores',
       colorsHint: 'Por defecto la página usa tu brand kit. Elige un color aquí para usar otro solo en esta página.',
       colorPrimary: 'Botones',
@@ -5327,6 +5337,7 @@ export const es: FormsMessages = {
       off: 'Sin publicar',
       toggleLabel: 'Publicar {name}',
       buttons: '{n} botones',
+      buttonsOne: '1 botón',
       edited: 'Editada {date}',
       edit: 'Editar',
       duplicate: 'Duplicar',
@@ -5337,6 +5348,7 @@ export const es: FormsMessages = {
       qr: 'Código QR',
       makeDefault: 'Hacer página principal',
       madeDefault: 'Ahora esta es tu página principal.',
+      makeDefaultNeedsPublish: 'Primero publica esta página. Tu página principal se abre en el link de tu workspace, así que tiene que estar publicada.',
       remove: 'Borrar',
       removeTitle: '¿Borrar esta página?',
       removeBody: '«{name}» y su link dejan de funcionar, incluidos los códigos QR impresos. No se puede deshacer.',
@@ -7420,7 +7432,7 @@ export const es: FormsMessages = {
         linkPagePathId: 'El `id` de la página, de `GET /v1/link-pages`.',
         linkPagePageName: 'Un nombre interno para distinguir las páginas, hasta 80 caracteres. Los visitantes no lo ven.',
         linkPageSlug: 'La dirección después de `/p/`: de 3 a 30 letras minúsculas, números o guiones. Única en el workspace.',
-        linkPageIsDefault: '`true` la vuelve la página de `/{accountCode}`; la principal anterior conserva su dirección con `/p/`.',
+        linkPageIsDefault: '`true` la vuelve la página de `/{accountCode}`; la principal anterior conserva su dirección con `/p/`. Solo una página publicada puede ser la principal (409 `PAGE_NOT_PUBLISHED`).',
         linkPageContent: 'Todo el contenido de la página, con la misma forma que recibe `PUT /v1/link-page`.',
         linkPageCopyName: 'El nombre interno de la copia. Si falta, conserva el del original.',
         linkPageCopySlug: 'El slug de la copia. Si falta, se usa el del original con `-2`, `-3` y así sucesivamente.',

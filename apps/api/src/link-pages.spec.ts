@@ -106,6 +106,39 @@ describe('several link pages per workspace', () => {
     expect((await editor.create(asOwner(), { slug: 'INSTAGRAM' })).slug).toBe('instagram');
   });
 
+  it('never makes up a slug that still redirects, but lets an explicit one reclaim it', async () => {
+    await editor.create(asOwner(), { slug: 'main' });
+    const old = await editor.create(asOwner(), { name: 'Expo' });
+    expect(old.slug).toBe('expo');
+    await editor.update(asOwner(), old.id!, { slug: 'expo-2026' });
+    // A new "Expo" gets a fresh slug: the printed /p/expo keeps reaching the renamed page.
+    const fresh = await editor.create(asOwner(), { name: 'Expo' });
+    expect(fresh.slug).toBe('expo-2');
+    expect((await editor.duplicate(asOwner(), fresh.id!, {})).slug).toBe('expo-2-2');
+    await editor.update(asOwner(), old.id!, { page: { version: 1, enabled: true } });
+    expect((await publicApi.linkPageBySlug(accountCode, 'expo')).pageSlug).toBe('expo-2026');
+    // Asked for by name, the retired slug is taken over on purpose.
+    const claimed = await editor.create(asOwner(), { slug: 'expo', page: { version: 1, enabled: true, name: 'New expo' } });
+    expect(claimed.slug).toBe('expo');
+    expect((await publicApi.linkPageBySlug(accountCode, 'expo')).name).toBe('New expo');
+  });
+
+  it('refuses to make an unpublished page the default, so the workspace address never turns into a 404', async () => {
+    await editor.create(asOwner(), { slug: 'main', page: { version: 1, enabled: true } });
+    const draft = await editor.create(asOwner(), { slug: 'draft' });
+    expect(await failure(editor.update(asOwner(), draft.id!, { isDefault: true }))).toMatchObject({
+      status: 409,
+      body: { error: 'PAGE_NOT_PUBLISHED' },
+    });
+    expect((await publicApi.linkPage(accountCode)).pageSlug).toBe('main');
+    // Publishing in the same request is enough.
+    const promoted = await editor.update(asOwner(), draft.id!, { isDefault: true, page: { version: 1, enabled: true } });
+    expect(promoted.isDefault).toBe(true);
+    // A request that unpublishes while asking for default is refused as well.
+    const other = await editor.create(asOwner(), { slug: 'other', page: { version: 1, enabled: true } });
+    expect((await failure(editor.update(asOwner(), other.id!, { isDefault: true, page: { version: 1, enabled: false } }))).status).toBe(409);
+  });
+
   it(`stops at ${LINK_PAGE_MAX_PAGES} pages`, async () => {
     for (let i = 0; i < LINK_PAGE_MAX_PAGES; i += 1) await editor.create(asOwner(), { slug: `page-${i}` });
     expect(await failure(editor.create(asOwner(), { slug: 'one-more' }))).toMatchObject({ status: 409, body: { error: 'PAGE_LIMIT' } });
