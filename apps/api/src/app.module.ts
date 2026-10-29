@@ -133,8 +133,10 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     },
     {
       provide: NOTIFIER,
-      useFactory: (email: EmailProvider) => new SubmissionNotifier(email),
-      inject: [EMAIL],
+      // The app URL is where the email header's dForms wordmark is served.
+      useFactory: (email: EmailProvider, env: ServerEnv) =>
+        new SubmissionNotifier(email, { appUrl: env.PUBLIC_APP_URL }),
+      inject: [EMAIL, ENV],
     },
     // Premium entitlements (vanity slug…): Forms is always free — the gate is the
     // customer's Dapta AI subscription via the upstream service. OSS default:

@@ -19,49 +19,100 @@ const FONT_STACK =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /**
+ * dForms palette for email. `ACCENT` is the brand green (`forms-logo.tsx`,
+ * `#3ddc84`), used only as a fill: as text on white it is under 2:1. Links use
+ * `LINK`, the same hue dark enough for 4.5:1 on the card.
+ */
+const INK = "#1a1a1c";
+const MUTED = "#6b7280";
+const ACCENT = "#3ddc84";
+const LINK = "#0e7a3f";
+const CANVAS = "#f4f5f7";
+const HAIRLINE = "#e7e8ec";
+
+/** Where the dForms wordmark PNG lives under the web app (`apps/web/public`). */
+export const EMAIL_LOGO_PATH = "/email/dforms-wordmark.png";
+
+/**
  * The answers as a two-column table: muted label on the left, value on the
- * right. `role="presentation"` because it is layout, not data, to a screen
- * reader; `word-break` so a long URL or a pasted paragraph wraps instead of
- * forcing the email wider than a phone.
+ * right, a hairline between rows. `role="presentation"` because it is layout,
+ * not data, to a screen reader; `word-break` so a long URL or a pasted
+ * paragraph wraps instead of forcing the email wider than a phone.
  */
 export function answersTableHtml(rows: AnswerRow[]): string {
   if (rows.length === 0) return "";
   const body = rows
     .map(
-      (row) =>
-        `<tr>` +
-        `<td style="padding:8px 12px 8px 0;vertical-align:top;width:40%;color:#6b7280;font-size:13px;line-height:1.4;word-break:break-word;">${escapeHtml(row.label)}</td>` +
-        `<td style="padding:8px 0;vertical-align:top;color:#111827;font-size:14px;line-height:1.4;word-break:break-word;white-space:pre-wrap;">${escapeHtml(row.value)}</td>` +
-        `</tr>`,
+      (row, i) => {
+        const rule = i === 0 ? "" : `border-top:1px solid ${HAIRLINE};`;
+        return (
+          `<tr>` +
+          `<td style="${rule}padding:10px 12px 10px 0;vertical-align:top;width:40%;color:${MUTED};font-size:13px;line-height:1.45;word-break:break-word;">${escapeHtml(row.label)}</td>` +
+          `<td style="${rule}padding:10px 0;vertical-align:top;color:${INK};font-size:14px;font-weight:500;line-height:1.45;word-break:break-word;white-space:pre-wrap;">${escapeHtml(row.value)}</td>` +
+          `</tr>`
+        );
+      },
     )
     .join("");
   return (
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;margin:12px 0;">` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;margin:16px 0;border-top:1px solid ${HAIRLINE};border-bottom:1px solid ${HAIRLINE};">` +
     `<tbody>${body}</tbody></table>`
   );
 }
 
 /**
- * A complete email document around the rendered lines: doctype, viewport meta,
- * a full-width outer table and a 600px white card, system font stack. The
- * lines are joined with `<br/>` inside a `<div>` (a `<p>` cannot legally
- * contain the answers table). Emits a real `</body></html>` because the
- * transactional service appends its footer right before `</body>`.
+ * A URL as a link, for the `{{formLink}}` token on the HTML side. Only http(s)
+ * becomes an anchor; anything else (an empty value, a relative path) stays
+ * escaped text, so a template can never produce a `javascript:` href.
+ */
+export function linkHtml(url: string): string {
+  const safe = escapeHtml(url);
+  if (!/^https?:\/\//i.test(url.trim())) return safe;
+  return `<a href="${safe}" style="color:${LINK};font-weight:600;text-decoration:underline;word-break:break-all;">${safe}</a>`;
+}
+
+/**
+ * A complete email document around the rendered lines: doctype, viewport and
+ * color-scheme metas, a canvas, and a 600px dForms card (brand accent bar, the
+ * wordmark, then the content). The lines are joined with `<br/>` inside a
+ * `<div>` (a `<p>` cannot legally contain the answers table).
+ *
+ * `logoUrl` is the absolute URL of the wordmark PNG (SVG does not render in
+ * Gmail or Outlook). Without one (self-host with no public URL, tests) the
+ * header shows the name as type instead, which is also what a client that
+ * blocks images shows through the `alt`.
+ *
+ * Emits a real `</body></html>` because the transactional service appends its
+ * support footer right before `</body>`, below the card.
  */
 export function emailDocument(input: {
   lang: "en" | "es";
   lines: string[];
+  logoUrl?: string | null;
 }): string {
   const content = input.lines.join("<br/>");
+  const wordmark = `<span style="font-family:${FONT_STACK};font-size:22px;font-weight:800;letter-spacing:-0.02em;color:${INK};">d<span style="color:${LINK};">F</span>orms</span>`;
+  const logo = input.logoUrl
+    ? `<img src="${escapeHtml(input.logoUrl)}" width="148" height="36" alt="dForms" style="display:block;border:0;outline:none;height:36px;width:148px;font-family:${FONT_STACK};font-size:22px;font-weight:800;color:${INK};"/>`
+    : wordmark;
   return (
     `<!DOCTYPE html>` +
     `<html lang="${input.lang}">` +
-    `<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>` +
-    `<body style="margin:0;padding:0;background:#f3f4f6;">` +
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;background:#f3f4f6;">` +
-    `<tr><td align="center" style="padding:24px 12px;">` +
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;max-width:600px;background:#ffffff;border-radius:8px;">` +
-    `<tr><td style="padding:24px;font-family:${FONT_STACK};font-size:15px;line-height:1.5;color:#111827;">` +
+    `<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>` +
+    // The card is designed light; ask clients not to auto-invert it.
+    `<meta name="color-scheme" content="light"/><meta name="supported-color-schemes" content="light"/>` +
+    `<style>@media (max-width:480px){.dfm-pad{padding-left:20px !important;padding-right:20px !important;}.dfm-body{padding:0 8px !important;}.dfm-outer{padding:16px 0 !important;}}</style>` +
+    `</head>` +
+    // The side padding sits on <body>, not on the outer cell: the transactional
+    // service splices its footer in just before </body>, outside our tables,
+    // and this is the one box that also insets it from the window edge.
+    `<body class="dfm-body" style="margin:0;padding:0 16px;background:${CANVAS};">` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;background:${CANVAS};">` +
+    `<tr><td class="dfm-outer" align="center" style="padding:32px 0;">` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;max-width:600px;background:#ffffff;border:1px solid ${HAIRLINE};border-radius:16px;overflow:hidden;">` +
+    `<tr><td style="height:4px;line-height:4px;font-size:0;background:${ACCENT};">&nbsp;</td></tr>` +
+    `<tr><td class="dfm-pad" style="padding:28px 32px 0;">${logo}</td></tr>` +
+    `<tr><td class="dfm-pad" style="padding:24px 32px 32px;font-family:${FONT_STACK};font-size:16px;line-height:1.6;color:${INK};">` +
     `<div style="word-break:break-word;overflow-wrap:anywhere;">${content}</div>` +
     `</td></tr></table>` +
     `</td></tr></table>` +

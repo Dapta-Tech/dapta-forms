@@ -1,6 +1,6 @@
 import type { EmailProvider, EmailResult } from './email.port';
 import { escapeHtml } from './util';
-import { emailDocument, type AnswerRow } from './render-html';
+import { EMAIL_LOGO_PATH, emailDocument, type AnswerRow } from './render-html';
 import {
   normalizeLocale,
   renderMemberInvited,
@@ -89,7 +89,19 @@ function addresseeKey(to: string[]): string {
  * bilingual (EN/ES) via the templates module; the caller supplies `locale`.
  */
 export class SubmissionNotifier {
-  constructor(private readonly email: EmailProvider) {}
+  /** Absolute URL of the dForms wordmark for the email header, or null. */
+  private readonly logoUrl: string | null;
+
+  /**
+   * `appUrl` is the web app's public base (`PUBLIC_APP_URL`), where the email
+   * wordmark is served. Absent (a bare fork), the header sets the name as type.
+   */
+  constructor(
+    private readonly email: EmailProvider,
+    opts: { appUrl?: string | null } = {},
+  ) {
+    this.logoUrl = opts.appUrl ? `${opts.appUrl.replace(/\/$/, '')}${EMAIL_LOGO_PATH}` : null;
+  }
 
   /** Internal notice to the account: a new submission landed. */
   sendSubmissionReceived(n: SubmissionNotification): Promise<EmailResult> {
@@ -105,7 +117,8 @@ export class SubmissionNotifier {
       to: n.to,
       subject,
       text: text.join('\n'),
-      html: emailDocument({ lang: locale, lines: html }),
+      html: emailDocument({ lang: locale, lines: html, logoUrl: this.logoUrl }),
+      locale,
       headers: { 'X-Submission-Id': n.submissionId },
       idempotencyKey: `submission:${n.submissionId}:received:${addresseeKey(n.to)}`,
     });
@@ -125,7 +138,8 @@ export class SubmissionNotifier {
       subject,
       text: body.join('\n'),
       // Platform copy with interpolated names: escape every line (E8).
-      html: emailDocument({ lang: locale, lines: body.map(escapeHtml) }),
+      html: emailDocument({ lang: locale, lines: body.map(escapeHtml), logoUrl: this.logoUrl }),
+      locale,
       // One invite per member row — a retried delivery must not read as a second
       // invitation to a managed service that de-duplicates on this key.
       idempotencyKey: `member:${n.memberId}:invited`,
@@ -146,7 +160,8 @@ export class SubmissionNotifier {
       to: n.respondentEmail ? [n.respondentEmail] : n.to,
       subject,
       text: text.join('\n'),
-      html: emailDocument({ lang: locale, lines: html }),
+      html: emailDocument({ lang: locale, lines: html, logoUrl: this.logoUrl }),
+      locale,
       headers: { 'X-Submission-Id': n.submissionId },
       // The receipt has exactly one addressee (the respondent), so its key is
       // already unique per send; it is qualified for symmetry with the notice.

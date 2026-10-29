@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { answersTableHtml, emailDocument } from "./render-html";
+import { answersTableHtml, emailDocument, linkHtml } from "./render-html";
 
 describe("answersTableHtml", () => {
   it("renders one row per answer with the label and value HTML-escaped", () => {
@@ -30,7 +30,32 @@ describe("answersTableHtml", () => {
   });
 });
 
+describe("linkHtml", () => {
+  it("links an http(s) URL, escaped", () => {
+    expect(linkHtml("https://x.io/a?b=1&c=2")).toMatch(
+      /^<a href="https:\/\/x\.io\/a\?b=1&amp;c=2" style="[^"]+">https:\/\/x\.io\/a\?b=1&amp;c=2<\/a>$/,
+    );
+  });
+
+  it("never links another scheme or an empty value", () => {
+    expect(linkHtml("javascript:alert(1)")).toBe("javascript:alert(1)");
+    expect(linkHtml("")).toBe("");
+    expect(linkHtml("<b>x</b>")).toBe("&lt;b&gt;x&lt;/b&gt;");
+  });
+});
+
 describe("emailDocument", () => {
+  it("brands the card: accent bar and the wordmark image when a logo URL is given", () => {
+    const html = emailDocument({ lang: "en", lines: ["x"], logoUrl: "https://app.example.com/email/dforms-wordmark.png" });
+    expect(html).toContain("background:#3ddc84");
+    expect(html).toContain('<img src="https://app.example.com/email/dforms-wordmark.png"');
+    expect(html).toContain('alt="dForms"');
+  });
+
+  it("asks clients not to auto-invert the light card", () => {
+    expect(emailDocument({ lang: "en", lines: ["x"] })).toContain('name="color-scheme" content="light"');
+  });
+
   it("wraps the lines in a complete, responsive HTML document", () => {
     const html = emailDocument({ lang: "es", lines: ["Hola", "Segunda"] });
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);

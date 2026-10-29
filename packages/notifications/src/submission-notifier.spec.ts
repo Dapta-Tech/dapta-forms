@@ -115,6 +115,28 @@ describe('SubmissionNotifier', () => {
     expect(html).toContain('<html lang="es">');
     expect(html).toContain('name="viewport"');
     expect(html.trimEnd().endsWith('</body></html>')).toBe(true);
+    // The message names its language, so the transport's own footer can match it.
+    expect(provider.sent[0]!.locale).toBe('es');
+    // No app URL: the header sets the name as type, no image to break.
+    expect(html).not.toContain('<img');
+    expect(html).toContain('orms</span>');
+  });
+
+  it('heads the email with the dForms wordmark served from the app URL', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider, { appUrl: 'https://app.example.com/' });
+    await notifier.sendSubmissionConfirmed({
+      accountId: 'acc-1',
+      submissionId: 'sub-logo',
+      formName: 'Survey',
+      to: ['owner@example.com'],
+      respondentEmail: 'lead@example.com',
+      locale: 'en',
+    });
+    const html = provider.sent[0]!.html!;
+    expect(html).toContain('<img src="https://app.example.com/email/dforms-wordmark.png"');
+    expect(html).toContain('alt="dForms"');
+    expect(html).not.toContain('Dapta Forms');
   });
 
   it('puts the answers in the owner notice: "Label: value" in text, a table in HTML, escaped', async () => {
@@ -150,7 +172,9 @@ describe('SubmissionNotifier', () => {
     expect(m.html).toContain('Founder');
     expect(m.html).not.toContain('<script>');
     expect(m.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
-    expect(m.html).toContain('View submissions: https://forms.example.com/admin/forms/f1/submissions');
+    expect(m.html).toContain(
+      'View submissions: <a href="https://forms.example.com/admin/forms/f1/submissions"',
+    );
   });
 
   it('a custom body can place {{answers}} anywhere, in both emails', async () => {

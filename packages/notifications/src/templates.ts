@@ -11,7 +11,7 @@
  * text bodies read naturally while the HTML path stays XSS-safe (E8).
  */
 
-import { answersTableHtml, type AnswerRow } from './render-html';
+import { answersTableHtml, linkHtml, type AnswerRow } from './render-html';
 import { escapeHtml } from './util';
 
 /** The two supported notification languages. Mirrors @quill/shared `Locale`. */
@@ -204,7 +204,7 @@ export function htmlTokenValues(v: ReceivedCopyVars): Record<NotificationToken, 
     respondentEmail: escapeHtml(text.respondentEmail),
     score: escapeHtml(text.score),
     outcomeLabel: escapeHtml(text.outcomeLabel),
-    formLink: escapeHtml(text.formLink),
+    formLink: linkHtml(text.formLink),
     answers: answersTableHtml(v.answers ?? []),
   };
 }
