@@ -11,7 +11,7 @@
  * text bodies read naturally while the HTML path stays XSS-safe (E8).
  */
 
-import { answersTableHtml, linkHtml, type AnswerRow } from './render-html';
+import { answersTableHtml, autolinkEscaped, linkHtml, type AnswerRow } from './render-html';
 import { escapeHtml } from './util';
 
 /** The two supported notification languages. Mirrors @quill/shared `Locale`. */
@@ -258,7 +258,8 @@ export function renderBodyLines(
     // A blank spacer stays; a run of blanks (from dropped lines) collapses.
     if (rendered.trim() === '' && (text.length === 0 || text[text.length - 1]!.trim() === '')) continue;
     text.push(rendered);
-    html.push(interpolateTokens(escapeHtml(line), htmlValues));
+    // URLs the owner wrote become links; token values (respondent input) never do.
+    html.push(interpolateTokens(autolinkEscaped(escapeHtml(line)), htmlValues));
   }
   while (text.length > 0 && text[text.length - 1]!.trim() === '') {
     text.pop();

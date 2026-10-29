@@ -68,7 +68,47 @@ export function answersTableHtml(rows: AnswerRow[]): string {
 export function linkHtml(url: string): string {
   const safe = escapeHtml(url);
   if (!/^https?:\/\//i.test(url.trim())) return safe;
-  return `<a href="${safe}" style="color:${LINK};font-weight:600;text-decoration:underline;word-break:break-all;">${safe}</a>`;
+  return anchor(safe);
+}
+
+/** A brand-styled anchor around an already-escaped http(s) URL. */
+function anchor(escapedUrl: string): string {
+  return `<a href="${escapedUrl}" style="color:${LINK};font-weight:600;text-decoration:underline;word-break:break-all;">${escapedUrl}</a>`;
+}
+
+/**
+ * An http(s) URL inside ESCAPED text: no whitespace, quotes, angle brackets or
+ * braces (so a `{{token}}` written right after a URL is never swallowed).
+ */
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'{}]+/gi;
+/**
+ * Turn every http(s) URL in an already-escaped template line into a link, the
+ * same as `{{formLink}}` renders. For the text an account OWNER writes in
+ * Settings (a Calendly link, a site): run it on the escaped template BEFORE the
+ * tokens are substituted, so a value a respondent typed (a name, an answer) is
+ * never made clickable.
+ *
+ * Sentence punctuation right after a URL stays outside the link ("aquí:
+ * https://x.io." links `https://x.io`), except a `;` that closes an entity
+ * (`&amp;`) and a `)` the URL itself opened.
+ */
+export function autolinkEscaped(escaped: string): string {
+  return escaped.replace(URL_IN_TEXT, (found) => {
+    // A quote or angle bracket was escaped to an entity, so the pattern above
+    // cannot stop at it: end the URL there (`"https://x.io"` links `https://x.io`).
+    const match = found.split(/&(?:quot|#39|#x27|lt|gt);/i)[0]!;
+    const rest = found.slice(match.length);
+    let url = match;
+    while (url.length > 0) {
+      const last = url[url.length - 1]!;
+      if (last === ";" && /&[a-z]+;$/i.test(url)) break;
+      if (last === ")" && (url.match(/\(/g)?.length ?? 0) >= (url.match(/\)/g)?.length ?? 0)) break;
+      if (!".,;:!?)]".includes(last)) break;
+      url = url.slice(0, -1);
+    }
+    if (!/^https?:\/\/[^/?#]/i.test(url)) return found;
+    return anchor(url) + match.slice(url.length) + rest;
+  });
 }
 
 /**

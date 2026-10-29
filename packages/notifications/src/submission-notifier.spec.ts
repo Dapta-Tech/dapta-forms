@@ -122,6 +122,27 @@ describe('SubmissionNotifier', () => {
     expect(html).toContain('orms</span>');
   });
 
+  it("links the URLs the owner wrote in a custom body, never a respondent's", async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    await notifier.sendSubmissionConfirmed({
+      accountId: 'acc-1',
+      submissionId: 'sub-link',
+      formName: 'Survey',
+      to: ['owner@example.com'],
+      respondentEmail: 'lead@example.com',
+      respondentName: 'https://evil.example/phish',
+      locale: 'es',
+      bodyTemplate: 'Hola {{respondentName}}, agenda aquí: https://calendly.com/dapta/intro.',
+    });
+    const m = provider.sent[0]!;
+    expect(m.html).toContain('<a href="https://calendly.com/dapta/intro"');
+    expect(m.html).toContain('</a>.');
+    expect(m.html).not.toContain('href="https://evil.example');
+    // The text twin is untouched.
+    expect(m.text).toBe('Hola https://evil.example/phish, agenda aquí: https://calendly.com/dapta/intro.');
+  });
+
   it('heads the email with the dForms wordmark served from the app URL', async () => {
     const provider = new CaptureProvider();
     const notifier = new SubmissionNotifier(provider, { appUrl: 'https://app.example.com/' });
