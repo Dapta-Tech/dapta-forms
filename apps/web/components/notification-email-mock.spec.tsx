@@ -59,6 +59,22 @@ describe('mockBodyLines', () => {
     expect(mockBodyLines('{{nope}}', values)).toEqual([[{ kind: 'text', text: '{{nope}}' }]]);
   });
 
+  it('links the URLs the owner wrote and {{formLink}}, like the email', () => {
+    const v = { ...values, formLink: 'https://forms.example.com/x', respondentName: 'https://evil.example' };
+    expect(mockBodyLines('Agenda aquí: https://calendly.com/dapta/intro.', v)).toEqual([
+      [
+        { kind: 'text', text: 'Agenda aquí: ' },
+        { kind: 'link', href: 'https://calendly.com/dapta/intro' },
+        { kind: 'text', text: '.' },
+      ],
+    ]);
+    expect(mockBodyLines('Ver: {{formLink}}', v)).toEqual([
+      [{ kind: 'text', text: 'Ver: ' }, { kind: 'link', href: 'https://forms.example.com/x' }],
+    ]);
+    // A respondent's value is never a link, whatever it holds.
+    expect(mockBodyLines('Hola {{respondentName}}', v)).toEqual([[{ kind: 'text', text: 'Hola https://evil.example' }]]);
+  });
+
   it('trims blank ends and collapses a run of blank lines to one', () => {
     expect(mockBodyLines('\n\nA\n\n\n\nB\n\n', values)).toEqual([
       [{ kind: 'text', text: 'A' }],
@@ -89,6 +105,29 @@ describe('NotificationEmailMock', () => {
     expect(html).toContain('Founder / Owner');
     // The text body's "Label: value" shape is for the plain-text part only.
     expect(html).not.toContain('What best describes you?: ');
+  });
+
+  it('wears the email brand and draws links as the email does', () => {
+    const html = mock(true, 'S', 'Agenda: https://calendly.com/x\n{{formLink}}');
+    expect(html).toContain('src="/email/dforms-wordmark.png"');
+    expect(html).toContain('background:#3ddc84');
+    expect(html.match(/data-testid="email-mock-link"/g)).toHaveLength(2);
+    expect(html).toContain('https://calendly.com/x</span>');
+  });
+
+  it('draws the growth button only when the deployment has the loop on', () => {
+    const saved = process.env.NEXT_PUBLIC_SIGNUP_URL;
+    try {
+      delete process.env.NEXT_PUBLIC_SIGNUP_URL;
+      expect(mock(true)).not.toContain('data-testid="email-mock-cta"');
+      process.env.NEXT_PUBLIC_SIGNUP_URL = 'https://example.com/signup';
+      const html = mock(true);
+      expect(html).toContain('data-testid="email-mock-cta"');
+      expect(html).toContain('Create your form, free');
+    } finally {
+      if (saved === undefined) delete process.env.NEXT_PUBLIC_SIGNUP_URL;
+      else process.env.NEXT_PUBLIC_SIGNUP_URL = saved;
+    }
   });
 
   it('omits the table when the body does not use the answers token', () => {

@@ -15,6 +15,8 @@ export interface BuilderMessages {
     tabBuild: string;
     tabLogic: string;
     tabDesign: string;
+    /** Opens the form's responses (the Submissions page); a link, not an editor section. */
+    tabResults: string;
     saved: string;
     saving: string;
     draft: string;
@@ -590,6 +592,7 @@ const en: BuilderMessages = {
     tabBuild: 'Build',
     tabLogic: 'Logic',
     tabDesign: 'Design',
+    tabResults: 'Results',
     saved: 'Saved',
     saving: 'Saving…',
     draft: 'Draft',
@@ -1049,6 +1052,7 @@ const es: BuilderMessages = {
     tabBuild: 'Construir',
     tabLogic: 'Lógica',
     tabDesign: 'Diseño',
+    tabResults: 'Resultados',
     saved: 'Guardado',
     saving: 'Guardando…',
     draft: 'Borrador',

@@ -10,6 +10,9 @@ import {
   NOTIFICATION_SAMPLE_ANSWERS as ANSWERS,
 } from '@/lib/notification-preview';
 import { PRODUCT_NAME } from '@/lib/product-name';
+import { getMessages } from '@quill/shared';
+import { clientLocale } from '@/lib/client-locale';
+import { signupHref } from '@/lib/growth';
 
 export interface NotificationMockLabels {
   title: string;
@@ -38,6 +41,18 @@ const INK = '#202124';
 const MUTED = '#5f6368';
 const RULE = '#e0e0e0';
 const EMAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+/** The email document's own palette (`render-html.ts`), mirrored literally. */
+const EMAIL = {
+  canvas: '#f4f5f7',
+  ink: '#1a1a1c',
+  muted: '#6b7280',
+  accent: '#3ddc84',
+  onAccent: '#0b2e1a',
+  link: '#0e7a3f',
+  hairline: '#e7e8ec',
+};
+/** The wordmark the email header loads (`EMAIL_LOGO_PATH`), served by this app. */
+const EMAIL_LOGO = '/email/dforms-wordmark.png';
 
 /** Inbox chrome icons: decorative, so every one is hidden from assistive tech. */
 function ToolIcon({ name }: { name: string }) {
@@ -61,6 +76,11 @@ export function NotificationEmailMock({
 }) {
   const lines = useMemo(() => mockBodyLines(body, SAMPLE), [body]);
   const renderedSubject = useMemo(() => interpolate(subject, SAMPLE), [subject]);
+  // The growth button the email carries under its card, by the badge's rule:
+  // only when this deployment has the loop on. Its copy is the dashboard's
+  // language here; the real email uses the respondent's.
+  const ctaOn = signupHref('email-receipt') !== null;
+  const growth = getMessages(clientLocale()).growth;
 
   return (
     <Modal open={open} onClose={onClose} title={labels.title} labelId="email-mock-title" size="xl">
@@ -126,43 +146,68 @@ export function NotificationEmailMock({
 
             {/* The message: the email document on its own grey page. */}
             <div className="mt-4 sm:pl-[52px]">
-              <div className="rounded-lg px-3 py-6" style={{ background: '#f3f4f6' }}>
+              <div className="rounded-lg px-3 py-6" style={{ background: EMAIL.canvas }}>
                 <div
-                  data-testid="email-mock-body"
-                  className="mx-auto max-w-[600px] rounded-lg bg-white p-6"
-                  style={{
-                    fontFamily: EMAIL_FONT,
-                    fontSize: 15,
-                    lineHeight: 1.5,
-                    color: '#111827',
-                    wordBreak: 'break-word',
-                    overflowWrap: 'anywhere',
-                  }}
+                  className="mx-auto max-w-[600px] overflow-hidden rounded-2xl border bg-white"
+                  style={{ borderColor: EMAIL.hairline }}
                 >
+                  {/* Brand accent bar and wordmark, as the email's header draws them. */}
+                  <div aria-hidden style={{ height: 4, background: EMAIL.accent }} />
+                  <div className="px-5 pt-7 sm:px-8">
+                    <img src={EMAIL_LOGO} alt="dForms" width={148} height={36} style={{ display: 'block', height: 36, width: 148 }} />
+                  </div>
+                  <div
+                    data-testid="email-mock-body"
+                    className="px-5 pb-8 pt-6 sm:px-8"
+                    style={{
+                      fontFamily: EMAIL_FONT,
+                      fontSize: 16,
+                      lineHeight: 1.6,
+                      color: EMAIL.ink,
+                      wordBreak: 'break-word',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
                   {lines.map((segments, i) => (
                     <Fragment key={i}>
                       {i > 0 ? <br /> : null}
                       {segments.map((segment, j) =>
                         segment.kind === 'text' ? (
                           <Fragment key={j}>{segment.text}</Fragment>
+                        ) : segment.kind === 'link' ? (
+                          // Drawn, not followed: a preview is not the place to leave Settings.
+                          <span
+                            key={j}
+                            data-testid="email-mock-link"
+                            style={{ color: EMAIL.link, fontWeight: 600, textDecoration: 'underline', wordBreak: 'break-all' }}
+                          >
+                            {segment.href}
+                          </span>
                         ) : (
                           <table
                             key={j}
                             role="presentation"
                             data-testid="email-mock-answers"
-                            style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}
+                            style={{
+                              width: '100%',
+                              borderCollapse: 'collapse',
+                              margin: '16px 0',
+                              borderTop: `1px solid ${EMAIL.hairline}`,
+                              borderBottom: `1px solid ${EMAIL.hairline}`,
+                            }}
                           >
                             <tbody>
-                              {ANSWERS.map((row) => (
+                              {ANSWERS.map((row, r) => (
                                 <tr key={row.label}>
                                   <td
                                     style={{
-                                      padding: '8px 12px 8px 0',
+                                      borderTop: r === 0 ? undefined : `1px solid ${EMAIL.hairline}`,
+                                      padding: '10px 12px 10px 0',
                                       verticalAlign: 'top',
                                       width: '40%',
-                                      color: '#6b7280',
+                                      color: EMAIL.muted,
                                       fontSize: 13,
-                                      lineHeight: 1.4,
+                                      lineHeight: 1.45,
                                       wordBreak: 'break-word',
                                     }}
                                   >
@@ -170,11 +215,13 @@ export function NotificationEmailMock({
                                   </td>
                                   <td
                                     style={{
-                                      padding: '8px 0',
+                                      borderTop: r === 0 ? undefined : `1px solid ${EMAIL.hairline}`,
+                                      padding: '10px 0',
                                       verticalAlign: 'top',
-                                      color: '#111827',
+                                      color: EMAIL.ink,
                                       fontSize: 14,
-                                      lineHeight: 1.4,
+                                      fontWeight: 500,
+                                      lineHeight: 1.45,
                                       wordBreak: 'break-word',
                                       whiteSpace: 'pre-wrap',
                                     }}
@@ -189,6 +236,30 @@ export function NotificationEmailMock({
                       )}
                     </Fragment>
                   ))}
+                  </div>
+                  {ctaOn ? (
+                    <div
+                      data-testid="email-mock-cta"
+                      className="px-5 pb-7 pt-6 text-center sm:px-8"
+                      style={{ borderTop: `1px solid ${EMAIL.hairline}`, fontFamily: EMAIL_FONT }}
+                    >
+                      <p style={{ margin: '0 0 14px', fontSize: 14, lineHeight: 1.5, color: EMAIL.muted }}>{growth.ctaQuestion}</p>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '12px 26px',
+                          borderRadius: 10,
+                          background: EMAIL.accent,
+                          color: EMAIL.onAccent,
+                          fontSize: 15,
+                          fontWeight: 700,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {growth.emailCtaAction}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

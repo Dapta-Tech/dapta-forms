@@ -57,6 +57,13 @@ export const serverEnvSchema = z.object({
   EMAIL_PROVIDER: z.enum(['log-only', 'noop', 'smtp', 'http']).default('log-only'),
   MAIL_FROM_EMAIL: z.string().default('forms@example.com'),
   MAIL_FROM_NAME: z.string().default('Forms'),
+  // Growth loop in the notification emails: the same three variables the web
+  // app reads for the "Made with" badge (see .env.example), read here too
+  // because the API renders the emails. Same contract: no signup URL, or the
+  // hide flag set, and the emails carry no dForms button.
+  NEXT_PUBLIC_SIGNUP_URL: z.string().optional(),
+  NEXT_PUBLIC_LANDING_URL: z.string().optional(),
+  NEXT_PUBLIC_HIDE_BADGE: z.string().optional(),
 
   // SMTP adapter
   SMTP_HOST: z.string().optional(),

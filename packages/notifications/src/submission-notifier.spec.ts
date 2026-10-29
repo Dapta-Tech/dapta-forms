@@ -115,6 +115,89 @@ describe('SubmissionNotifier', () => {
     expect(html).toContain('<html lang="es">');
     expect(html).toContain('name="viewport"');
     expect(html.trimEnd().endsWith('</body></html>')).toBe(true);
+    // The message names its language, so the transport's own footer can match it.
+    expect(provider.sent[0]!.locale).toBe('es');
+    // No app URL: the header sets the name as type, no image to break.
+    expect(html).not.toContain('<img');
+    expect(html).toContain('orms</span>');
+  });
+
+  it("links the URLs the owner wrote in a custom body, never a respondent's", async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    await notifier.sendSubmissionConfirmed({
+      accountId: 'acc-1',
+      submissionId: 'sub-link',
+      formName: 'Survey',
+      to: ['owner@example.com'],
+      respondentEmail: 'lead@example.com',
+      respondentName: 'https://evil.example/phish',
+      locale: 'es',
+      bodyTemplate: 'Hola {{respondentName}}, agenda aquí: https://calendly.com/dapta/intro.',
+    });
+    const m = provider.sent[0]!;
+    expect(m.html).toContain('<a href="https://calendly.com/dapta/intro"');
+    expect(m.html).toContain('</a>.');
+    expect(m.html).not.toContain('href="https://evil.example');
+    // The text twin is untouched.
+    expect(m.text).toBe('Hola https://evil.example/phish, agenda aquí: https://calendly.com/dapta/intro.');
+  });
+
+  it('puts the growth button in the receipt and the notice, each with its own medium and language', async () => {
+    const provider = new CaptureProvider();
+    const asked: Array<{ locale: string; medium: string }> = [];
+    const notifier = new SubmissionNotifier(provider, {
+      cta: ({ locale, medium }) => {
+        asked.push({ locale, medium });
+        return {
+          question: locale === 'es' ? '¿Quieres tu propio formulario?' : 'Want your own form?',
+          action: locale === 'es' ? 'Crea tu formulario gratis' : 'Create your form, free',
+          href: `https://dforms.ai/?utm_medium=${medium}`,
+        };
+      },
+    });
+    const base = { accountId: 'acc-1', formName: 'Survey', to: ['owner@example.com'] };
+    await notifier.sendSubmissionConfirmed({ ...base, submissionId: 'r', respondentEmail: 'lead@example.com', locale: 'es' });
+    await notifier.sendSubmissionReceived({ ...base, submissionId: 'n', locale: 'en' });
+    expect(asked).toEqual([
+      { locale: 'es', medium: 'email-receipt' },
+      { locale: 'en', medium: 'email-notice' },
+    ]);
+    const [receipt, notice] = provider.sent;
+    expect(receipt!.html).toContain('>Crea tu formulario gratis</a>');
+    expect(receipt!.text!.endsWith('¿Quieres tu propio formulario? Crea tu formulario gratis: https://dforms.ai/?utm_medium=email-receipt')).toBe(true);
+    expect(notice!.html).toContain('href="https://dforms.ai/?utm_medium=email-notice"');
+    expect(notice!.html).toContain('>Create your form, free</a>');
+  });
+
+  it('sends no button when the deployment has the growth loop off', async () => {
+    const provider = new CaptureProvider();
+    await new SubmissionNotifier(provider, { cta: () => null }).sendSubmissionConfirmed({
+      accountId: 'acc-1',
+      submissionId: 'off',
+      formName: 'Survey',
+      to: ['owner@example.com'],
+      respondentEmail: 'lead@example.com',
+    });
+    expect(provider.sent[0]!.html).not.toContain('bgcolor=');
+    expect(provider.sent[0]!.text).not.toContain('dforms.ai');
+  });
+
+  it('heads the email with the dForms wordmark served from the app URL', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider, { appUrl: 'https://app.example.com/' });
+    await notifier.sendSubmissionConfirmed({
+      accountId: 'acc-1',
+      submissionId: 'sub-logo',
+      formName: 'Survey',
+      to: ['owner@example.com'],
+      respondentEmail: 'lead@example.com',
+      locale: 'en',
+    });
+    const html = provider.sent[0]!.html!;
+    expect(html).toContain('<img src="https://app.example.com/email/dforms-wordmark.png"');
+    expect(html).toContain('alt="dForms"');
+    expect(html).not.toContain('Dapta Forms');
   });
 
   it('puts the answers in the owner notice: "Label: value" in text, a table in HTML, escaped', async () => {
@@ -150,7 +233,9 @@ describe('SubmissionNotifier', () => {
     expect(m.html).toContain('Founder');
     expect(m.html).not.toContain('<script>');
     expect(m.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
-    expect(m.html).toContain('View submissions: https://forms.example.com/admin/forms/f1/submissions');
+    expect(m.html).toContain(
+      'View submissions: <a href="https://forms.example.com/admin/forms/f1/submissions"',
+    );
   });
 
   it('a custom body can place {{answers}} anywhere, in both emails', async () => {

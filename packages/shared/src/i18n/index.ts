@@ -23,6 +23,8 @@ export interface FormsMessages {
     madeWith: string;
     ctaQuestion: string;
     ctaAction: string;
+    /** The button under the notification emails' card; `ctaQuestion` sits above it. */
+    emailCtaAction: string;
     /** SEO/OG meta description for a public form page. */
     seoForm: string;
     /** Step count on the generated share card. `{count}` is a number. */
@@ -2571,6 +2573,7 @@ export const en: FormsMessages = {
     madeWith: 'Made with dForms',
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get dForms, free',
+    emailCtaAction: 'Create your form, free',
     seoForm: 'Fill out {name} online.',
     shareCardSteps: '{count} questions',
     shareCardUntitled: 'Form',
@@ -5124,6 +5127,7 @@ export const es: FormsMessages = {
     madeWith: 'Hecho con dForms',
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue dForms, gratis',
+    emailCtaAction: 'Crea tu formulario gratis',
     seoForm: 'Completa {name} en línea.',
     shareCardSteps: '{count} preguntas',
     shareCardUntitled: 'Formulario',

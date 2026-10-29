@@ -942,6 +942,22 @@ export function FormEditor({
               <span className="sr-only md:not-sr-only">{t.label}</span>
             </button>
           ))}
+          {/* The responses this form has collected. Not an editor section: it
+              opens the Submissions page (table, summary, CSV), which links back
+              here through its own tabs. A link rather than a `Tab`, so the old
+              `?tab=results` (now Logic → Scoring / Outcomes) keeps landing on
+              Build. */}
+          <Link
+            href={`/admin/forms/${id}/submissions`}
+            data-testid="editor-tab-results"
+            title={bm.shell.tabResults}
+            className={cn(
+              'relative inline-flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:px-3 lg:h-14',
+            )}
+          >
+            <i aria-hidden className="pi pi-inbox md:!hidden" style={{ fontSize: 14 }} />
+            <span className="sr-only md:not-sr-only">{bm.shell.tabResults}</span>
+          </Link>
         </nav>
 
         <div className="contents lg:col-start-3 lg:row-start-1 lg:flex lg:min-w-0 lg:items-center lg:justify-end lg:gap-2">

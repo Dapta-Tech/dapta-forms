@@ -60,6 +60,7 @@ describe('HttpEmailProvider — transactional-v1', () => {
       text: 'You have a new submission.',
       html: '<p>You have a new submission.</p>',
       idempotencyKey: 'submission:s1:received',
+      locale: 'es',
     });
 
     expect(result).toEqual({ delivered: true, messageId: 'msg-1', driver: 'http' });
@@ -83,6 +84,8 @@ describe('HttpEmailProvider — transactional-v1', () => {
       category: 'lifecycle',
       idempotencyKey: 'submission:s1:received',
       businessContext: { accountId: 'acc-1' },
+      // The footer the service appends follows the body's language.
+      locale: 'es',
     });
     expect(sent.from).toBeUndefined();
     expect(sent.fromName).toBeUndefined();
