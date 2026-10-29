@@ -1254,7 +1254,7 @@ export function FormRenderer({
     }
     const several = screen.length > 1;
     return (
-      <PhaseShell className="pf" design={design} onKeyDown={onScreenKeyDown} cover={chrome}>
+      <PhaseShell className="pf pf--fit" design={design} onKeyDown={onScreenKeyDown} cover={chrome}>
         <header className="pf__topbar">
           <div className="pf__topbar-inner">
             {screenIdx > 0 || coverScreen ? (
@@ -1279,6 +1279,9 @@ export function FormRenderer({
         <div className="pf__body">
           <div className="pf__inner">
             <div className="pf__content pf-s pf-animate" key={animKey} data-pf-screen-size={screen.length}>
+              {/* The questions scroll inside the card; the footer below never
+                  leaves the screen (see `.pf--fit` in public-form.css). */}
+              <div className="pf-s__members">
               {screen.map((member, i) => {
                 const code = errors[member.key];
                 const classes = ['pf-s__member'];
@@ -1346,6 +1349,7 @@ export function FormRenderer({
                   </section>
                 );
               })}
+              </div>
 
               <div className="pf-s__footer">
                 {error ? (
@@ -1506,7 +1510,7 @@ export function FormRenderer({
   // (see `finalize`, and `advance` for a legacy reveal played after it).
   const finishesHere = showContinue && (!!step.terminal || index + 1 === steps.length);
   return (
-    <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={chrome}>
+    <PhaseShell className="pf pf--fit" design={design} onKeyDown={onKeyDown} cover={chrome}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || coverScreen ? (

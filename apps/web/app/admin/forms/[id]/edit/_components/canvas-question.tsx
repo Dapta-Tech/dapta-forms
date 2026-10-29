@@ -154,6 +154,7 @@ export function CanvasQuestion({
           index={index}
           accent={chrome.accent}
           eyebrow={false}
+          listCap={chrome.listCap}
           onUpdate={onUpdate}
           onOptionLabel={onOptionLabel}
           m={m}
@@ -261,7 +262,12 @@ export function CanvasScreen({
         className={cn(CARD, 'p-6 sm:p-8', chrome.cardRadius)}
       >
         <CanvasProgress chrome={chrome} index={position} total={total} />
-        <div className="-mx-6 flex flex-col divide-y divide-border sm:-mx-8">
+        <div
+          className={cn(
+            '-mx-6 flex flex-col divide-y divide-border overflow-y-auto overscroll-contain sm:-mx-8',
+            chrome.screenCap,
+          )}
+        >
           {members.map((i) => {
             const step = config.steps[i];
             if (!step) return null;
@@ -369,7 +375,27 @@ function canvasChrome(config: FormConfig, device: 'desktop' | 'mobile') {
   // The same resolver the public form and the preview use: the author's
   // overrides, else the stock copy of the FORM's language (not the editor's).
   const formLabels = resolveFormLabels(config, config.language ?? (clientLocale() === 'es' ? 'es' : 'en'));
-  return { accent, design, cardRadius, btnRadius, canvasWidth, frameWidth, theme, centred, btnStyle, formLabels };
+  // The public slides card holds itself to the viewport and scrolls its option
+  // list (or a screen's questions) so the button never drops below the fold
+  // (`.pf--fit` in public-form.css). The canvas has no viewport to fit, so it
+  // caps the same regions at what a common laptop (900px) or phone (667px)
+  // leaves them, and the author sees the list scroll where the respondent will.
+  const listCap = device === 'mobile' ? 'max-h-[344px]' : 'max-h-[434px]';
+  const screenCap = device === 'mobile' ? 'max-h-[400px]' : 'max-h-[520px]';
+  return {
+    accent,
+    design,
+    cardRadius,
+    btnRadius,
+    canvasWidth,
+    frameWidth,
+    theme,
+    centred,
+    btnStyle,
+    formLabels,
+    listCap,
+    screenCap,
+  };
 }
 
 /**
@@ -433,6 +459,7 @@ function QuestionEditableBody({
   index,
   accent,
   eyebrow = true,
+  listCap,
   onUpdate,
   onOptionLabel,
   m,
@@ -443,6 +470,12 @@ function QuestionEditableBody({
   accent: string;
   /** "Question N" above the title. Off where a frame tag already says it. */
   eyebrow?: boolean;
+  /**
+   * Max-height class for the option list on a slides card, which scrolls past
+   * it as the public card does. Absent (one-page canvas, a screen's members)
+   * the list grows with its options.
+   */
+  listCap?: string;
   onUpdate: (patch: Partial<FormStep>) => void;
   onOptionLabel: (optionIndex: number, label: string) => void;
   m: BuilderMessages;
@@ -526,11 +559,11 @@ function QuestionEditableBody({
           // Both branches keep the label editable inline; only the shell and
           // the icon treatment differ, exactly as the public renderer does.
           <div
-            className={
-              cardLayout
-                ? 'flex flex-wrap justify-center gap-2.5'
-                : 'flex flex-col gap-2.5'
-            }
+            className={cn(
+              cardLayout ? 'flex flex-wrap justify-center gap-2.5' : 'flex flex-col gap-2.5',
+              // Inset by 4px so a focused row's ring is not shaved by the scroll box.
+              listCap && ['-m-1 overflow-y-auto overscroll-contain p-1', listCap],
+            )}
           >
             {(step.options ?? []).map((opt, i) => {
               const icon = resolveOptionIcon(opt, cardLayout ? 'cards' : 'list');

@@ -2266,11 +2266,10 @@
    so nothing below reaches it.
 
    The three bands need no rules of their own beyond the gap: the card is the
-   same box a slide is. Up to 480px the column scrolls with the document and
-   the button closes it in flow; up to 768px the body's own padding (32/20)
-   frames it; from 769px it is the centred 560px card (720px wide) and grows
-   downward, with `.pf`'s `min-height: 100dvh` (not a height) letting the page
-   grow instead of clipping the card's top. */
+   same box a slide is. Up to 768px the body's own padding (32/20) frames it;
+   from 769px it is the centred 560px card (720px wide). On every band the
+   questions scroll inside `.pf-s__members` and the footer stays on screen
+   (see "Fit to the viewport" at the end of this file). */
 .pf-s__member + .pf-s__member {
   margin-top: 28px;
   padding-top: 28px;
@@ -2727,4 +2726,130 @@
   .pf--linkpage:not(.pf--linkpage-preview) .pf-lp__name {
     font-size: 30px;
   }
+}
+
+/* ── Fit to the viewport (slides question screens) ─────────────────────────────
+   A question screen never asks the respondent to scroll the PAGE to reach its
+   button. `.pf--fit` (set by the slides renderer on its two question screens:
+   one question, and a screen of several) holds `.pf` to the viewport, lets
+   every box down to the fields shrink, and gives the overflow to the one part
+   that may grow without bound:
+
+   - one question: its option list (`.pf-choices--list`, `.pf-choices--icons`);
+   - a screen of several: the questions column (`.pf-s__members`).
+
+   The title, the error, spam protection's check and the button keep their
+   size. Only the lists scroll, never `.pf__fields` itself: the dropdown and the
+   phone country picker open absolute popovers that an overflow box would clip.
+   A list keeps at least ~3 rows; on a viewport too short even for that,
+   `.pf__main` scrolls as the last resort rather than clipping anything.
+
+   Short screens are unchanged: nothing here stretches, it only lets things
+   shrink. `?embed=1` renders are excluded at the end: there the iframe is
+   sized to the content (embed-height-reporter), so a viewport-high box would
+   feed its own height back to the host. */
+.pf--fit {
+  height: 100dvh;
+  min-height: 0;
+}
+.pf--fit .pf__main {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pf--fit .pf__body,
+.pf--fit .pf__inner,
+.pf--fit .pf__content,
+.pf--fit .pf__fields {
+  min-height: 0;
+}
+.pf--fit .pf__content:not(.pf-s) > .pf__question-wrap {
+  flex-shrink: 0;
+}
+.pf--fit .pf__content:not(.pf-s) > .pf__fields {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+}
+.pf--fit .pf__content:not(.pf-s) > .pf__fields > * {
+  flex-shrink: 0;
+}
+.pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--list,
+.pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--icons,
+.pf--fit .pf-s > .pf-s__members {
+  flex: 0 1 auto;
+  min-height: 184px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the 2px focus ring + offset and a selected card's border, which
+     the scroll box would otherwise shave off at its edges. */
+  padding: 4px;
+  margin: -4px;
+}
+.pf--fit .pf-s > .pf-s__footer {
+  flex-shrink: 0;
+}
+/* A soft fade at whichever edge still hides options, so a cut-off list reads
+   as "more below" and not as the end. Scroll-driven, so it costs no script;
+   browsers without scroll timelines show the list unfaded, as before. */
+@supports (animation-timeline: scroll()) {
+  .pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--list,
+  .pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--icons,
+  .pf--fit .pf-s > .pf-s__members {
+    --pf-fade-top: 0px;
+    --pf-fade-bottom: 28px;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--pf-fade-top),
+      #000 calc(100% - var(--pf-fade-bottom)),
+      transparent 100%
+    );
+    animation: pfListFade linear both;
+    animation-timeline: scroll(self);
+  }
+}
+@property --pf-fade-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --pf-fade-bottom {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes pfListFade {
+  0% {
+    --pf-fade-top: 0px;
+    --pf-fade-bottom: 28px;
+  }
+  8%,
+  92% {
+    --pf-fade-top: 28px;
+    --pf-fade-bottom: 28px;
+  }
+  100% {
+    --pf-fade-top: 28px;
+    --pf-fade-bottom: 0px;
+  }
+}
+@media (min-width: 769px) {
+  /* The card is centred in `.pf__main`; `safe` keeps its top reachable in the
+     last-resort case where it is taller than the viewport. */
+  .pf--fit:not(.pf--vertical) .pf__main {
+    justify-content: safe center;
+  }
+}
+/* Embedded: sized by its content, as before (see the block comment above). */
+.pf-embed-root .pf--fit {
+  height: auto;
+  min-height: 100dvh;
+}
+.pf-embed-root .pf--fit .pf__main,
+.pf-embed-root .pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--list,
+.pf-embed-root .pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--icons,
+.pf-embed-root .pf--fit .pf-s > .pf-s__members {
+  overflow: visible;
+  mask-image: none;
+  animation: none;
 }

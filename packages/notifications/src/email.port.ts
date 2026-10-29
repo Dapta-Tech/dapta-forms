@@ -35,6 +35,12 @@ export interface EmailMessage {
    * it as `idempotencyKey`.
    */
   idempotencyKey?: string;
+  /**
+   * The language the message is written in (`en`, `es`). The `transactional-v1`
+   * profile forwards it so the managed service's own footer matches the body;
+   * other transports ignore it.
+   */
+  locale?: string;
 }
 
 export interface EmailResult {
