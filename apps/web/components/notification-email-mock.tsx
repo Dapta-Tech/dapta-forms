@@ -10,6 +10,9 @@ import {
   NOTIFICATION_SAMPLE_ANSWERS as ANSWERS,
 } from '@/lib/notification-preview';
 import { PRODUCT_NAME } from '@/lib/product-name';
+import { getMessages } from '@quill/shared';
+import { clientLocale } from '@/lib/client-locale';
+import { signupHref } from '@/lib/growth';
 
 export interface NotificationMockLabels {
   title: string;
@@ -44,6 +47,7 @@ const EMAIL = {
   ink: '#1a1a1c',
   muted: '#6b7280',
   accent: '#3ddc84',
+  onAccent: '#0b2e1a',
   link: '#0e7a3f',
   hairline: '#e7e8ec',
 };
@@ -72,6 +76,11 @@ export function NotificationEmailMock({
 }) {
   const lines = useMemo(() => mockBodyLines(body, SAMPLE), [body]);
   const renderedSubject = useMemo(() => interpolate(subject, SAMPLE), [subject]);
+  // The growth button the email carries under its card, by the badge's rule:
+  // only when this deployment has the loop on. Its copy is the dashboard's
+  // language here; the real email uses the respondent's.
+  const ctaOn = signupHref('email-receipt') !== null;
+  const growth = getMessages(clientLocale()).growth;
 
   return (
     <Modal open={open} onClose={onClose} title={labels.title} labelId="email-mock-title" size="xl">
@@ -228,6 +237,29 @@ export function NotificationEmailMock({
                     </Fragment>
                   ))}
                   </div>
+                  {ctaOn ? (
+                    <div
+                      data-testid="email-mock-cta"
+                      className="px-5 pb-7 pt-6 text-center sm:px-8"
+                      style={{ borderTop: `1px solid ${EMAIL.hairline}`, fontFamily: EMAIL_FONT }}
+                    >
+                      <p style={{ margin: '0 0 14px', fontSize: 14, lineHeight: 1.5, color: EMAIL.muted }}>{growth.ctaQuestion}</p>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '12px 26px',
+                          borderRadius: 10,
+                          background: EMAIL.accent,
+                          color: EMAIL.onAccent,
+                          fontSize: 15,
+                          fontWeight: 700,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {growth.emailCtaAction}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

@@ -143,6 +143,46 @@ describe('SubmissionNotifier', () => {
     expect(m.text).toBe('Hola https://evil.example/phish, agenda aquí: https://calendly.com/dapta/intro.');
   });
 
+  it('puts the growth button in the receipt and the notice, each with its own medium and language', async () => {
+    const provider = new CaptureProvider();
+    const asked: Array<{ locale: string; medium: string }> = [];
+    const notifier = new SubmissionNotifier(provider, {
+      cta: ({ locale, medium }) => {
+        asked.push({ locale, medium });
+        return {
+          question: locale === 'es' ? '¿Quieres tu propio formulario?' : 'Want your own form?',
+          action: locale === 'es' ? 'Crea tu formulario gratis' : 'Create your form, free',
+          href: `https://dforms.ai/?utm_medium=${medium}`,
+        };
+      },
+    });
+    const base = { accountId: 'acc-1', formName: 'Survey', to: ['owner@example.com'] };
+    await notifier.sendSubmissionConfirmed({ ...base, submissionId: 'r', respondentEmail: 'lead@example.com', locale: 'es' });
+    await notifier.sendSubmissionReceived({ ...base, submissionId: 'n', locale: 'en' });
+    expect(asked).toEqual([
+      { locale: 'es', medium: 'email-receipt' },
+      { locale: 'en', medium: 'email-notice' },
+    ]);
+    const [receipt, notice] = provider.sent;
+    expect(receipt!.html).toContain('>Crea tu formulario gratis</a>');
+    expect(receipt!.text!.endsWith('¿Quieres tu propio formulario? Crea tu formulario gratis: https://dforms.ai/?utm_medium=email-receipt')).toBe(true);
+    expect(notice!.html).toContain('href="https://dforms.ai/?utm_medium=email-notice"');
+    expect(notice!.html).toContain('>Create your form, free</a>');
+  });
+
+  it('sends no button when the deployment has the growth loop off', async () => {
+    const provider = new CaptureProvider();
+    await new SubmissionNotifier(provider, { cta: () => null }).sendSubmissionConfirmed({
+      accountId: 'acc-1',
+      submissionId: 'off',
+      formName: 'Survey',
+      to: ['owner@example.com'],
+      respondentEmail: 'lead@example.com',
+    });
+    expect(provider.sent[0]!.html).not.toContain('bgcolor=');
+    expect(provider.sent[0]!.text).not.toContain('dforms.ai');
+  });
+
   it('heads the email with the dForms wordmark served from the app URL', async () => {
     const provider = new CaptureProvider();
     const notifier = new SubmissionNotifier(provider, { appUrl: 'https://app.example.com/' });

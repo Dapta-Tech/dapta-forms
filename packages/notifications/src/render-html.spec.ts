@@ -79,6 +79,26 @@ describe("emailDocument", () => {
     expect(html).toContain('alt="dForms"');
   });
 
+  it("draws the growth button at the foot of the card, escaped", () => {
+    const html = emailDocument({
+      lang: "es",
+      lines: ["x"],
+      cta: { question: "¿Quieres tu propio formulario?", action: "Crea tu formulario gratis", href: "https://dforms.ai/?a=1&b=2" },
+    });
+    expect(html).toContain("¿Quieres tu propio formulario?");
+    expect(html).toContain('bgcolor="#3ddc84"');
+    expect(html).toMatch(/<a href="https:\/\/dforms\.ai\/\?a=1&amp;b=2"[^>]*>Crea tu formulario gratis<\/a>/);
+    // Still inside the card: the card table closes after the button row.
+    expect(html.indexOf("Crea tu formulario gratis")).toBeLessThan(html.indexOf("</body>"));
+  });
+
+  it("draws no button without one, or with a link that is not http(s)", () => {
+    expect(emailDocument({ lang: "en", lines: ["x"] })).not.toContain("bgcolor=");
+    expect(
+      emailDocument({ lang: "en", lines: ["x"], cta: { question: "q", action: "a", href: "javascript:alert(1)" } }),
+    ).not.toContain("bgcolor=");
+  });
+
   it("asks clients not to auto-invert the light card", () => {
     expect(emailDocument({ lang: "en", lines: ["x"] })).toContain('name="color-scheme" content="light"');
   });

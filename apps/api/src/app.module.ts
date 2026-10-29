@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { createDb } from '@quill/db';
 import { createEmailProvider, SubmissionNotifier, type EmailProvider } from '@quill/notifications';
 import { loadServerEnv, type ServerEnv } from '@quill/config/env';
+import { emailGrowthCta } from './email-growth-cta';
 import {
   API_KEY_RATE_LIMITER,
   AUTH_PROVIDER,
@@ -133,9 +134,10 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     },
     {
       provide: NOTIFIER,
-      // The app URL is where the email header's dForms wordmark is served.
+      // The app URL is where the email header's dForms wordmark is served; the
+      // growth button follows the web badge's rule (see `emailGrowthCta`).
       useFactory: (email: EmailProvider, env: ServerEnv) =>
-        new SubmissionNotifier(email, { appUrl: env.PUBLIC_APP_URL }),
+        new SubmissionNotifier(email, { appUrl: env.PUBLIC_APP_URL, cta: emailGrowthCta(env) }),
       inject: [EMAIL, ENV],
     },
     // Premium entitlements (vanity slug…): Forms is always free — the gate is the

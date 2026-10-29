@@ -31,7 +31,7 @@ export {
   type SubmissionEmailKey,
   type NotificationToken,
 } from './templates';
-export { answersTableHtml, autolinkEscaped, emailDocument, linkHtml, EMAIL_LOGO_PATH, type AnswerRow } from './render-html';
+export { answersTableHtml, autolinkEscaped, emailDocument, linkHtml, EMAIL_LOGO_PATH, type AnswerRow, type EmailCta } from './render-html';
 export { LogOnlyEmailProvider } from './adapters/log-only';
 export { NoopEmailProvider } from './adapters/noop';
 export { SmtpEmailProvider, type SmtpOptions } from './adapters/smtp';

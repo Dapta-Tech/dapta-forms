@@ -1,12 +1,22 @@
 import type { EmailProvider, EmailResult } from './email.port';
 import { escapeHtml } from './util';
-import { EMAIL_LOGO_PATH, emailDocument, type AnswerRow } from './render-html';
+import { EMAIL_LOGO_PATH, emailDocument, type AnswerRow, type EmailCta } from './render-html';
 import {
   normalizeLocale,
   renderMemberInvited,
   renderSubmissionEmail,
   type NotificationLocale,
 } from './templates';
+
+/** Which email the growth button sits in; it becomes the link's `utm_medium`. */
+export type EmailCtaMedium = 'email-receipt' | 'email-notice';
+
+/**
+ * Supplies the growth button for one email: its copy in `locale` and the
+ * tagged link, or null when the deployment has the growth loop off. Injected,
+ * so this package stays free of the deployment's config and copy catalog.
+ */
+export type EmailCtaResolver = (input: { locale: NotificationLocale; medium: EmailCtaMedium }) => EmailCta | null;
 
 /** Everything a submission notification needs to render, provider-agnostic. */
 /** Everything the invitation email needs, resolved before it is enqueued. */
@@ -91,6 +101,8 @@ function addresseeKey(to: string[]): string {
 export class SubmissionNotifier {
   /** Absolute URL of the dForms wordmark for the email header, or null. */
   private readonly logoUrl: string | null;
+  /** Resolves the growth button for one email, or null (loop off). */
+  private readonly ctaFor: EmailCtaResolver;
 
   /**
    * `appUrl` is the web app's public base (`PUBLIC_APP_URL`), where the email
@@ -98,9 +110,20 @@ export class SubmissionNotifier {
    */
   constructor(
     private readonly email: EmailProvider,
-    opts: { appUrl?: string | null } = {},
+    opts: { appUrl?: string | null; cta?: EmailCtaResolver } = {},
   ) {
     this.logoUrl = opts.appUrl ? `${opts.appUrl.replace(/\/$/, '')}${EMAIL_LOGO_PATH}` : null;
+    this.ctaFor = opts.cta ?? (() => null);
+  }
+
+  /** The HTML document and the text body of one submission email, with its button. */
+  private body(locale: NotificationLocale, html: string[], text: string[], medium: EmailCtaMedium) {
+    const cta = this.ctaFor({ locale, medium });
+    return {
+      html: emailDocument({ lang: locale, lines: html, logoUrl: this.logoUrl, cta }),
+      // The text twin carries the same invitation, as a plain line and URL.
+      text: (cta ? [...text, '', `${cta.question} ${cta.action}: ${cta.href}`] : text).join('\n'),
+    };
   }
 
   /** Internal notice to the account: a new submission landed. */
@@ -116,8 +139,7 @@ export class SubmissionNotifier {
       accountId: n.accountId,
       to: n.to,
       subject,
-      text: text.join('\n'),
-      html: emailDocument({ lang: locale, lines: html, logoUrl: this.logoUrl }),
+      ...this.body(locale, html, text, 'email-notice'),
       locale,
       headers: { 'X-Submission-Id': n.submissionId },
       idempotencyKey: `submission:${n.submissionId}:received:${addresseeKey(n.to)}`,
@@ -159,8 +181,7 @@ export class SubmissionNotifier {
       accountId: n.accountId,
       to: n.respondentEmail ? [n.respondentEmail] : n.to,
       subject,
-      text: text.join('\n'),
-      html: emailDocument({ lang: locale, lines: html, logoUrl: this.logoUrl }),
+      ...this.body(locale, html, text, 'email-receipt'),
       locale,
       headers: { 'X-Submission-Id': n.submissionId },
       // The receipt has exactly one addressee (the respondent), so its key is

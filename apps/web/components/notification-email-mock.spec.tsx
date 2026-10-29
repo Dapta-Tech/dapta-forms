@@ -115,6 +115,21 @@ describe('NotificationEmailMock', () => {
     expect(html).toContain('https://calendly.com/x</span>');
   });
 
+  it('draws the growth button only when the deployment has the loop on', () => {
+    const saved = process.env.NEXT_PUBLIC_SIGNUP_URL;
+    try {
+      delete process.env.NEXT_PUBLIC_SIGNUP_URL;
+      expect(mock(true)).not.toContain('data-testid="email-mock-cta"');
+      process.env.NEXT_PUBLIC_SIGNUP_URL = 'https://example.com/signup';
+      const html = mock(true);
+      expect(html).toContain('data-testid="email-mock-cta"');
+      expect(html).toContain('Create your form, free');
+    } finally {
+      if (saved === undefined) delete process.env.NEXT_PUBLIC_SIGNUP_URL;
+      else process.env.NEXT_PUBLIC_SIGNUP_URL = saved;
+    }
+  });
+
   it('omits the table when the body does not use the answers token', () => {
     expect(mock(true, 'S', 'Just a note')).not.toContain('email-mock-answers');
   });

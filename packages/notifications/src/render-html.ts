@@ -30,6 +30,20 @@ const LINK = "#0e7a3f";
 const CANVAS = "#f4f5f7";
 const HAIRLINE = "#e7e8ec";
 
+/** Text on the brand-green button: dark green, over 9:1 on `ACCENT`. */
+const ON_ACCENT = "#0b2e1a";
+
+/**
+ * The growth button under the card: a question, then a green button. The
+ * caller resolves the copy in the email's language and the tagged link; null
+ * means the deployment has the growth loop off, and nothing is drawn.
+ */
+export interface EmailCta {
+  question: string;
+  action: string;
+  href: string;
+}
+
 /** Where the dForms wordmark PNG lives under the web app (`apps/web/public`). */
 export const EMAIL_LOGO_PATH = "/email/dforms-wordmark.png";
 
@@ -129,6 +143,7 @@ export function emailDocument(input: {
   lang: "en" | "es";
   lines: string[];
   logoUrl?: string | null;
+  cta?: EmailCta | null;
 }): string {
   const content = input.lines.join("<br/>");
   const wordmark = `<span style="font-family:${FONT_STACK};font-size:22px;font-weight:800;letter-spacing:-0.02em;color:${INK};">d<span style="color:${LINK};">F</span>orms</span>`;
@@ -154,8 +169,30 @@ export function emailDocument(input: {
     `<tr><td class="dfm-pad" style="padding:28px 32px 0;">${logo}</td></tr>` +
     `<tr><td class="dfm-pad" style="padding:24px 32px 32px;font-family:${FONT_STACK};font-size:16px;line-height:1.6;color:${INK};">` +
     `<div style="word-break:break-word;overflow-wrap:anywhere;">${content}</div>` +
-    `</td></tr></table>` +
+    `</td></tr>` +
+    ctaRow(input.cta) +
+    `</table>` +
     `</td></tr></table>` +
     `</body></html>`
+  );
+}
+
+/**
+ * The growth row at the foot of the card: hairline, the question, then a
+ * "bulletproof" button (a table cell carries the fill, so Outlook, which drops
+ * an anchor's padding and background, still draws a green block). Only an
+ * http(s) link is drawn; anything else leaves the card as it was.
+ */
+function ctaRow(cta: EmailCta | null | undefined): string {
+  if (!cta || !/^https?:\/\//i.test(cta.href.trim())) return "";
+  const href = escapeHtml(cta.href);
+  return (
+    `<tr><td class="dfm-pad" align="center" style="border-top:1px solid ${HAIRLINE};padding:24px 32px 28px;font-family:${FONT_STACK};">` +
+    `<p style="margin:0 0 14px;font-size:14px;line-height:1.5;color:${MUTED};">${escapeHtml(cta.question)}</p>` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin:0 auto;">` +
+    `<tr><td align="center" bgcolor="${ACCENT}" style="border-radius:10px;background:${ACCENT};">` +
+    `<a href="${href}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 26px;font-family:${FONT_STACK};font-size:15px;font-weight:700;line-height:1.2;color:${ON_ACCENT};text-decoration:none;border-radius:10px;">${escapeHtml(cta.action)}</a>` +
+    `</td></tr></table>` +
+    `</td></tr>`
   );
 }
