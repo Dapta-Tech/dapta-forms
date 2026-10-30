@@ -19,6 +19,14 @@ export { IssuerUnavailable } from './jwt-rs256';
 export interface VerifiedAccess {
   /** The token's `sub`: the person, as the identity provider knows them. */
   subject: string;
+  /**
+   * The person's email, only when the token carries it AND says the identity
+   * provider verified it (`email_verified: true`); null otherwise. Signed by
+   * the issuer with the rest of the token, so it is never a value the client
+   * or the person typed into dForms. It decides staff of the deployment
+   * (`isStaffEmail`) and nothing else: members are never matched by email.
+   */
+  email: string | null;
 }
 
 /** The protected-resource metadata (RFC 9728) of the MCP endpoint. */

@@ -127,6 +127,7 @@ export class McpController implements OnModuleInit {
             authenticate: (token) =>
               authenticateMcpConnection(db, oauth, token, {
                 linkMaxAgeMs: env.OAUTH_LINK_MAX_AGE_DAYS * 86_400_000,
+                staffDomains: env.IAM_STAFF_DOMAINS,
                 log: (line) => this.oauthLogSink(line),
               }),
             resourceMetadataUrl: oauth.resourceMetadataUrl,
