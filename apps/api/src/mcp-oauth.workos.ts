@@ -19,6 +19,23 @@ const AS_METADATA_MAX_AGE_MS = 10 * 60_000;
 /** While AuthKit cannot be read, how long the stale copy is served before it is tried again. */
 const AS_METADATA_RETRY_MS = 30_000;
 
+/**
+ * The token's email when AuthKit's JWT template puts it there with
+ * `email_verified` exactly `true` (the template: `"email": {{ user.email }}`,
+ * `"email_verified": {{ user.email_verified }}`), else null. An unverified
+ * address is never used: anyone can sign up to AuthKit with an address they
+ * do not own, and the email decides staff of the deployment. Without the
+ * template every token carries neither claim, and nobody is staff over a
+ * sign-in, as before.
+ */
+export function verifiedEmailOf(claims: Record<string, unknown>): string | null {
+  if (claims.email_verified !== true) return null;
+  const email = claims.email;
+  if (typeof email !== 'string') return null;
+  const trimmed = email.trim();
+  return trimmed === '' || trimmed.length > 320 ? null : trimmed;
+}
+
 export function createWorkosAuthKit(config: McpOAuthConfig, deps: McpOAuthDeps = {}): McpOAuth {
   const jwks = new RemoteJwks(`${config.issuer}/oauth2/jwks`, { fetch: deps.fetch });
   let asMetadata: { at: number; body: Record<string, unknown> } | null = null;
@@ -68,7 +85,7 @@ export function createWorkosAuthKit(config: McpOAuthConfig, deps: McpOAuthDeps =
         audience: config.resource,
         keyFor: (kid) => jwks.keyFor(kid),
       });
-      return claims ? { subject: claims.sub } : null;
+      return claims ? { subject: claims.sub, email: verifiedEmailOf(claims) } : null;
     },
   };
 }
