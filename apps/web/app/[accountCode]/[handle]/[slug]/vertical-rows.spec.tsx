@@ -5,6 +5,8 @@
  * `branding.density: 'compact'` marks the root for the compact CSS. Slides
  * ignores all three. Static markup only, same mocks as `legacy-markup.spec`.
  */
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -160,5 +162,51 @@ describe('slides ignores width, fieldLabels and density', () => {
       );
       expect(html.innerHTML).toBe(bare.innerHTML);
     }
+  });
+});
+
+describe('re-pairing keeps the caret', () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+  it('keeps focus and value in A when typing in it shows C and breaks the A + B pair', async () => {
+    const steps = [
+      half('a'),
+      { key: 'c', type: 'text', question: 'c?', showWhen: { field: 'a', values: ['x'] } },
+      half('b'),
+    ];
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <VerticalFormRenderer
+          accountCode="acme"
+          slug="f"
+          name="Clinic contact"
+          config={{ version: 1, layout: 'vertical', steps } as never}
+          locale="en"
+        />,
+      ),
+    );
+    const inputOf = (key: string) => host.querySelector<HTMLInputElement>(`[data-vf-step="${key}"] input`)!;
+    expect(host.querySelector('.pf-v__row')).not.toBeNull();
+
+    const before = inputOf('a');
+    await act(async () => before.focus());
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(before, 'x');
+      before.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    // C shows, so A and B are no longer neighbours: A remounted as a bare section.
+    expect(host.querySelector('[data-vf-step="c"]')).not.toBeNull();
+    expect(host.querySelector('.pf-v__row')).toBeNull();
+    const after = inputOf('a');
+    expect(after).not.toBe(before);
+    expect(document.activeElement).toBe(after);
+    expect(after.value).toBe('x');
+
+    await act(async () => root.unmount());
+    host.remove();
   });
 });
