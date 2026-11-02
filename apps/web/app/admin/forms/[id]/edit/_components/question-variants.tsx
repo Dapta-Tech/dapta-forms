@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormOption, FormStep } from '@quill/engine';
-import { isMultiSelect } from '@quill/engine';
+import { isMultiSelect, stepQuestionText } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -257,7 +257,7 @@ export function QuestionVariants({
             >
               {prior.map((s, i) => (
                 <option key={s.key} value={s.key}>
-                  {s.question?.trim() || `${i + 1} · ${s.key}`}
+                  {stepQuestionText(s).trim() || `${i + 1} · ${s.key}`}
                 </option>
               ))}
             </SelectField>

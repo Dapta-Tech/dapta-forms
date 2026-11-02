@@ -1,5 +1,6 @@
 'use client';
 
+import { stepQuestionText } from '@quill/engine';
 import type { FormConfig, FormOption, FormStep, SliderScoringRange } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/cn';
@@ -174,7 +175,7 @@ function PointsCard({
   em: EditorMessages;
 }) {
   const on = step.scoringEnabled !== false;
-  const title = step.question?.trim() || tb(bm.canvas.questionN, { n: index + 1 });
+  const title = stepQuestionText(step).trim() || tb(bm.canvas.questionN, { n: index + 1 });
   const options = step.options ?? [];
 
   function setOptionPoints(optionIndex: number, raw: string) {

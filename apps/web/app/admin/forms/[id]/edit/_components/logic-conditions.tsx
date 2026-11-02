@@ -11,6 +11,7 @@ import {
   type ConditionOp,
   type FormStep,
   type StepCondition,
+  stepQuestionText,
 } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { SelectField, TextField } from './fields';
@@ -279,7 +280,7 @@ function ConditionEditor({
         {scoreSource || onScore ? <option value={SCORE_FIELD}>{m.scoreField}</option> : null}
         {prior.map((s, i) => (
           <option key={s.key} value={s.key}>
-            {s.question?.trim() || `${i + 1} · ${s.key}`}
+            {stepQuestionText(s).trim() || `${i + 1} · ${s.key}`}
           </option>
         ))}
       </SelectField>

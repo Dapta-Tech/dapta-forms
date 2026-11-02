@@ -3,7 +3,7 @@
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { galleryIdForStep, iconForStep } from './question-types';
-import { authoredScreens, conditionNeverHolds, conditionsContradict, isHiddenStep, screensActive } from '@quill/engine';
+import { authoredScreens, conditionNeverHolds, conditionsContradict, isHiddenStep, screensActive, stepQuestionText } from '@quill/engine';
 import { describeCondition, liveGotoRules, optionLabel } from './logic-util';
 import { screenList } from './screen-util';
 import type { BuilderMessages } from './builder-messages';
@@ -38,7 +38,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
     return <p className="py-16 text-center text-sm text-muted-foreground">{m.map.empty}</p>;
   }
 
-  const titleOf = (step: FormStep, i: number) => step.question?.trim() || tb(m.canvas.questionN, { n: i + 1 });
+  const titleOf = (step: FormStep, i: number) => stepQuestionText(step).trim() || tb(m.canvas.questionN, { n: i + 1 });
   const stepByKey = new Map(steps.map((s, i) => [s.key, i] as const));
   const outcomes = config.outcomes ?? [];
   // Screens (#200), slides only: the first question of each screen of several

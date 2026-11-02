@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormConfig, FormStep } from '@quill/engine';
-import { conditionNeverHolds, conditionsContradict, isHiddenStep } from '@quill/engine';
+import { conditionNeverHolds, conditionsContradict, isHiddenStep, stepQuestionText } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
 import { describeCondition, liveRuleCount } from './logic-util';
@@ -425,7 +425,7 @@ function StepNode({
   // an author opens to find out WHY a question never appears.
   const broken =
     conditionsContradict(step.showWhen, step.hideWhen) || !!conditionNeverHolds(step.showWhen);
-  const title = step.question?.trim() || tb(m.canvas.questionN, { n: index + 1 });
+  const title = stepQuestionText(step).trim() || tb(m.canvas.questionN, { n: index + 1 });
 
   return (
     <div

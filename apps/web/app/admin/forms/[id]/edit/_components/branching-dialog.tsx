@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormLayout, FormStep, GotoRule } from '@quill/engine';
-import { conditionNeverHolds, conditionsContradict, isHiddenStep } from '@quill/engine';
+import { conditionNeverHolds, conditionsContradict, isHiddenStep, stepQuestionText } from '@quill/engine';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -80,7 +80,7 @@ export function BranchingDialog({
 }) {
   const b = bm.branching;
   const titleOf = (step: FormStep, i: number) =>
-    step.question?.trim() || tb(bm.canvas.questionN, { n: i + 1 });
+    stepQuestionText(step).trim() || tb(bm.canvas.questionN, { n: i + 1 });
   // Rules that can never fire do not make a question "carry logic" — see
   // {@link liveRuleCount}.
   const withLogic = steps.filter((s) => liveRuleCount(s) > 0).length;

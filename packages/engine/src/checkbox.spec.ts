@@ -3,6 +3,7 @@ import {
   FORM_FIELD_TYPES,
   canonicalizeAnswer,
   checkboxText,
+  stepQuestionText,
   inlineLinksPlainText,
   isCheckboxChecked,
   parseInlineLinks,
@@ -219,5 +220,20 @@ describe('checkboxText', () => {
   it('returns null with neither, never the key', () => {
     expect(checkboxText({ question: '', helper: null })).toEqual({ text: null, helper: null });
     expect(checkboxText({})).toEqual({ text: null, helper: null });
+  });
+});
+
+describe('stepQuestionText', () => {
+  it('flattens a checkbox text with links', () => {
+    expect(stepQuestionText({ type: 'checkbox', question: 'Acepto la [política](https://a.co)' })).toBe('Acepto la política');
+  });
+  it('uses the description of a checkbox with no text', () => {
+    expect(stepQuestionText({ type: 'checkbox', question: '', helper: 'Autorizo el [uso](https://a.co).' })).toBe('Autorizo el uso.');
+  });
+  it('is empty for a checkbox with neither, never the key', () => {
+    expect(stepQuestionText({ type: 'checkbox', question: '' })).toBe('');
+  });
+  it('returns other questions as written', () => {
+    expect(stepQuestionText({ type: 'text', question: 'Hola [name]' })).toBe('Hola [name]');
   });
 });

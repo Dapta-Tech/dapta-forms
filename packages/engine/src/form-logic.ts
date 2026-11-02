@@ -3022,6 +3022,19 @@ export function checkboxText(step: Pick<FormStep, 'question' | 'helper'>): {
   return { text: null, helper: null };
 }
 
+/**
+ * A step's question as plain text, for any admin surface that labels a step
+ * (response detail, analytics, logic, branching, mapping, pickers). A checkbox
+ * reads through `checkboxText` (an empty text takes the description) with its
+ * inline links flattened to their visible text, so no surface shows `[a](url)`
+ * syntax. Other steps return `question` as written. Empty when there is
+ * nothing, so callers keep their own fallback (a "Question N" label).
+ */
+export function stepQuestionText(step: Pick<FormStep, 'type' | 'question' | 'helper'>): string {
+  if (step.type === 'checkbox') return inlineLinksPlainText(checkboxText(step).text ?? '');
+  return typeof step.question === 'string' ? step.question : '';
+}
+
 /** True for a checked checkbox answer: `true` and the string `'true'`. */
 export function isCheckboxChecked(value: AnswerValue | undefined): boolean {
   return value === true || value === 'true';
