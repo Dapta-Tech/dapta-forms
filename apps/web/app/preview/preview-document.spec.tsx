@@ -79,3 +79,27 @@ describe('the builder preview and spam protection', () => {
     expect(props).not.toHaveProperty('captcha');
   });
 });
+
+describe('the ready handshake', () => {
+  it('announces ready on load and again on every ping, so a lost first ready is recovered', async () => {
+    const post = vi.spyOn(window.parent, 'postMessage');
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => root!.render(<PreviewDocument />));
+    const readies = () =>
+      post.mock.calls.filter(([data]) => (data as { type?: string })?.type === 'ready').length;
+    expect(readies()).toBe(1);
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          origin: window.location.origin,
+          source: window.parent,
+          data: { channel: PREVIEW_CHANNEL, type: 'ping' },
+        }),
+      );
+    });
+    expect(readies()).toBe(2);
+    post.mockRestore();
+  });
+});
