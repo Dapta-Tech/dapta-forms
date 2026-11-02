@@ -95,7 +95,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   'steps.[].fieldLabels':
     'name steps on the one page layout only: a visible label above each input, keyed by the sub-field key (firstname, lastname unless fields says otherwise), for example {"firstname": "Nombre", "lastname": "Apellido"}. With any label set, the question text is kept for screen readers and the response column but not shown. Ignored on slides.',
   'branding.density':
-    'One page layout only. "compact" removes the lines between questions and spaces fields 16 px apart, like a regular web form; "comfortable" (the default when absent) is the original spacing. Ignored on slides.',  'branding.buttonTextColor':
+    'One page layout only. "compact" removes the lines between questions and spaces fields 16 px apart, like a regular web form; "comfortable" (the default when absent) is the original spacing. Ignored on slides.',
+  'branding.buttonTextColor':
     'Text color of the solid button (buttonStyle "solid"). Leave it out for the automatic color that contrasts with primaryColor. Ignored when buttonStyle is "outline" or "soft".',
 };
 
