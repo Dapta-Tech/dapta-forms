@@ -354,7 +354,7 @@ export function VerticalFormRenderer({
   // Reveal steps are interstitials — never inline questions on this layout.
   const questions = useMemo(() => walk.filter((s) => s.type !== 'reveal'), [walk]);
   const answerable = useMemo(() => questions.filter((s) => s.type !== 'message'), [questions]);
-  useKeepFocusAcrossRows(questions);
+  const pageRef = useKeepFocusAcrossRows(questions);
   const answeredCount = answerable.filter(answeredByUser).length;
 
   // The one reveal that may play after Submit: a reveal STEP in the current walk
@@ -999,6 +999,7 @@ export function VerticalFormRenderer({
 
   return (
     <div
+      ref={pageRef}
       className="pf pf--vertical"
       {...design.attrs}
       // Only the form phase of this layout reads density, and only `compact`
@@ -1232,27 +1233,50 @@ function SchedulerQuestion({
 /** What can take focus inside a question, in document order. */
 const FOCUSABLE = 'input, textarea, select, button, [tabindex]:not([tabindex="-1"])';
 
+/** `CSS.escape`, or a minimal stand-in where the environment has none. */
+function cssEscape(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value);
+  return value.replace(/["\\]/g, '\\$&');
+}
+
 /**
  * Keeps the respondent's caret when logic re-pairs the rows. A row of one is a
  * bare section and a row of two wraps its sections in `.pf-v__row`; React does
  * not move a child between parents, so a question that joins or leaves a pair
  * remounts, and the input being typed in loses focus. The markup must stay as
  * it is (a form with no half steps keeps its legacy DOM), so instead the last
- * focused control is remembered (its question, its position among the
- * question's focusables, its selection) and restored once the rows change.
+ * focused control is remembered (the element, its question, its position among
+ * the question's focusables, its selection) and restored only when that very
+ * element left the document, i.e. it really remounted.
+ *
+ * A press anywhere outside that control forgets it: Safari and iOS do not focus
+ * a tapped `<button>` (choice options are buttons), so focus sits on the body
+ * after a tap, and a tap that reveals a question must never send the caret
+ * (and the phone keyboard) back to the field typed in before.
+ *
+ * Returns the ref for the page root; lookups stay inside it.
  */
 function useKeepFocusAcrossRows(questions: readonly FormStep[]) {
   const rowsKey = useMemo(
     () => onePageRows(questions).map((row) => row.map((i) => questions[i]!.key).join('+')).join('|'),
     [questions],
   );
-  const last = useRef<{ step: string; index: number; start: number | null; end: number | null } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const last = useRef<{
+    el: HTMLElement;
+    step: string;
+    index: number;
+    start: number | null;
+    end: number | null;
+  } | null>(null);
 
   useEffect(() => {
     const remember = (e: Event) => {
       const target = e.target as HTMLElement | null;
-      const section = target?.closest?.<HTMLElement>('[data-vf-step]');
-      if (!target || !section) return;
+      const root = rootRef.current;
+      if (!target || !root || !root.contains(target)) return;
+      const section = target.closest?.<HTMLElement>('[data-vf-step]');
+      if (!section) return;
       const index = [...section.querySelectorAll<HTMLElement>(FOCUSABLE)].indexOf(target);
       if (index < 0) return;
       let start: number | null = null;
@@ -1263,28 +1287,34 @@ function useKeepFocusAcrossRows(questions: readonly FormStep[]) {
       } catch {
         // Inputs like email and number throw on selection reads.
       }
-      last.current = { step: section.dataset.vfStep!, index, start, end };
+      last.current = { el: target, step: section.dataset.vfStep!, index, start, end };
+    };
+    const forget = (e: Event) => {
+      const saved = last.current;
+      if (saved && !saved.el.contains(e.target as Node | null)) last.current = null;
     };
     document.addEventListener('focusin', remember);
     document.addEventListener('input', remember, true);
     document.addEventListener('keyup', remember, true);
+    document.addEventListener('pointerdown', forget, true);
     return () => {
       document.removeEventListener('focusin', remember);
       document.removeEventListener('input', remember, true);
       document.removeEventListener('keyup', remember, true);
+      document.removeEventListener('pointerdown', forget, true);
     };
   }, []);
 
   useLayoutEffect(() => {
     const saved = last.current;
-    if (!saved) return;
-    const section = document.querySelector<HTMLElement>(`[data-vf-step="${saved.step}"]`);
-    if (!section) return;
+    const root = rootRef.current;
+    // Only a control that really remounted: one still in the document kept
+    // its own focus, or the respondent moved on from it.
+    if (!saved || !root || saved.el.isConnected) return;
     const active = document.activeElement;
-    // Only when the remount actually dropped the focus: never steal it back
-    // from wherever the respondent moved on to.
     if (active && active !== document.body) return;
-    const target = section.querySelectorAll<HTMLElement>(FOCUSABLE)[saved.index];
+    const section = root.querySelector<HTMLElement>(`[data-vf-step="${cssEscape(saved.step)}"]`);
+    const target = section?.querySelectorAll<HTMLElement>(FOCUSABLE)[saved.index];
     if (!target) return;
     target.focus({ preventScroll: true });
     if (saved.start != null && saved.end != null) {
@@ -1295,4 +1325,6 @@ function useKeepFocusAcrossRows(questions: readonly FormStep[]) {
       }
     }
   }, [rowsKey]);
+
+  return rootRef;
 }

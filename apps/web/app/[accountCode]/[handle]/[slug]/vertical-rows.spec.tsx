@@ -210,3 +210,60 @@ describe('re-pairing keeps the caret', () => {
     host.remove();
   });
 });
+
+describe('a tap that reveals a question does not pull the caret back', () => {
+  it('leaves focus on the body after typing in A and tapping an option (Safari does not focus buttons)', async () => {
+    const steps = [
+      half('a'),
+      half('b'),
+      {
+        key: 'm',
+        type: 'multiple_choice',
+        question: 'm?',
+        options: [
+          { label: 'Yes', value: 'yes' },
+          { label: 'No', value: 'no' },
+        ],
+      },
+      { key: 'r', type: 'text', question: 'r?', showWhen: { field: 'm', values: ['yes'] } },
+    ];
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <VerticalFormRenderer
+          accountCode="acme"
+          slug="f"
+          name="Clinic contact"
+          config={{ version: 1, layout: 'vertical', steps } as never}
+          locale="en"
+        />,
+      ),
+    );
+    const a = host.querySelector<HTMLInputElement>('[data-vf-step="a"] input')!;
+    await act(async () => a.focus());
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(a, 'Ana');
+      a.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const yes = [...host.querySelectorAll<HTMLElement>('[data-vf-step="m"] [role="radio"]')].find((o) =>
+      o.textContent?.includes('Yes'),
+    )!;
+    // Safari: the tap blurs the input but never focuses the button.
+    await act(async () => {
+      yes.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      a.blur();
+    });
+    expect(document.activeElement).toBe(document.body);
+    await act(async () => yes.click());
+
+    expect(host.querySelector('[data-vf-step="r"]')).not.toBeNull();
+    expect(document.activeElement).not.toBe(a);
+    expect(document.activeElement).toBe(document.body);
+
+    await act(async () => root.unmount());
+    host.remove();
+  });
+});
