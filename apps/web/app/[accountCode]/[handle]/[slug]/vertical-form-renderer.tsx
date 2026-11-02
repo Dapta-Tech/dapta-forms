@@ -97,6 +97,11 @@ type Phase = 'form' | 'reveal' | 'submitting' | 'booking' | 'done';
  * Does the respondent's answer to this step hold ANY content yet? Drives the
  * progress counter, the terminal cut and the completion events — deliberately
  * weaker than validity (a half-typed email "has content" but isn't complete).
+ *
+ * Content alone is not "answered": the counter and the terminal cut go through
+ * `answeredByUser`, which also requires the key to be out of `seededKeys`. A
+ * question counts as answered only when it is in the visible walk, has content
+ * here, and its value was put there by the person rather than by the page.
  */
 function hasContent(step: FormStep, answers: Answers): boolean {
   if (step.type === 'name') {
@@ -306,10 +311,13 @@ export function VerticalFormRenderer({
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const startTracked = useRef(false);
-  // Keys whose answer was SEEDED, not typed (a slider's mount-time default).
-  // A seeded value submits, but it is not "answered by the respondent": it must
-  // not tick the progress counter and must never trip a terminal cut on load.
-  // Any real interaction with the step removes it from this set.
+  // Keys whose answer was SEEDED by the page, not given by the person: a
+  // slider's mount-time default, a step's configured `defaultValue`, and a URL
+  // prefill (a `name` step's subfields map to the step's own key). A seeded
+  // value submits, but it is not "answered by the respondent": it must not tick
+  // the progress counter and must never trip a terminal cut on load. Any real
+  // interaction with the step (`setAnswer`) removes it from this set, even
+  // re-picking the option that was already the default.
   const seededKeys = useRef<Set<string>>(new Set());
   const partialSent = useRef(false);
   const completeSent = useRef<Set<string>>(new Set()); // one step_complete per step
@@ -325,7 +333,11 @@ export function VerticalFormRenderer({
     [engineConfig, answers],
   );
 
-  /** Answered by the RESPONDENT — a seeded (untouched) default doesn't count. */
+  /**
+   * Answered by the RESPONDENT: has content AND is not in `seededKeys`. A
+   * default, a URL prefill or a slider's mount value doesn't count until the
+   * person touches the question.
+   */
   const answeredByUser = (s: FormStep) => hasContent(s, answers) && !seededKeys.current.has(s.key);
 
   // Terminal cut (disqualify): once a terminal step holds an answer, everything
@@ -403,7 +415,18 @@ export function VerticalFormRenderer({
     utmRef.current = captureUtm();
     // Defaults first, then the URL on top: a link that names a value must beat
     // a default the author configured earlier.
-    const seed = { ...captureDefaults(engineConfig.steps), ...capturePrefill(engineConfig.steps) };
+    const defaults = captureDefaults(engineConfig.steps);
+    const prefill = capturePrefill(engineConfig.steps);
+    const seed = { ...defaults, ...prefill };
+    // Both are the page's values, not the person's: they stay out of the
+    // counter and the terminal cut until the question is touched. A prefilled
+    // `name` subfield seeds the `name` step's own key, which is what
+    // `answeredByUser` checks.
+    for (const key of Object.keys(defaults)) seededKeys.current.add(key);
+    for (const step of engineConfig.steps) {
+      if (step.type === 'message') continue;
+      if (nameFields(step).some((f) => f in prefill)) seededKeys.current.add(step.key);
+    }
     // A reload mid-form: what the person had answered wins over both. A value
     // that was only seeded before the reload stays seeded (no progress tick,
     // no terminal cut), exactly as it was.
@@ -862,7 +885,7 @@ export function VerticalFormRenderer({
           reveal={pendingReveal ?? { enabled: true }}
           answers={answers}
           messages={revealMessages}
-          logo={logos.form}
+          logo={design.design.showHeader ? logos.form : null}
           name={name}
           onComplete={onRevealComplete}
         >
@@ -889,7 +912,7 @@ export function VerticalFormRenderer({
             layout's copy of this screen. The logo has to be here too or it
             blinks out at the reveal → submitting handover. */}
         <div className="pf-reveal__inner">
-          {logos.form ? (
+          {design.design.showHeader && logos.form ? (
             <div className="pf-reveal__brand">
               <FormLogo src={logos.form} name={name} fallback="none" />
             </div>
@@ -924,7 +947,9 @@ export function VerticalFormRenderer({
             {chrome?.bannerText}
           </div>
         ) : null}
-        {total > 0 ? (
+        {/* `progressStyle: 'none'` drops the whole strip, label included. The
+            other styles have no one-page version: they all draw the bar. */}
+        {total > 0 && design.design.progressStyle !== 'none' ? (
           <div className="pf-v__progressbar">
             <div className="pf-progress" aria-hidden="true">
               <div className="pf-progress__track">
@@ -943,9 +968,11 @@ export function VerticalFormRenderer({
 
       <div className="pf__main">
         <div className="pf-v__page">
-          <header className="pf-v__header">
-            <FormLogo src={headerLogo} name={name} />
-          </header>
+          {design.design.showHeader ? (
+            <header className="pf-v__header">
+              <FormLogo src={headerLogo} name={name} />
+            </header>
+          ) : null}
 
           {coverScreen ? (
             <section className="pf-v__hero pf-animate">

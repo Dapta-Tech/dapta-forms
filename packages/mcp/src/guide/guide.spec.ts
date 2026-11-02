@@ -20,6 +20,13 @@ describe('formGuide', () => {
     expect(GUIDE_PARTS).toContain('all');
   });
 
+  it('tells an agent how to set up a one-page form embedded in a branded page', () => {
+    const rules = formGuide('rules').rules!;
+    expect(rules).toContain(
+      'A one-page form (layout "vertical") meant to be embedded in a page that already shows the brand usually takes branding.showHeader false and branding.progressStyle "none": no logo or form name on top and no answered counter.',
+    );
+  });
+
   it('tells an agent how to choose a workspace, for an API key and for a person signed in', () => {
     const text = formGuide('rules').workspaces!.join(' ');
     expect(text).toContain('list_my_workspaces');

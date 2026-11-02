@@ -1412,6 +1412,8 @@ export interface FormsMessages {
         layoutSubtitle: string;
         formLogo: string;
         formLogoHint: string;
+        showHeader: string;
+        showHeaderHint: string;
         logoSize: string;
         sizeSm: string;
         sizeMd: string;
@@ -3741,6 +3743,9 @@ export const en: FormsMessages = {
         layoutSubtitle: 'Where things sit and how the form moves between steps.',
         formLogo: 'Form logo URL',
         formLogoHint: 'Shown on every question screen. Leave empty for no logo.',
+        showHeader: 'Show header',
+        showHeaderHint:
+          'The logo above the form, or the form name when there is no logo. Turn it off when the form is embedded in a page that already shows your brand.',
         logoSize: 'Logo size',
         sizeSm: 'Small',
         sizeMd: 'Medium',
@@ -6301,6 +6306,9 @@ export const es: FormsMessages = {
         layoutSubtitle: 'Dónde va cada cosa y cómo se mueve el formulario entre pasos.',
         formLogo: 'URL del logo del formulario',
         formLogoHint: 'Se muestra en cada pantalla de pregunta. Vacío = sin logo.',
+        showHeader: 'Mostrar encabezado',
+        showHeaderHint:
+          'El logo arriba del formulario, o su nombre si no tiene logo. Apágalo si el formulario va embebido en una página que ya muestra tu marca.',
         logoSize: 'Tamaño del logo',
         sizeSm: 'Pequeño',
         sizeMd: 'Mediano',

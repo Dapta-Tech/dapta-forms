@@ -86,6 +86,10 @@ const CONDITION_FIELD_DESCRIPTION =
 export const FIELD_DESCRIPTIONS: Record<string, string> = {
   'steps.[].showWhen.field': CONDITION_FIELD_DESCRIPTION,
   'steps.[].hideWhen.field': CONDITION_FIELD_DESCRIPTION,
+  'branding.showHeader':
+    'Only read by layout "vertical". false hides the header above the form (the logo, or the form name when there is no logo) on the form and on the reveal and submitting screens. Absent or true shows it. Ignored by layout "slides".',
+  'branding.progressStyle':
+    'On layout "slides": bar, dots, steps or none. On layout "vertical" only two looks exist: none hides the bar and the "X of N answered" counter; any other value shows both.',
 };
 
 /** The schema itself and every object variant of a nullable or union node. */

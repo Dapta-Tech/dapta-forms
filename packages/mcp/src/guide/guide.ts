@@ -35,6 +35,7 @@ export const GUIDE_RULES: readonly string[] = [
   'get_form_analytics is the funnel (sessions: views, starts, drop-off). get_form_summary counts what responses answered, question by question. Their numbers measure different things.',
   'A tool marked destructive deletes or replaces something (delete_form, delete_responses, delete_folder, set_destinations, update_form, the resets). The recommended flow is to tell the user exactly what will change and wait for a clear yes; after an error, a read shows whether it went through, so it is not repeated blind.',
   'Some tools are for owners and admins only (the brand kit writes, the notification emails, ping_webhook). A member gets FORBIDDEN, and an owner or admin of the workspace can do it instead.',
+  'A one-page form (layout "vertical") meant to be embedded in a page that already shows the brand usually takes branding.showHeader false and branding.progressStyle "none": no logo or form name on top and no answered counter.',
 ];
 
 export const GUIDE_LIFECYCLE: readonly string[] = [

@@ -146,6 +146,7 @@ export interface FormDesignInput {
   contentAlign?: FormContentAlign;
   contentWidth?: FormContentWidth;
   transition?: FormTransition;
+  showHeader?: boolean;
 }
 
 /**
@@ -171,6 +172,12 @@ export interface ResolvedFormDesign {
   contentAlign: FormContentAlign;
   contentWidth: FormContentWidth;
   transition: FormTransition;
+  /**
+   * Whether the `vertical` layout paints its header (logo or form name). Not a
+   * `data-pf-*` attribute: the renderer drops the node instead, so legacy markup
+   * stays byte-identical. `slides` never reads it.
+   */
+  showHeader: boolean;
 }
 
 /**
@@ -216,6 +223,7 @@ export const LEGACY_FORM_DESIGN: ResolvedFormDesign = {
   contentAlign: 'center',
   contentWidth: 'narrow',
   transition: 'slide',
+  showHeader: true,
 };
 
 /** Default scrim over a background image, in percent. */
@@ -284,6 +292,7 @@ export function resolveDesign(design: FormDesignInput | null | undefined): Resol
     contentAlign: d.contentAlign ?? LEGACY_FORM_DESIGN.contentAlign,
     contentWidth: d.contentWidth ?? LEGACY_FORM_DESIGN.contentWidth,
     transition: d.transition ?? LEGACY_FORM_DESIGN.transition,
+    showHeader: d.showHeader ?? LEGACY_FORM_DESIGN.showHeader,
   };
 }
 

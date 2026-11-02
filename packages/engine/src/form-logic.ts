@@ -471,6 +471,11 @@ export interface FormBranding {
   contentAlign?: FormContentAlign;
   contentWidth?: FormContentWidth;
   transition?: FormTransition;
+  /**
+   * Whether the one-page (`vertical`) form paints its header: the form logo, or
+   * the form name when there is no logo. Ignored by `slides`. Absent = `true`.
+   */
+  showHeader?: boolean;
 
   /**
    * Which preset was last applied — an editor affordance only. Nothing at

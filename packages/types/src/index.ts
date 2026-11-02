@@ -413,6 +413,13 @@ export const formBrandingSchema = z.object({
   contentAlign: z.enum(FORM_CONTENT_ALIGNS).optional(),
   contentWidth: z.enum(FORM_CONTENT_WIDTHS).optional(),
   transition: z.enum(FORM_TRANSITIONS).optional(),
+  /**
+   * ADDITIVE. Whether the one-page form paints its header (the form logo, or the
+   * form name when there is no logo) above the questions. Only the `vertical`
+   * layout reads it; `slides` ignores it. Absent = `true`, the behavior every
+   * form had before this field existed.
+   */
+  showHeader: z.boolean().optional(),
 
   /** Editor bookkeeping — which preset was last applied. Never read at render. */
   themePreset: z.string().max(32).nullable().optional(),

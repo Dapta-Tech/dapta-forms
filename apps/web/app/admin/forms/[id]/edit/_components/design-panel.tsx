@@ -89,12 +89,14 @@ export function DesignPanel({
   m: EditorMessages;
 }) {
   const [device, setDevice] = useState<PreviewDevice>('desktop');
-  // Four axes do nothing on one page, so they are not offered there: the form
+  // Three axes do nothing on one page, so they are not offered there: the form
   // never changes step (transition), the layout pins questions left
-  // (contentAlign), it draws its own answered-count progress bar
-  // (progressStyle), and the logo sits in a hero rather than a top bar
+  // (contentAlign), and the logo sits in a hero rather than a top bar
   // (logoSize/logoPosition). Offering a control that changes nothing is worse
-  // than not having it.
+  // than not having it. Progress DOES apply on one page, but only as the
+  // answered-count bar or nothing: dots and steps have no one-page version, so
+  // vertical offers just those two (any stored value but `none` shows as bar).
+  // The header switch is the reverse: it only exists on one page.
   const vertical = layout === 'vertical';
 
   const d = m.design;
@@ -437,21 +439,31 @@ export function DesignPanel({
               aria-label={d.buttonFullWidth}
             />
           </InlineField>
-          {vertical ? null : (
           <InlineField label={d.progress}>
-            <SegmentedToggle
-              value={design.progressStyle}
-              onChange={(progressStyle) => onBrandingChange({ progressStyle })}
-              options={[
-                { value: 'bar' as const, label: d.progressBar },
-                { value: 'dots' as const, label: d.progressDots },
-                { value: 'steps' as const, label: d.progressSteps },
-                { value: 'none' as const, label: d.progressNone },
-              ]}
-              ariaLabel={d.progress}
-            />
+            {vertical ? (
+              <SegmentedToggle
+                value={design.progressStyle === 'none' ? 'none' : 'bar'}
+                onChange={(progressStyle) => onBrandingChange({ progressStyle })}
+                options={[
+                  { value: 'bar' as const, label: d.progressBar },
+                  { value: 'none' as const, label: d.progressNone },
+                ]}
+                ariaLabel={d.progress}
+              />
+            ) : (
+              <SegmentedToggle
+                value={design.progressStyle}
+                onChange={(progressStyle) => onBrandingChange({ progressStyle })}
+                options={[
+                  { value: 'bar' as const, label: d.progressBar },
+                  { value: 'dots' as const, label: d.progressDots },
+                  { value: 'steps' as const, label: d.progressSteps },
+                  { value: 'none' as const, label: d.progressNone },
+                ]}
+                ariaLabel={d.progress}
+              />
+            )}
           </InlineField>
-          )}
         </PanelSection>
 
         <PanelSection title={d.layoutTitle} subtitle={d.layoutSubtitle}>
@@ -499,8 +511,20 @@ export function DesignPanel({
             </>
           ) : null}
           {/* The one-page layout puts the logo in a hero, not a top bar, so
-              neither size nor placement applies there. */}
-          {vertical ? null : (
+              neither size nor placement applies there. What it has instead is
+              the choice to drop the header altogether, for a form embedded in a
+              page that already shows the brand. Slides ignores that field, so
+              the switch is not offered there. */}
+          {vertical ? (
+            <InlineField label={d.showHeader} hint={d.showHeaderHint}>
+              <Switch
+                checked={design.showHeader}
+                onCheckedChange={(on) => onBrandingChange({ showHeader: on })}
+                data-testid="design-show-header"
+                aria-label={d.showHeader}
+              />
+            </InlineField>
+          ) : (
             <>
               <InlineField label={d.logoSize}>
                 <SegmentedToggle
