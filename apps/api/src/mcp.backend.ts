@@ -3,9 +3,13 @@ import { HttpException, Logger } from '@nestjs/common';
 import {
   findApiKeyPrincipal,
   getFormById,
+  grantStaffAccess,
   listLiveStepCounts,
   membershipsBySubject,
+  searchProjectedAccounts,
+  sql,
   staffGrantsBySubject,
+  StaffGrantRefused,
   type Db,
 } from '@quill/db';
 import {
@@ -29,9 +33,11 @@ import {
   type FormListItem,
   type McpCaller,
   type McpConnection,
+  type McpStaffAccess,
   type ResponseAnswer,
   type ResponsesPage,
   type ResponsesQuery,
+  type StaffWorkspaceHit,
   type UpdateFormInput,
   type WhoAmI,
 } from '@quill/mcp';
@@ -42,7 +48,7 @@ import { isKeyAllowedRoute, routeOf } from './api-key-routes';
 import type { ReqLike } from './auth.provider';
 import { inProcessRequest } from './in-process-principal';
 import { IssuerUnavailable, type McpOAuth } from './mcp-oauth';
-import { STAFF_GRANT_MAX_AGE_MS } from './staff';
+import { isStaffEmail, MEMBERSHIP_NOT_ACTIVE_MESSAGE, STAFF_GRANT_MAX_AGE_MS, upstreamWorkspaceIdOf } from './staff';
 
 /**
  * forms-api's side of the MCP port (`FormsBackend` in `@quill/mcp`).
@@ -250,7 +256,15 @@ export async function authenticateMcpConnection(
       memberCaller(person, label, { accountId: g.accountId, accountName: g.accountName, memberId: g.memberId, role: g.role }, 'staff'),
     ),
   ];
-  return { personId: person.id, email: person.email, label, workspaces };
+  const connection: McpConnection = { personId: person.id, email: person.email, label, workspaces };
+  // Staff of the deployment, judged on THIS token: the email the issuer signed
+  // into it, verified, on one of the staff domains. Only next to an active
+  // membership of the person's own (as grants above), and judged again on
+  // every request, so a person who stops being staff loses it on the next one.
+  if (isStaffEmail(access.email, opts.staffDomains)) {
+    connection.staff = staffAccessFor(db, person, access.email, label, workspaces, opts.staffLog ?? defaultStaffLog);
+  }
+  return connection;
 }
 
 /** Longest stored answer a leftover row carries (the summary rows' own cap); the tool cuts again for the model. */
@@ -301,6 +315,10 @@ export interface McpConnectionOptions {
   log?: (line: string) => void;
   /** The clock (specs). */
   now?: () => number;
+  /** Email domains whose people are staff of the deployment (`IAM_STAFF_DOMAINS`). Empty or unset: nobody. */
+  staffDomains?: readonly string[];
+  /** Where a staff call outside the person's own workspaces is logged, one JSON line each. */
+  staffLog?: (line: string) => void;
 }
 
 const connectionLogger = new Logger('McpOAuth');
@@ -330,6 +348,139 @@ function memberCaller(
     personId: person.id,
     ...(access === 'staff' ? { access } : {}),
     context: { req: inProcessRequest({ accountId: m.accountId, memberId: m.memberId }) } satisfies ApiCallerContext,
+  };
+}
+
+const staffLogger = new Logger('McpStaffAccess');
+const defaultStaffLog = (line: string): void => staffLogger.log(line);
+
+/** Ids are stored lowercase UUIDs; an upper-case copy names the same workspace. */
+const UUID_SHAPED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Staff named a workspace where their own membership is not active: never turned into a grant. */
+function membershipNotActive(): BackendError {
+  return new BackendError(403, 'MEMBERSHIP_NOT_ACTIVE', MEMBERSHIP_NOT_ACTIVE_MESSAGE);
+}
+
+/** A local account staff may be granted into: one the identity service owns and the projection has confirmed. */
+interface GrantableAccount {
+  id: string;
+  workspaceId: string;
+  name: string;
+  iamAccountId: string | null;
+}
+
+/**
+ * The account `id` names (its local id or the identity service's workspace
+ * id), when staff may enter it: owned by the identity service (never a
+ * local-only `dev:`/`local:`/`legacy:` account) and projected from it at
+ * least once (`synced_at`), so it is a real workspace someone opened dForms
+ * in. Read from this database only.
+ */
+async function grantableAccount(db: Db, id: string): Promise<GrantableAccount | null> {
+  const row = await db.get<{ id: string; external_id: string | null; name: string; iam_account_id: string | null }>(
+    sql`SELECT id, external_id, name, iam_account_id FROM account
+        WHERE (id = ${id} OR external_id = ${id}) AND synced_at IS NOT NULL LIMIT 1`,
+  );
+  const workspaceId = row ? upstreamWorkspaceIdOf(row.external_id) : null;
+  if (!row || !workspaceId) return null;
+  return { id: row.id, workspaceId, name: row.name, iamAccountId: row.iam_account_id ?? null };
+}
+
+/**
+ * What a staff person can do beyond their own workspaces over a sign-in, the
+ * way the web app's switcher lets them (`WorkspaceService.search` and
+ * `enterEstateWorkspace`), read from this database only: no identity
+ * database, no credential that reads other people (docs/adr/0004).
+ *
+ *   - `search`: the accounts dForms already knows (by workspace name, a
+ *     member's email or a form's name), only those `enter` would take. Named
+ *     by the identity service's workspace id, the id the web uses too.
+ *   - `enter`: either id. A workspace of the person's own is entered as that
+ *     member. A membership there that is not active (disabled, removed or an
+ *     invitation) is never replaced: MEMBERSHIP_NOT_ACTIVE. Otherwise the
+ *     person acts as the `admin` row `grantStaffAccess` mints or finds, with
+ *     `access_grant = 'staff'`, exactly as the web does. Every entry is
+ *     logged as a staff call.
+ *
+ * The connection is rebuilt on every request, so this exists only while the
+ * request's token proves the person staff.
+ */
+function staffAccessFor(
+  db: Db,
+  person: Person,
+  tokenEmail: string | null,
+  label: string,
+  own: McpCaller[],
+  log: (line: string) => void,
+): McpStaffAccess {
+  return {
+    async search(query, limit) {
+      const hits = await searchProjectedAccounts(db, query.trim().toLowerCase(), { limit });
+      const out: StaffWorkspaceHit[] = [];
+      for (const hit of hits) {
+        const account = await grantableAccount(db, hit.id);
+        if (!account) continue;
+        // The person's own workspaces are told apart by `localId` (the tool lists them as members).
+        out.push({
+          id: account.workspaceId,
+          localId: account.id,
+          name: account.name,
+          accountName: null,
+          role: 'admin',
+          access: 'staff',
+          matchedOn: hit.hint?.kind === 'email' ? 'member_email' : hit.hint?.kind === 'form' ? 'form_name' : 'name',
+        });
+      }
+      return out.slice(0, limit);
+    },
+
+    async enter(workspaceId) {
+      const raw = workspaceId.trim();
+      const id = UUID_SHAPED.test(raw) ? raw.toLowerCase() : raw;
+      const account = await grantableAccount(db, id);
+      if (!account) return null;
+      // Named by the identity service's id, but a workspace of their own: as that member.
+      const mine = own.find((w) => w.accountId === account.id);
+      if (mine) return mine;
+      const held = await db.get<{ id: string; status: string; access_grant: string | null }>(
+        sql`SELECT id, status, access_grant FROM member WHERE account_id = ${account.id} AND external_id = ${person.id} LIMIT 1`,
+      );
+      // A membership of the person's own that is not active stays as it is:
+      // a member the owner disabled stays disabled, an invitation stays one.
+      if (held && held.access_grant === null) throw membershipNotActive();
+      let memberId: string;
+      let granted = false;
+      if (held && held.status === 'active' && held.access_grant === 'staff') {
+        memberId = held.id;
+      } else {
+        try {
+          ({ memberId } = await grantStaffAccess(
+            db,
+            { externalId: person.id, email: tokenEmail ?? person.email, displayName: null },
+            { workspaceId: account.workspaceId, workspaceName: account.name, iamAccountId: account.iamAccountId },
+          ));
+        } catch (error) {
+          // A membership appeared between the read above and the grant.
+          if (error instanceof StaffGrantRefused) throw membershipNotActive();
+          throw error;
+        }
+        granted = true;
+      }
+      log(
+        JSON.stringify({
+          msg: 'mcp.staff_access',
+          channel: 'mcp',
+          via: 'staff_grant',
+          personId: person.id,
+          accountId: account.id,
+          memberId,
+          workspaceId: account.workspaceId,
+          granted,
+        }),
+      );
+      return memberCaller(person, label, { accountId: account.id, accountName: account.name, memberId, role: 'admin' }, 'staff');
+    },
   };
 }
 

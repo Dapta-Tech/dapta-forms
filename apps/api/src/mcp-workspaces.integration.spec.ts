@@ -8,10 +8,12 @@
  * workspace where a member of theirs was vouched for within the link window
  * and is an active owner or admin. Each call names its workspace
  * (`workspace_id`), from `list_my_workspaces`; with only one, it is used
- * without asking. Nothing is matched by email, a staff access grant never
- * counts, and staff of the deployment get no search of, or entry into, other
- * workspaces over an OAuth sign-in. A person with no such workspace is
- * refused at connect. An API key keeps its one workspace.
+ * without asking. Nothing is matched by email, and a staff access grant
+ * counts only as ADR 0003 and 0004 say: one a staff web visit stamped within
+ * a day, or, when the token itself carries a verified email on a staff domain
+ * (the AuthKit JWT template), a search of every synced workspace and entry
+ * through a staff grant, always named. A person with no such workspace
+ * connects and acts nowhere. An API key keeps its one workspace.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -570,5 +572,122 @@ describe('staff of the deployment, signed in over OAuth', () => {
     );
     expect(grants.every((g) => g.access_grant === 'staff')).toBe(true);
     expect(grants).toHaveLength(2);
+  });
+});
+
+// --- Staff judged on the token's verified email (docs/adr/0004) ---------------
+
+/** Make Globex a workspace the identity service owns and the projection confirmed, with an owner. */
+async function syncedGlobex(h: Harness): Promise<{ workspaceId: string; ownerEmail: string }> {
+  const workspaceId = randomUUID();
+  await h.db.run(sql`UPDATE account SET external_id = ${workspaceId}, synced_at = ${Date.now()} WHERE id = ${h.other.accountId}`);
+  const owner = newPerson({ domain: 'globex.example' });
+  await join(h, owner, h.other.accountId, 'owner');
+  return { workspaceId, ownerEmail: owner.email };
+}
+
+/** Sign in with a token that carries what the AuthKit JWT template adds. */
+async function signInWith(h: Harness, subject: string, claims: Record<string, unknown>): Promise<Client> {
+  await link(h, subject);
+  return h.signIn(idp.client(subject, claims));
+}
+
+describe('staff of the deployment, by the verified email their token carries', () => {
+  it('searches every synced workspace and enters a customer one through a staff grant, always named', async () => {
+    const h = await boot({ IAM_STAFF_DOMAINS: STAFF_DOMAIN });
+    const { workspaceId, ownerEmail } = await syncedGlobex(h);
+    const p = newPerson({ domain: STAFF_DOMAIN });
+    await join(h, p, h.accountId, 'admin');
+    const c = await signInWith(h, p.subject, { email: p.email, email_verified: true });
+
+    const mine = structured<Found>(await c.callTool({ name: 'list_my_workspaces', arguments: {} }));
+    expect(mine.staff).toBe(true);
+    // By the workspace's name, a member's email and a form's name, named by the identity service's id.
+    for (const [search, matchedOn] of [
+      ['globex', 'name'],
+      [ownerEmail.slice(0, 12), 'member_email'],
+      ['secret survey', 'form_name'],
+    ] as const) {
+      const found = structured<Found>(await c.callTool({ name: 'list_my_workspaces', arguments: { search } }));
+      expect(found.workspaces, search).toContainEqual(
+        expect.objectContaining({ id: workspaceId, name: 'Globex', role: 'admin', access: 'staff', matched_on: matchedOn }),
+      );
+    }
+
+    // Staff always name the workspace, even with one of their own.
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: {} }))).toMatch(/^WORKSPACE_REQUIRED: /);
+
+    // Entering by either id acts as an admin through a staff grant, audited as staff.
+    for (const id of [workspaceId, h.other.accountId.toUpperCase()]) {
+      const forms = await c.callTool({ name: 'list_forms', arguments: { workspace_id: id } });
+      expect(structured<{ workspace: { access: string } }>(forms).workspace, id).toMatchObject({ access: 'staff' });
+      expect((forms as { content: Array<{ text: string }> }).content[0]!.text, id).toMatch(/^In workspace "Globex" \(staff access\): /);
+    }
+    const grants = await h.db.all<{ role: string; access_grant: string | null }>(
+      sql`SELECT role, access_grant FROM member WHERE account_id = ${h.other.accountId} AND external_id = ${p.personId}`,
+    );
+    expect(grants).toEqual([{ role: 'admin', access_grant: 'staff' }]);
+    expect(h.audit.some((line) => (JSON.parse(line) as { via?: string }).via === 'staff_grant')).toBe(true);
+
+    // The next token without the claims (the person stopped being staff): the grant is out of reach.
+    const later = await h.signIn(idp.client(p.subject));
+    expect(structured<Found>(await later.callTool({ name: 'list_my_workspaces', arguments: {} })).staff).toBe(false);
+    expect(errorText(await later.callTool({ name: 'list_forms', arguments: { workspace_id: workspaceId } }))).toMatch(
+      /^NOT_FOUND: No workspace of yours has this id\./,
+    );
+  });
+
+  it('never counts an unverified email, a non-staff domain, or staff with no active membership of their own', async () => {
+    const h = await boot({ IAM_STAFF_DOMAINS: STAFF_DOMAIN });
+    const { workspaceId } = await syncedGlobex(h);
+
+    const cases: Array<[string, (email: string) => Record<string, unknown>, string?]> = [
+      ['email_verified false', (email) => ({ email, email_verified: false })],
+      ['email_verified missing', (email) => ({ email })],
+      ['email_verified as a string', (email) => ({ email, email_verified: 'true' })],
+      ['another domain, verified', () => ({ email: 'someone@example.com', email_verified: true })],
+      ['a lookalike domain, verified', () => ({ email: `x@not${STAFF_DOMAIN}`, email_verified: true })],
+    ];
+    for (const [label, claims] of cases) {
+      const p = newPerson({ domain: STAFF_DOMAIN });
+      await join(h, p, h.accountId, 'admin');
+      const c = await signInWith(h, p.subject, claims(p.email));
+      const found = structured<Found>(await c.callTool({ name: 'list_my_workspaces', arguments: { search: 'globex' } }));
+      expect(found, label).toMatchObject({ staff: false, workspaces: [] });
+      expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: workspaceId } })), label).toMatch(/^NOT_FOUND: /);
+    }
+
+    // Verified staff whose own membership is disabled reach no customer either.
+    const d = newPerson({ domain: STAFF_DOMAIN });
+    const ownRow = await join(h, d, h.accountId, 'admin');
+    await link(h, d.subject);
+    await h.db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${ownRow}`);
+    const dc = await h.signIn(idp.client(d.subject, { email: d.email, email_verified: true }));
+    expect(errorText(await dc.callTool({ name: 'list_forms', arguments: { workspace_id: workspaceId } }))).toBe(`NO_WORKSPACE: ${NO_WORKSPACE}`);
+
+    expect(await h.db.get(sql`SELECT id FROM member WHERE access_grant = 'staff'`)).toBeUndefined();
+  });
+
+  it('never replaces a membership that is not active, and never enters a workspace the identity service does not own', async () => {
+    const h = await boot({ IAM_STAFF_DOMAINS: STAFF_DOMAIN });
+    const { workspaceId } = await syncedGlobex(h);
+    const p = newPerson({ domain: STAFF_DOMAIN });
+    await join(h, p, h.accountId, 'admin');
+    const disabled = await join(h, p, h.other.accountId, 'member', { status: 'disabled' });
+    const c = await signInWith(h, p.subject, { email: p.email, email_verified: true });
+    expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: workspaceId } }))).toMatch(/^MEMBERSHIP_NOT_ACTIVE: /);
+    const row = await h.db.get<{ status: string; access_grant: string | null }>(sql`SELECT status, access_grant FROM member WHERE id = ${disabled}`);
+    expect(row).toEqual({ status: 'disabled', access_grant: null });
+
+    // A local-only account (no identity-service id) or one never projected is not searchable nor enterable.
+    const local = await workspace(h, 'Initech Local');
+    const unsynced = await workspace(h, 'Initech Unsynced');
+    await h.db.run(sql`UPDATE account SET external_id = ${randomUUID()} WHERE id = ${unsynced}`);
+    const found = structured<Found>(await c.callTool({ name: 'list_my_workspaces', arguments: { search: 'initech' } }));
+    expect(found).toMatchObject({ staff: true, workspaces: [] });
+    for (const id of [local, unsynced]) {
+      expect(errorText(await c.callTool({ name: 'list_forms', arguments: { workspace_id: id } }))).toMatch(/^NOT_FOUND: /);
+    }
+    expect(await h.db.get(sql`SELECT id FROM member WHERE access_grant = 'staff'`)).toBeUndefined();
   });
 });

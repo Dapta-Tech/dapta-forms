@@ -43,8 +43,17 @@ describe('the MCP OAuth adapter', () => {
   });
 
   it('accepts a token the issuer signed for this resource, and names its subject', async () => {
-    expect(await oauth.verify(idp.token('user_A', RESOURCE))).toEqual({ subject: 'user_A' });
-    expect(await oauth.verify(idp.token('user_A', [RESOURCE, 'https://other.example.test'] as never))).toEqual({ subject: 'user_A' });
+    expect(await oauth.verify(idp.token('user_A', RESOURCE))).toEqual({ subject: 'user_A', email: null });
+    expect(await oauth.verify(idp.token('user_A', [RESOURCE, 'https://other.example.test'] as never))).toEqual({ subject: 'user_A', email: null });
+    // The email the AuthKit JWT template adds, only when verified.
+    expect(await oauth.verify(idp.token('user_A', RESOURCE, { email: 'ana@staff.example.com', email_verified: true }))).toEqual({
+      subject: 'user_A',
+      email: 'ana@staff.example.com',
+    });
+    expect(await oauth.verify(idp.token('user_A', RESOURCE, { email: 'ana@staff.example.com', email_verified: false }))).toEqual({
+      subject: 'user_A',
+      email: null,
+    });
   });
 
   it.each([
@@ -78,7 +87,7 @@ describe('the MCP OAuth adapter', () => {
 
   it('finds a key the issuer rotated in, and does not refetch the keys for every unknown key id', async () => {
     idp.rotate();
-    expect(await oauth.verify(idp.token('user_B', RESOURCE))).toEqual({ subject: 'user_B' });
+    expect(await oauth.verify(idp.token('user_B', RESOURCE))).toEqual({ subject: 'user_B', email: null });
     const before = idp.jwksFetches();
     for (let i = 0; i < 5; i += 1) {
       expect(await oauth.verify(idp.sign({ iss: idp.issuer, aud: RESOURCE, sub: 'x', exp: now() + 60 }, { kid: `unknown-${i}` }))).toBeNull();
@@ -126,5 +135,19 @@ describe('the authorization server metadata while AuthKit is down', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('verifiedEmailOf (the AuthKit JWT template claims that decide staff)', () => {
+  it('returns the email only when email_verified is exactly true', async () => {
+    const { verifiedEmailOf } = await import('./mcp-oauth.workos');
+    expect(verifiedEmailOf({ email: ' ana@staff.example.com ', email_verified: true })).toBe('ana@staff.example.com');
+    expect(verifiedEmailOf({ email: 'ana@staff.example.com', email_verified: false })).toBeNull();
+    expect(verifiedEmailOf({ email: 'ana@staff.example.com', email_verified: 'true' })).toBeNull();
+    expect(verifiedEmailOf({ email: 'ana@staff.example.com' })).toBeNull();
+    expect(verifiedEmailOf({ email_verified: true })).toBeNull();
+    expect(verifiedEmailOf({ email: ['ana@staff.example.com'], email_verified: true })).toBeNull();
+    expect(verifiedEmailOf({ email: '   ', email_verified: true })).toBeNull();
+    expect(verifiedEmailOf({ email: `${'a'.repeat(320)}@x.com`, email_verified: true })).toBeNull();
   });
 });

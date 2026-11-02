@@ -80,34 +80,45 @@ start of the text summary.
 
 ### Staff
 
-An MCP sign-in never searches other workspaces, and never enters a new one
-(see [ADR 0003](adr/0003-mcp-sign-in-maps-through-web-logins.md), which
-supersedes the MCP part of [ADR 0002](adr/0002-staff-access-over-mcp.md)).
-Staff enter a customer's workspace in the web app's switcher
-(`IAM_STAFF_DOMAINS`), which holds them a staff access grant there. A web
-request that proves the person is staff (the email its session token carries
-is on those domains) and acts in that customer's workspace stamps that grant,
-and a sign-in then reaches it for about a day after that visit (a day from
-the issue time of that visit's session token), no longer, and only
-next to an active membership of the person's own: the workspace says
-`access: 'staff'`, is never used without being named in `workspace_id`, the
-text starts `In workspace "<name>" (staff access):`, and the audit line
-carries `via: 'staff_grant'`. A customer workspace staff have not opened on
-the web in the last day is not reachable over MCP, and a person who stops
-being staff (or leaves) loses those workspaces over MCP within a day.
-A workspace where the person is a real member is always entered as that
-member. Staff can also create an API key in a customer's workspace through
-the API (`/v1/api-keys`, with their session), which works over MCP like any
-key: in that workspace only, as the grant's `admin` row, until someone revokes
-it; the workspace's owners and admins see such keys marked as created by Dapta
-staff.
+Staff of the deployment reach any customer workspace over a sign-in when
+their access token carries a verified email on one of `IAM_STAFF_DOMAINS`
+([ADR 0004](adr/0004-staff-over-mcp-by-the-tokens-verified-email.md)). The
+email comes from AuthKit's JWT template, which the deployment configures with:
+
+```json
+{ "email": {{ user.email }}, "email_verified": {{ user.email_verified }} }
+```
+
+Only `email_verified: true` counts. Such a person, next to an active
+membership of their own, gets `staff: true`: `list_my_workspaces(search=...)`
+finds the workspaces dForms already knows (by name, a member's email or a
+form's name; at least 3 letters or digits, at most 20), and naming one in
+`workspace_id` acts there as an `admin` through a staff access grant, minted
+on first use exactly as the web switcher does. Staff name the workspace on
+every call. A membership of their own there that is not active is never
+replaced (`MEMBERSHIP_NOT_ACTIVE`), and only workspaces the identity service
+owns and dForms has synced are listed or entered. Every staff call says
+`access: 'staff'`, its text starts `In workspace "<name>" (staff access):`,
+and the audit line carries `via: 'staff_grant'`. A token without the verified
+email is not staff, and the grants entered this way are out of reach from
+that token on.
+
+Without the template, staff reach only what [ADR
+0003](adr/0003-mcp-sign-in-maps-through-web-logins.md) allows: a customer
+workspace they opened on the web as staff within the last day, as staff
+access, only next to an active membership of their own. A workspace where the
+person is a real member is always entered as that member. Staff can also
+create an API key in a customer's workspace through the API (`/v1/api-keys`,
+with their session), which works over MCP like any key: in that workspace
+only, as the grant's `admin` row, until someone revokes it; the workspace's
+owners and admins see such keys marked as created by Dapta staff.
 
 ## Tools
 
 | Tool | Kind | What it does |
 |---|---|---|
 | `whoami` | read | Who is connected (the key prefix, or the person signed in), every workspace it can act in with the role there, whether the person is `staff`, `next_step`, and, when a workspace applies, that workspace (with its `access`) and the member it acts as (every field `GET /v1/me` documents, `status` and `locale` included). |
-| `list_my_workspaces` | read | The workspaces this connection can act in: id, name, account name, role and access, plus what to do next. `search` filters them by name (an MCP sign-in never searches other workspaces; see [Staff](#staff)). `limit` caps the list (default: all); `truncated` says when more applied. With a key, the key's one workspace. |
+| `list_my_workspaces` | read | The workspaces this connection can act in: id, name, account name, role and access, plus what to do next. `search` filters them by name; for staff it searches every workspace dForms knows (see [Staff](#staff)). `limit` caps the list (default: all); `truncated` says when more applied. With a key, the key's one workspace. |
 | `list_forms` | read | Forms, most recently updated first, with id, `public_url`, whether edits are unpublished and `is_live` (false when the live version has no steps, so the link opens an empty form). Filter by name, ignoring case and accents; page with `limit`/`offset`. |
 | `get_form` | read | One form: `public_url`, publish state, `is_live` and the config to edit (the pending draft when there is one). `destinations` are left out of the config and listed apart (the live form's, with their ids, secrets masked): the list `set_destinations` starts from. |
 | `create_form` | write | Creates a form from a full config. It is live at once; the result carries its `public_url`, and a warning when dForms filled `branding` in. Not idempotent. |
@@ -450,7 +461,7 @@ All optional; unset (or blank) means the safe default. See
 | `MCP_OAUTH_PROVIDER` | API and web (runtime; the web shows the connector guide only with `MCP_PUBLIC_URL` set too) | unset (API keys only; the MCP page says the connector is not available here) |
 | `WORKOS_AUTHKIT_DOMAIN` | API | unset (required with `MCP_OAUTH_PROVIDER`) |
 | `OAUTH_LINK_MAX_AGE_DAYS` | API | `30` (days after a member's last verified web login that a sign-in may act as it) |
-| `IAM_STAFF_DOMAINS` | API (the web app's switcher; never an MCP sign-in) | unset (nobody is staff) |
+| `IAM_STAFF_DOMAINS` | API (the web app's switcher, and an MCP sign-in whose token carries a verified email) | unset (nobody is staff) |
 | `OPENAI_APPS_CHALLENGE_TOKEN` | API (served at `/.well-known/openai-apps-challenge`, OpenAI's domain check for a ChatGPT app) | unset (404) |
 
 ## Check it yourself
