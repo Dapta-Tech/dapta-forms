@@ -45,6 +45,7 @@ export function ColorPicker({
   disabled = false,
   variant = 'field',
   emptyLabel,
+  hideFailNote = false,
   m,
 }: {
   value: string | null | undefined;
@@ -54,6 +55,12 @@ export function ColorPicker({
   againstLabel?: string;
   /** When true, clearing the field is allowed and means "inherit". */
   allowEmpty?: boolean;
+  /**
+   * Keep the ratio badge but drop the "below AA" line: for a control whose
+   * panel already shows its own contrast warning (with a fix), so the same
+   * problem is not reported twice.
+   */
+  hideFailNote?: boolean;
   /** Read-only mode: the trigger renders but never opens the popover. */
   disabled?: boolean;
   /**
@@ -164,7 +171,7 @@ export function ColorPicker({
         ) : null}
       </div>
 
-      {grade === 'fail' ? (
+      {grade === 'fail' && !hideFailNote ? (
         <p className="text-xs text-destructive" role="alert">
           {m.contrastFail}
         </p>
