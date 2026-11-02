@@ -151,7 +151,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function mount(steps: unknown[], extra: Record<string, unknown> = {}) {
+async function mount(steps: unknown[], extra: Record<string, unknown> = {}, resume = false) {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -163,10 +163,18 @@ async function mount(steps: unknown[], extra: Record<string, unknown> = {}) {
         name="Clinic contact"
         config={{ version: 1, layout: 'vertical', steps, ...extra } as never}
         locale="en"
+        resume={resume}
       />,
     ),
   );
   await settle();
+}
+
+/** A reload of the public page: same tab (sessionStorage kept), same URL. */
+async function reload(steps: unknown[]) {
+  await act(async () => root.unmount());
+  host.remove();
+  await mount(steps, {}, true);
 }
 
 async function settle() {
@@ -257,6 +265,54 @@ describe('what the answered counter counts', () => {
     expect(q('[data-vf-step="email"]')).not.toBeNull();
     expect(q('[data-vf-step="notes"]')).not.toBeNull();
     expect(label()).toBe('0 of 3 answered');
+  });
+});
+
+describe('the answered counter across a reload mid-form', () => {
+  it('counts a prefilled name the person edited, after the reload', async () => {
+    window.history.replaceState(null, '', '/acme/f/contact?firstname=Ana');
+    const steps = [
+      { key: 'who', type: 'name', question: 'Your name?' },
+      { key: 'email', type: 'email', question: 'Email?' },
+    ];
+    await mount(steps, {}, true);
+    expect(label()).toBe('0 of 2 answered');
+    const first = () => question('who').querySelector<HTMLInputElement>('input')!;
+    await act(async () => typeInto(first(), 'Ana María'));
+    await settle();
+    expect(label()).toBe('1 of 2 answered');
+
+    await reload(steps); // the URL still carries ?firstname=Ana
+    expect(first().value).toBe('Ana María');
+    expect(label()).toBe('1 of 2 answered');
+  });
+
+  it('keeps an untouched prefilled name uncounted after the reload', async () => {
+    window.history.replaceState(null, '', '/acme/f/contact?firstname=Ana');
+    const steps = [
+      { key: 'who', type: 'name', question: 'Your name?' },
+      { key: 'email', type: 'email', question: 'Email?' },
+    ];
+    await mount(steps, {}, true);
+    await reload(steps);
+    expect(question('who').querySelector<HTMLInputElement>('input')!.value).toBe('Ana');
+    expect(label()).toBe('0 of 2 answered');
+  });
+
+  it('keeps an untouched default uncounted, and a touched one counted', async () => {
+    const steps = [
+      { key: 'plan', type: 'dropdown', question: 'Plan?', options: plans, defaultValue: 'pro' },
+      { key: 'email', type: 'email', question: 'Email?' },
+    ];
+    await mount(steps, {}, true);
+    expect(label()).toBe('0 of 2 answered');
+    await reload(steps);
+    expect(label()).toBe('0 of 2 answered');
+
+    await pick('plan', 'Pro'); // the option that was already the default
+    expect(label()).toBe('1 of 2 answered');
+    await reload(steps);
+    expect(label()).toBe('1 of 2 answered');
   });
 });
 
