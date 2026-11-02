@@ -479,6 +479,11 @@ export interface FormBranding {
   // --- Shape & controls --------------------------------------------------
   radius?: FormRadius;
   buttonStyle?: FormButtonStyle;
+  /**
+   * Label colour of a SOLID button. Absent / null / blank = the automatic
+   * contrast colour of the accent. Ignored for `outline` and `soft`.
+   */
+  buttonTextColor?: string | null;
   buttonFullWidth?: boolean;
   progressStyle?: FormProgressStyle;
 

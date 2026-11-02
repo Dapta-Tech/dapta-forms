@@ -456,3 +456,23 @@ describe('checkbox step', () => {
     expect(parsed.success).toBe(true);
   });
 });
+
+describe('branding.buttonTextColor (additive)', () => {
+  const parse = (branding: Record<string, unknown>) =>
+    formConfigSchema.safeParse({ ...baseConfig(), branding });
+
+  it('accepts a hex, an rgb() color, null and an absent value', () => {
+    const hex = parse({ buttonTextColor: '#FFFFFF' });
+    expect(hex.success && hex.data.branding?.buttonTextColor).toBe('#FFFFFF');
+    expect(parse({ buttonTextColor: 'rgb(255,255,255)' }).success).toBe(true);
+    const cleared = parse({ buttonTextColor: null });
+    expect(cleared.success && cleared.data.branding?.buttonTextColor).toBeNull();
+    const absent = parse({});
+    expect(absent.success && 'buttonTextColor' in (absent.data.branding ?? {})).toBe(false);
+  });
+
+  it('rejects a CSS injection and a string over 32 characters', () => {
+    expect(parse({ buttonTextColor: 'red;} body{x}' }).success).toBe(false);
+    expect(parse({ buttonTextColor: 'a'.repeat(33) }).success).toBe(false);
+  });
+});

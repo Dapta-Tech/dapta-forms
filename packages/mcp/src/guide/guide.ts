@@ -62,7 +62,7 @@ export const GUIDE_WORKSPACES: readonly string[] = [
 export const GUIDE_STEP_TYPES: ReadonlyArray<{ type: string; use_for: string }> = [
   { type: 'name', use_for: "The person's name. Collects first and last name. The type for a name, rather than text." },
   { type: 'email', use_for: 'An email address.' },
-  { type: 'phone', use_for: 'A phone number.' },
+  { type: 'phone', use_for: 'A phone number. Its placeholder replaces the automatic number mask; leave it out to keep the mask.' },
   {
     type: 'checkbox',
     use_for:

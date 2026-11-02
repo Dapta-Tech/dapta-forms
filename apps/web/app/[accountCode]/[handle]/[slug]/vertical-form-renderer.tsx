@@ -957,6 +957,9 @@ export function VerticalFormRenderer({
           value={answers[step.key]}
           answers={answers}
           autoFocus={false}
+          // No question takes focus on load, the phone included: on a page
+          // (and in an embed) it would scroll the host to the field.
+          phoneAutoFocus={false}
           showFieldLabels
           // Mount-time seeding (slider default) is not an interaction:
           // write the answer silently — no start/complete events, no

@@ -374,7 +374,7 @@ function canvasChrome(config: FormConfig, device: 'desktop' | 'mobile') {
             color: 'var(--foreground)',
             border: `1px solid color-mix(in srgb, ${accent} 32%, transparent)`,
           }
-        : { background: accent, color: accentText };
+        : { background: accent, color: config.branding?.buttonTextColor?.trim() || accentText };
   // The same resolver the public form and the preview use: the author's
   // overrides, else the stock copy of the FORM's language (not the editor's).
   const formLabels = resolveFormLabels(config, config.language ?? (clientLocale() === 'es' ? 'es' : 'en'));
@@ -826,7 +826,12 @@ export function CanvasPage({
 
   // Compact density drops the lines between questions and tightens each block,
   // as the public one-page form does.
-  const compact = resolveDesign(config.branding).density === 'compact';
+  const pageDesign = resolveDesign(config.branding);
+  const compact = pageDesign.density === 'compact';
+  // The Submit stays a solid accent fill here whatever the style; only a solid
+  // button takes the author's own label colour, as on the public form.
+  const submitText =
+    (pageDesign.buttonStyle === 'solid' && config.branding?.buttonTextColor?.trim()) || accentText;
   const renderBlock = (i: number) => {
     const step = config.steps[i]!;
     return (
@@ -907,7 +912,7 @@ export function CanvasPage({
             <button
               type="button"
               className="w-full rounded-xl px-6 py-3.5 text-sm font-semibold"
-              style={{ background: accent, color: accentText }}
+              style={{ background: accent, color: submitText }}
             >
               {m.canvas.submit}
             </button>

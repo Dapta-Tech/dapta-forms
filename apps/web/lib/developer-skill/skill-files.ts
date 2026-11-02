@@ -86,7 +86,7 @@ Pick the \`type\` that matches what the step asks. \`name\`, \`email\` and \`pho
 |---|---|
 | \`name\` | The person's name. Always this type when the form asks for a name, never \`text\`. It collects first and last name by default. |
 | \`email\` | An email address. |
-| \`phone\` | A phone number. |
+| \`phone\` | A phone number. Its placeholder replaces the automatic number mask; leave it out to keep the mask. |
 | \`checkbox\` | One box to tick, such as consent to a privacy policy. \`question\` is the text beside the box and can carry links as \`[text](https://url)\`. Checked is stored as \`true\`; unchecked stores nothing. \`required: true\` blocks submit until it is checked. |
 | \`multiple_choice\` | Pick from a few options shown at once. Options score with \`points\`. |
 | \`dropdown\` | Pick from a long list. Options score with \`points\`. |

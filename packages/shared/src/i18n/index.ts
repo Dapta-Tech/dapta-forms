@@ -1407,6 +1407,9 @@ export interface FormsMessages {
         buttonSolid: string;
         buttonOutline: string;
         buttonSoft: string;
+        buttonTextColor: string;
+        buttonTextAuto: string;
+        buttonTextLowContrast: string;
         buttonFullWidth: string;
         progress: string;
         progressBar: string;
@@ -3746,6 +3749,10 @@ export const en: FormsMessages = {
         buttonSolid: 'Solid',
         buttonOutline: 'Outline',
         buttonSoft: 'Soft',
+        buttonTextColor: 'Button text color',
+        buttonTextAuto: 'Automatic',
+        buttonTextLowContrast:
+          'The button text has a {ratio}:1 contrast on the accent color. Use 4.5:1 or more so it reads well.',
         buttonFullWidth: 'Full-width button',
         progress: 'Progress',
         progressBar: 'Bar',
@@ -6318,6 +6325,10 @@ export const es: FormsMessages = {
         buttonSolid: 'Sólido',
         buttonOutline: 'Contorno',
         buttonSoft: 'Suave',
+        buttonTextColor: 'Color del texto del botón',
+        buttonTextAuto: 'Automático',
+        buttonTextLowContrast:
+          'El texto del botón tiene contraste {ratio}:1 sobre el color de acento. Usa 4.5:1 o más para que se lea bien.',
         buttonFullWidth: 'Botón de ancho completo',
         progress: 'Progreso',
         progressBar: 'Barra',

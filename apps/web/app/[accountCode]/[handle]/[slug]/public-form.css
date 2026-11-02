@@ -1007,7 +1007,9 @@
   font-size: 16px;
   font-weight: 600;
   font-family: inherit;
-  color: var(--pf-primary-contrast);
+  /* `--pf-btn-text` is the author's own label colour for a solid button
+     (`branding.buttonTextColor`); `formDesignProps` only sets it for `solid`. */
+  color: var(--pf-btn-text, var(--pf-primary-contrast));
   background: var(--pf-primary);
   border: none;
   border-radius: var(--pf-radius-sm);
@@ -1791,7 +1793,7 @@
   padding: 0 24px;
   font-size: 16px;
   font-weight: 600;
-  color: var(--pf-primary-contrast);
+  color: var(--pf-btn-text, var(--pf-primary-contrast));
   background: var(--pf-primary);
   border-radius: var(--pf-radius-sm);
   text-decoration: none;

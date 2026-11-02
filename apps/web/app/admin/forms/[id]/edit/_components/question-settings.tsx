@@ -53,6 +53,7 @@ const PLACEHOLDER_TYPES: ReadonlySet<FormStep['type']> = new Set([
   'url',
   'textarea',
   'dropdown',
+  'phone',
 ]);
 
 /** The long-text length ceiling, mirroring `formStepSchema`'s cap on both fields. */
@@ -312,8 +313,9 @@ export function QuestionSettings({
       ) : null}
 
       {/* Only the types whose public input actually renders `step.placeholder`
-          (step-input.tsx) get the control — phone brings its own placeholder,
-          name edits per-field placeholders below, choices have none. The first
+          (step-input.tsx) get the control. A phone's placeholder replaces its
+          automatic number mask; name edits per-field placeholders below,
+          choices have none. The first
           builder had this field; the WYSIWYG rewrite dropped it silently, which
           left API-authored placeholders visible on the canvas but uneditable. */}
       {PLACEHOLDER_TYPES.has(step.type) ? (

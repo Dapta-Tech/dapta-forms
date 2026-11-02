@@ -125,6 +125,12 @@ export function DesignPanel({
   // matters for the large/decorative places it actually appears.
   const textSuggestion = branding.foreground ? suggestReadable(text, ground, AA_CONTRAST) : null;
   const accentSuggestion = branding.primaryColor ? suggestReadable(accent, ground) : null;
+  // The label a solid button actually wears: the author's own color, else the
+  // automatic one. Only an explicit color can be "too low", so the warning
+  // below measures that one; 0 is a color the ratio math cannot read.
+  const buttonText = branding.buttonTextColor?.trim() || '';
+  const buttonTextRatio = buttonText ? contrastRatio(buttonText, accent) : 0;
+  const buttonTextLow = buttonTextRatio > 0 && buttonTextRatio < AA_CONTRAST;
 
   return (
     // A narrow panel of settings and the form beside it, as large as the window
@@ -291,7 +297,7 @@ export function DesignPanel({
             {design.buttonStyle === 'solid' ? (
               <ContrastRow
                 label={d.contrastButton}
-                a={onAccent(accent)}
+                a={buttonText || onAccent(accent)}
                 b={accent}
                 failLabel={d.contrastFail}
               />
@@ -432,6 +438,33 @@ export function DesignPanel({
               ariaLabel={d.buttonStyle}
             />
           </InlineField>
+          {/* Only a solid button puts its label on the accent; outline and soft
+              paint it in the text color, so the control is not offered there
+              (a stored value is kept and comes back with solid). */}
+          {design.buttonStyle === 'solid' ? (
+            <>
+              <Field label={d.buttonTextColor}>
+                <ColorPicker
+                  value={branding.buttonTextColor}
+                  onChange={(buttonTextColor) => onBrandingChange({ buttonTextColor, themePreset: null })}
+                  label={d.buttonTextColor}
+                  allowEmpty
+                  emptyLabel={d.buttonTextAuto}
+                  against={accent}
+                  againstLabel={d.contrastButton}
+                  m={d}
+                />
+              </Field>
+              {buttonTextLow ? (
+                <Warning
+                  text={t(d.buttonTextLowContrast, { ratio: String(buttonTextRatio) })}
+                  suggestion={onAccent(accent)}
+                  applyLabel={t(d.suggestApply, { color: onAccent(accent) })}
+                  onApply={() => onBrandingChange({ buttonTextColor: null, themePreset: null })}
+                />
+              ) : null}
+            </>
+          ) : null}
           <InlineField label={d.buttonFullWidth}>
             <Switch
               checked={design.buttonFullWidth}

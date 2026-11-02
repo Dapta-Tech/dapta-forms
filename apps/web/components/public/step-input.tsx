@@ -41,10 +41,10 @@ interface StepInputProps {
   autoFocus?: boolean;
   /**
    * Whether a `phone` field focuses itself on mount. Apart from `autoFocus`
-   * because the phone field always has, even on the one-page layout (which
-   * passes `autoFocus={false}`), and that page's markup is pinned as it is. A
+   * because a slide focuses its phone field even where other inputs do not. A
    * screen of several questions passes `false` for every question but its
-   * first, or the phone would take focus from the one above it. Default `true`.
+   * first, or the phone would take focus from the one above it; the one-page
+   * layout passes `false` for every question. Default `true`.
    */
   phoneAutoFocus?: boolean;
   /**
@@ -372,6 +372,7 @@ export function StepInput({
           ariaLabel={step.question ?? step.key}
           defaultCountry={step.phoneDefaultCountry ?? undefined}
           autoFocus={phoneAutoFocus}
+          placeholder={step.placeholder}
         />
       );
 

@@ -266,3 +266,22 @@ describe('QuestionSettings: checkbox', () => {
     expect(add().disabled).toBe(false);
   });
 });
+
+describe('QuestionSettings: phone placeholder', () => {
+  const phone: FormStep = { key: 'phone', type: 'phone', question: 'Phone?' };
+  const field = () => host!.querySelector<HTMLInputElement>('[data-testid="step-placeholder"]');
+
+  it('offers the placeholder field and writes what is typed', async () => {
+    const onUpdate = await mount(phone, 'vertical');
+    expect(field()).not.toBeNull();
+    await typeInto(field()!, 'Celular');
+    expect(onUpdate).toHaveBeenLastCalledWith({ placeholder: 'Celular' });
+  });
+
+  it('emptying it writes null, back to the automatic mask', async () => {
+    const onUpdate = await mount({ ...phone, placeholder: 'Celular' }, 'vertical');
+    expect(field()!.value).toBe('Celular');
+    await typeInto(field()!, '');
+    expect(onUpdate).toHaveBeenLastCalledWith({ placeholder: null });
+  });
+});

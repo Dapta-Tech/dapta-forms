@@ -419,6 +419,9 @@ export const formBrandingSchema = z.object({
   // Shape & controls.
   radius: z.enum(FORM_RADII).optional(),
   buttonStyle: z.enum(FORM_BUTTON_STYLES).optional(),
+  // Additive: the label colour of a SOLID button. Absent / null / blank keeps
+  // the automatic contrast colour; ignored for `outline` and `soft`.
+  buttonTextColor: cssColor.nullable().optional(),
   buttonFullWidth: z.boolean().optional(),
   progressStyle: z.enum(FORM_PROGRESS_STYLES).optional(),
 

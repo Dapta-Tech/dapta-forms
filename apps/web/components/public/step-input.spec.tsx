@@ -268,3 +268,53 @@ describe('checkbox', () => {
     expect(render({ ...consent, question: '' })).toContain('<span class="pf-checkbox__text">consent</span>');
   });
 });
+
+describe('phone: placeholder and focus', () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const phone = (placeholder?: string | null): FormStep => ({
+    key: 'phone',
+    type: 'phone',
+    question: 'Your phone?',
+    phoneDefaultCountry: 'US',
+    ...(placeholder === undefined ? {} : { placeholder }),
+  });
+  const placeholderOf = (html: string) => /<input[^>]*type="tel"[^>]*>/.exec(html)?.[0].match(/placeholder="([^"]*)"/)?.[1];
+
+  it('shows the configured placeholder as is', () => {
+    expect(placeholderOf(render(phone('Tu celular')))).toBe('Tu celular');
+  });
+
+  it('absent, null or blank keeps the country mask', () => {
+    const mask = placeholderOf(render(phone()));
+    expect(mask).toBe('(000) 000-0000');
+    expect(placeholderOf(render(phone(null)))).toBe(mask);
+    expect(placeholderOf(render(phone('  ')))).toBe(mask);
+  });
+
+  it('phoneAutoFocus false leaves the input unfocused after mount', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <StepInput
+          step={phone()}
+          value=""
+          answers={{}}
+          onChange={() => {}}
+          onFieldChange={() => {}}
+          onSelect={() => {}}
+          dropdownPlaceholder="Pick one"
+          dropdownEmpty="No matches"
+          autoFocus={false}
+          phoneAutoFocus={false}
+        />,
+      ),
+    );
+    const input = host.querySelector<HTMLInputElement>('input[type="tel"]')!;
+    expect(input).not.toBeNull();
+    expect(document.activeElement).not.toBe(input);
+    await act(async () => root.unmount());
+    host.remove();
+  });
+});
