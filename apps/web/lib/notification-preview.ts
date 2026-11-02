@@ -117,11 +117,14 @@ export function mockBodyLines(template: string, values: Record<string, string>):
 /**
  * The server's rule (`renderBodyLines`): a line is dropped when it carries
  * tokens and every one of them resolves to an empty value (`Score: {{score}}`
- * on a form with no scoring). A line with no tokens, or with an unknown one,
- * always stays.
+ * on a form with no scoring), unless the owner wrote a link on it. A line
+ * with no tokens, or with an unknown one, always stays.
  */
 function allTokensEmpty(line: string, values: Record<string, string>): boolean {
-  const names = [...line.matchAll(/\{\{\s*([a-zA-Z][A-Za-z0-9_]*)\s*\}\}/g)].map((m) => m[1]!);
+  const tokens = /\{\{\s*([a-zA-Z][A-Za-z0-9_]*)\s*\}\}/g;
+  const names = [...line.matchAll(tokens)].map((m) => m[1]!);
+  // A link the owner wrote keeps the line, as on the server.
+  if (/https?:\/\/[^/?#\s]/i.test(line.replace(tokens, ''))) return false;
   return names.length > 0 && names.every((name) => values[name] === '');
 }
 

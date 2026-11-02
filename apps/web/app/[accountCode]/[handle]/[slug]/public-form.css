@@ -2924,6 +2924,15 @@
   padding: 4px;
   margin: -4px;
 }
+/* The ~3-row floor only applies to a list that HAS three rows. A yes/no list
+   (one or two rows) or a single row of cards is shorter than the floor, and the
+   floor would stretch it and push the button down; it keeps its own height
+   and never scrolls (it is too short to need to). */
+.pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--list:not(:has(> :nth-child(3))),
+.pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--icons:not(:has(> :nth-child(4))) {
+  flex-shrink: 0;
+  min-height: 0;
+}
 .pf--fit .pf-s > .pf-s__footer {
   flex-shrink: 0;
 }
@@ -2934,8 +2943,11 @@
   .pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--list,
   .pf--fit .pf__content:not(.pf-s) > .pf__fields > .pf-choices--icons,
   .pf--fit .pf-s > .pf-s__members {
+    /* No fade at rest: a list that does not overflow has no active scroll
+       timeline, so the keyframes never apply and these values are what it
+       shows. The keyframes add the fade only while there is more to scroll. */
     --pf-fade-top: 0px;
-    --pf-fade-bottom: 28px;
+    --pf-fade-bottom: 0px;
     mask-image: linear-gradient(
       to bottom,
       transparent 0,

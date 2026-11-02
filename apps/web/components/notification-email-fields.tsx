@@ -72,7 +72,7 @@ export function NotificationEmailFields({
   recipients,
   layout = 'stacked',
   footer,
-  sample = SAMPLE,
+  sample: sampleIn = SAMPLE,
 }: {
   value: NotificationEmailValue;
   onChange: (next: NotificationEmailValue) => void;
@@ -106,6 +106,11 @@ export function NotificationEmailFields({
   /** Set under the fields, inside their column, so it stays with them in `split`. */
   footer?: ReactNode;
 }) {
+  // The respondent receipt (the email with no recipient list) never carries
+  // `{{formLink}}`: the server leaves it empty, so a line with it drops. Show
+  // the preview that way too, not an admin link the respondent never gets.
+  const isReceipt = !recipients;
+  const sample = useMemo(() => (isReceipt ? { ...sampleIn, formLink: '' } : sampleIn), [isReceipt, sampleIn]);
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const activeField = useRef<'subject' | 'body'>('body');

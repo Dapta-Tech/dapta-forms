@@ -76,3 +76,11 @@ describe('preview of a form with no scoring', () => {
     );
   });
 });
+
+describe('preview keeps a link the owner wrote', () => {
+  it('keeps a line with an empty token when it carries a link, as the server does', () => {
+    const lines = mockBodyLines('Hi {{score}}. Book: https://calendly.com/x', notificationSampleFor(false));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.some((s) => s.kind === 'link' && s.href === 'https://calendly.com/x')).toBe(true);
+  });
+});
