@@ -244,11 +244,14 @@ export function QuestionSettings({
   // while its badges describe what is INSIDE it — a badge for content that moved
   // out would send an author digging through the accordion for an editor that is
   // no longer there.
+  // A checkbox ignores variants, `terminal`, `hidden` and `defaultValue` (an
+  // API config may still carry them), so none of them is announced there.
+  const inert = step.type === 'checkbox';
   const advancedBadges = [
-    Object.keys(step.questionVariants ?? {}).length > 0 ? bm.settings.badgeDynamic : null,
-    step.terminal ? bm.settings.badgeEndsForm : null,
+    !inert && Object.keys(step.questionVariants ?? {}).length > 0 ? bm.settings.badgeDynamic : null,
+    !inert && step.terminal ? bm.settings.badgeEndsForm : null,
     isHiddenStep(step) ? bm.settings.badgeHidden : null,
-    step.defaultValue ? bm.settings.badgeDefault : null,
+    !inert && step.defaultValue ? bm.settings.badgeDefault : null,
     step.scoringEnabled && (step.sliderScoring?.length ?? 0) > 0 ? bm.settings.badgeScored : null,
   ].filter((b): b is string => !!b);
 

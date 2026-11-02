@@ -1309,6 +1309,18 @@ describe('submit: a checkbox is stored as true or not at all (#128)', () => {
     expect((await stored(form.id, 's-true')).consent).toBe(true);
   });
 
+  it("keeps only a checked box: 'false', 'on' and 0 drop the key on a partial and an optional complete", async () => {
+    const partialForm = await checkboxForm(true);
+    const optionalForm = await checkboxForm(false);
+    for (const [i, value] of (['false', 'on', 0] as const).entries()) {
+      await svc.submit('acme', partialForm.slug, { sessionId: `p-odd-${i}`, data: { email: 'a@acme.io', consent: value }, partial: true });
+      expect('consent' in (await stored(partialForm.id, `p-odd-${i}`))).toBe(false);
+    }
+    // A complete validates the raw value first: these are not a checkbox answer.
+    const odd = await svc.submit('acme', optionalForm.slug, { sessionId: 's-odd', data: { email: 'a@acme.io', consent: 'on' } });
+    expect('error' in odd && odd.error).toBe('INVALID_ANSWERS');
+  });
+
   it("does the same on a partial save", async () => {
     const form = await checkboxForm(true);
     await svc.submit('acme', form.slug, { sessionId: 'p-false', data: { email: 'a@acme.io', consent: false }, partial: true });

@@ -204,6 +204,26 @@ describe('QuestionSettings: checkbox', () => {
     expect(host!.textContent).not.toContain(em.variants.title);
   });
 
+  it('announces none of the ignored settings an API config may carry (#128)', async () => {
+    const badges = () => [...host!.querySelectorAll('[data-testid="advanced-badge"]')].map((b) => b.textContent);
+    const carried = {
+      terminal: true,
+      hidden: true,
+      defaultValue: 'true',
+      questionField: 'email',
+      questionVariants: { '*': 'Otro texto' },
+    };
+    await mount({ ...consent, ...carried }, 'vertical');
+    expect(badges()).toEqual([]);
+    await act(async () => root!.unmount());
+    host!.remove();
+    // The same settings on a text step are announced.
+    await mount({ key: 'company', type: 'text', question: 'Company?', ...carried }, 'vertical');
+    expect(badges()).toEqual(
+      expect.arrayContaining([bm.settings.badgeEndsForm, bm.settings.badgeHidden, bm.settings.badgeDefault, bm.settings.badgeDynamic]),
+    );
+  });
+
   it('a text step still has them (the check above is not vacuous)', async () => {
     await mount({ key: 'company', type: 'text', question: 'Company?' }, 'vertical');
     await openAdvanced();
