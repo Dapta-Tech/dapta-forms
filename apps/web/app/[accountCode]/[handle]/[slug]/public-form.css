@@ -2449,6 +2449,121 @@
   margin-top: 0;
 }
 
+/* Rows: two consecutive half-width questions (`steps[].width: 'half'`) share
+   a line from 640 px; below that they stack. A row of one is a bare section,
+   so a form without half steps keeps its markup and these rules never match. */
+.pf-v__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: start;
+  border-bottom: 1px solid var(--border);
+}
+.pf-v__row > .pf-v__question {
+  border-bottom: none;
+  min-width: 0;
+}
+/* `.pf-v__question:last-of-type` counts sibling sections: when a row follows,
+   that section is not the last block. */
+.pf-v__question:last-of-type:has(~ .pf-v__row) {
+  border-bottom: 1px solid var(--border);
+}
+.pf-v__row:not(:has(~ .pf-v__row, ~ .pf-v__question)) {
+  border-bottom: none;
+}
+@media (max-width: 639px) {
+  .pf-v__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pf-v__row > .pf-v__question:first-child {
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* A name step with `fieldLabels`: a label above each input; the question
+   title is visually hidden (screen readers keep it). */
+.pf-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.pf-name-field__label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--foreground);
+}
+.pf-v__question--labelled .pf__fields {
+  margin-top: 0;
+}
+@media (max-width: 639px) {
+  .pf-name-fields--labelled {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Compact density (`branding.density: 'compact'`): no lines between questions,
+   16 px between fields, like a regular web form. Only the vertical renderer
+   sets the attribute, so slides never matches. */
+.pf--vertical[data-pf-density='compact'] .pf-v__header {
+  padding: 14px 0 4px;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__hero {
+  padding: 8px 0 16px;
+  border-bottom: none;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__question {
+  padding: 8px 0;
+  border-bottom: none;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__row,
+.pf--vertical[data-pf-density='compact'] .pf-v__question:last-of-type:has(~ .pf-v__row) {
+  border-bottom: none;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__question .pf__question {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__question .pf__helper {
+  font-size: 13px;
+  margin-top: 2px;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__question .pf__fields {
+  margin-top: 6px;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__question--labelled .pf__fields {
+  margin-top: 0;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__question .pf__error {
+  margin-top: 4px;
+  font-size: 13px;
+}
+/* font-size stays 16 px: anything smaller makes iOS zoom on focus. */
+.pf--vertical[data-pf-density='compact'] .pf-input {
+  padding: 10px 14px;
+}
+.pf--vertical[data-pf-density='compact'] .pf-textarea {
+  min-height: 96px;
+}
+.pf--vertical[data-pf-density='compact'] .pf-phone__country {
+  min-width: 96px;
+  padding: 0 12px;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__footer {
+  padding-top: 16px;
+}
+.pf--vertical[data-pf-density='compact'] .pf-v__page {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+@media (max-width: 639px) {
+  .pf--vertical[data-pf-density='compact'] .pf-v__row > .pf-v__question:first-child {
+    border-bottom: none;
+  }
+}
+
 @media (min-width: 769px) {
   .pf-v__page {
     padding-bottom: 88px;

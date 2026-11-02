@@ -27,6 +27,13 @@ describe('formGuide', () => {
     );
   });
 
+  it('tells an agent how to make a one-page form look like a regular web form', () => {
+    const rules = formGuide('rules').rules!;
+    expect(rules).toContain(
+      'To make a one page form look like a regular web form: layout "vertical", branding.density "compact", width "half" on pairs of short fields (first name and last name go in one name step with fieldLabels), and no cover.',
+    );
+  });
+
   it('tells an agent how to choose a workspace, for an API key and for a person signed in', () => {
     const text = formGuide('rules').workspaces!.join(' ');
     expect(text).toContain('list_my_workspaces');

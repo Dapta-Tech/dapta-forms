@@ -1236,6 +1236,9 @@ export interface FormsMessages {
         /** Explains the field key doubles as a URL parameter for prefill. */
         fieldKeyHint: string;
         placeholder: string;
+        /** One page only: a visible label above each input. */
+        label: string;
+        labelHint: string;
       };
       /** Partial-submission threshold ("save a partial after step N"). */
       partial: {
@@ -1427,6 +1430,11 @@ export interface FormsMessages {
         contentWidth: string;
         widthNarrow: string;
         widthWide: string;
+        /** One page only: how tightly the questions are packed. */
+        density: string;
+        densityHint: string;
+        densityComfortable: string;
+        densityCompact: string;
         transition: string;
         transitionSlide: string;
         transitionFade: string;
@@ -3571,6 +3579,8 @@ export const en: FormsMessages = {
         fieldKey: 'Field key',
         fieldKeyHint: 'Used as a URL parameter to prefill this field.',
         placeholder: 'Placeholder',
+        label: 'Label',
+        labelHint: 'Shown above the field on One page. With a label, the question title is only read by screen readers.',
       },
       partial: {
         title: 'Partial submissions',
@@ -3759,6 +3769,11 @@ export const en: FormsMessages = {
         contentWidth: 'Content width',
         widthNarrow: 'Narrow',
         widthWide: 'Wide',
+        density: 'Density',
+        densityHint:
+          'Compact removes the lines between questions and spaces fields like a regular web form (16 px apart). One page only.',
+        densityComfortable: 'Comfortable',
+        densityCompact: 'Compact',
         transition: 'Step transition',
         transitionSlide: 'Slide',
         transitionFade: 'Fade',
@@ -6133,6 +6148,9 @@ export const es: FormsMessages = {
         fieldKey: 'Clave del campo',
         fieldKeyHint: 'Se usa como parámetro de URL para prellenar este campo.',
         placeholder: 'Texto de ejemplo',
+        label: 'Etiqueta',
+        labelHint:
+          'Se muestra encima del campo en Una página. Con etiqueta, el título de la pregunta solo lo leen los lectores de pantalla.',
       },
       partial: {
         title: 'Envíos parciales',
@@ -6322,6 +6340,11 @@ export const es: FormsMessages = {
         contentWidth: 'Ancho del contenido',
         widthNarrow: 'Angosto',
         widthWide: 'Amplio',
+        density: 'Densidad',
+        densityHint:
+          'Compacta quita las líneas entre preguntas y separa los campos como un formulario web normal (16 px). Solo en Una página.',
+        densityComfortable: 'Cómoda',
+        densityCompact: 'Compacta',
         transition: 'Transición entre pasos',
         transitionSlide: 'Deslizar',
         transitionFade: 'Desvanecer',

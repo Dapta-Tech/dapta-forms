@@ -128,3 +128,47 @@ describe('textarea: character limits + live counter', () => {
     expect(html).not.toContain('maxLength');
   });
 });
+
+describe('name: one-page field labels', () => {
+  const name: FormStep = {
+    key: 'name',
+    type: 'name',
+    question: 'Full name',
+    fieldLabels: { firstname: 'Nombre', lastname: 'Apellido' },
+  };
+  const renderName = (step: FormStep, showFieldLabels?: boolean) =>
+    renderToStaticMarkup(
+      <StepInput
+        step={step}
+        value={null as never}
+        answers={{}}
+        onChange={() => {}}
+        onFieldChange={() => {}}
+        onSelect={() => {}}
+        dropdownPlaceholder="Pick one"
+        dropdownEmpty="No matches"
+        autoFocus={false}
+        showFieldLabels={showFieldLabels}
+      />,
+    );
+
+  it('renders today\'s markup when the renderer does not ask for labels', () => {
+    const { fieldLabels: _labels, ...bare } = name;
+    expect(renderName(name)).toBe(renderName(bare));
+    expect(renderName(name)).not.toContain('pf-name-field"');
+  });
+
+  it('renders a label above each input when the renderer asks for them', () => {
+    const html = renderName(name, true);
+    expect(html).toContain('pf-name-fields pf-name-fields--labelled');
+    expect(html.match(/<label class="pf-name-field">/g)).toHaveLength(2);
+    expect(html).toContain('<span class="pf-name-field__label">Nombre</span>');
+    expect(html).toContain('<span class="pf-name-field__label">Apellido</span>');
+    expect(html).not.toContain('aria-label');
+  });
+
+  it('renders today\'s markup with showFieldLabels but no label configured', () => {
+    const { fieldLabels: _labels, ...bare } = name;
+    expect(renderName(bare, true)).toBe(renderName(bare));
+  });
+});

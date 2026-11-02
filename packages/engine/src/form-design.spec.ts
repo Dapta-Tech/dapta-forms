@@ -119,6 +119,18 @@ describe('resolveDesign — explicit axes', () => {
   });
 });
 
+describe('resolveDesign: density', () => {
+  it('resolves to comfortable when absent and keeps compact', () => {
+    expect(resolveDesign({}).density).toBe('comfortable');
+    expect(resolveDesign({ density: 'compact' }).density).toBe('compact');
+  });
+
+  it('adds no data-pf-density attribute: only the vertical renderer sets it', () => {
+    expect(designAttributes(resolveDesign({ density: 'compact' }))).not.toHaveProperty('data-pf-density');
+    expect(designAttributes(resolveDesign({ density: 'compact' }))).toEqual(designAttributes(resolveDesign({})));
+  });
+});
+
 describe('resolveDesign — background image cross-validation', () => {
   it('keeps the image when style and url are both present', () => {
     const d = resolveDesign({ backgroundStyle: 'image', backgroundImage: 'https://x.test/a.jpg' });

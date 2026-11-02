@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Answers, AnswerValue, FormOption, FormStep } from '@quill/engine';
 import {
   nameFields,
+  nameFieldLabels,
   isMultiSelect,
   sliderBounds,
   clampSliderValue,
@@ -44,6 +45,12 @@ interface StepInputProps {
    * first, or the phone would take focus from the one above it. Default `true`.
    */
   phoneAutoFocus?: boolean;
+  /**
+   * Paint a `name` step's `fieldLabels` as a visible label above each input.
+   * Only the one-page (vertical) renderer passes `true`; slides never shows
+   * them. Without labels configured the markup is today's either way.
+   */
+  showFieldLabels?: boolean;
   /**
    * A NON-INTERACTION answer write (today: the slider seeding its default on
    * mount so an untouched optional slider still submits a value). Falls back to
@@ -204,6 +211,7 @@ export function StepInput({
   locale = 'en',
   autoFocus = true,
   phoneAutoFocus = true,
+  showFieldLabels = false,
   onSeed,
   onRequestUpload,
   uploadMaxMb,
@@ -218,6 +226,53 @@ export function StepInput({
       const nm = getMessages(locale).renderer.name;
       const firstLabel = (firstField && step.placeholders?.[firstField]) || nm.firstPlaceholder;
       const secondLabel = (secondField && step.placeholders?.[secondField]) || nm.lastPlaceholder;
+      const fieldLabels = showFieldLabels ? nameFieldLabels(step) : null;
+      if (fieldLabels) {
+        // One page with labels: each input sits in its own <label>, which names
+        // it, so the input drops its aria-label. The question title stays in
+        // the document for screen readers (the renderer hides it visually).
+        const visible = [fieldLabels[0] || nm.firstPlaceholder, fieldLabels[1] || nm.lastPlaceholder];
+        const required = step.required ? (
+          <span aria-hidden className="pf-v__required">
+            *
+          </span>
+        ) : null;
+        return (
+          <div className="pf-name-fields pf-name-fields--labelled">
+            {firstField && (
+              <label className="pf-name-field">
+                <span className="pf-name-field__label">
+                  {visible[0]}
+                  {required}
+                </span>
+                <input
+                  type="text"
+                  className="pf-input"
+                  value={String(answers[firstField] ?? '')}
+                  onChange={(e) => onFieldChange(firstField, e.target.value)}
+                  placeholder={firstLabel}
+                  autoFocus={autoFocus}
+                />
+              </label>
+            )}
+            {secondField && (
+              <label className="pf-name-field">
+                <span className="pf-name-field__label">
+                  {visible[1]}
+                  {required}
+                </span>
+                <input
+                  type="text"
+                  className="pf-input"
+                  value={String(answers[secondField] ?? '')}
+                  onChange={(e) => onFieldChange(secondField, e.target.value)}
+                  placeholder={secondLabel}
+                />
+              </label>
+            )}
+          </div>
+        );
+      }
       return (
         <div className="pf-name-fields">
           {firstField && (

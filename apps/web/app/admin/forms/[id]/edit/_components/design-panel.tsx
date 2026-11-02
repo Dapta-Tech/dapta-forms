@@ -96,7 +96,7 @@ export function DesignPanel({
   // than not having it. Progress DOES apply on one page, but only as the
   // answered-count bar or nothing: dots and steps have no one-page version, so
   // vertical offers just those two (any stored value but `none` shows as bar).
-  // The header switch is the reverse: it only exists on one page.
+  // The header switch and density are the reverse: they only exist on one page.
   const vertical = layout === 'vertical';
 
   const d = m.design;
@@ -597,6 +597,21 @@ export function DesignPanel({
               ariaLabel={d.contentWidth}
             />
           </InlineField>
+          {vertical ? (
+            <InlineField label={d.density} hint={d.densityHint}>
+              <div data-testid="design-density">
+                <SegmentedToggle
+                  value={design.density}
+                  onChange={(density) => onBrandingChange({ density })}
+                  options={[
+                    { value: 'comfortable' as const, label: d.densityComfortable },
+                    { value: 'compact' as const, label: d.densityCompact },
+                  ]}
+                  ariaLabel={d.density}
+                />
+              </div>
+            </InlineField>
+          ) : null}
           {vertical ? null : (
           <InlineField label={d.transition}>
             <SegmentedToggle

@@ -41,6 +41,8 @@ import {
   showBanner,
   showClientLogosOn,
   resolveFormLogos,
+  nameFieldLabels,
+  onePageRows,
   type Answers,
   type AnswerValue,
   type FormStep,
@@ -928,8 +930,64 @@ export function VerticalFormRenderer({
   const headerLogo = coverScreen ? logos.cover : logos.form;
   const total = answerable.length;
 
+  const renderQuestion = (step: FormStep) => (
+    <VerticalQuestion
+      key={step.key}
+      step={step}
+      index={steps.findIndex((s) => s.key === step.key)}
+      error={errors[step.key] ? err(errors[step.key] as string) : null}
+      stepViewSent={stepViewSent}
+      track={track}
+      onBlur={(e) => onQuestionBlur(step, e)}
+    >
+      {step.type === 'scheduler' ? (
+        <SchedulerQuestion
+          step={step}
+          config={config}
+          answers={answers}
+          sessionId={sessionId}
+          locale={locale}
+          unconfiguredLabel={m.schedulerUnconfigured}
+          onBooked={(details) => void handleSchedulerBooked(step, details)}
+        />
+      ) : (
+        <StepInput
+          step={step}
+          value={answers[step.key]}
+          answers={answers}
+          autoFocus={false}
+          showFieldLabels
+          // Mount-time seeding (slider default) is not an interaction:
+          // write the answer silently — no start/complete events, no
+          // progress tick, no terminal cut (seededKeys).
+          onSeed={(v: AnswerValue) => {
+            seededKeys.current.add(step.key);
+            setAnswers((a) => ({ ...a, [step.key]: v }));
+          }}
+          onChange={(v: AnswerValue) =>
+            setAnswer(step, step.key, v, step.type === 'slider' || step.type === 'multiple_choice')
+          }
+          onFieldChange={(field, v) => setAnswer(step, field, v, false)}
+          onSelect={(v) => setAnswer(step, step.key, v, true)}
+          dropdownPlaceholder={m.dropdownPlaceholder}
+          dropdownEmpty={m.dropdownEmpty}
+          locale={locale}
+          onRequestUpload={requestUploadTicket}
+          uploadMaxMb={uploadMaxMb}
+        />
+      )}
+    </VerticalQuestion>
+  );
+
   return (
-    <div className="pf pf--vertical" {...design.attrs} style={design.style}>
+    <div
+      className="pf pf--vertical"
+      {...design.attrs}
+      // Only the form phase of this layout reads density, and only `compact`
+      // adds the attribute, so every other form keeps its markup.
+      data-pf-density={design.design.density === 'compact' ? 'compact' : undefined}
+      style={design.style}
+    >
       {/* An author-supplied face has to be declared in the document. This root
           is not a PhaseShell, so it declares its own. */}
       {design.fontFace ? <style>{design.fontFace}</style> : null}
@@ -989,53 +1047,19 @@ export function VerticalFormRenderer({
           {questions.length === 0 ? (
             <p className="pf__helper">{m.noSteps}</p>
           ) : (
-            questions.map((step) => (
-              <VerticalQuestion
-                key={step.key}
-                step={step}
-                index={steps.findIndex((s) => s.key === step.key)}
-                error={errors[step.key] ? err(errors[step.key] as string) : null}
-                stepViewSent={stepViewSent}
-                track={track}
-                onBlur={(e) => onQuestionBlur(step, e)}
-              >
-                {step.type === 'scheduler' ? (
-                  <SchedulerQuestion
-                    step={step}
-                    config={config}
-                    answers={answers}
-                    sessionId={sessionId}
-                    locale={locale}
-                    unconfiguredLabel={m.schedulerUnconfigured}
-                    onBooked={(details) => void handleSchedulerBooked(step, details)}
-                  />
-                ) : (
-                  <StepInput
-                    step={step}
-                    value={answers[step.key]}
-                    answers={answers}
-                    autoFocus={false}
-                    // Mount-time seeding (slider default) is not an interaction:
-                    // write the answer silently — no start/complete events, no
-                    // progress tick, no terminal cut (seededKeys).
-                    onSeed={(v: AnswerValue) => {
-                      seededKeys.current.add(step.key);
-                      setAnswers((a) => ({ ...a, [step.key]: v }));
-                    }}
-                    onChange={(v: AnswerValue) =>
-                      setAnswer(step, step.key, v, step.type === 'slider' || step.type === 'multiple_choice')
-                    }
-                    onFieldChange={(field, v) => setAnswer(step, field, v, false)}
-                    onSelect={(v) => setAnswer(step, step.key, v, true)}
-                    dropdownPlaceholder={m.dropdownPlaceholder}
-                    dropdownEmpty={m.dropdownEmpty}
-                    locale={locale}
-                    onRequestUpload={requestUploadTicket}
-                    uploadMaxMb={uploadMaxMb}
-                  />
-                )}
-              </VerticalQuestion>
-            ))
+            // Rows over the LIVE walk (after logic): a pair whose partner is
+            // hidden by logic falls back to full width, and two halves with a
+            // hidden question between them pair up. A row of one is today's
+            // bare <section>, so a form with no half steps keeps its markup.
+            onePageRows(questions).map((row) => {
+              const members = row.map((i) => questions[i]!);
+              if (members.length === 1) return renderQuestion(members[0]!);
+              return (
+                <div key={`row:${members[0]!.key}`} className="pf-v__row">
+                  {members.map(renderQuestion)}
+                </div>
+              );
+            })
           )}
 
           {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
@@ -1098,16 +1122,19 @@ function VerticalQuestion({
     stepViewSent.current.add(step.key);
     track('step_view', index >= 0 ? index : undefined, step.key);
   });
+  // A name step with its own field labels: each input shows its label, so the
+  // title stays only as the group's accessible name (StepInput paints them).
+  const labelled = nameFieldLabels(step) !== null;
 
   return (
     <section
       ref={ref}
-      className={`pf-v__question${error ? ' pf-v__question--error' : ''}`}
+      className={`pf-v__question${labelled ? ' pf-v__question--labelled' : ''}${error ? ' pf-v__question--error' : ''}`}
       data-vf-step={step.key}
       onBlur={onBlur}
     >
       <div className="pf__question-wrap">
-        <h2 className="pf__question">
+        <h2 className={labelled ? 'pf__question sr-only' : 'pf__question'}>
           {step.question ?? step.key}
           {step.required && step.type !== 'message' ? (
             <span aria-hidden className="pf-v__required">

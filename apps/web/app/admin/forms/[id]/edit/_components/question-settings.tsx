@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FormStep, FormLayout, FormRevealSize } from '@quill/engine';
 import {
   FORM_REVEAL_SIZES,
+  HALF_WIDTH_TYPES,
   clampSliderValue,
   defaultFlowGroup,
   nameFields,
@@ -223,6 +224,10 @@ export function QuestionSettings({
     }
     // Leaving a choice type drops choice-only forward rules (nothing to match on).
     if (!hasOptions(item.type) && step.goto) patch.goto = undefined;
+    // One-page presentation the new type cannot use: half width is for short
+    // inputs only, field labels for the name step only.
+    if (!HALF_WIDTH_TYPES.has(item.type)) patch.width = undefined;
+    if (item.type !== 'name') patch.fieldLabels = undefined;
     onUpdate(patch);
   }
 
@@ -313,6 +318,26 @@ export function QuestionSettings({
             }
           />
         </Field>
+      ) : null}
+
+      {/* One page only: half width puts two consecutive short questions on one
+          row. Shown on a hidden step too (where it has no effect) so the
+          control does not vanish while "hidden" is toggled. Switching to
+          slides keeps the value, like screens on one page. */}
+      {layout === 'vertical' && HALF_WIDTH_TYPES.has(step.type) ? (
+        <InlineField label={bm.settings.width} hint={bm.settings.widthHint}>
+          <div data-testid="step-width">
+            <SegmentedToggle
+              value={step.width === 'half' ? 'half' : 'full'}
+              onChange={(width) => onUpdate({ width: width === 'half' ? 'half' : undefined })}
+              options={[
+                { value: 'full' as const, label: bm.settings.widthFull },
+                { value: 'half' as const, label: bm.settings.widthHalf },
+              ]}
+              ariaLabel={bm.settings.width}
+            />
+          </div>
+        </InlineField>
       ) : null}
 
       {/* Type-specific: options, then the scoring switch that controls whether
@@ -726,6 +751,7 @@ export function QuestionSettings({
           <p className="text-xs text-muted-foreground">{em.nameStep.hint}</p>
           <NameFieldsEditor
             step={step}
+            layout={layout}
             onUpdate={onUpdate}
             m={em.nameStep}
             placeholderDefaults={[bm.canvas.nameFirstPlaceholder, bm.canvas.nameLastPlaceholder]}
@@ -1365,11 +1391,14 @@ function FieldKeyEditor({
  */
 function NameFieldsEditor({
   step,
+  layout,
   onUpdate,
   m,
   placeholderDefaults,
 }: {
   step: FormStep;
+  /** Field labels exist only on one page; slides never shows them. */
+  layout: FormLayout;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: EditorMessages['nameStep'];
   /** Localized defaults ("First name"/"Last name") shown as the input
@@ -1379,6 +1408,8 @@ function NameFieldsEditor({
   const defaults = ['firstname', 'lastname'];
   const fields = [step.fields?.[0] ?? defaults[0]!, step.fields?.[1] ?? defaults[1]!];
   const placeholders = step.placeholders ?? {};
+  const labels = step.fieldLabels ?? {};
+  const onePage = layout === 'vertical';
 
   function setFieldKey(i: number, raw: string) {
     // Lighter than `slugify` (no trailing-underscore trim) so multi-word typing
@@ -1395,7 +1426,19 @@ function NameFieldsEditor({
       delete moved[old];
       patch.placeholders = Object.keys(moved).length ? moved : undefined;
     }
+    if (old !== key && labels[old] != null) {
+      const moved = { ...labels, [key]: labels[old]! };
+      delete moved[old];
+      patch.fieldLabels = Object.keys(moved).length ? moved : undefined;
+    }
     onUpdate(patch);
+  }
+
+  function setLabel(field: string, text: string) {
+    const next = { ...labels };
+    if (text) next[field] = text;
+    else delete next[field];
+    onUpdate({ fieldLabels: Object.keys(next).length ? next : undefined });
   }
 
   function setPlaceholder(field: string, text: string) {
@@ -1432,8 +1475,26 @@ function NameFieldsEditor({
               className="h-8 py-1 text-xs"
             />
           </label>
+          {onePage ? (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">{m.label}</span>
+              <TextField
+                value={labels[field] ?? ''}
+                onChange={(e) => setLabel(field, e.target.value)}
+                placeholder={placeholderDefaults[i]}
+                maxLength={200}
+                data-testid={`name-label-${i}`}
+                className="h-8 py-1 text-xs"
+              />
+            </label>
+          ) : null}
         </div>
       ))}
+      {onePage ? (
+        <p className="pt-3 text-2xs leading-relaxed text-faint" data-testid="name-label-hint">
+          {m.labelHint}
+        </p>
+      ) : null}
       <p className="pt-3 text-2xs leading-relaxed text-faint" data-testid="name-fieldkey-hint">
         {m.fieldKeyHint}
       </p>

@@ -2,7 +2,8 @@
 /**
  * The Design tab's one-page controls (#126): "Show header" exists only on a
  * one-page form, and the progress toggle offers there only the two looks a
- * one-page form has (the bar, or nothing). Slides keeps its four.
+ * one-page form has (the bar, or nothing). Slides keeps its four. Density
+ * (#127) is offered on one page only too.
  *
  * The live preview is stubbed: it is an iframe with its own document, and
  * what it renders is pinned in the public renderer's specs.
@@ -136,5 +137,35 @@ describe('DesignPanel on a slides form', () => {
     await mount('slides', { showHeader: false });
     expect(headerSwitch()).toBeNull();
     expect(labels(progressOptions())).toEqual([d.progressBar, d.progressDots, d.progressSteps, d.progressNone]);
+  });
+});
+
+describe('DesignPanel density (one page only)', () => {
+  const densityOptions = () => [...host!.querySelectorAll<HTMLButtonElement>('[data-testid="design-density"] [role="radio"]')];
+
+  it('is offered on a one-page form, comfortable when absent', async () => {
+    await mount('vertical');
+    expect(host!.querySelector('[data-testid="design-density"]')).not.toBeNull();
+    expect(labels(densityOptions())).toEqual([d.densityComfortable, d.densityCompact]);
+    expect(checked(densityOptions())).toBe(d.densityComfortable);
+    expect(host!.textContent).toContain(d.densityHint);
+  });
+
+  it('writes compact, and comfortable back (never clears the key)', async () => {
+    const { onBrandingChange } = await mount('vertical');
+    await act(async () => densityOptions()[1]!.click());
+    expect(onBrandingChange).toHaveBeenLastCalledWith({ density: 'compact' });
+    await act(async () => root!.unmount());
+    host!.remove();
+
+    const compact = await mount('vertical', { density: 'compact' });
+    expect(checked(densityOptions())).toBe(d.densityCompact);
+    await act(async () => densityOptions()[0]!.click());
+    expect(compact.onBrandingChange).toHaveBeenLastCalledWith({ density: 'comfortable' });
+  });
+
+  it('is not offered on slides', async () => {
+    await mount('slides', { density: 'compact' });
+    expect(host!.querySelector('[data-testid="design-density"]')).toBeNull();
   });
 });

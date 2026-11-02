@@ -48,6 +48,14 @@ export type FormContentWidth = (typeof FORM_CONTENT_WIDTHS)[number];
 export const FORM_TRANSITIONS = ['slide', 'fade', 'none'] as const;
 export type FormTransition = (typeof FORM_TRANSITIONS)[number];
 
+/**
+ * How tightly the one-page (`vertical`) layout packs its questions. `compact`
+ * drops the lines between questions and spaces fields 16 px apart, like a
+ * regular web form. `slides` never reads it.
+ */
+export const FORM_DENSITIES = ['comfortable', 'compact'] as const;
+export type FormDensity = (typeof FORM_DENSITIES)[number];
+
 /** Logo scale in the top bar. */
 export const FORM_LOGO_SIZES = ['sm', 'md', 'lg'] as const;
 export type FormLogoSize = (typeof FORM_LOGO_SIZES)[number];
@@ -147,6 +155,7 @@ export interface FormDesignInput {
   contentWidth?: FormContentWidth;
   transition?: FormTransition;
   showHeader?: boolean;
+  density?: FormDensity;
 }
 
 /**
@@ -178,6 +187,13 @@ export interface ResolvedFormDesign {
    * stays byte-identical. `slides` never reads it.
    */
   showHeader: boolean;
+  /**
+   * How tightly the `vertical` layout packs its questions. Not a `data-pf-*`
+   * attribute here: the vertical renderer sets `data-pf-density` on its own
+   * root, only for `compact`, so legacy markup stays byte-identical and
+   * `slides` never sees it.
+   */
+  density: FormDensity;
 }
 
 /**
@@ -224,6 +240,7 @@ export const LEGACY_FORM_DESIGN: ResolvedFormDesign = {
   contentWidth: 'narrow',
   transition: 'slide',
   showHeader: true,
+  density: 'comfortable',
 };
 
 /** Default scrim over a background image, in percent. */
@@ -293,6 +310,7 @@ export function resolveDesign(design: FormDesignInput | null | undefined): Resol
     contentWidth: d.contentWidth ?? LEGACY_FORM_DESIGN.contentWidth,
     transition: d.transition ?? LEGACY_FORM_DESIGN.transition,
     showHeader: d.showHeader ?? LEGACY_FORM_DESIGN.showHeader,
+    density: d.density ?? LEGACY_FORM_DESIGN.density,
   };
 }
 

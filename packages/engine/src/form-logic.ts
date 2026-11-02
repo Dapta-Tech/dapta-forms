@@ -16,6 +16,7 @@ import type {
   FormContentAlign,
   FormContentWidth,
   FormCustomFont,
+  FormDensity,
   FormFont,
   FormLogoPosition,
   FormLogoSize,
@@ -45,6 +46,10 @@ export const FORM_FIELD_TYPES = [
   'file',
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
+
+/** A step's column width on the one-page layout. Absent = `'full'`. */
+export const FORM_STEP_WIDTHS = ['full', 'half'] as const;
+export type FormStepWidth = (typeof FORM_STEP_WIDTHS)[number];
 
 /** How a choice step lays its options out. */
 export const FORM_OPTION_LAYOUTS = ['list', 'cards'] as const;
@@ -198,6 +203,12 @@ export interface FormStep {
   /** `name` step: per-field placeholders keyed by field name. */
   placeholders?: Record<string, string>;
   /**
+   * `name` step on the one-page (`vertical`) layout: a visible label above each
+   * input, keyed by field name like `placeholders`. See {@link nameFieldLabels}.
+   * `slides` ignores it.
+   */
+  fieldLabels?: Record<string, string>;
+  /**
    * Dynamic question variants: pick the question text from the answer to
    * `questionField`. `questionVariants[value]` overrides `question` when the
    * respondent's answer to that earlier field matches a key; a `*` key (or the
@@ -257,6 +268,13 @@ export interface FormStep {
    * a screen is. Unrelated to `flowGroup`, which is the scoring phase.
    */
   screenGroup?: string;
+  /**
+   * Column width on the one-page (`vertical`) layout (additive; back-compat).
+   * Two consecutive `half` steps share a row; see {@link onePageRows}. Absent =
+   * `'full'`. `slides` ignores it, and so does any type outside
+   * {@link HALF_WIDTH_TYPES}.
+   */
+  width?: FormStepWidth;
   /**
    * Per-question scoring switch (additive; back-compat — V5-B2). `false` makes
    * THIS step contribute nothing to the score while the rest of the form keeps
@@ -476,6 +494,11 @@ export interface FormBranding {
    * the form name when there is no logo. Ignored by `slides`. Absent = `true`.
    */
   showHeader?: boolean;
+  /**
+   * How tightly the one-page (`vertical`) form packs its questions. Ignored by
+   * `slides`. Absent = `'comfortable'`.
+   */
+  density?: FormDensity;
 
   /**
    * Which preset was last applied — an editor affordance only. Nothing at
@@ -2437,6 +2460,66 @@ export const SOLO_SCREEN_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldTy
   'scheduler',
   'file',
 ]);
+
+/**
+ * The `name` step's per-field labels for the one-page layout, in
+ * {@link nameFields} order, or `null` when it shows none (not a `name` step, or
+ * no sub-field has a non-blank label). When at least one is set, the other
+ * comes back as `''` and the renderer puts its localized default there.
+ */
+export function nameFieldLabels(step: FormStep): [string, string] | null {
+  if (step.type !== 'name') return null;
+  const labels = step.fieldLabels ?? {};
+  const [first, last] = nameFields(step).map((field) => (labels[field] ?? '').trim());
+  if (!first && !last) return null;
+  return [first ?? '', last ?? ''];
+}
+
+/**
+ * The step types that can sit at half width on the one-page layout. Everything
+ * else (`name` already has two inputs, long and choice inputs need the room)
+ * always takes a full row.
+ */
+export const HALF_WIDTH_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldType>([
+  'text',
+  'email',
+  'phone',
+  'url',
+  'dropdown',
+]);
+
+/** Can this step take half a row on the one-page layout? Never a hidden step. */
+export function canHalfWidth(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
+  return HALF_WIDTH_TYPES.has(step.type) && !step.hidden;
+}
+
+/**
+ * The rows of the one-page layout, as indexes into `steps`. Two consecutive
+ * steps that are both `width: 'half'` and {@link canHalfWidth} share a row;
+ * every other step gets a row of its own, so a lone half step renders full
+ * width and three in a row make a pair plus a full row (never three columns).
+ * The public form passes its live walk (after logic), so a step that logic
+ * hides drops out and its neighbours re-pair; the builder passes the authored
+ * steps, where a hidden step is not eligible and breaks a pair.
+ */
+export function onePageRows(steps: readonly Pick<FormStep, 'type' | 'hidden' | 'width'>[]): number[][] {
+  const half = (i: number) => {
+    const step = steps[i];
+    return step !== undefined && step.width === 'half' && canHalfWidth(step);
+  };
+  const rows: number[][] = [];
+  let i = 0;
+  while (i < steps.length) {
+    if (half(i) && half(i + 1)) {
+      rows.push([i, i + 1]);
+      i += 2;
+    } else {
+      rows.push([i]);
+      i += 1;
+    }
+  }
+  return rows;
+}
 
 /** The most questions the builder puts on one screen. The engine does not cap. */
 export const MAX_SCREEN_SIZE = 10;

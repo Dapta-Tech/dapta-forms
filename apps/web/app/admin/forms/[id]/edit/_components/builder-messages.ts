@@ -277,6 +277,8 @@ export interface BuilderMessages {
      *  `renderer.name.*` so the canvas shows exactly what publishes. */
     nameFirstPlaceholder: string;
     nameLastPlaceholder: string;
+    /** One page: a name step with field labels hides its title on the form. */
+    nameLabelsTitleHidden: string;
   };
   settings: {
     /** A reveal STEP owns its copy here — there is no form-level reveal. */
@@ -383,6 +385,11 @@ export interface BuilderMessages {
     placeholder: string;
     placeholderHint: string;
     placeholderEmpty: string;
+    /** One page only: full or half width (two halves share a row). */
+    width: string;
+    widthHint: string;
+    widthFull: string;
+    widthHalf: string;
     /** A value the answer starts with; anything in the URL wins over it. */
     defaultAnswer: string;
     defaultAnswerHint: string;
@@ -765,6 +772,7 @@ const en: BuilderMessages = {
     schedulerLoadError: 'The calendar could not load. Check the event type is still available.',
     nameFirstPlaceholder: 'First name',
     nameLastPlaceholder: 'Last name',
+    nameLabelsTitleHidden: 'Hidden on the form: each field shows its own label.',
   },
   settings: {
     title: 'Question settings',
@@ -865,6 +873,10 @@ const en: BuilderMessages = {
     placeholder: 'Placeholder',
     placeholderHint: 'Ghost text shown inside the input while it is empty.',
     placeholderEmpty: 'Leave empty for none',
+    width: 'Width',
+    widthHint: 'On desktop, two half width questions in a row share a line. On phones they stack.',
+    widthFull: 'Full',
+    widthHalf: 'Half',
     defaultAnswer: 'Default answer',
     defaultAnswerHint: 'Used when the link carries no value. Anything in the URL wins over this.',
     defaultAnswerPlaceholder: 'Leave empty for none',
@@ -1228,6 +1240,7 @@ const es: BuilderMessages = {
     schedulerLoadError: 'No se pudo cargar el calendario. Revisa que el tipo de evento siga disponible.',
     nameFirstPlaceholder: 'Nombre',
     nameLastPlaceholder: 'Apellidos',
+    nameLabelsTitleHidden: 'Oculto en el formulario: cada campo muestra su etiqueta.',
   },
   settings: {
     title: 'Ajustes de la pregunta',
@@ -1329,6 +1342,10 @@ const es: BuilderMessages = {
     placeholder: 'Placeholder',
     placeholderHint: 'Texto guía que se muestra dentro del campo mientras está vacío.',
     placeholderEmpty: 'Vacío para ninguno',
+    width: 'Ancho',
+    widthHint: 'En escritorio, dos preguntas seguidas a media columna comparten fila. En celular se apilan.',
+    widthFull: 'Completo',
+    widthHalf: 'Media',
     defaultAnswer: 'Respuesta por defecto',
     defaultAnswerHint: 'Se usa cuando el link no trae valor. Lo que venga en la URL gana sobre esto.',
     defaultAnswerPlaceholder: 'Vacío para ninguna',

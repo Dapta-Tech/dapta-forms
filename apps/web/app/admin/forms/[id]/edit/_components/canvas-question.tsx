@@ -4,6 +4,8 @@ import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { FormConfig, FormStep } from '@quill/engine';
 import {
   nameFields,
+  nameFieldLabels,
+  onePageRows,
   sliderBounds,
   clampSliderValue,
   resolveOptionLayout,
@@ -460,6 +462,7 @@ function QuestionEditableBody({
   accent,
   eyebrow = true,
   listCap,
+  onePage = false,
   onUpdate,
   onOptionLabel,
   m,
@@ -468,6 +471,11 @@ function QuestionEditableBody({
   step: FormStep;
   index: number;
   accent: string;
+  /**
+   * The one-page canvas: a `name` step's `fieldLabels` show above its inputs,
+   * as the public one-page form shows them. Slides never passes it.
+   */
+  onePage?: boolean;
   /** "Question N" above the title. Off where a frame tag already says it. */
   eyebrow?: boolean;
   /**
@@ -491,6 +499,8 @@ function QuestionEditableBody({
   const optionRadius =
     design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-[14px]' : 'rounded-[8px]';
   const centred = design.contentAlign === 'center';
+  // A name step with its own field labels hides its title on the one-page form.
+  const nameLabels = onePage ? nameFieldLabels(step) : null;
 
   function addOption() {
     const n = (step.options ?? []).length + 1;
@@ -532,6 +542,13 @@ function QuestionEditableBody({
           centred && 'text-center',
         )}
       />
+      {/* Still editable: it names the response column and the field group for
+          screen readers, even though the form shows the labels instead. */}
+      {nameLabels ? (
+        <p data-testid="canvas-name-labels-note" className={cn('mt-1 text-xs text-muted-foreground', centred && 'text-center')}>
+          {m.canvas.nameLabelsTitleHidden}
+        </p>
+      ) : null}
 
       {/* Inline editable description — same @ picker as the title (tokens =
           fields captured before this step). No hint here so the single
@@ -680,7 +697,7 @@ function QuestionEditableBody({
             {step.placeholder || m.canvas.messagePlaceholder}
           </div>
         ) : step.type === 'name' ? (
-          <NamePreview step={step} m={m} />
+          <NamePreview step={step} labels={nameLabels} m={m} />
         ) : step.type === 'scheduler' ? (
           <SchedulerEmbedPreview step={step} m={m} />
         ) : step.type === 'file' ? (
@@ -755,6 +772,55 @@ export function CanvasPage({
     (el as HTMLTextAreaElement | null)?.focus();
   }, [focusSignal]);
 
+  // Compact density drops the lines between questions and tightens each block,
+  // as the public one-page form does.
+  const compact = resolveDesign(config.branding).density === 'compact';
+  const renderBlock = (i: number) => {
+    const step = config.steps[i]!;
+    return (
+      <section
+        key={step.key}
+        ref={(el) => {
+          if (el) blockRefs.current.set(step.key, el);
+          else blockRefs.current.delete(step.key);
+        }}
+        data-testid={`page-block-${i}`}
+        aria-current={i === selected || undefined}
+        // Focus/click anywhere in a block selects it, so the settings
+        // panel always describes the question under the caret.
+        onMouseDownCapture={() => onSelect(i)}
+        onFocusCapture={() => onSelect(i)}
+        className={cn(
+          'scroll-my-16 px-6 transition-colors sm:px-8',
+          compact ? 'py-3' : 'py-6',
+          // The accent EDGE at full alpha, not `ring-primary/40`: this is the
+          // canvas's ONLY answer to "which question is the settings panel
+          // describing", and the raw accent at 40% alpha flattened to well
+          // under 3:1 over paper — the block you were editing looked exactly
+          // like the ones you weren't. Full alpha on the edge token so the
+          // mark clears 1.4.11 in both themes; the `bg-primary/5` wash keeps
+          // the soft fill it always had.
+          i === selected ? 'bg-primary/5 shadow-[inset_0_0_0_1px_var(--primary-edge)]' : 'hover:bg-muted/40',
+        )}
+      >
+        {step.type === 'reveal' ? (
+          <RevealPageBlock step={step} onUpdate={(patch) => onUpdateStep(i, patch)} m={m} />
+        ) : (
+          <QuestionEditableBody
+            config={config}
+            step={step}
+            index={i}
+            accent={accent}
+            onUpdate={(patch) => onUpdateStep(i, patch)}
+            onePage
+            onOptionLabel={(optionIndex, label) => onOptionLabel(i, optionIndex, label)}
+            m={m}
+          />
+        )}
+      </section>
+    );
+  };
+
   return (
     <div className="flex justify-center">
       <div
@@ -765,47 +831,24 @@ export function CanvasPage({
           device === 'mobile' ? 'max-w-[400px]' : 'max-w-[720px]',
         )}
       >
-        <div className="flex flex-col divide-y divide-border">
-          {config.steps.map((step, i) => (
-            <section
-              key={step.key}
-              ref={(el) => {
-                if (el) blockRefs.current.set(step.key, el);
-                else blockRefs.current.delete(step.key);
-              }}
-              data-testid={`page-block-${i}`}
-              aria-current={i === selected || undefined}
-              // Focus/click anywhere in a block selects it, so the settings
-              // panel always describes the question under the caret.
-              onMouseDownCapture={() => onSelect(i)}
-              onFocusCapture={() => onSelect(i)}
-              className={cn(
-                'scroll-my-16 px-6 py-6 transition-colors sm:px-8',
-                // The accent EDGE at full alpha, not `ring-primary/40`: this is the
-                // canvas's ONLY answer to "which question is the settings panel
-                // describing", and the raw accent at 40% alpha flattened to well
-                // under 3:1 over paper — the block you were editing looked exactly
-                // like the ones you weren't. Full alpha on the edge token so the
-                // mark clears 1.4.11 in both themes; the `bg-primary/5` wash keeps
-                // the soft fill it always had.
-                i === selected ? 'bg-primary/5 shadow-[inset_0_0_0_1px_var(--primary-edge)]' : 'hover:bg-muted/40',
-              )}
-            >
-              {step.type === 'reveal' ? (
-                <RevealPageBlock step={step} onUpdate={(patch) => onUpdateStep(i, patch)} m={m} />
-              ) : (
-                <QuestionEditableBody
-                  config={config}
-                  step={step}
-                  index={i}
-                  accent={accent}
-                  onUpdate={(patch) => onUpdateStep(i, patch)}
-                  onOptionLabel={(optionIndex, label) => onOptionLabel(i, optionIndex, label)}
-                  m={m}
-                />
-              )}
-            </section>
-          ))}
+        <div className={cn('flex flex-col', !compact && 'divide-y divide-border')}>
+          {/* Rows over the AUTHORED steps, in order: the canvas shows hidden and
+              conditional questions too, so a hidden step breaks a pair here.
+              The public form pairs over its live walk (after logic) instead, so
+              the two can differ while logic hides a question. Accepted. */}
+          {onePageRows(config.steps).map((row) =>
+            row.length === 1 ? (
+              renderBlock(row[0]!)
+            ) : (
+              <div
+                key={`row:${config.steps[row[0]!]!.key}`}
+                data-testid={`page-row-${row[0]}`}
+                className={cn('grid gap-x-4', device === 'mobile' ? 'grid-cols-1' : 'grid-cols-2')}
+              >
+                {row.map(renderBlock)}
+              </div>
+            ),
+          )}
 
           {/* The page's ONE Submit — static chrome, exactly like the real form. */}
           <div className="px-6 py-6 sm:px-8">
@@ -1133,12 +1176,44 @@ function FileDropPreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
   );
 }
 
-function NamePreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
+function NamePreview({
+  step,
+  labels,
+  m,
+}: {
+  step: FormStep;
+  /** One-page field labels (`nameFieldLabels`), or null to show none. */
+  labels: [string, string] | null;
+  m: BuilderMessages;
+}) {
   const [firstField, secondField] = nameFields(step);
   const firstLabel = (firstField && step.placeholders?.[firstField]) || m.canvas.nameFirstPlaceholder;
   const secondLabel = (secondField && step.placeholders?.[secondField]) || m.canvas.nameLastPlaceholder;
   const boxClass =
     'w-full rounded-xl border border-input bg-background px-4 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/60';
+  if (labels) {
+    const visible = [labels[0] || m.canvas.nameFirstPlaceholder, labels[1] || m.canvas.nameLastPlaceholder];
+    const field = (key: string | undefined, i: 0 | 1, placeholder: string, testId: string) =>
+      key ? (
+        <label className="flex min-w-0 flex-col gap-1.5">
+          <span data-testid={`canvas-name-label-${i}`} className="text-[15px] font-semibold text-foreground">
+            {visible[i]}
+            {step.required ? (
+              <span aria-hidden className="ml-0.5 text-destructive">
+                *
+              </span>
+            ) : null}
+          </span>
+          <input disabled placeholder={placeholder} data-testid={testId} className={boxClass} />
+        </label>
+      ) : null;
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        {field(firstField, 0, firstLabel, 'canvas-name-first')}
+        {field(secondField, 1, secondLabel, 'canvas-name-second')}
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-2 gap-3">
       {firstField ? (

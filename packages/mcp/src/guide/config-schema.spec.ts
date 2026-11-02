@@ -162,6 +162,27 @@ describe('formConfigJsonSchema', () => {
     expect(validate({ ...QUIZ_CONFIG, branding: { ...(QUIZ_CONFIG.branding ?? {}), showHeader: false } })).toBe(true);
   });
 
+  it('describes the one-page row width, name labels and density fields', () => {
+    for (const path of ['steps.[].width', 'steps.[].fieldLabels', 'branding.density']) {
+      expect(hasField(schema, path)).toBe(true);
+      const found = fieldDescriptions(schema, path);
+      expect(found.length).toBeGreaterThan(0);
+      for (const d of found) expect(d).toBe(FIELD_DESCRIPTIONS[path]);
+    }
+    const validate = ajv.compile(schema);
+    expect(
+      validate({
+        ...QUIZ_CONFIG,
+        layout: 'vertical',
+        branding: { ...(QUIZ_CONFIG.branding ?? {}), density: 'compact' },
+        steps: QUIZ_CONFIG.steps.map((s, i) => (i === 0 ? { ...s, width: 'half' } : s)),
+      }),
+    ).toBe(true);
+    expect(
+      validate({ ...QUIZ_CONFIG, branding: { ...(QUIZ_CONFIG.branding ?? {}), density: 'tight' } }),
+    ).toBe(false);
+  });
+
   it('rejects a config that uses an unsupported field', () => {
     const validate = ajv.compile(schema);
     const withButtonText = {

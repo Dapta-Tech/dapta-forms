@@ -36,6 +36,7 @@ export const GUIDE_RULES: readonly string[] = [
   'A tool marked destructive deletes or replaces something (delete_form, delete_responses, delete_folder, set_destinations, update_form, the resets). The recommended flow is to tell the user exactly what will change and wait for a clear yes; after an error, a read shows whether it went through, so it is not repeated blind.',
   'Some tools are for owners and admins only (the brand kit writes, the notification emails, ping_webhook). A member gets FORBIDDEN, and an owner or admin of the workspace can do it instead.',
   'A one-page form (layout "vertical") meant to be embedded in a page that already shows the brand usually takes branding.showHeader false and branding.progressStyle "none": no logo or form name on top and no answered counter.',
+  'To make a one page form look like a regular web form: layout "vertical", branding.density "compact", width "half" on pairs of short fields (first name and last name go in one name step with fieldLabels), and no cover.',
 ];
 
 export const GUIDE_LIFECYCLE: readonly string[] = [

@@ -411,3 +411,38 @@ describe('folder schemas', () => {
     expect(folderViewSchema.parse({ id: 'f1', name: 'Sales', createdAt: 1, updatedAt: 1 }).name).toBe('Sales');
   });
 });
+
+describe('one-page rows, name labels and density (additive)', () => {
+  const config = (step: Record<string, unknown>, branding?: Record<string, unknown>) => ({
+    version: 1 as const,
+    layout: 'vertical' as const,
+    steps: [{ key: 'q1', type: 'text' as const, question: 'Your name?', ...step }],
+    ...(branding ? { branding } : {}),
+  });
+
+  it('a legacy config parses with none of the three fields', () => {
+    const parsed = formConfigSchema.parse(baseConfig());
+    expect('width' in parsed.steps[0]).toBe(false);
+    expect('fieldLabels' in parsed.steps[0]).toBe(false);
+  });
+
+  it('keeps width "half", fieldLabels and branding.density "compact" on save', () => {
+    expect(formConfigSchema.parse(config({ width: 'half' })).steps[0].width).toBe('half');
+    expect(formConfigSchema.parse(config({ width: 'full' })).steps[0].width).toBe('full');
+    const labels = { firstname: 'Nombre', lastname: 'Apellido' };
+    expect(
+      formConfigSchema.parse(config({ type: 'name', fieldLabels: labels })).steps[0].fieldLabels,
+    ).toEqual(labels);
+    expect(formConfigSchema.parse(config({}, { density: 'compact' })).branding?.density).toBe('compact');
+  });
+
+  it('does not reject half on a type that cannot be half: the renderer ignores it', () => {
+    expect(() => formConfigSchema.parse(config({ type: 'textarea', width: 'half' }))).not.toThrow();
+  });
+
+  it('rejects a width or a density it does not know', () => {
+    expect(() => formConfigSchema.parse(config({ width: 'third' }))).toThrow();
+    expect(() => formConfigSchema.parse(config({}, { density: 'tight' }))).toThrow();
+    expect(() => formConfigSchema.parse(config({ type: 'name', fieldLabels: { firstname: 'x'.repeat(201) } }))).toThrow();
+  });
+});
