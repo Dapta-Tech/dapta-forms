@@ -14,6 +14,7 @@ import {
 } from '@quill/db';
 import {
   computeScore,
+  hasScoringSignal,
   publicTitle,
   resolveOutcome,
   respondentFullName,
@@ -304,7 +305,9 @@ export class SubmissionService {
           formName: form.name,
           respondentEmail,
           respondentName,
-          score,
+          // A form with no scoring has no score to report: null drops the
+          // owner notice's "Score: {{score}}" line instead of printing 0.
+          score: hasScoringSignal(config) ? score : null,
           outcomeLabel: outcome?.label ?? null,
           answers,
         },

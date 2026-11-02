@@ -98,6 +98,7 @@ function renderPart(part: string, values: Record<string, string>): MockSegment[]
 export function mockBodyLines(template: string, values: Record<string, string>): MockSegment[][] {
   const lines: MockSegment[][] = [];
   for (const raw of template.replace(/\r\n?/g, '\n').split('\n')) {
+    if (allTokensEmpty(raw, values)) continue;
     const segments: MockSegment[] = [];
     const parts = raw.split(new RegExp(ANSWERS_TOKEN.source, 'g'));
     parts.forEach((part, i) => {
@@ -111,6 +112,42 @@ export function mockBodyLines(template: string, values: Record<string, string>):
   }
   while (lines.length > 0 && lines[lines.length - 1]!.length === 0) lines.pop();
   return lines;
+}
+
+/**
+ * The server's rule (`renderBodyLines`): a line is dropped when it carries
+ * tokens and every one of them resolves to an empty value (`Score: {{score}}`
+ * on a form with no scoring). A line with no tokens, or with an unknown one,
+ * always stays.
+ */
+function allTokensEmpty(line: string, values: Record<string, string>): boolean {
+  const names = [...line.matchAll(/\{\{\s*([a-zA-Z][A-Za-z0-9_]*)\s*\}\}/g)].map((m) => m[1]!);
+  return names.length > 0 && names.every((name) => values[name] === '');
+}
+
+/**
+ * A body as its text version reads, for the inline preview: tokens
+ * substituted, lines whose tokens all resolved to nothing dropped, as the
+ * server does, and runs of blank lines collapsed.
+ */
+export function interpolateBody(template: string, values: Record<string, string>): string {
+  const out: string[] = [];
+  for (const line of template.replace(/\r\n?/g, '\n').split('\n')) {
+    if (allTokensEmpty(line, values)) continue;
+    const rendered = interpolate(line, values);
+    if (rendered.trim() === '' && (out.length === 0 || out[out.length - 1]!.trim() === '')) continue;
+    out.push(rendered);
+  }
+  while (out.length > 0 && out[out.length - 1]!.trim() === '') out.pop();
+  return out.join('\n');
+}
+
+/**
+ * The preview sample for a form: with no scoring, a real email has no score
+ * and no outcome, so neither does the sample.
+ */
+export function notificationSampleFor(scored: boolean): Record<string, string> {
+  return scored ? NOTIFICATION_SAMPLE : { ...NOTIFICATION_SAMPLE, score: '', outcomeLabel: '' };
 }
 
 /** True when `template` references `{{name}}` (inner whitespace tolerated, like the server). */
