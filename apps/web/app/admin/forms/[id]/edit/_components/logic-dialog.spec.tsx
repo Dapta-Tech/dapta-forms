@@ -142,6 +142,13 @@ describe('LogicDialog — sections per step type', () => {
     expect(byTestId(els, 'logic-dialog-no-routing')).toBeUndefined();
   });
 
+  it('offers a checkbox no Always-go-to, even with a catch-all saved by API (#128)', () => {
+    const box: FormStep = { key: 'consent', type: 'checkbox', question: 'Acepto', goto: [{ values: ['*'], target: null }] };
+    const els = render({ step: box, steps: [scorer, box], index: 1 });
+    expect(byTestId(els, 'logic-dialog-always')).toBeUndefined();
+    expect(els.some((el) => el.type === LogicRules)).toBe(false);
+  });
+
   it('renders the real rule editor for a choice step', () => {
     const els = render({ step: scorer });
     expect(byTestId(els, 'logic-dialog-no-routing')).toBeUndefined();

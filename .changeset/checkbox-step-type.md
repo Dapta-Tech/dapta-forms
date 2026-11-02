@@ -12,5 +12,6 @@ A `checkbox` question type: one native box with text beside it, for a consent li
 - Checked stores `true`; unchecked stores nothing (never `false`). `canonicalizeAnswer` turns `'true'` into `true`. A checkbox question is shown as written: no `[key]` tokens and no question variants.
 - Validation: `validateAnswerCode` returns the new code `'consent'` for a required box left unchecked and `'option'` for any other value; `validateAnswer` says "Check the box to continue.". i18n: `renderer.errors.consent` (EN + ES).
 - `hidden`, `defaultValue` and URL prefill have no effect on a checkbox: it always shows and always starts unchecked.
+- `goto` and `terminal` have no effect on a checkbox either: `resolveGoto` and `answeredPath` skip them, and `resolveStepDisplay` drops both from the resolved step.
 - Answers: a check in the table, the CSV, the response panel, the owner email and the MCP; the column header shows the links as their text (`stepLabel`, `summarizeAnswersByStep`). `stepLabel` accepts an optional `type`.
 - MCP `get_form_guide`: the `checkbox` step type and a note that its question takes no placeholders.

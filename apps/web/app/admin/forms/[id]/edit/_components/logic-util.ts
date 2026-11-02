@@ -39,8 +39,17 @@ export function stepRecordsAnswer(step: FormStep): boolean {
   return !isInputlessType(step.type);
 }
 
+/**
+ * Can a `goto` rule ever run here? Only on a step that records an answer, and
+ * never on a `checkbox`: the engine ignores its `goto` and `terminal` (consent
+ * routes nowhere), so the editor offers no jump there either.
+ */
+export function stepCanRoute(step: FormStep): boolean {
+  return stepRecordsAnswer(step) && step.type !== 'checkbox';
+}
+
 /** Can a catch-all ever fire here? Same question, narrower name. */
-export const catchAllFires = stepRecordsAnswer;
+export const catchAllFires = stepCanRoute;
 
 /**
  * The `goto` rules that can actually run. On a step that records no answer
@@ -52,7 +61,7 @@ export const catchAllFires = stepRecordsAnswer;
  * config on open is worse than declining to draw it.
  */
 export function liveGotoRules(step: FormStep): GotoRule[] {
-  return stepRecordsAnswer(step) ? (step.goto ?? []) : [];
+  return stepCanRoute(step) ? (step.goto ?? []) : [];
 }
 
 /** {@link ruleCount} minus the rules that can never fire. */

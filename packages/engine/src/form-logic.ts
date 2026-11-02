@@ -1233,6 +1233,8 @@ export function isMultiSelect(step: FormStep): boolean {
  * or `null` when none match. First match wins (rules run top to bottom).
  */
 function resolveGoto(step: FormStep, answers: Answers): GotoRule | null {
+  // A checkbox routes nowhere: consent never jumps or ends the form.
+  if (step.type === 'checkbox') return null;
   if (!step.goto || step.goto.length === 0) return null;
   const got = new Set(tokens(answers[step.key]));
   for (const rule of step.goto) {
@@ -2459,7 +2461,15 @@ export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
     const label = resolveVariant(step.sliderLabelVariants, answers[step.questionField]);
     if (label) sliderUnitLabel = label;
   }
-  return { ...step, question, helper, sliderUnitLabel };
+  const display = { ...step, question, helper, sliderUnitLabel };
+  // A checkbox ignores `goto` and `terminal` (an API config may carry them):
+  // the renderers read the resolved step, so dropping them here keeps every
+  // button and every cut in line with the engine.
+  if (step.type === 'checkbox') {
+    delete display.goto;
+    delete display.terminal;
+  }
+  return display;
 }
 
 /**
@@ -2671,7 +2681,7 @@ export function runtimeScreens(config: FormConfig, answers: Answers): FormStep[]
  */
 export function answeredPath(config: FormConfig, answers: Answers): FormStep[] {
   const path = runtimeSteps(config, answers);
-  const cut = path.findIndex((s) => s.terminal);
+  const cut = path.findIndex((s) => s.terminal && s.type !== 'checkbox');
   return cut >= 0 ? path.slice(0, cut + 1) : path;
 }
 

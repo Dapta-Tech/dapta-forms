@@ -9,6 +9,9 @@ import {
   validateAnswer,
   validateAnswerCode,
   visibleSteps,
+  answeredPath,
+  runtimeSteps,
+  validateSubmission,
   canShareScreen,
   type FormConfig,
   type FormStep,
@@ -167,5 +170,37 @@ describe('inlineLinksPlainText / isCheckboxChecked', () => {
     expect(isCheckboxChecked(false)).toBe(false);
     expect(isCheckboxChecked(undefined)).toBe(false);
     expect(isCheckboxChecked('yes')).toBe(false);
+  });
+});
+
+describe('checkbox: goto and terminal have no effect', () => {
+  const steps = (box: FormStep): FormConfig => ({
+    version: 1,
+    steps: [box, { key: 'b', type: 'text', question: 'B?' }, { key: 'c', type: 'text', question: 'C?', required: true }],
+  });
+
+  it('a catch-all goto never jumps', () => {
+    const config = steps(box({ goto: [{ values: ['*'], target: 'c' }] }));
+    expect(runtimeSteps(config, { consent: true }).map((s) => s.key)).toEqual(['consent', 'b', 'c']);
+    // The same rule on a text step does jump (the check above is not vacuous).
+    const text = steps({ key: 'consent', type: 'text', question: 'X', goto: [{ values: ['*'], target: 'c' }] });
+    expect(runtimeSteps(text, { consent: 'x' }).map((s) => s.key)).toEqual(['consent', 'c']);
+  });
+
+  it('a goto to the end never ends the form', () => {
+    const config = steps(box({ goto: [{ values: ['*'], target: null }] }));
+    expect(runtimeSteps(config, { consent: true }).map((s) => s.key)).toEqual(['consent', 'b', 'c']);
+  });
+
+  it('terminal never cuts the path, so the questions after it are still required', () => {
+    const config = steps(box({ terminal: true }));
+    expect(answeredPath(config, { consent: true }).map((s) => s.key)).toEqual(['consent', 'b', 'c']);
+    expect(validateSubmission(config, { consent: true })).toEqual({ ok: false, key: 'c', code: 'required' });
+  });
+
+  it('the resolved step the renderers read carries neither', () => {
+    const shown = resolveStepDisplay(box({ terminal: true, goto: [{ values: ['*'], target: 'c' }] }), {});
+    expect(shown.terminal).toBeUndefined();
+    expect(shown.goto).toBeUndefined();
   });
 });

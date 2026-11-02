@@ -137,3 +137,16 @@ describe('jumpTargetsAfter with screens (#200)', () => {
     expect(jumpTargetsAfter(steps, 3, 'Question', 'slides').map((t) => t.label)).toEqual(['Question 5', 'Question 6']);
   });
 });
+
+describe('a checkbox routes nowhere (#128)', () => {
+  it('reports no live rule and no catch-all, while the stored rule stays', async () => {
+    const { catchAllFires, liveGotoRules, liveRuleCount, ruleCount, splitGoto } = await import('./logic-util');
+    const box: FormStep = { key: 'consent', type: 'checkbox', goto: [{ values: ['*'], target: 'q2' }] };
+    expect(catchAllFires(box)).toBe(false);
+    expect(liveGotoRules(box)).toEqual([]);
+    expect(liveRuleCount(box)).toBe(0);
+    expect(splitGoto(box).catchAll).toBeUndefined();
+    expect(ruleCount(box)).toBe(1);
+    expect(catchAllFires({ key: 't', type: 'text' })).toBe(true);
+  });
+});

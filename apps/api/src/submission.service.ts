@@ -13,6 +13,7 @@ import {
   getAccountOwner,
 } from '@quill/db';
 import {
+  canonicalizeAnswer,
   computeScore,
   hasScoringSignal,
   publicTitle,
@@ -256,7 +257,10 @@ export class SubmissionService {
     // or scored: an unverified answer must never reach the row, the score, or
     // an outbound effect. What comes back has its keys rewritten out of the
     // staging prefix, which lifecycle deletes.
-    let data = input.data;
+    // A checkbox is stored as `true` or not at all, whatever an API client
+    // sent: `'true'` becomes the boolean, and `false`, `''` or `null` drop the
+    // key, so a CRM never receives "false" over a consent it already holds.
+    let data = checkboxAnswers(config, input.data);
     if (this.uploads) {
       const verified = await this.uploads.verifyAnswers(form, input.sessionId, data);
       if ('error' in verified) return verified;
@@ -646,4 +650,26 @@ function pickEmail(data: Record<string, unknown>): string | null {
     }
   }
   return null;
+}
+
+/**
+ * `data` with every `checkbox` answer in its stored shape: `'true'` read as
+ * `true`, and an unchecked value (`false`, `''`, `null`) removed. Partials
+ * and completes alike. Returns `data` itself when nothing changes.
+ */
+export function checkboxAnswers<T extends Record<string, unknown>>(config: FormConfig, data: T): T {
+  let out: Record<string, unknown> | null = null;
+  for (const step of config.steps ?? []) {
+    if (step.type !== 'checkbox' || !(step.key in data)) continue;
+    const raw = data[step.key];
+    const value = canonicalizeAnswer(step, raw as never);
+    if (value === false || value === '' || value == null) {
+      out ??= { ...data };
+      delete out[step.key];
+    } else if (value !== raw) {
+      out ??= { ...data };
+      out[step.key] = value;
+    }
+  }
+  return (out ?? data) as T;
 }
