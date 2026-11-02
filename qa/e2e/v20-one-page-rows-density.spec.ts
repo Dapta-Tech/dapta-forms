@@ -5,7 +5,7 @@ import path from 'node:path';
 
 /**
  * One page as a regular web form (#127): half-width pairs share a row from
- * 640 px and stack below it, a name step shows a label above each input, and
+ * 400 px (so they pair inside a 400 to 600 px embed) and stack below it, a name step shows a label above each input, and
  * `branding.density: 'compact'` packs the page. The reference is a clinic
  * contact form of 7 fields, embedded in a hero: at 1440 px its embed must be
  * no taller than 650 px, and at least 45 % shorter than the same config with
@@ -188,6 +188,28 @@ test.describe('one page: rows, name labels and compact density', () => {
       expect(names[0]).toBeLessThan(names[1]!);
       await page.screenshot({ path: shot(`390-${label}-reference`), fullPage: true });
     }
+  });
+
+  test('embed at 480 (a card on a landing page): pairs and labelled name share a row', async ({ page }) => {
+    await page.setViewportSize({ width: 480, height: 900 });
+    const after = await embedHeight(page, reference.path);
+    await page.screenshot({ path: shot('480-embed-reference'), fullPage: true });
+    console.log(`[${test.info().project.name || 'default'}] embed 480: reference ${after}px`);
+    const t = await tops(page);
+    for (const [a, b] of PAIRS) expect(t[a], `${a} and ${b}`).toBe(t[b]);
+    const names = await page.locator('.pf-name-field').evaluateAll((els) =>
+      els.map((e) => Math.round(e.getBoundingClientRect().top)),
+    );
+    expect(names[0]).toBe(names[1]);
+    // A half cell at this width still opens the country picker whole.
+    await page.locator('[data-vf-step="telefono"] .pf-phone__country').click();
+    const panel = page.locator('[data-vf-step="telefono"] .pf-phone__panel');
+    await expect(panel).toBeVisible();
+    expect((await panel.boundingBox())!.height).toBeGreaterThan(100);
+    await page.screenshot({ path: shot('480-embed-country-open'), fullPage: true });
+    await page.keyboard.press('Escape');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+    expect(overflow).toBe(true);
   });
 
   test('1440: the service dropdown and the country picker open whole', async ({ page }) => {

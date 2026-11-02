@@ -91,7 +91,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   'branding.progressStyle':
     'On layout "slides": bar, dots, steps or none. On layout "vertical" only two looks exist: none hides the bar and the "X of N answered" counter; any other value shows both.',
   'steps.[].width':
-    'One page layout only (layout "vertical"). "half" puts two consecutive half steps side by side from 640 px wide; they stack below that. Only text, email, phone, url and dropdown steps can be half; on any other type, on a half step with no half neighbour, and on the slides layout it renders full width. Absent = "full".',
+    'One page layout only (layout "vertical"). "half" puts two consecutive half steps side by side from 400 px wide (so they also pair inside a typical 400 to 600 px embed); they stack below that. Only text, email, phone, url and dropdown steps can be half; on any other type, on a half step with no half neighbour, and on the slides layout it renders full width. Absent = "full".',
   'steps.[].fieldLabels':
     'name steps on the one page layout only: a visible label above each input, keyed by the sub-field key (firstname, lastname unless fields says otherwise), for example {"firstname": "Nombre", "lastname": "Apellido"}. With any label set, the question text is kept for screen readers and the response column but not shown. Ignored on slides.',
   'branding.density':

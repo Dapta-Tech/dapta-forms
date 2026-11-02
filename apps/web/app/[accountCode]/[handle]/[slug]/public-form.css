@@ -2474,7 +2474,10 @@
 }
 
 /* Rows: two consecutive half-width questions (`steps[].width: 'half'`) share
-   a line from 640 px; below that they stack. A row of one is a bare section,
+   a line from 400 px; below that they stack. 400, not a desktop breakpoint: an
+   embedded form lives in a 400 to 600 px card, and inside its iframe the
+   viewport IS that card, so a 640 cut stacked every embed. A half cell at 400
+   is ~192 px, still wide enough for the phone country picker. A row of one is a bare section,
    so a form without half steps keeps its markup and these rules never match. */
 .pf-v__row {
   display: grid;
@@ -2495,7 +2498,7 @@
 .pf-v__row:not(:has(~ .pf-v__row, ~ .pf-v__question)) {
   border-bottom: none;
 }
-@media (max-width: 639px) {
+@media (max-width: 399px) {
   .pf-v__row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2521,9 +2524,16 @@
 .pf-v__question--labelled .pf__fields {
   margin-top: 0;
 }
-@media (max-width: 639px) {
+/* Same cut as the rows, so a labelled name and the half rows stack together.
+   Overrides the base `.pf-name-fields` stack at 480 px (same specificity, later),
+   and uses the rows' 16 px gap so the two columns line up with the rows below. */
+.pf-name-fields--labelled {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 16px;
+}
+@media (max-width: 399px) {
   .pf-name-fields--labelled {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -2582,7 +2592,7 @@
 .pf--vertical[data-pf-density='compact'] .pf-v__page {
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }
-@media (max-width: 639px) {
+@media (max-width: 399px) {
   .pf--vertical[data-pf-density='compact'] .pf-v__row > .pf-v__question:first-child {
     border-bottom: none;
   }
