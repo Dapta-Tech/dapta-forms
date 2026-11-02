@@ -148,3 +148,24 @@ describe('one-page canvas: a checkbox (#128)', () => {
     expect(host!.querySelector('[data-testid="canvas-title-input"]')).toBeNull();
   });
 });
+
+describe('one-page canvas: a checkbox with no text', () => {
+  it('flags the empty text and previews the description, never the key', async () => {
+    await renderPage(
+      config({
+        steps: [{ key: 'check1', type: 'checkbox', question: '', helper: 'Autorizo el tratamiento.', required: true }],
+      }),
+    );
+    expect(host!.querySelector('[data-testid="canvas-checkbox-text-empty"]')!.textContent).toBe(m.canvas.checkboxTextEmpty);
+    const row = host!.querySelector('[data-testid="canvas-checkbox"]')!;
+    expect(row.textContent).toBe('Autorizo el tratamiento.*');
+  });
+  it('previews the default with no text and no description', async () => {
+    await renderPage(config({ steps: [{ key: 'check1', type: 'checkbox', question: '' }] }));
+    expect(host!.querySelector('[data-testid="canvas-checkbox"]')!.textContent).toBe(m.canvas.checkboxDefault);
+  });
+  it('shows no note once the text is written', async () => {
+    await renderPage(config({ steps: [{ key: 'c', type: 'checkbox', question: 'Acepto' }] }));
+    expect(host!.querySelector('[data-testid="canvas-checkbox-text-empty"]')).toBeNull();
+  });
+});

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   FORM_FIELD_TYPES,
   canonicalizeAnswer,
+  checkboxText,
   inlineLinksPlainText,
   isCheckboxChecked,
   parseInlineLinks,
@@ -202,5 +203,21 @@ describe('checkbox: goto and terminal have no effect', () => {
     const shown = resolveStepDisplay(box({ terminal: true, goto: [{ values: ['*'], target: 'c' }] }), {});
     expect(shown.terminal).toBeUndefined();
     expect(shown.goto).toBeUndefined();
+  });
+});
+
+describe('checkboxText', () => {
+  it('uses the text and keeps the description under it', () => {
+    expect(checkboxText({ question: 'Acepto', helper: 'Detalle' })).toEqual({ text: 'Acepto', helper: 'Detalle' });
+  });
+  it('promotes the description when the text is empty, and does not repeat it', () => {
+    expect(checkboxText({ question: '  ', helper: 'Autorizo el tratamiento' })).toEqual({
+      text: 'Autorizo el tratamiento',
+      helper: null,
+    });
+  });
+  it('returns null with neither, never the key', () => {
+    expect(checkboxText({ question: '', helper: null })).toEqual({ text: null, helper: null });
+    expect(checkboxText({})).toEqual({ text: null, helper: null });
   });
 });

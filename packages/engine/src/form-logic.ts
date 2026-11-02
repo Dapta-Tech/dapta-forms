@@ -3001,6 +3001,27 @@ export function inlineLinksPlainText(text: string): string {
     .join('');
 }
 
+/**
+ * What a checkbox shows beside its box, and what stays under it.
+ *
+ * The box's text is `question`. An author who leaves it empty and writes the
+ * consent sentence in the description (the editor offers both fields, and the
+ * text field's example reads like real text) must not ship a box labelled with
+ * the internal key: the description is promoted to the box's text and not
+ * repeated under it. With neither, `text` is null and the caller draws its own
+ * localized default. Never returns the step key.
+ */
+export function checkboxText(step: Pick<FormStep, 'question' | 'helper'>): {
+  text: string | null;
+  helper: string | null;
+} {
+  const question = typeof step.question === 'string' ? step.question : '';
+  const helper = typeof step.helper === 'string' ? step.helper : '';
+  if (question.trim()) return { text: question, helper: helper.trim() ? helper : null };
+  if (helper.trim()) return { text: helper, helper: null };
+  return { text: null, helper: null };
+}
+
 /** True for a checked checkbox answer: `true` and the string `'true'`. */
 export function isCheckboxChecked(value: AnswerValue | undefined): boolean {
   return value === true || value === 'true';

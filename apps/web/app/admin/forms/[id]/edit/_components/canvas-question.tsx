@@ -14,6 +14,7 @@ import {
   resolveFormLogos,
   resolveRevealPresentation,
   uniqueKey,
+  checkboxText,
   parseInlineLinks,
 } from '@quill/engine';
 import { onAccent, DEFAULT_ACCENT, getMessages, resolveThemeMode } from '@quill/shared';
@@ -531,13 +532,25 @@ function QuestionEditableBody({
           inline `[text](https://...)` link is never read as one): a plain
           textarea at the size the box's text has on the form. */}
       {step.type === 'checkbox' ? (
-        <AutoTextarea
-          value={step.question ?? ''}
-          onChange={(v) => onUpdate({ question: v })}
-          placeholder={m.canvas.checkboxPlaceholder}
-          ariaLabel={m.canvas.checkboxPlaceholder}
-          className={cn('canvas-title text-[15px] leading-relaxed text-foreground', centred && 'text-center')}
-        />
+        <>
+          <AutoTextarea
+            value={step.question ?? ''}
+            onChange={(v) => onUpdate({ question: v })}
+            placeholder={m.canvas.checkboxPlaceholder}
+            ariaLabel={m.canvas.checkboxPlaceholder}
+            className={cn('canvas-title text-[15px] leading-relaxed text-foreground', centred && 'text-center')}
+          />
+          {/* The example text reads like real text, so an empty field is easy to
+              miss: say so, and what the form does meanwhile. */}
+          {(step.question ?? '').trim() ? null : (
+            <p
+              data-testid="canvas-checkbox-text-empty"
+              className={cn('mt-1 text-xs text-amber-700 dark:text-amber-400', centred && 'text-center')}
+            >
+              {m.canvas.checkboxTextEmpty}
+            </p>
+          )}
+        </>
       ) : (
         <TokenTextarea
           value={step.question ?? ''}
@@ -719,7 +732,7 @@ function QuestionEditableBody({
         ) : step.type === 'checkbox' ? (
           // One page reads every question from the left (public-form.css), so
           // the row is only centred on a slide.
-          <CheckboxPreview step={step} centred={centred && !onePage} />
+          <CheckboxPreview step={step} centred={centred && !onePage} fallback={m.canvas.checkboxDefault} />
         ) : (
           <div className="rounded-xl border border-input bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
             {step.placeholder ||
@@ -741,8 +754,9 @@ function QuestionEditableBody({
  * A checkbox step's row as the form draws it: an 18px box and its text, links
  * underlined but not followed (this is the editor), `*` when required.
  */
-function CheckboxPreview({ step, centred }: { step: FormStep; centred: boolean }) {
-  const segments = parseInlineLinks(step.question ?? '');
+function CheckboxPreview({ step, centred, fallback }: { step: FormStep; centred: boolean; fallback: string }) {
+  // Same rule as the form: an empty text takes the description, never the key.
+  const segments = parseInlineLinks(checkboxText(step).text ?? '');
   return (
     <div
       data-testid="canvas-checkbox"
@@ -751,7 +765,7 @@ function CheckboxPreview({ step, centred }: { step: FormStep; centred: boolean }
       <span aria-hidden className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded-[4px] border border-input bg-background" />
       <span className="text-left">
         {segments.length === 0
-          ? step.key
+          ? fallback
           : segments.map((seg, i) =>
               seg.kind === 'link' ? (
                 <span key={i} className="underline underline-offset-2">

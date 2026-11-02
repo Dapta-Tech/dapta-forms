@@ -264,8 +264,10 @@ describe('checkbox', () => {
     expect(html).toContain('class="pf-v__required"');
   });
 
-  it('an empty text falls back to the step key', () => {
-    expect(render({ ...consent, question: '' })).toContain('<span class="pf-checkbox__text">consent</span>');
+  it('an empty text never shows the step key', () => {
+    const html = render({ ...consent, question: '' });
+    expect(html).not.toContain('>consent<');
+    expect(html).toContain('<span class="pf-checkbox__text">I agree');
   });
 });
 
@@ -316,5 +318,29 @@ describe('phone: placeholder and focus', () => {
     expect(document.activeElement).not.toBe(input);
     await act(async () => root.unmount());
     host.remove();
+  });
+});
+
+describe('checkbox with no text', () => {
+  it('shows the description as the box text, once, and never the key', () => {
+    const html = render({ key: 'check1', type: 'checkbox', question: '', helper: 'Autorizo el tratamiento de mis datos.', required: true });
+    expect(html).not.toContain('check1');
+    expect(html).toMatch(/pf-checkbox__text[^>]*>Autorizo el tratamiento de mis datos\./);
+    expect(html).not.toContain('pf-checkbox__helper');
+    expect(html.split('Autorizo el tratamiento').length - 1).toBe(1);
+  });
+  it('says a localized "I agree" with no text and no description', () => {
+    const step: FormStep = { key: 'check1', type: 'checkbox', question: '' };
+    expect(render(step)).toContain('I agree');
+    expect(render(step)).not.toContain('check1');
+    const es = renderToStaticMarkup(
+      <StepInput step={step} value={undefined} answers={{}} locale="es" onChange={() => {}} onFieldChange={() => {}} onSelect={() => {}} />,
+    );
+    expect(es).toContain('Acepto');
+  });
+  it('keeps text plus description as before', () => {
+    const html = render({ key: 'c', type: 'checkbox', question: 'Acepto', helper: 'Detalle' });
+    expect(html).toContain('pf-checkbox__helper');
+    expect(html).toContain('Detalle');
   });
 });
