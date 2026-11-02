@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Answers, AnswerValue, FormOption, FormStep } from '@quill/engine';
 import {
   nameFields,
+  nameFieldLabels,
   isMultiSelect,
   sliderBounds,
   clampSliderValue,
@@ -11,6 +12,8 @@ import {
   resolveOptionIcon,
   optionInitials,
   canonicalizeAnswer,
+  isCheckboxChecked,
+  parseInlineLinks,
 } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { SearchableDropdown } from './searchable-dropdown';
@@ -38,12 +41,18 @@ interface StepInputProps {
   autoFocus?: boolean;
   /**
    * Whether a `phone` field focuses itself on mount. Apart from `autoFocus`
-   * because the phone field always has, even on the one-page layout (which
-   * passes `autoFocus={false}`), and that page's markup is pinned as it is. A
+   * because a slide focuses its phone field even where other inputs do not. A
    * screen of several questions passes `false` for every question but its
-   * first, or the phone would take focus from the one above it. Default `true`.
+   * first, or the phone would take focus from the one above it; the one-page
+   * layout passes `false` for every question. Default `true`.
    */
   phoneAutoFocus?: boolean;
+  /**
+   * Paint a `name` step's `fieldLabels` as a visible label above each input.
+   * Only the one-page (vertical) renderer passes `true`; slides never shows
+   * them. Without labels configured the markup is today's either way.
+   */
+  showFieldLabels?: boolean;
   /**
    * A NON-INTERACTION answer write (today: the slider seeding its default on
    * mount so an untouched optional slider still submits a value). Falls back to
@@ -61,6 +70,15 @@ interface StepInputProps {
   onRequestUpload?: (stepKey: string, file: Parameters<RequestTicket>[0]) => ReturnType<RequestTicket>;
   /** The deployment's per-file ceiling in MB, for the accepted-files line. */
   uploadMaxMb?: number;
+  /**
+   * `id` for a `checkbox` step's text, so a slides screen's `aria-labelledby`
+   * still points at the question when the renderer paints no title for it.
+   */
+  labelId?: string;
+  /** Paint the `*` after a `checkbox` step's text. Default `false`. */
+  showRequiredMark?: boolean;
+  /** The step currently shows an error (a `checkbox` sets `aria-invalid`). */
+  invalid?: boolean;
 }
 
 /** The current multi-select answer as a string[] (defensive against scalars). */
@@ -204,11 +222,62 @@ export function StepInput({
   locale = 'en',
   autoFocus = true,
   phoneAutoFocus = true,
+  showFieldLabels = false,
   onSeed,
   onRequestUpload,
   uploadMaxMb,
+  labelId,
+  showRequiredMark = false,
+  invalid = false,
 }: StepInputProps) {
   switch (step.type) {
+    case 'checkbox': {
+      // One native box; the step's text is its label and the only title it
+      // has. Links open in a new tab and never toggle the box.
+      const segments = parseInlineLinks(step.question ?? '');
+      const text = segments.length > 0 ? segments : [{ kind: 'text' as const, text: step.key }];
+      const helper = step.helper?.trim();
+      return (
+        <div className="pf-checkbox-field">
+          <label className="pf-checkbox">
+            <input
+              type="checkbox"
+              className="pf-checkbox__box"
+              checked={isCheckboxChecked(value)}
+              onChange={(e) => onChange(e.target.checked ? true : undefined)}
+              aria-required={step.required === true ? true : undefined}
+              aria-invalid={invalid || undefined}
+              autoFocus={autoFocus}
+            />
+            <span className="pf-checkbox__text" id={labelId}>
+              {text.map((seg, i) =>
+                seg.kind === 'link' ? (
+                  <a
+                    key={i}
+                    className="pf-checkbox__link"
+                    href={seg.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {seg.text}
+                  </a>
+                ) : (
+                  <Fragment key={i}>{seg.text}</Fragment>
+                ),
+              )}
+              {showRequiredMark ? (
+                <span aria-hidden className="pf-v__required">
+                  *
+                </span>
+              ) : null}
+            </span>
+          </label>
+          {helper ? <p className="pf__helper pf-checkbox__helper">{step.helper}</p> : null}
+        </div>
+      );
+    }
+
     case 'name': {
       const [firstField, secondField] = nameFields(step);
       // Positional fallback: a configured placeholder wins; an empty/unset one
@@ -218,6 +287,53 @@ export function StepInput({
       const nm = getMessages(locale).renderer.name;
       const firstLabel = (firstField && step.placeholders?.[firstField]) || nm.firstPlaceholder;
       const secondLabel = (secondField && step.placeholders?.[secondField]) || nm.lastPlaceholder;
+      const fieldLabels = showFieldLabels ? nameFieldLabels(step) : null;
+      if (fieldLabels) {
+        // One page with labels: each input sits in its own <label>, which names
+        // it, so the input drops its aria-label. The question title stays in
+        // the document for screen readers (the renderer hides it visually).
+        const visible = [fieldLabels[0] || nm.firstPlaceholder, fieldLabels[1] || nm.lastPlaceholder];
+        const required = step.required ? (
+          <span aria-hidden className="pf-v__required">
+            *
+          </span>
+        ) : null;
+        return (
+          <div className="pf-name-fields pf-name-fields--labelled">
+            {firstField && (
+              <label className="pf-name-field">
+                <span className="pf-name-field__label">
+                  {visible[0]}
+                  {required}
+                </span>
+                <input
+                  type="text"
+                  className="pf-input"
+                  value={String(answers[firstField] ?? '')}
+                  onChange={(e) => onFieldChange(firstField, e.target.value)}
+                  placeholder={firstLabel}
+                  autoFocus={autoFocus}
+                />
+              </label>
+            )}
+            {secondField && (
+              <label className="pf-name-field">
+                <span className="pf-name-field__label">
+                  {visible[1]}
+                  {required}
+                </span>
+                <input
+                  type="text"
+                  className="pf-input"
+                  value={String(answers[secondField] ?? '')}
+                  onChange={(e) => onFieldChange(secondField, e.target.value)}
+                  placeholder={secondLabel}
+                />
+              </label>
+            )}
+          </div>
+        );
+      }
       return (
         <div className="pf-name-fields">
           {firstField && (
@@ -256,6 +372,7 @@ export function StepInput({
           ariaLabel={step.question ?? step.key}
           defaultCountry={step.phoneDefaultCountry ?? undefined}
           autoFocus={phoneAutoFocus}
+          placeholder={step.placeholder}
         />
       );
 

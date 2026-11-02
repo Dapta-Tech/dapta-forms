@@ -3,7 +3,7 @@
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { galleryIdForStep, iconForStep } from './question-types';
-import { authoredScreens, conditionNeverHolds, conditionsContradict, screensActive } from '@quill/engine';
+import { authoredScreens, conditionNeverHolds, conditionsContradict, isHiddenStep, screensActive } from '@quill/engine';
 import { describeCondition, liveGotoRules, optionLabel } from './logic-util';
 import { screenList } from './screen-util';
 import type { BuilderMessages } from './builder-messages';
@@ -133,7 +133,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                     </div>
                     <span className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                       {kindLabel(step, m)}
-                      {step.hidden ? (
+                      {isHiddenStep(step) ? (
                         <span
                           data-testid="logic-hidden-badge"
                           className="rounded-sm bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint"

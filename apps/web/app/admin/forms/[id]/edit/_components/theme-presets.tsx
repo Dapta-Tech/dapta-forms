@@ -20,6 +20,9 @@ export function presetPatch(preset: FormThemePreset): Partial<FormBranding> {
     fontFamily: preset.font,
     radius: preset.radius,
     buttonStyle: preset.buttonStyle,
+    // A preset changes the accent; a hand-picked label colour could end up
+    // unreadable on it, so it goes back to automatic.
+    buttonTextColor: null,
     themePreset: preset.id,
   };
 }

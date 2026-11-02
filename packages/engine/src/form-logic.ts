@@ -16,6 +16,7 @@ import type {
   FormContentAlign,
   FormContentWidth,
   FormCustomFont,
+  FormDensity,
   FormFont,
   FormLogoPosition,
   FormLogoSize,
@@ -43,8 +44,13 @@ export const FORM_FIELD_TYPES = [
   'reveal',
   'scheduler',
   'file',
+  'checkbox',
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
+
+/** A step's column width on the one-page layout. Absent = `'full'`. */
+export const FORM_STEP_WIDTHS = ['full', 'half'] as const;
+export type FormStepWidth = (typeof FORM_STEP_WIDTHS)[number];
 
 /** How a choice step lays its options out. */
 export const FORM_OPTION_LAYOUTS = ['list', 'cards'] as const;
@@ -198,6 +204,12 @@ export interface FormStep {
   /** `name` step: per-field placeholders keyed by field name. */
   placeholders?: Record<string, string>;
   /**
+   * `name` step on the one-page (`vertical`) layout: a visible label above each
+   * input, keyed by field name like `placeholders`. See {@link nameFieldLabels}.
+   * `slides` ignores it.
+   */
+  fieldLabels?: Record<string, string>;
+  /**
    * Dynamic question variants: pick the question text from the answer to
    * `questionField`. `questionVariants[value]` overrides `question` when the
    * respondent's answer to that earlier field matches a key; a `*` key (or the
@@ -257,6 +269,13 @@ export interface FormStep {
    * a screen is. Unrelated to `flowGroup`, which is the scoring phase.
    */
   screenGroup?: string;
+  /**
+   * Column width on the one-page (`vertical`) layout (additive; back-compat).
+   * Two consecutive `half` steps share a row; see {@link onePageRows}. Absent =
+   * `'full'`. `slides` ignores it, and so does any type outside
+   * {@link HALF_WIDTH_TYPES}.
+   */
+  width?: FormStepWidth;
   /**
    * Per-question scoring switch (additive; back-compat — V5-B2). `false` makes
    * THIS step contribute nothing to the score while the rest of the form keeps
@@ -460,6 +479,11 @@ export interface FormBranding {
   // --- Shape & controls --------------------------------------------------
   radius?: FormRadius;
   buttonStyle?: FormButtonStyle;
+  /**
+   * Label colour of a SOLID button. Absent / null / blank = the automatic
+   * contrast colour of the accent. Ignored for `outline` and `soft`.
+   */
+  buttonTextColor?: string | null;
   buttonFullWidth?: boolean;
   progressStyle?: FormProgressStyle;
 
@@ -471,6 +495,16 @@ export interface FormBranding {
   contentAlign?: FormContentAlign;
   contentWidth?: FormContentWidth;
   transition?: FormTransition;
+  /**
+   * Whether the one-page (`vertical`) form paints its header: the form logo, or
+   * the form name when there is no logo. Ignored by `slides`. Absent = `true`.
+   */
+  showHeader?: boolean;
+  /**
+   * How tightly the one-page (`vertical`) form packs its questions. Ignored by
+   * `slides`. Absent = `'comfortable'`.
+   */
+  density?: FormDensity;
 
   /**
    * Which preset was last applied — an editor affordance only. Nothing at
@@ -792,6 +826,14 @@ function conditionHolds(cond: StepCondition, answers: Answers, scoreSoFar = 0): 
  * contributed to a gate upstream of the jump — but only if it carries a STALE
  * answer, since a step the respondent never saw is unanswered and scores 0.
  */
+/**
+ * Whether `hidden` takes a step off the form. A `checkbox` ignores the flag:
+ * consent is given by the person on the page, never seeded behind their back.
+ */
+export function isHiddenStep(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
+  return !!step.hidden && step.type !== 'checkbox';
+}
+
 export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
   const scored = config.scoring?.enabled !== false;
   const out: FormStep[] = [];
@@ -800,7 +842,7 @@ export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
     // A hidden step is never rendered as a question — it is skipped in the walk
     // (and therefore never scored). Its answer can still be seeded (e.g. from a
     // URL parameter) and rides along into the submission via the answers map.
-    if (step.hidden) continue;
+    if (isHiddenStep(step)) continue;
     if (step.showWhen && !conditionHolds(step.showWhen, answers, scoreSoFar)) continue;
     if (step.hideWhen && conditionHolds(step.hideWhen, answers, scoreSoFar)) continue;
     if (step.showForPersonalEmailOnly) {
@@ -1191,6 +1233,8 @@ export function isMultiSelect(step: FormStep): boolean {
  * or `null` when none match. First match wins (rules run top to bottom).
  */
 function resolveGoto(step: FormStep, answers: Answers): GotoRule | null {
+  // A checkbox routes nowhere: consent never jumps or ends the form.
+  if (step.type === 'checkbox') return null;
   if (!step.goto || step.goto.length === 0) return null;
   const got = new Set(tokens(answers[step.key]));
   for (const rule of step.goto) {
@@ -1323,6 +1367,7 @@ export function isValidWebUrl(raw: string): boolean {
  * type is returned untouched.
  */
 export function canonicalizeAnswer(step: FormStep, value: AnswerValue): AnswerValue {
+  if (step.type === 'checkbox' && value === 'true') return true;
   if (step.type === 'url' && typeof value === 'string' && isValidWebUrl(value)) {
     return normalizeUrl(value);
   }
@@ -1414,6 +1459,15 @@ export function isInputlessStep(step: Pick<FormStep, 'type'>): boolean {
 export function validateAnswer(step: FormStep, value: AnswerValue): ValidationResult {
   // Info + reveal steps never carry input.
   if (isInputlessStep(step)) return { ok: true };
+
+  // A checkbox is checked (`true`/'true') or empty; `false` counts as empty,
+  // so this runs before the generic empty test below.
+  if (step.type === 'checkbox') {
+    if (isCheckboxChecked(value)) return { ok: true };
+    if (isCheckboxEmpty(value))
+      return step.required ? { ok: false, error: 'Check the box to continue.' } : { ok: true };
+    return { ok: false, error: 'Choose one of the available options.' };
+  }
 
   const empty =
     value == null ||
@@ -2009,7 +2063,8 @@ export type ValidationCode =
   | 'too_short'
   | 'too_long'
   | 'option'
-  | 'file';
+  | 'file'
+  | 'consent';
 
 export type ValidationCodeResult = { ok: true } | { ok: false; code: ValidationCode };
 
@@ -2033,6 +2088,12 @@ export function validateAnswerCode(
       if (empty && step.required) return { ok: false, code: 'required' };
     }
     return { ok: true };
+  }
+
+  if (step.type === 'checkbox') {
+    if (isCheckboxChecked(value)) return { ok: true };
+    if (isCheckboxEmpty(value)) return step.required ? { ok: false, code: 'consent' } : { ok: true };
+    return { ok: false, code: 'option' };
   }
 
   const empty =
@@ -2373,6 +2434,9 @@ function resolveVariant(variants: Record<string, string>, raw: AnswerValue): str
  */
 export function resolveQuestion(step: FormStep, answers: Answers): string {
   let text = step.question ?? '';
+  // A checkbox shows its text as written: no variants and no `[key]` tokens, so
+  // an inline link `[text](https://...)` is never read as a token.
+  if (step.type === 'checkbox') return text;
   if (step.questionField && step.questionVariants) {
     const fallback = step.questionVariants['*'];
     text =
@@ -2390,14 +2454,22 @@ export function resolveQuestion(step: FormStep, answers: Answers): string {
  * mutates the config. A null/undefined helper is left untouched.
  */
 export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
-  const question = resolveQuestion(step, answers);
+  const question = step.type === 'checkbox' ? step.question : resolveQuestion(step, answers);
   const helper = typeof step.helper === 'string' ? interpolate(step.helper, answers) : step.helper;
   let sliderUnitLabel = step.sliderUnitLabel ?? null;
   if (step.questionField && step.sliderLabelVariants) {
     const label = resolveVariant(step.sliderLabelVariants, answers[step.questionField]);
     if (label) sliderUnitLabel = label;
   }
-  return { ...step, question, helper, sliderUnitLabel };
+  const display = { ...step, question, helper, sliderUnitLabel };
+  // A checkbox ignores `goto` and `terminal` (an API config may carry them):
+  // the renderers read the resolved step, so dropping them here keeps every
+  // button and every cut in line with the engine.
+  if (step.type === 'checkbox') {
+    delete display.goto;
+    delete display.terminal;
+  }
+  return display;
 }
 
 /**
@@ -2433,6 +2505,66 @@ export const SOLO_SCREEN_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldTy
   'file',
 ]);
 
+/**
+ * The `name` step's per-field labels for the one-page layout, in
+ * {@link nameFields} order, or `null` when it shows none (not a `name` step, or
+ * no sub-field has a non-blank label). When at least one is set, the other
+ * comes back as `''` and the renderer puts its localized default there.
+ */
+export function nameFieldLabels(step: FormStep): [string, string] | null {
+  if (step.type !== 'name') return null;
+  const labels = step.fieldLabels ?? {};
+  const [first, last] = nameFields(step).map((field) => (labels[field] ?? '').trim());
+  if (!first && !last) return null;
+  return [first ?? '', last ?? ''];
+}
+
+/**
+ * The step types that can sit at half width on the one-page layout. Everything
+ * else (`name` already has two inputs, long and choice inputs need the room)
+ * always takes a full row.
+ */
+export const HALF_WIDTH_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldType>([
+  'text',
+  'email',
+  'phone',
+  'url',
+  'dropdown',
+]);
+
+/** Can this step take half a row on the one-page layout? Never a hidden step. */
+export function canHalfWidth(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
+  return HALF_WIDTH_TYPES.has(step.type) && !step.hidden;
+}
+
+/**
+ * The rows of the one-page layout, as indexes into `steps`. Two consecutive
+ * steps that are both `width: 'half'` and {@link canHalfWidth} share a row;
+ * every other step gets a row of its own, so a lone half step renders full
+ * width and three in a row make a pair plus a full row (never three columns).
+ * The public form passes its live walk (after logic), so a step that logic
+ * hides drops out and its neighbours re-pair; the builder passes the authored
+ * steps, where a hidden step is not eligible and breaks a pair.
+ */
+export function onePageRows(steps: readonly Pick<FormStep, 'type' | 'hidden' | 'width'>[]): number[][] {
+  const half = (i: number) => {
+    const step = steps[i];
+    return step !== undefined && step.width === 'half' && canHalfWidth(step);
+  };
+  const rows: number[][] = [];
+  let i = 0;
+  while (i < steps.length) {
+    if (half(i) && half(i + 1)) {
+      rows.push([i, i + 1]);
+      i += 2;
+    } else {
+      rows.push([i]);
+      i += 1;
+    }
+  }
+  return rows;
+}
+
 /** The most questions the builder puts on one screen. The engine does not cap. */
 export const MAX_SCREEN_SIZE = 10;
 
@@ -2447,7 +2579,7 @@ export function screensActive(config: Pick<FormConfig, 'layout'> | null | undefi
  * screen nor cuts one).
  */
 export function canShareScreen(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
-  return !SOLO_SCREEN_TYPES.has(step.type) && !step.hidden;
+  return !SOLO_SCREEN_TYPES.has(step.type) && !isHiddenStep(step);
 }
 
 /** One authored screen: its canonical id and its members' indexes in `steps`. */
@@ -2486,7 +2618,7 @@ export function authoredScreens(steps: readonly FormStep[]): AuthoredScreen[] {
     screens.push({ id, members: run.members });
   };
   steps.forEach((step, i) => {
-    if (step.hidden) return; // transparent
+    if (isHiddenStep(step)) return; // transparent
     const value = canShareScreen(step) ? step.screenGroup : undefined;
     if (!value) {
       close();
@@ -2549,7 +2681,7 @@ export function runtimeScreens(config: FormConfig, answers: Answers): FormStep[]
  */
 export function answeredPath(config: FormConfig, answers: Answers): FormStep[] {
   const path = runtimeSteps(config, answers);
-  const cut = path.findIndex((s) => s.terminal);
+  const cut = path.findIndex((s) => s.terminal && s.type !== 'checkbox');
   return cut >= 0 ? path.slice(0, cut + 1) : path;
 }
 
@@ -2823,4 +2955,58 @@ export function isSafeImageUrl(url: string): boolean {
   if (s.startsWith('javascript:') || s.startsWith('vbscript:')) return false;
   if (s.startsWith('data:') && !s.startsWith('data:image/')) return false;
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Checkbox: one native box whose text can carry inline links.
+// ---------------------------------------------------------------------------
+
+/** A piece of a checkbox's text: plain text or an http(s) link. */
+export type InlineSegment = { kind: 'text'; text: string } | { kind: 'link'; text: string; href: string };
+
+/** `[text](url)`, linear: no nesting, bounded lengths, no newline in the text. */
+const INLINE_LINK_RE = /\[([^\]\n]{1,200})\]\(([^\s)]{1,2048})\)/g;
+
+/**
+ * Split `[text](https://url)` links out of a string. A match whose URL is not
+ * http(s) (`javascript:`, `mailto:`, a relative path) stays as literal text,
+ * brackets included. Adjacent text pieces are merged. Never throws.
+ */
+export function parseInlineLinks(text: string): InlineSegment[] {
+  const out: InlineSegment[] = [];
+  const pushText = (t: string) => {
+    if (!t) return;
+    const last = out[out.length - 1];
+    if (last && last.kind === 'text') last.text += t;
+    else out.push({ kind: 'text', text: t });
+  };
+  const source = typeof text === 'string' ? text : '';
+  let at = 0;
+  for (const m of source.matchAll(INLINE_LINK_RE)) {
+    const start = m.index ?? 0;
+    pushText(source.slice(at, start));
+    const [whole, label, href] = m as unknown as [string, string, string];
+    if (isSafeHttpUrl(href)) out.push({ kind: 'link', text: label, href });
+    else pushText(whole);
+    at = start + whole.length;
+  }
+  pushText(source.slice(at));
+  return out;
+}
+
+/** The text with each link replaced by its visible text. */
+export function inlineLinksPlainText(text: string): string {
+  return parseInlineLinks(text)
+    .map((seg) => seg.text)
+    .join('');
+}
+
+/** True for a checked checkbox answer: `true` and the string `'true'`. */
+export function isCheckboxChecked(value: AnswerValue | undefined): boolean {
+  return value === true || value === 'true';
+}
+
+/** An unchecked checkbox answer. `false` counts, though it is never stored. */
+function isCheckboxEmpty(value: unknown): boolean {
+  return value == null || value === '' || value === false;
 }

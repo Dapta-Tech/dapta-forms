@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormConfig, FormStep } from '@quill/engine';
-import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
+import { conditionNeverHolds, conditionsContradict, isHiddenStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
 import { describeCondition, liveRuleCount } from './logic-util';
@@ -456,7 +456,7 @@ function StepNode({
         {zoom >= LOD_TITLE ? (
           <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">{title}</span>
         ) : null}
-        {step.hidden ? (
+        {isHiddenStep(step) ? (
           <span
             data-testid="logic-hidden-badge"
             className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-2xs font-semibold uppercase text-muted-foreground"

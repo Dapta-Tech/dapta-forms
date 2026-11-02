@@ -8,7 +8,7 @@
  * browser-only capture helpers; every flow decision stays in `@quill/engine`.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Answers, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
+import type { Answers, AnswerValue, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
 import { nameFields, isSafeHttpUrl, interpolate, showBanner } from '@quill/engine';
 import { captchaCData, type OutcomeBooking, type PublicCaptcha, type SubmissionVisit } from '@quill/types';
 import type { getMessages } from '@quill/shared';
@@ -203,6 +203,8 @@ export function capturePrefill(steps: FormStep[]): Answers {
   const declared = new Set<string>();
   for (const step of steps) {
     if (step.type === 'message') continue; // message steps capture no answer
+    // Consent is given by the person on the page, never by a link.
+    if (step.type === 'checkbox') continue;
     for (const key of nameFields(step)) declared.add(key);
   }
   if (declared.size === 0) return {};
@@ -215,6 +217,20 @@ export function capturePrefill(steps: FormStep[]): Answers {
     seed[key] = value.slice(0, PREFILL_MAX_LEN);
   }
   return seed;
+}
+
+/**
+ * `answers` with `key` set to `value`, or without `key` when `value` is
+ * `undefined`: an unchecked checkbox leaves no key behind (never `false`).
+ */
+export function withAnswer(answers: Answers, key: string, value: AnswerValue): Answers {
+  if (value === undefined) {
+    if (!(key in answers)) return answers;
+    const rest = { ...answers };
+    delete rest[key];
+    return rest;
+  }
+  return { ...answers, [key]: value };
 }
 
 /**
@@ -232,6 +248,8 @@ export function captureDefaults(steps: FormStep[]): Answers {
   const seed: Answers = {};
   for (const step of steps) {
     if (step.type === 'message' || step.type === 'name') continue;
+    // A checkbox never starts checked: consent is given, not defaulted.
+    if (step.type === 'checkbox') continue;
     const value = step.defaultValue;
     if (typeof value === 'string' && value !== '') seed[step.key] = value;
   }

@@ -178,3 +178,36 @@ describe('the one-page layout never reads screen ids', () => {
     expect(render(steps)).toBe(render(bare as typeof steps));
   });
 });
+
+describe('a checkbox on a screen (#128)', () => {
+  const withBox = [
+    { key: 'email', type: 'email', question: 'Email?', required: true, screenGroup: 'c' },
+    {
+      key: 'consent',
+      type: 'checkbox',
+      question: 'Acepto la [política](https://example.com/privacidad)',
+      required: true,
+      screenGroup: 'c',
+    },
+  ];
+
+  it('is a row on the shared screen, with no title of its own, labelled by its text', () => {
+    const html = slides({ steps: withBox });
+    expect(count(html, 'data-pf-step="')).toBe(2);
+    const member = html.slice(html.indexOf('data-pf-step="consent"'));
+    expect(member.split('</section>')[0]).not.toContain('<h2');
+    expect(member).toContain('aria-labelledby="');
+    const labelledBy = /aria-labelledby="([^"]+)"/.exec(member)![1];
+    expect(member).toContain(`<span class="pf-checkbox__text" id="${labelledBy}">`);
+    // Two members: the asterisk rule of a shared screen applies to the box too.
+    expect(member.split('</section>')[0]).toContain('class="pf-v__required"');
+    expect(primaryButtons(html)).toHaveLength(1);
+  });
+
+  it('alone on its slide: the box and the button, no title', () => {
+    const html = slides({ steps: [withBox[1]!].map(({ screenGroup: _s, ...s }) => s) });
+    expect(html).not.toContain('<h2 class="pf__question"');
+    expect(html).toContain('class="pf-checkbox__box"');
+    expect(primaryButtons(html)[0]).toContain('>Submit<');
+  });
+});

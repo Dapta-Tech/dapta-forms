@@ -105,6 +105,8 @@ export interface FormsMessages {
       too_long: string;
       option: string;
       file: string;
+      /** A required checkbox left unchecked. */
+      consent: string;
       submit: string;
       /**
        * The final submit's human check did not pass (spam protection), or the
@@ -1236,6 +1238,9 @@ export interface FormsMessages {
         /** Explains the field key doubles as a URL parameter for prefill. */
         fieldKeyHint: string;
         placeholder: string;
+        /** One page only: a visible label above each input. */
+        label: string;
+        labelHint: string;
       };
       /** Partial-submission threshold ("save a partial after step N"). */
       partial: {
@@ -1402,6 +1407,9 @@ export interface FormsMessages {
         buttonSolid: string;
         buttonOutline: string;
         buttonSoft: string;
+        buttonTextColor: string;
+        buttonTextAuto: string;
+        buttonTextLowContrast: string;
         buttonFullWidth: string;
         progress: string;
         progressBar: string;
@@ -1412,6 +1420,8 @@ export interface FormsMessages {
         layoutSubtitle: string;
         formLogo: string;
         formLogoHint: string;
+        showHeader: string;
+        showHeaderHint: string;
         logoSize: string;
         sizeSm: string;
         sizeMd: string;
@@ -1425,6 +1435,11 @@ export interface FormsMessages {
         contentWidth: string;
         widthNarrow: string;
         widthWide: string;
+        /** One page only: how tightly the questions are packed. */
+        density: string;
+        densityHint: string;
+        densityComfortable: string;
+        densityCompact: string;
         transition: string;
         transitionSlide: string;
         transitionFade: string;
@@ -2630,6 +2645,7 @@ export const en: FormsMessages = {
       too_long: 'Your answer is too long.',
       option: 'Choose one of the available options.',
       file: 'Upload a file to continue.',
+      consent: 'Check the box to continue.',
       submit: 'Could not submit. Please try again.',
       captcha: 'We couldn’t verify that you’re human. Please try again.',
       captcha_required: 'This form now checks that you’re human. Refresh the page and submit again.',
@@ -3569,6 +3585,8 @@ export const en: FormsMessages = {
         fieldKey: 'Field key',
         fieldKeyHint: 'Used as a URL parameter to prefill this field.',
         placeholder: 'Placeholder',
+        label: 'Label',
+        labelHint: 'Shown above the field on One page. With a label, the question title is only read by screen readers.',
       },
       partial: {
         title: 'Partial submissions',
@@ -3731,6 +3749,10 @@ export const en: FormsMessages = {
         buttonSolid: 'Solid',
         buttonOutline: 'Outline',
         buttonSoft: 'Soft',
+        buttonTextColor: 'Button text color',
+        buttonTextAuto: 'Automatic',
+        buttonTextLowContrast:
+          'The button text has a {ratio}:1 contrast on the accent color. Use 4.5:1 or more so it reads well.',
         buttonFullWidth: 'Full-width button',
         progress: 'Progress',
         progressBar: 'Bar',
@@ -3741,6 +3763,9 @@ export const en: FormsMessages = {
         layoutSubtitle: 'Where things sit and how the form moves between steps.',
         formLogo: 'Form logo URL',
         formLogoHint: 'Shown on every question screen. Leave empty for no logo.',
+        showHeader: 'Show header',
+        showHeaderHint:
+          'The logo above the form, or the form name when there is no logo. Turn it off when the form is embedded in a page that already shows your brand.',
         logoSize: 'Logo size',
         sizeSm: 'Small',
         sizeMd: 'Medium',
@@ -3754,6 +3779,11 @@ export const en: FormsMessages = {
         contentWidth: 'Content width',
         widthNarrow: 'Narrow',
         widthWide: 'Wide',
+        density: 'Density',
+        densityHint:
+          'Compact removes the lines between questions and spaces fields like a regular web form (16 px apart). One page only.',
+        densityComfortable: 'Comfortable',
+        densityCompact: 'Compact',
         transition: 'Step transition',
         transitionSlide: 'Slide',
         transitionFade: 'Fade',
@@ -5184,6 +5214,7 @@ export const es: FormsMessages = {
       too_long: 'Tu respuesta es muy larga.',
       option: 'Elige una de las opciones disponibles.',
       file: 'Sube un archivo para continuar.',
+      consent: 'Marca la casilla para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
       captcha: 'No pudimos verificar que eres una persona. Inténtalo de nuevo.',
       captcha_required:
@@ -6128,6 +6159,9 @@ export const es: FormsMessages = {
         fieldKey: 'Clave del campo',
         fieldKeyHint: 'Se usa como parámetro de URL para prellenar este campo.',
         placeholder: 'Texto de ejemplo',
+        label: 'Etiqueta',
+        labelHint:
+          'Se muestra encima del campo en Una página. Con etiqueta, el título de la pregunta solo lo leen los lectores de pantalla.',
       },
       partial: {
         title: 'Envíos parciales',
@@ -6291,6 +6325,10 @@ export const es: FormsMessages = {
         buttonSolid: 'Sólido',
         buttonOutline: 'Contorno',
         buttonSoft: 'Suave',
+        buttonTextColor: 'Color del texto del botón',
+        buttonTextAuto: 'Automático',
+        buttonTextLowContrast:
+          'El texto del botón tiene contraste {ratio}:1 sobre el color de acento. Usa 4.5:1 o más para que se lea bien.',
         buttonFullWidth: 'Botón de ancho completo',
         progress: 'Progreso',
         progressBar: 'Barra',
@@ -6301,6 +6339,9 @@ export const es: FormsMessages = {
         layoutSubtitle: 'Dónde va cada cosa y cómo se mueve el formulario entre pasos.',
         formLogo: 'URL del logo del formulario',
         formLogoHint: 'Se muestra en cada pantalla de pregunta. Vacío = sin logo.',
+        showHeader: 'Mostrar encabezado',
+        showHeaderHint:
+          'El logo arriba del formulario, o su nombre si no tiene logo. Apágalo si el formulario va embebido en una página que ya muestra tu marca.',
         logoSize: 'Tamaño del logo',
         sizeSm: 'Pequeño',
         sizeMd: 'Mediano',
@@ -6314,6 +6355,11 @@ export const es: FormsMessages = {
         contentWidth: 'Ancho del contenido',
         widthNarrow: 'Angosto',
         widthWide: 'Amplio',
+        density: 'Densidad',
+        densityHint:
+          'Compacta quita las líneas entre preguntas y separa los campos como un formulario web normal (16 px). Solo en Una página.',
+        densityComfortable: 'Cómoda',
+        densityCompact: 'Compacta',
         transition: 'Transición entre pasos',
         transitionSlide: 'Deslizar',
         transitionFade: 'Desvanecer',

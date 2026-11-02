@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormLayout, FormStep, GotoRule } from '@quill/engine';
-import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
+import { conditionNeverHolds, conditionsContradict, isHiddenStep } from '@quill/engine';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -216,7 +216,7 @@ function StepBlock({
         </span>
         <i aria-hidden className={`pi ${iconForStep(step)} shrink-0 text-muted-foreground`} style={{ fontSize: 12 }} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{title}</span>
-        {step.hidden ? (
+        {isHiddenStep(step) ? (
           <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint">
             {bm.badges.hidden}
           </span>

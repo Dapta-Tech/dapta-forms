@@ -35,6 +35,8 @@ export const GUIDE_RULES: readonly string[] = [
   'get_form_analytics is the funnel (sessions: views, starts, drop-off). get_form_summary counts what responses answered, question by question. Their numbers measure different things.',
   'A tool marked destructive deletes or replaces something (delete_form, delete_responses, delete_folder, set_destinations, update_form, the resets). The recommended flow is to tell the user exactly what will change and wait for a clear yes; after an error, a read shows whether it went through, so it is not repeated blind.',
   'Some tools are for owners and admins only (the brand kit writes, the notification emails, ping_webhook). A member gets FORBIDDEN, and an owner or admin of the workspace can do it instead.',
+  'A one-page form (layout "vertical") meant to be embedded in a page that already shows the brand usually takes branding.showHeader false and branding.progressStyle "none": no logo or form name on top and no answered counter.',
+  'To make a one page form look like a regular web form: layout "vertical", branding.density "compact", width "half" on pairs of short fields (first name and last name go in one name step with fieldLabels), and no cover.',
 ];
 
 export const GUIDE_LIFECYCLE: readonly string[] = [
@@ -60,7 +62,12 @@ export const GUIDE_WORKSPACES: readonly string[] = [
 export const GUIDE_STEP_TYPES: ReadonlyArray<{ type: string; use_for: string }> = [
   { type: 'name', use_for: "The person's name. Collects first and last name. The type for a name, rather than text." },
   { type: 'email', use_for: 'An email address.' },
-  { type: 'phone', use_for: 'A phone number.' },
+  { type: 'phone', use_for: 'A phone number. Its placeholder replaces the automatic number mask; leave it out to keep the mask.' },
+  {
+    type: 'checkbox',
+    use_for:
+      'One box to tick, such as consent to a privacy policy. `question` is the text beside the box and can carry links as [text](https://url). Checked is stored as true; unchecked stores nothing. `required: true` blocks submit until it is checked.',
+  },
   { type: 'multiple_choice', use_for: 'Pick from a few options shown at once. Options score with `points`.' },
   { type: 'dropdown', use_for: 'Pick from a long list. Options score with `points`.' },
   { type: 'slider', use_for: 'A number on a range. Scores with `sliderScoring` ranges.' },
@@ -79,7 +86,7 @@ export const GUIDE_LOGIC: readonly string[] = [
   'op "in" (the default) with `values`: the answer is one of those option values. op "eq", "gt" or "lt" with `value`, or "between" with `min` and `max` (inclusive): a number, from a slider or from "@score".',
   '"@score" is the running score of the steps shown before this one, not counting the step itself. Only gt, lt, eq and between apply to it. Put a step gated by score after the last scored question.',
   'Scoring: each answer adds points and the total picks one of `outcomes` by minScore and maxScore (inclusive). Leave maxScore off the highest range so every score lands somewhere.',
-  'Placeholders: [step_key] inserts an earlier answer into a question, helper, outcome label or message, ending texts, reveal texts and redirectUrl. A name step exposes [firstname], [lastname] and [name]. A placeholder with no answer disappears with the comma or space that joined it.',
+  'Placeholders: [step_key] inserts an earlier answer into a question, helper, outcome label or message, ending texts, reveal texts and redirectUrl. A name step exposes [firstname], [lastname] and [name]. A placeholder with no answer disappears with the comma or space that joined it. A checkbox step does not take placeholders in its question.',
 ];
 
 export const GUIDE_EXAMPLES: ReadonlyArray<{ name: string; what: string; config: unknown }> = [

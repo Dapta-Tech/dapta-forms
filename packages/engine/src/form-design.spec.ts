@@ -105,6 +105,30 @@ describe('resolveDesign — explicit axes', () => {
   it('progressStyle "none" survives resolution', () => {
     expect(resolveDesign({ progressStyle: 'none' }).progressStyle).toBe('none');
   });
+
+  it('shows the one-page header unless it is switched off', () => {
+    expect(resolveDesign({}).showHeader).toBe(true);
+    expect(resolveDesign({ showHeader: true }).showHeader).toBe(true);
+    expect(resolveDesign({ showHeader: false }).showHeader).toBe(false);
+  });
+
+  it('adds no data-pf attribute for showHeader, so legacy markup stays identical', () => {
+    // The renderer drops the header node instead; an attribute here would
+    // change every published form's root markup.
+    expect(designAttributes(resolveDesign({ showHeader: false }))).toEqual(designAttributes(resolveDesign({})));
+  });
+});
+
+describe('resolveDesign: density', () => {
+  it('resolves to comfortable when absent and keeps compact', () => {
+    expect(resolveDesign({}).density).toBe('comfortable');
+    expect(resolveDesign({ density: 'compact' }).density).toBe('compact');
+  });
+
+  it('adds no data-pf-density attribute: only the vertical renderer sets it', () => {
+    expect(designAttributes(resolveDesign({ density: 'compact' }))).not.toHaveProperty('data-pf-density');
+    expect(designAttributes(resolveDesign({ density: 'compact' }))).toEqual(designAttributes(resolveDesign({})));
+  });
 });
 
 describe('resolveDesign — background image cross-validation', () => {

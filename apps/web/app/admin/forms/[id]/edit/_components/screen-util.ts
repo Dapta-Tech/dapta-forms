@@ -11,6 +11,7 @@ import {
   MAX_SCREEN_SIZE,
   authoredScreens,
   canShareScreen,
+  isHiddenStep,
   nameFields,
   normalizeScreenGroups,
   screensActive,
@@ -38,7 +39,7 @@ export function screenOf(steps: FormStep[], index: number): AuthoredScreen | nul
 /** The nearest step above `index` that is not hidden (hidden steps are transparent). */
 function visibleAbove(steps: FormStep[], index: number): number {
   let above = index - 1;
-  while (above >= 0 && steps[above]?.hidden) above -= 1;
+  while (above >= 0 && steps[above] && isHiddenStep(steps[above]!)) above -= 1;
   return above;
 }
 
@@ -58,7 +59,7 @@ export function screenBoundary(steps: FormStep[], index: number): ScreenBoundary
   const own = screens.find((s) => s.members.includes(index)) ?? null;
   const above = visibleAbove(steps, index);
   if (own && above >= 0 && own.members.includes(above)) return { joined: true, blocked: null };
-  if (step.hidden) return { joined: false, blocked: 'hidden' };
+  if (isHiddenStep(step)) return { joined: false, blocked: 'hidden' };
   if (above < 0) return { joined: false, blocked: 'first' };
   if (!canShareScreen(step) || !canShareScreen(steps[above] as FormStep)) return { joined: false, blocked: 'solo' };
   const upper = screens.find((s) => s.members.includes(above));
@@ -82,7 +83,7 @@ export function screenList(steps: FormStep[]): number[][] {
   steps.forEach((step, i) => {
     const screen = byFirst.get(i);
     if (screen) list.push(screen);
-    else if (!member.has(i) && !step.hidden) list.push([i]);
+    else if (!member.has(i) && !isHiddenStep(step)) list.push([i]);
   });
   return list;
 }
@@ -105,9 +106,9 @@ export function moveStep(steps: FormStep[], from: number, to: number): FormStep[
   arr.splice(from, 1);
   arr.splice(to, 0, moved);
   let prev: FormStep | undefined;
-  for (let i = to - 1; i >= 0 && !prev; i -= 1) if (!arr[i]?.hidden) prev = arr[i];
+  for (let i = to - 1; i >= 0 && !prev; i -= 1) if (arr[i] && !isHiddenStep(arr[i]!)) prev = arr[i];
   let next: FormStep | undefined;
-  for (let i = to + 1; i < arr.length && !next; i += 1) if (!arr[i]?.hidden) next = arr[i];
+  for (let i = to + 1; i < arr.length && !next; i += 1) if (arr[i] && !isHiddenStep(arr[i]!)) next = arr[i];
   const { screenGroup: _left, ...plain } = moved;
   if (own && (prev?.screenGroup === own.id || next?.screenGroup === own.id)) {
     arr[to] = { ...moved, screenGroup: own.id };
@@ -116,7 +117,7 @@ export function moveStep(steps: FormStep[], from: number, to: number): FormStep[
     const size = arr.filter((s) => s !== moved && s.screenGroup === inside).length;
     if (canShareScreen(moved) && size < MAX_SCREEN_SIZE) {
       arr[to] = { ...moved, screenGroup: inside };
-    } else if (moved.hidden) {
+    } else if (isHiddenStep(moved)) {
       // A hidden question is transparent: it sits there and cuts nothing.
       arr[to] = plain;
     } else {

@@ -25,7 +25,7 @@
  *    inputs on change, free-text inputs on blur).
  *  - `partial_submit` fires when the threshold step's answer becomes valid.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   runtimeSteps,
   validateAnswerCode,
@@ -41,6 +41,8 @@ import {
   showBanner,
   showClientLogosOn,
   resolveFormLogos,
+  nameFieldLabels,
+  onePageRows,
   type Answers,
   type AnswerValue,
   type FormStep,
@@ -79,6 +81,7 @@ import {
   submitFinal,
   captureUtm,
   captureDefaults,
+  withAnswer,
   capturePrefill,
   schedulerToBooking,
   bannerChromeProps,
@@ -97,6 +100,11 @@ type Phase = 'form' | 'reveal' | 'submitting' | 'booking' | 'done';
  * Does the respondent's answer to this step hold ANY content yet? Drives the
  * progress counter, the terminal cut and the completion events — deliberately
  * weaker than validity (a half-typed email "has content" but isn't complete).
+ *
+ * Content alone is not "answered": the counter and the terminal cut go through
+ * `answeredByUser`, which also requires the key to be out of `seededKeys`. A
+ * question counts as answered only when it is in the visible walk, has content
+ * here, and its value was put there by the person rather than by the page.
  */
 function hasContent(step: FormStep, answers: Answers): boolean {
   if (step.type === 'name') {
@@ -306,10 +314,13 @@ export function VerticalFormRenderer({
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const startTracked = useRef(false);
-  // Keys whose answer was SEEDED, not typed (a slider's mount-time default).
-  // A seeded value submits, but it is not "answered by the respondent": it must
-  // not tick the progress counter and must never trip a terminal cut on load.
-  // Any real interaction with the step removes it from this set.
+  // Keys whose answer was SEEDED by the page, not given by the person: a
+  // slider's mount-time default, a step's configured `defaultValue`, and a URL
+  // prefill (a `name` step's subfields map to the step's own key). A seeded
+  // value submits, but it is not "answered by the respondent": it must not tick
+  // the progress counter and must never trip a terminal cut on load. Any real
+  // interaction with the step (`setAnswer`) removes it from this set, even
+  // re-picking the option that was already the default.
   const seededKeys = useRef<Set<string>>(new Set());
   const partialSent = useRef(false);
   const completeSent = useRef<Set<string>>(new Set()); // one step_complete per step
@@ -325,7 +336,11 @@ export function VerticalFormRenderer({
     [engineConfig, answers],
   );
 
-  /** Answered by the RESPONDENT — a seeded (untouched) default doesn't count. */
+  /**
+   * Answered by the RESPONDENT: has content AND is not in `seededKeys`. A
+   * default, a URL prefill or a slider's mount value doesn't count until the
+   * person touches the question.
+   */
   const answeredByUser = (s: FormStep) => hasContent(s, answers) && !seededKeys.current.has(s.key);
 
   // Terminal cut (disqualify): once a terminal step holds an answer, everything
@@ -339,6 +354,7 @@ export function VerticalFormRenderer({
   // Reveal steps are interstitials — never inline questions on this layout.
   const questions = useMemo(() => walk.filter((s) => s.type !== 'reveal'), [walk]);
   const answerable = useMemo(() => questions.filter((s) => s.type !== 'message'), [questions]);
+  const pageRef = useKeepFocusAcrossRows(questions);
   const answeredCount = answerable.filter(answeredByUser).length;
 
   // The one reveal that may play after Submit: a reveal STEP in the current walk
@@ -403,7 +419,18 @@ export function VerticalFormRenderer({
     utmRef.current = captureUtm();
     // Defaults first, then the URL on top: a link that names a value must beat
     // a default the author configured earlier.
-    const seed = { ...captureDefaults(engineConfig.steps), ...capturePrefill(engineConfig.steps) };
+    const defaults = captureDefaults(engineConfig.steps);
+    const prefill = capturePrefill(engineConfig.steps);
+    const seed = { ...defaults, ...prefill };
+    // Both are the page's values, not the person's: they stay out of the
+    // counter and the terminal cut until the question is touched. A prefilled
+    // `name` subfield seeds the `name` step's own key, which is what
+    // `answeredByUser` checks.
+    for (const key of Object.keys(defaults)) seededKeys.current.add(key);
+    for (const step of engineConfig.steps) {
+      if (step.type === 'message') continue;
+      if (nameFields(step).some((f) => f in prefill)) seededKeys.current.add(step.key);
+    }
     // A reload mid-form: what the person had answered wins over both. A value
     // that was only seeded before the reload stays seeded (no progress tick,
     // no terminal cut), exactly as it was.
@@ -412,11 +439,17 @@ export function VerticalFormRenderer({
     // The draft last: a question's own mount-time default (a slider's) has
     // already landed in `a` and in `seededKeys` by now, and must not replace
     // what was answered, nor leave a moved slider counted as untouched.
+    // Decided per STEP, not per answer key: `seededKeys` holds step keys, and a
+    // `name` step stores its answer under its subfields (`firstname`, ...), never
+    // under its own key. Walking the answer keys would leave a prefilled name
+    // that the person then edited stuck as seeded after the reload.
     if (draft) {
       const seeded = new Set(draft.seeded ?? []);
-      for (const key of Object.keys(restored)) {
-        if (seeded.has(key)) seededKeys.current.add(key);
-        else seededKeys.current.delete(key);
+      for (const step of engineConfig.steps) {
+        if (step.type === 'message') continue;
+        if (!nameFields(step).some((f) => f in restored)) continue;
+        if (seeded.has(step.key)) seededKeys.current.add(step.key);
+        else seededKeys.current.delete(step.key);
       }
     }
     if (Object.keys(seed).length > 0 || Object.keys(restored).length > 0) {
@@ -648,7 +681,7 @@ export function VerticalFormRenderer({
       // scrolls to the end, never reaches the challenge provider.
       gateRef.current.arm();
     }
-    const next = { ...answersRef.current, [key]: value };
+    const next = withAnswer(answersRef.current, key, value);
     // Keep the ref fresh SYNCHRONOUSLY: a blur handler can run before React
     // re-renders (where the ref is normally reassigned), and it must validate
     // the value just typed, not the previous one.
@@ -862,7 +895,7 @@ export function VerticalFormRenderer({
           reveal={pendingReveal ?? { enabled: true }}
           answers={answers}
           messages={revealMessages}
-          logo={logos.form}
+          logo={design.design.showHeader ? logos.form : null}
           name={name}
           onComplete={onRevealComplete}
         >
@@ -889,7 +922,7 @@ export function VerticalFormRenderer({
             layout's copy of this screen. The logo has to be here too or it
             blinks out at the reveal → submitting handover. */}
         <div className="pf-reveal__inner">
-          {logos.form ? (
+          {design.design.showHeader && logos.form ? (
             <div className="pf-reveal__brand">
               <FormLogo src={logos.form} name={name} fallback="none" />
             </div>
@@ -905,8 +938,75 @@ export function VerticalFormRenderer({
   const headerLogo = coverScreen ? logos.cover : logos.form;
   const total = answerable.length;
 
+  const renderQuestion = (step: FormStep) => (
+    <VerticalQuestion
+      key={step.key}
+      step={step}
+      index={steps.findIndex((s) => s.key === step.key)}
+      error={errors[step.key] ? err(errors[step.key] as string) : null}
+      stepViewSent={stepViewSent}
+      track={track}
+      onBlur={(e) => onQuestionBlur(step, e)}
+    >
+      {step.type === 'scheduler' ? (
+        <SchedulerQuestion
+          step={step}
+          config={config}
+          answers={answers}
+          sessionId={sessionId}
+          locale={locale}
+          unconfiguredLabel={m.schedulerUnconfigured}
+          onBooked={(details) => void handleSchedulerBooked(step, details)}
+        />
+      ) : (
+        <StepInput
+          step={step}
+          value={answers[step.key]}
+          answers={answers}
+          autoFocus={false}
+          // No question takes focus on load, the phone included: on a page
+          // (and in an embed) it would scroll the host to the field.
+          phoneAutoFocus={false}
+          showFieldLabels
+          // Mount-time seeding (slider default) is not an interaction:
+          // write the answer silently — no start/complete events, no
+          // progress tick, no terminal cut (seededKeys).
+          onSeed={(v: AnswerValue) => {
+            seededKeys.current.add(step.key);
+            setAnswers((a) => ({ ...a, [step.key]: v }));
+          }}
+          onChange={(v: AnswerValue) =>
+            setAnswer(
+              step,
+              step.key,
+              v,
+              step.type === 'slider' || step.type === 'multiple_choice' || step.type === 'checkbox',
+            )
+          }
+          onFieldChange={(field, v) => setAnswer(step, field, v, false)}
+          onSelect={(v) => setAnswer(step, step.key, v, true)}
+          dropdownPlaceholder={m.dropdownPlaceholder}
+          dropdownEmpty={m.dropdownEmpty}
+          locale={locale}
+          onRequestUpload={requestUploadTicket}
+          uploadMaxMb={uploadMaxMb}
+          showRequiredMark={step.required === true}
+          invalid={Boolean(errors[step.key])}
+        />
+      )}
+    </VerticalQuestion>
+  );
+
   return (
-    <div className="pf pf--vertical" {...design.attrs} style={design.style}>
+    <div
+      ref={pageRef}
+      className="pf pf--vertical"
+      {...design.attrs}
+      // Only the form phase of this layout reads density, and only `compact`
+      // adds the attribute, so every other form keeps its markup.
+      data-pf-density={design.design.density === 'compact' ? 'compact' : undefined}
+      style={design.style}
+    >
       {/* An author-supplied face has to be declared in the document. This root
           is not a PhaseShell, so it declares its own. */}
       {design.fontFace ? <style>{design.fontFace}</style> : null}
@@ -924,7 +1024,9 @@ export function VerticalFormRenderer({
             {chrome?.bannerText}
           </div>
         ) : null}
-        {total > 0 ? (
+        {/* `progressStyle: 'none'` drops the whole strip, label included. The
+            other styles have no one-page version: they all draw the bar. */}
+        {total > 0 && design.design.progressStyle !== 'none' ? (
           <div className="pf-v__progressbar">
             <div className="pf-progress" aria-hidden="true">
               <div className="pf-progress__track">
@@ -943,9 +1045,11 @@ export function VerticalFormRenderer({
 
       <div className="pf__main">
         <div className="pf-v__page">
-          <header className="pf-v__header">
-            <FormLogo src={headerLogo} name={name} />
-          </header>
+          {design.design.showHeader ? (
+            <header className="pf-v__header">
+              <FormLogo src={headerLogo} name={name} />
+            </header>
+          ) : null}
 
           {coverScreen ? (
             <section className="pf-v__hero pf-animate">
@@ -962,53 +1066,19 @@ export function VerticalFormRenderer({
           {questions.length === 0 ? (
             <p className="pf__helper">{m.noSteps}</p>
           ) : (
-            questions.map((step) => (
-              <VerticalQuestion
-                key={step.key}
-                step={step}
-                index={steps.findIndex((s) => s.key === step.key)}
-                error={errors[step.key] ? err(errors[step.key] as string) : null}
-                stepViewSent={stepViewSent}
-                track={track}
-                onBlur={(e) => onQuestionBlur(step, e)}
-              >
-                {step.type === 'scheduler' ? (
-                  <SchedulerQuestion
-                    step={step}
-                    config={config}
-                    answers={answers}
-                    sessionId={sessionId}
-                    locale={locale}
-                    unconfiguredLabel={m.schedulerUnconfigured}
-                    onBooked={(details) => void handleSchedulerBooked(step, details)}
-                  />
-                ) : (
-                  <StepInput
-                    step={step}
-                    value={answers[step.key]}
-                    answers={answers}
-                    autoFocus={false}
-                    // Mount-time seeding (slider default) is not an interaction:
-                    // write the answer silently — no start/complete events, no
-                    // progress tick, no terminal cut (seededKeys).
-                    onSeed={(v: AnswerValue) => {
-                      seededKeys.current.add(step.key);
-                      setAnswers((a) => ({ ...a, [step.key]: v }));
-                    }}
-                    onChange={(v: AnswerValue) =>
-                      setAnswer(step, step.key, v, step.type === 'slider' || step.type === 'multiple_choice')
-                    }
-                    onFieldChange={(field, v) => setAnswer(step, field, v, false)}
-                    onSelect={(v) => setAnswer(step, step.key, v, true)}
-                    dropdownPlaceholder={m.dropdownPlaceholder}
-                    dropdownEmpty={m.dropdownEmpty}
-                    locale={locale}
-                    onRequestUpload={requestUploadTicket}
-                    uploadMaxMb={uploadMaxMb}
-                  />
-                )}
-              </VerticalQuestion>
-            ))
+            // Rows over the LIVE walk (after logic): a pair whose partner is
+            // hidden by logic falls back to full width, and two halves with a
+            // hidden question between them pair up. A row of one is today's
+            // bare <section>, so a form with no half steps keeps its markup.
+            onePageRows(questions).map((row) => {
+              const members = row.map((i) => questions[i]!);
+              if (members.length === 1) return renderQuestion(members[0]!);
+              return (
+                <div key={`row:${members[0]!.key}`} className="pf-v__row">
+                  {members.map(renderQuestion)}
+                </div>
+              );
+            })
           )}
 
           {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
@@ -1071,25 +1141,31 @@ function VerticalQuestion({
     stepViewSent.current.add(step.key);
     track('step_view', index >= 0 ? index : undefined, step.key);
   });
+  // A name step with its own field labels: each input shows its label, so the
+  // title stays only as the group's accessible name (StepInput paints them).
+  const labelled = nameFieldLabels(step) !== null;
 
   return (
     <section
       ref={ref}
-      className={`pf-v__question${error ? ' pf-v__question--error' : ''}`}
+      className={`pf-v__question${labelled ? ' pf-v__question--labelled' : ''}${error ? ' pf-v__question--error' : ''}`}
       data-vf-step={step.key}
       onBlur={onBlur}
     >
-      <div className="pf__question-wrap">
-        <h2 className="pf__question">
-          {step.question ?? step.key}
-          {step.required && step.type !== 'message' ? (
-            <span aria-hidden className="pf-v__required">
-              *
-            </span>
-          ) : null}
-        </h2>
-        {step.helper && step.type !== 'message' ? <p className="pf__helper">{step.helper}</p> : null}
-      </div>
+      {/* A checkbox's text sits beside its box (StepInput paints it): no title. */}
+      {step.type === 'checkbox' ? null : (
+        <div className="pf__question-wrap">
+          <h2 className={labelled ? 'pf__question sr-only' : 'pf__question'}>
+            {step.question ?? step.key}
+            {step.required && step.type !== 'message' ? (
+              <span aria-hidden className="pf-v__required">
+                *
+              </span>
+            ) : null}
+          </h2>
+          {step.helper && step.type !== 'message' ? <p className="pf__helper">{step.helper}</p> : null}
+        </div>
+      )}
       <div className="pf__fields">
         {children}
         {error ? (
@@ -1152,4 +1228,103 @@ function SchedulerQuestion({
       />
     </NearViewport>
   );
+}
+
+/** What can take focus inside a question, in document order. */
+const FOCUSABLE = 'input, textarea, select, button, [tabindex]:not([tabindex="-1"])';
+
+/** `CSS.escape`, or a minimal stand-in where the environment has none. */
+function cssEscape(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value);
+  return value.replace(/["\\]/g, '\\$&');
+}
+
+/**
+ * Keeps the respondent's caret when logic re-pairs the rows. A row of one is a
+ * bare section and a row of two wraps its sections in `.pf-v__row`; React does
+ * not move a child between parents, so a question that joins or leaves a pair
+ * remounts, and the input being typed in loses focus. The markup must stay as
+ * it is (a form with no half steps keeps its legacy DOM), so instead the last
+ * focused control is remembered (the element, its question, its position among
+ * the question's focusables, its selection) and restored only when that very
+ * element left the document, i.e. it really remounted.
+ *
+ * A press anywhere outside that control forgets it: Safari and iOS do not focus
+ * a tapped `<button>` (choice options are buttons), so focus sits on the body
+ * after a tap, and a tap that reveals a question must never send the caret
+ * (and the phone keyboard) back to the field typed in before.
+ *
+ * Returns the ref for the page root; lookups stay inside it.
+ */
+function useKeepFocusAcrossRows(questions: readonly FormStep[]) {
+  const rowsKey = useMemo(
+    () => onePageRows(questions).map((row) => row.map((i) => questions[i]!.key).join('+')).join('|'),
+    [questions],
+  );
+  const rootRef = useRef<HTMLDivElement>(null);
+  const last = useRef<{
+    el: HTMLElement;
+    step: string;
+    index: number;
+    start: number | null;
+    end: number | null;
+  } | null>(null);
+
+  useEffect(() => {
+    const remember = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      const root = rootRef.current;
+      if (!target || !root || !root.contains(target)) return;
+      const section = target.closest?.<HTMLElement>('[data-vf-step]');
+      if (!section) return;
+      const index = [...section.querySelectorAll<HTMLElement>(FOCUSABLE)].indexOf(target);
+      if (index < 0) return;
+      let start: number | null = null;
+      let end: number | null = null;
+      try {
+        start = (target as HTMLInputElement).selectionStart ?? null;
+        end = (target as HTMLInputElement).selectionEnd ?? null;
+      } catch {
+        // Inputs like email and number throw on selection reads.
+      }
+      last.current = { el: target, step: section.dataset.vfStep!, index, start, end };
+    };
+    const forget = (e: Event) => {
+      const saved = last.current;
+      if (saved && !saved.el.contains(e.target as Node | null)) last.current = null;
+    };
+    document.addEventListener('focusin', remember);
+    document.addEventListener('input', remember, true);
+    document.addEventListener('keyup', remember, true);
+    document.addEventListener('pointerdown', forget, true);
+    return () => {
+      document.removeEventListener('focusin', remember);
+      document.removeEventListener('input', remember, true);
+      document.removeEventListener('keyup', remember, true);
+      document.removeEventListener('pointerdown', forget, true);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const saved = last.current;
+    const root = rootRef.current;
+    // Only a control that really remounted: one still in the document kept
+    // its own focus, or the respondent moved on from it.
+    if (!saved || !root || saved.el.isConnected) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const section = root.querySelector<HTMLElement>(`[data-vf-step="${cssEscape(saved.step)}"]`);
+    const target = section?.querySelectorAll<HTMLElement>(FOCUSABLE)[saved.index];
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    if (saved.start != null && saved.end != null) {
+      try {
+        (target as HTMLInputElement).setSelectionRange(saved.start, saved.end);
+      } catch {
+        // Not a text control with a selection.
+      }
+    }
+  }, [rowsKey]);
+
+  return rootRef;
 }

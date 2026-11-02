@@ -17,6 +17,7 @@ import {
   MAX_SCREEN_SIZE,
   authoredScreens,
   canShareScreen,
+  isHiddenStep,
   freshScreenId,
   revealAfterKey,
 } from './form-logic';
@@ -550,7 +551,7 @@ export function setScreenBoundary(config: FormConfig, index: number, joined: boo
   const current = steps[index];
   if (!current || !canShareScreen(current)) return config;
   let above = index - 1;
-  while (above >= 0 && steps[above]?.hidden) above -= 1;
+  while (above >= 0 && steps[above] && isHiddenStep(steps[above]!)) above -= 1;
   const prev = above >= 0 ? steps[above] : undefined;
   if (!prev || !canShareScreen(prev)) return config;
 

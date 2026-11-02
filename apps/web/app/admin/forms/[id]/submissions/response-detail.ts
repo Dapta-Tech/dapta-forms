@@ -2,6 +2,7 @@ import type { SubmissionView } from '@quill/types';
 import {
   formatAnswerCell,
   formatAnswerValue,
+  inlineLinksPlainText,
   nameAnswer,
   parseFileAnswer,
   resolveQuestion,
@@ -81,7 +82,9 @@ export function answerView(
   timeZone: string,
 ): AnswerView {
   const key = step.key;
-  const label = resolveQuestion(step, data as Answers).trim() || step.key;
+  // A checkbox shows its inline links as their text, like its column header.
+  const question = step.type === 'checkbox' ? inlineLinksPlainText(step.question ?? '') : resolveQuestion(step, data as Answers);
+  const label = question.trim() || step.key;
 
   // A name step stores its sub-fields flat (firstname, lastname), never under its key.
   if (step.type === 'name') {

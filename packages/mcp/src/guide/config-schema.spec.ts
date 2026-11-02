@@ -3,7 +3,13 @@ import Ajv from 'ajv';
 import { createEmptyStep, normalizeConfig, type FormConfig as EngineConfig } from '@quill/engine';
 import { formConfigSchema } from '@quill/types';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { EDITOR_DEFAULT_FIELDS, formConfigJsonSchema, KEPT_AS_READ_FIELDS, UNSUPPORTED_CONFIG_FIELDS } from './config-schema';
+import {
+  EDITOR_DEFAULT_FIELDS,
+  FIELD_DESCRIPTIONS,
+  formConfigJsonSchema,
+  KEPT_AS_READ_FIELDS,
+  UNSUPPORTED_CONFIG_FIELDS,
+} from './config-schema';
 import { EXAMPLE_CONFIGS, QUIZ_CONFIG } from './examples';
 
 /** Does `path` (dot segments, `[]` for array items) resolve to a property anywhere in `schema`? */
@@ -22,6 +28,27 @@ function hasField(schema: unknown, path: string): boolean {
     return i === segments.length - 1 ? true : walk(props[segment], i + 1);
   };
   return walk(schema, 0);
+}
+
+/** The `description` of every node `path` resolves to (one per union variant). */
+function fieldDescriptions(schema: unknown, path: string): unknown[] {
+  const segments = path.split('.');
+  const out: unknown[] = [];
+  const walk = (node: unknown, i: number): void => {
+    if (!node || typeof node !== 'object') return;
+    const n = node as Record<string, unknown>;
+    for (const key of ['anyOf', 'oneOf', 'allOf']) {
+      if (Array.isArray(n[key])) for (const m of n[key] as unknown[]) walk(m, i);
+    }
+    const segment = segments[i]!;
+    if (segment === '[]') return walk(n.items, i + 1);
+    const props = n.properties as Record<string, unknown> | undefined;
+    if (!props || !(segment in props)) return;
+    if (i === segments.length - 1) out.push((props[segment] as Record<string, unknown>).description);
+    else walk(props[segment], i + 1);
+  };
+  walk(schema, 0);
+  return out;
 }
 
 const ajv = new Ajv({ allErrors: true, strict: false });
@@ -114,6 +141,46 @@ describe('formConfigJsonSchema', () => {
       expect(validate(config), `${name}: ${ajv.errorsText(validate.errors)}`).toBe(true);
       expect(formConfigSchema.safeParse(config).success, name).toBe(true);
     }
+  });
+
+  it('describes the one-page header and progress fields', () => {
+    expect(hasField(schema, 'branding.showHeader')).toBe(true);
+    const header = fieldDescriptions(schema, 'branding.showHeader');
+    expect(header.length).toBeGreaterThan(0);
+    for (const d of header) expect(d).toBe(FIELD_DESCRIPTIONS['branding.showHeader']);
+    expect(FIELD_DESCRIPTIONS['branding.showHeader']).toBe(
+      'Only read by layout "vertical". false hides the header above the form (the logo, or the form name when there is no logo) on the form and on the reveal and submitting screens. Absent or true shows it. Ignored by layout "slides".',
+    );
+    const progress = fieldDescriptions(schema, 'branding.progressStyle');
+    expect(progress.length).toBeGreaterThan(0);
+    for (const d of progress) {
+      expect(d).toBe(
+        'On layout "slides": bar, dots, steps or none. On layout "vertical" only two looks exist: none hides the bar and the "X of N answered" counter; any other value shows both.',
+      );
+    }
+    const validate = ajv.compile(schema);
+    expect(validate({ ...QUIZ_CONFIG, branding: { ...(QUIZ_CONFIG.branding ?? {}), showHeader: false } })).toBe(true);
+  });
+
+  it('describes the one-page row width, name labels and density fields', () => {
+    for (const path of ['steps.[].width', 'steps.[].fieldLabels', 'branding.density']) {
+      expect(hasField(schema, path)).toBe(true);
+      const found = fieldDescriptions(schema, path);
+      expect(found.length).toBeGreaterThan(0);
+      for (const d of found) expect(d).toBe(FIELD_DESCRIPTIONS[path]);
+    }
+    const validate = ajv.compile(schema);
+    expect(
+      validate({
+        ...QUIZ_CONFIG,
+        layout: 'vertical',
+        branding: { ...(QUIZ_CONFIG.branding ?? {}), density: 'compact' },
+        steps: QUIZ_CONFIG.steps.map((s, i) => (i === 0 ? { ...s, width: 'half' } : s)),
+      }),
+    ).toBe(true);
+    expect(
+      validate({ ...QUIZ_CONFIG, branding: { ...(QUIZ_CONFIG.branding ?? {}), density: 'tight' } }),
+    ).toBe(false);
   });
 
   it('rejects a config that uses an unsupported field', () => {
