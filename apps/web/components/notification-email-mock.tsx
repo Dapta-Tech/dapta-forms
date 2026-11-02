@@ -65,6 +65,7 @@ export function NotificationEmailMock({
   subject,
   body,
   labels,
+  sample = SAMPLE,
 }: {
   open: boolean;
   onClose: () => void;
@@ -73,9 +74,11 @@ export function NotificationEmailMock({
   /** The raw body template. */
   body: string;
   labels: NotificationMockLabels;
+  /** The values the tokens take (default: the shared sample, with a score). */
+  sample?: Record<string, string>;
 }) {
-  const lines = useMemo(() => mockBodyLines(body, SAMPLE), [body]);
-  const renderedSubject = useMemo(() => interpolate(subject, SAMPLE), [subject]);
+  const lines = useMemo(() => mockBodyLines(body, sample), [body, sample]);
+  const renderedSubject = useMemo(() => interpolate(subject, sample), [subject, sample]);
   // The growth button the email carries under its card, by the badge's rule:
   // only when this deployment has the loop on. Its copy is the dashboard's
   // language here; the real email uses the respondent's.

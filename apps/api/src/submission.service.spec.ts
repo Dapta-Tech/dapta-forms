@@ -93,6 +93,34 @@ describe('submit', () => {
     expect(payload.respondentEmail).toBe('lead@acme.io');
   });
 
+  it('the owner notice carries no score for a form with no scoring, and the score for a scored one', async () => {
+    const account = await db.get<{ id: string }>(sql`SELECT id FROM account WHERE code = 'acme' LIMIT 1`);
+    const config: FormConfig = {
+      version: 1,
+      steps: [
+        { key: 'email', type: 'email', question: 'Email?' },
+        { key: 'plan', type: 'multiple_choice', question: 'Plan?', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+      ],
+    } as FormConfig;
+    // No points, ranges or outcomes anywhere: the form has no scoring.
+    const created = await createForm(db, account!.id, { name: 'No scoring', config });
+    if (!created.ok) throw new Error('createForm failed');
+    const slug = created.value.slug;
+    const out = await svc.submit('acme', slug, { sessionId: 'sess-noscore', data: { email: 'x@acme.io', plan: 'a' } });
+    expect('error' in out).toBe(false);
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-scored',
+      data: { role: 'founder', team_size: 20, company: 'Acme', email: 'lead@acme.io' },
+    });
+    await flushEffects();
+
+    const notices = (await listOutbox(db, { kind: 'email' }))
+      .filter((r) => r.action === 'submission_received')
+      .map((r) => JSON.parse(r.payload!) as { formName: string; score: number | null });
+    expect(notices.find((n) => n.formName === 'No scoring')!.score).toBeNull();
+    expect(notices.find((n) => n.formName === 'Lead Qualifier')!.score).toBe(18);
+  });
+
   it('the respondent receipt renders in the language the respondent saw, then the form language, then none', async () => {
     const localeOf = async (sessionId: string, extra: Record<string, unknown>, language?: 'en' | 'es') => {
       if (language) {
