@@ -69,6 +69,7 @@ import {
   submitFinal,
   captureUtm,
   captureDefaults,
+  withAnswer,
   capturePrefill,
   schedulerToBooking,
   preloadableCalendlyKeys,
@@ -944,7 +945,7 @@ export function FormRenderer({
     // The first answer arms spam protection's check, which then loads once
     // the end of the form is on screen, as on the one-page layout.
     gateRef.current.arm();
-    setAnswers((a) => ({ ...a, [field]: value }));
+    setAnswers((a) => withAnswer(a, field, value));
     setError(null);
     setErrors((e) => {
       if (!(owner in e)) return e;
@@ -1304,19 +1305,23 @@ export function FormRenderer({
                     aria-labelledby={memberId(member.key, 'q')}
                     aria-describedby={code ? memberId(member.key, 'e') : undefined}
                   >
-                    <div className="pf__question-wrap">
-                      <h2 className="pf__question" id={memberId(member.key, 'q')}>
-                        {member.question ?? member.key}
-                        {several && member.required && member.type !== 'message' ? (
-                          <span aria-hidden className="pf-v__required">
-                            *
-                          </span>
+                    {/* A checkbox's text sits beside its box and carries the
+                        `q` id the group is labelled by (StepInput paints it). */}
+                    {member.type === 'checkbox' ? null : (
+                      <div className="pf__question-wrap">
+                        <h2 className="pf__question" id={memberId(member.key, 'q')}>
+                          {member.question ?? member.key}
+                          {several && member.required && member.type !== 'message' ? (
+                            <span aria-hidden className="pf-v__required">
+                              *
+                            </span>
+                          ) : null}
+                        </h2>
+                        {member.helper && member.type !== 'message' ? (
+                          <p className="pf__helper">{member.helper}</p>
                         ) : null}
-                      </h2>
-                      {member.helper && member.type !== 'message' ? (
-                        <p className="pf__helper">{member.helper}</p>
-                      ) : null}
-                    </div>
+                      </div>
+                    )}
                     {member.type !== 'message' || member.helper ? (
                       <div className="pf__fields">
                         <StepInput
@@ -1337,6 +1342,9 @@ export function FormRenderer({
                           locale={locale}
                           onRequestUpload={requestUploadTicket}
                           uploadMaxMb={uploadMaxMb}
+                          labelId={memberId(member.key, 'q')}
+                          showRequiredMark={several && member.required === true}
+                          invalid={Boolean(code)}
                         />
                         {/* Quiet per question: the summary below is the one alert. */}
                         {code ? (
@@ -1535,12 +1543,15 @@ export function FormRenderer({
       <div className="pf__body">
         <div className="pf__inner">
           <div className="pf__content pf-animate" key={animKey}>
-            <div className="pf__question-wrap">
-              <h2 className="pf__question">{step.question ?? step.key}</h2>
-              {step.helper && step.type !== 'message' ? (
-                <p className="pf__helper">{step.helper}</p>
-              ) : null}
-            </div>
+            {/* A checkbox's text sits beside its box (StepInput paints it). */}
+            {step.type === 'checkbox' ? null : (
+              <div className="pf__question-wrap">
+                <h2 className="pf__question">{step.question ?? step.key}</h2>
+                {step.helper && step.type !== 'message' ? (
+                  <p className="pf__helper">{step.helper}</p>
+                ) : null}
+              </div>
+            )}
 
             <div className="pf__fields">
               <StepInput
@@ -1549,7 +1560,7 @@ export function FormRenderer({
                 answers={answers}
                 onChange={(v: AnswerValue) => {
                   if (sendingRef.current) return;
-                  setAnswers((a) => ({ ...a, [step.key]: v }));
+                  setAnswers((a) => withAnswer(a, step.key, v));
                   setError(null);
                 }}
                 onFieldChange={(field, v) => {
@@ -1563,6 +1574,7 @@ export function FormRenderer({
                 locale={locale}
                 onRequestUpload={requestUploadTicket}
                 uploadMaxMb={uploadMaxMb}
+                invalid={Boolean(error)}
               />
 
               {error ? (

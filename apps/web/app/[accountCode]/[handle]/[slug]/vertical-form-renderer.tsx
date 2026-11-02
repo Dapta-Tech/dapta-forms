@@ -81,6 +81,7 @@ import {
   submitFinal,
   captureUtm,
   captureDefaults,
+  withAnswer,
   capturePrefill,
   schedulerToBooking,
   bannerChromeProps,
@@ -673,7 +674,7 @@ export function VerticalFormRenderer({
       // scrolls to the end, never reaches the challenge provider.
       gateRef.current.arm();
     }
-    const next = { ...answersRef.current, [key]: value };
+    const next = withAnswer(answersRef.current, key, value);
     // Keep the ref fresh SYNCHRONOUSLY: a blur handler can run before React
     // re-renders (where the ref is normally reassigned), and it must validate
     // the value just typed, not the previous one.
@@ -965,7 +966,12 @@ export function VerticalFormRenderer({
             setAnswers((a) => ({ ...a, [step.key]: v }));
           }}
           onChange={(v: AnswerValue) =>
-            setAnswer(step, step.key, v, step.type === 'slider' || step.type === 'multiple_choice')
+            setAnswer(
+              step,
+              step.key,
+              v,
+              step.type === 'slider' || step.type === 'multiple_choice' || step.type === 'checkbox',
+            )
           }
           onFieldChange={(field, v) => setAnswer(step, field, v, false)}
           onSelect={(v) => setAnswer(step, step.key, v, true)}
@@ -974,6 +980,8 @@ export function VerticalFormRenderer({
           locale={locale}
           onRequestUpload={requestUploadTicket}
           uploadMaxMb={uploadMaxMb}
+          showRequiredMark={step.required === true}
+          invalid={Boolean(errors[step.key])}
         />
       )}
     </VerticalQuestion>
@@ -1133,17 +1141,20 @@ function VerticalQuestion({
       data-vf-step={step.key}
       onBlur={onBlur}
     >
-      <div className="pf__question-wrap">
-        <h2 className={labelled ? 'pf__question sr-only' : 'pf__question'}>
-          {step.question ?? step.key}
-          {step.required && step.type !== 'message' ? (
-            <span aria-hidden className="pf-v__required">
-              *
-            </span>
-          ) : null}
-        </h2>
-        {step.helper && step.type !== 'message' ? <p className="pf__helper">{step.helper}</p> : null}
-      </div>
+      {/* A checkbox's text sits beside its box (StepInput paints it): no title. */}
+      {step.type === 'checkbox' ? null : (
+        <div className="pf__question-wrap">
+          <h2 className={labelled ? 'pf__question sr-only' : 'pf__question'}>
+            {step.question ?? step.key}
+            {step.required && step.type !== 'message' ? (
+              <span aria-hidden className="pf-v__required">
+                *
+              </span>
+            ) : null}
+          </h2>
+          {step.helper && step.type !== 'message' ? <p className="pf__helper">{step.helper}</p> : null}
+        </div>
+      )}
       <div className="pf__fields">
         {children}
         {error ? (

@@ -44,6 +44,7 @@ export const FORM_FIELD_TYPES = [
   'reveal',
   'scheduler',
   'file',
+  'checkbox',
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
@@ -820,6 +821,14 @@ function conditionHolds(cond: StepCondition, answers: Answers, scoreSoFar = 0): 
  * contributed to a gate upstream of the jump — but only if it carries a STALE
  * answer, since a step the respondent never saw is unanswered and scores 0.
  */
+/**
+ * Whether `hidden` takes a step off the form. A `checkbox` ignores the flag:
+ * consent is given by the person on the page, never seeded behind their back.
+ */
+export function isHiddenStep(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
+  return !!step.hidden && step.type !== 'checkbox';
+}
+
 export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
   const scored = config.scoring?.enabled !== false;
   const out: FormStep[] = [];
@@ -828,7 +837,7 @@ export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
     // A hidden step is never rendered as a question — it is skipped in the walk
     // (and therefore never scored). Its answer can still be seeded (e.g. from a
     // URL parameter) and rides along into the submission via the answers map.
-    if (step.hidden) continue;
+    if (isHiddenStep(step)) continue;
     if (step.showWhen && !conditionHolds(step.showWhen, answers, scoreSoFar)) continue;
     if (step.hideWhen && conditionHolds(step.hideWhen, answers, scoreSoFar)) continue;
     if (step.showForPersonalEmailOnly) {
@@ -1351,6 +1360,7 @@ export function isValidWebUrl(raw: string): boolean {
  * type is returned untouched.
  */
 export function canonicalizeAnswer(step: FormStep, value: AnswerValue): AnswerValue {
+  if (step.type === 'checkbox' && value === 'true') return true;
   if (step.type === 'url' && typeof value === 'string' && isValidWebUrl(value)) {
     return normalizeUrl(value);
   }
@@ -1442,6 +1452,15 @@ export function isInputlessStep(step: Pick<FormStep, 'type'>): boolean {
 export function validateAnswer(step: FormStep, value: AnswerValue): ValidationResult {
   // Info + reveal steps never carry input.
   if (isInputlessStep(step)) return { ok: true };
+
+  // A checkbox is checked (`true`/'true') or empty; `false` counts as empty,
+  // so this runs before the generic empty test below.
+  if (step.type === 'checkbox') {
+    if (isCheckboxChecked(value)) return { ok: true };
+    if (isCheckboxEmpty(value))
+      return step.required ? { ok: false, error: 'Check the box to continue.' } : { ok: true };
+    return { ok: false, error: 'Choose one of the available options.' };
+  }
 
   const empty =
     value == null ||
@@ -2037,7 +2056,8 @@ export type ValidationCode =
   | 'too_short'
   | 'too_long'
   | 'option'
-  | 'file';
+  | 'file'
+  | 'consent';
 
 export type ValidationCodeResult = { ok: true } | { ok: false; code: ValidationCode };
 
@@ -2061,6 +2081,12 @@ export function validateAnswerCode(
       if (empty && step.required) return { ok: false, code: 'required' };
     }
     return { ok: true };
+  }
+
+  if (step.type === 'checkbox') {
+    if (isCheckboxChecked(value)) return { ok: true };
+    if (isCheckboxEmpty(value)) return step.required ? { ok: false, code: 'consent' } : { ok: true };
+    return { ok: false, code: 'option' };
   }
 
   const empty =
@@ -2401,6 +2427,9 @@ function resolveVariant(variants: Record<string, string>, raw: AnswerValue): str
  */
 export function resolveQuestion(step: FormStep, answers: Answers): string {
   let text = step.question ?? '';
+  // A checkbox shows its text as written: no variants and no `[key]` tokens, so
+  // an inline link `[text](https://...)` is never read as a token.
+  if (step.type === 'checkbox') return text;
   if (step.questionField && step.questionVariants) {
     const fallback = step.questionVariants['*'];
     text =
@@ -2418,7 +2447,7 @@ export function resolveQuestion(step: FormStep, answers: Answers): string {
  * mutates the config. A null/undefined helper is left untouched.
  */
 export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
-  const question = resolveQuestion(step, answers);
+  const question = step.type === 'checkbox' ? step.question : resolveQuestion(step, answers);
   const helper = typeof step.helper === 'string' ? interpolate(step.helper, answers) : step.helper;
   let sliderUnitLabel = step.sliderUnitLabel ?? null;
   if (step.questionField && step.sliderLabelVariants) {
@@ -2535,7 +2564,7 @@ export function screensActive(config: Pick<FormConfig, 'layout'> | null | undefi
  * screen nor cuts one).
  */
 export function canShareScreen(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
-  return !SOLO_SCREEN_TYPES.has(step.type) && !step.hidden;
+  return !SOLO_SCREEN_TYPES.has(step.type) && !isHiddenStep(step);
 }
 
 /** One authored screen: its canonical id and its members' indexes in `steps`. */
@@ -2574,7 +2603,7 @@ export function authoredScreens(steps: readonly FormStep[]): AuthoredScreen[] {
     screens.push({ id, members: run.members });
   };
   steps.forEach((step, i) => {
-    if (step.hidden) return; // transparent
+    if (isHiddenStep(step)) return; // transparent
     const value = canShareScreen(step) ? step.screenGroup : undefined;
     if (!value) {
       close();
@@ -2911,4 +2940,58 @@ export function isSafeImageUrl(url: string): boolean {
   if (s.startsWith('javascript:') || s.startsWith('vbscript:')) return false;
   if (s.startsWith('data:') && !s.startsWith('data:image/')) return false;
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Checkbox: one native box whose text can carry inline links.
+// ---------------------------------------------------------------------------
+
+/** A piece of a checkbox's text: plain text or an http(s) link. */
+export type InlineSegment = { kind: 'text'; text: string } | { kind: 'link'; text: string; href: string };
+
+/** `[text](url)`, linear: no nesting, bounded lengths, no newline in the text. */
+const INLINE_LINK_RE = /\[([^\]\n]{1,200})\]\(([^\s)]{1,2048})\)/g;
+
+/**
+ * Split `[text](https://url)` links out of a string. A match whose URL is not
+ * http(s) (`javascript:`, `mailto:`, a relative path) stays as literal text,
+ * brackets included. Adjacent text pieces are merged. Never throws.
+ */
+export function parseInlineLinks(text: string): InlineSegment[] {
+  const out: InlineSegment[] = [];
+  const pushText = (t: string) => {
+    if (!t) return;
+    const last = out[out.length - 1];
+    if (last && last.kind === 'text') last.text += t;
+    else out.push({ kind: 'text', text: t });
+  };
+  const source = typeof text === 'string' ? text : '';
+  let at = 0;
+  for (const m of source.matchAll(INLINE_LINK_RE)) {
+    const start = m.index ?? 0;
+    pushText(source.slice(at, start));
+    const [whole, label, href] = m as unknown as [string, string, string];
+    if (isSafeHttpUrl(href)) out.push({ kind: 'link', text: label, href });
+    else pushText(whole);
+    at = start + whole.length;
+  }
+  pushText(source.slice(at));
+  return out;
+}
+
+/** The text with each link replaced by its visible text. */
+export function inlineLinksPlainText(text: string): string {
+  return parseInlineLinks(text)
+    .map((seg) => seg.text)
+    .join('');
+}
+
+/** True for a checked checkbox answer: `true` and the string `'true'`. */
+export function isCheckboxChecked(value: AnswerValue | undefined): boolean {
+  return value === true || value === 'true';
+}
+
+/** An unchecked checkbox answer. `false` counts, though it is never stored. */
+function isCheckboxEmpty(value: unknown): boolean {
+  return value == null || value === '' || value === false;
 }

@@ -63,6 +63,11 @@ export const GUIDE_STEP_TYPES: ReadonlyArray<{ type: string; use_for: string }> 
   { type: 'name', use_for: "The person's name. Collects first and last name. The type for a name, rather than text." },
   { type: 'email', use_for: 'An email address.' },
   { type: 'phone', use_for: 'A phone number.' },
+  {
+    type: 'checkbox',
+    use_for:
+      'One box to tick, such as consent to a privacy policy. `question` is the text beside the box and can carry links as [text](https://url). Checked is stored as true; unchecked stores nothing. `required: true` blocks submit until it is checked.',
+  },
   { type: 'multiple_choice', use_for: 'Pick from a few options shown at once. Options score with `points`.' },
   { type: 'dropdown', use_for: 'Pick from a long list. Options score with `points`.' },
   { type: 'slider', use_for: 'A number on a range. Scores with `sliderScoring` ranges.' },
@@ -81,7 +86,7 @@ export const GUIDE_LOGIC: readonly string[] = [
   'op "in" (the default) with `values`: the answer is one of those option values. op "eq", "gt" or "lt" with `value`, or "between" with `min` and `max` (inclusive): a number, from a slider or from "@score".',
   '"@score" is the running score of the steps shown before this one, not counting the step itself. Only gt, lt, eq and between apply to it. Put a step gated by score after the last scored question.',
   'Scoring: each answer adds points and the total picks one of `outcomes` by minScore and maxScore (inclusive). Leave maxScore off the highest range so every score lands somewhere.',
-  'Placeholders: [step_key] inserts an earlier answer into a question, helper, outcome label or message, ending texts, reveal texts and redirectUrl. A name step exposes [firstname], [lastname] and [name]. A placeholder with no answer disappears with the comma or space that joined it.',
+  'Placeholders: [step_key] inserts an earlier answer into a question, helper, outcome label or message, ending texts, reveal texts and redirectUrl. A name step exposes [firstname], [lastname] and [name]. A placeholder with no answer disappears with the comma or space that joined it. A checkbox step does not take placeholders in its question.',
 ];
 
 export const GUIDE_EXAMPLES: ReadonlyArray<{ name: string; what: string; config: unknown }> = [

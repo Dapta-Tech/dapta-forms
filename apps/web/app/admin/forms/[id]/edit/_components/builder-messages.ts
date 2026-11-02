@@ -279,6 +279,8 @@ export interface BuilderMessages {
     nameLastPlaceholder: string;
     /** One page: a name step with field labels hides its title on the form. */
     nameLabelsTitleHidden: string;
+    /** A checkbox step's text, before the author writes any. */
+    checkboxPlaceholder: string;
   };
   settings: {
     /** A reveal STEP owns its copy here — there is no form-level reveal. */
@@ -350,6 +352,13 @@ export interface BuilderMessages {
     title: string;
     questionType: string;
     required: string;
+    /** A checkbox step: its inline `[text](https://...)` links. */
+    checkboxLinks: string;
+    checkboxLinksHint: string;
+    checkboxLinkText: string;
+    checkboxLinkUrl: string;
+    checkboxLinkAdd: string;
+    checkboxLinkRemove: string;
     options: string;
     addOption: string;
     /** How a choice question lays its options out: a list, or a card grid. */
@@ -588,7 +597,8 @@ export type GalleryItemId =
   | 'file'
   | 'message'
   | 'reveal'
-  | 'scheduler';
+  | 'scheduler'
+  | 'checkbox';
 
 export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
 
@@ -754,6 +764,7 @@ const en: BuilderMessages = {
   canvas: {
     questionN: 'Question {n}',
     titlePlaceholder: 'Type your question…',
+    checkboxPlaceholder: 'I accept the privacy policy',
     descriptionPlaceholder: 'Add a description (optional)',
     optionPlaceholder: 'Option',
     addOption: 'Add option',
@@ -778,6 +789,12 @@ const en: BuilderMessages = {
     title: 'Question settings',
     questionType: 'Question type',
     required: 'Required',
+    checkboxLinks: 'Links in the text',
+    checkboxLinksHint: 'Type [text](https://...) in the checkbox text, or add it here.',
+    checkboxLinkText: 'Link text',
+    checkboxLinkUrl: 'URL',
+    checkboxLinkAdd: 'Add link',
+    checkboxLinkRemove: 'Remove link',
     options: 'Options',
     addOption: 'Add option',
     optionLayout: 'Show options as',
@@ -947,6 +964,7 @@ const en: BuilderMessages = {
       name: { title: 'Name', desc: 'Full name field' },
       email: { title: 'Email', desc: 'Validated email' },
       phone: { title: 'Phone', desc: 'Number with country' },
+      checkbox: { title: 'Checkbox', desc: 'One box to tick, with links' },
       single: { title: 'Single choice', desc: 'Pick one' },
       multiple: { title: 'Multiple choice', desc: 'Pick several' },
       dropdown: { title: 'Dropdown', desc: 'Compact list' },
@@ -1222,6 +1240,7 @@ const es: BuilderMessages = {
   canvas: {
     questionN: 'Pregunta {n}',
     titlePlaceholder: 'Escribe tu pregunta…',
+    checkboxPlaceholder: 'Acepto la política de tratamiento de datos',
     descriptionPlaceholder: 'Añade una descripción (opcional)',
     optionPlaceholder: 'Opción',
     addOption: 'Añadir opción',
@@ -1246,6 +1265,12 @@ const es: BuilderMessages = {
     title: 'Ajustes de la pregunta',
     questionType: 'Tipo de pregunta',
     required: 'Obligatoria',
+    checkboxLinks: 'Links en el texto',
+    checkboxLinksHint: 'Escribe [texto](https://...) en el texto de la casilla, o agrégalo aquí.',
+    checkboxLinkText: 'Texto del link',
+    checkboxLinkUrl: 'URL',
+    checkboxLinkAdd: 'Agregar link',
+    checkboxLinkRemove: 'Quitar link',
     options: 'Opciones',
     addOption: 'Añadir opción',
     optionLayout: 'Mostrar opciones como',
@@ -1416,6 +1441,7 @@ const es: BuilderMessages = {
       name: { title: 'Nombre', desc: 'Campo de nombre completo' },
       email: { title: 'Correo', desc: 'Correo validado' },
       phone: { title: 'Teléfono', desc: 'Número con país' },
+      checkbox: { title: 'Casilla de verificación', desc: 'Una casilla para marcar, con links' },
       single: { title: 'Opción única', desc: 'Elegir una' },
       multiple: { title: 'Opción múltiple', desc: 'Elegir varias' },
       dropdown: { title: 'Desplegable', desc: 'Lista compacta' },

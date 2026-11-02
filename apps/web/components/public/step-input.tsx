@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Answers, AnswerValue, FormOption, FormStep } from '@quill/engine';
 import {
   nameFields,
@@ -12,6 +12,8 @@ import {
   resolveOptionIcon,
   optionInitials,
   canonicalizeAnswer,
+  isCheckboxChecked,
+  parseInlineLinks,
 } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { SearchableDropdown } from './searchable-dropdown';
@@ -68,6 +70,15 @@ interface StepInputProps {
   onRequestUpload?: (stepKey: string, file: Parameters<RequestTicket>[0]) => ReturnType<RequestTicket>;
   /** The deployment's per-file ceiling in MB, for the accepted-files line. */
   uploadMaxMb?: number;
+  /**
+   * `id` for a `checkbox` step's text, so a slides screen's `aria-labelledby`
+   * still points at the question when the renderer paints no title for it.
+   */
+  labelId?: string;
+  /** Paint the `*` after a `checkbox` step's text. Default `false`. */
+  showRequiredMark?: boolean;
+  /** The step currently shows an error (a `checkbox` sets `aria-invalid`). */
+  invalid?: boolean;
 }
 
 /** The current multi-select answer as a string[] (defensive against scalars). */
@@ -215,8 +226,58 @@ export function StepInput({
   onSeed,
   onRequestUpload,
   uploadMaxMb,
+  labelId,
+  showRequiredMark = false,
+  invalid = false,
 }: StepInputProps) {
   switch (step.type) {
+    case 'checkbox': {
+      // One native box; the step's text is its label and the only title it
+      // has. Links open in a new tab and never toggle the box.
+      const segments = parseInlineLinks(step.question ?? '');
+      const text = segments.length > 0 ? segments : [{ kind: 'text' as const, text: step.key }];
+      const helper = step.helper?.trim();
+      return (
+        <div className="pf-checkbox-field">
+          <label className="pf-checkbox">
+            <input
+              type="checkbox"
+              className="pf-checkbox__box"
+              checked={isCheckboxChecked(value)}
+              onChange={(e) => onChange(e.target.checked ? true : undefined)}
+              aria-required={step.required === true ? true : undefined}
+              aria-invalid={invalid || undefined}
+              autoFocus={autoFocus}
+            />
+            <span className="pf-checkbox__text" id={labelId}>
+              {text.map((seg, i) =>
+                seg.kind === 'link' ? (
+                  <a
+                    key={i}
+                    className="pf-checkbox__link"
+                    href={seg.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {seg.text}
+                  </a>
+                ) : (
+                  <Fragment key={i}>{seg.text}</Fragment>
+                ),
+              )}
+              {showRequiredMark ? (
+                <span aria-hidden className="pf-v__required">
+                  *
+                </span>
+              ) : null}
+            </span>
+          </label>
+          {helper ? <p className="pf__helper pf-checkbox__helper">{step.helper}</p> : null}
+        </div>
+      );
+    }
+
     case 'name': {
       const [firstField, secondField] = nameFields(step);
       // Positional fallback: a configured placeholder wins; an empty/unset one

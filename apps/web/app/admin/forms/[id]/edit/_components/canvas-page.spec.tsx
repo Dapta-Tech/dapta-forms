@@ -122,3 +122,29 @@ describe('CanvasPage name labels', () => {
     expect(host!.querySelector('[data-testid="canvas-name-labels-note"]')).toBeNull();
   });
 });
+
+describe('one-page canvas: a checkbox (#128)', () => {
+  it('draws the box row with its link text, the required mark, and a plain title field', async () => {
+    await renderPage(
+      config({
+        steps: [
+          {
+            key: 'consent',
+            type: 'checkbox',
+            question: 'Acepto la [política](https://example.com/p) y [esto](javascript:x)',
+            required: true,
+          },
+        ],
+      }),
+    );
+    const row = host!.querySelector('[data-testid="canvas-checkbox"]')!;
+    expect(row).not.toBeNull();
+    expect(row.textContent).toBe('Acepto la política y [esto](javascript:x)*');
+    // Links are drawn, not followed, in the editor.
+    expect(row.querySelector('a')).toBeNull();
+    expect(row.querySelector('.underline')!.textContent).toBe('política');
+    // No token picker on this title: it is a plain textarea with the checkbox placeholder.
+    expect(host!.querySelector(`textarea[placeholder="${m.canvas.checkboxPlaceholder}"]`)).not.toBeNull();
+    expect(host!.querySelector('[data-testid="canvas-title-input"]')).toBeNull();
+  });
+});

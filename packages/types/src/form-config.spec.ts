@@ -446,3 +446,13 @@ describe('one-page rows, name labels and density (additive)', () => {
     expect(() => formConfigSchema.parse(config({ type: 'name', fieldLabels: { firstname: 'x'.repeat(201) } }))).toThrow();
   });
 });
+
+describe('checkbox step', () => {
+  it('parses a required checkbox whose text carries a link', () => {
+    const parsed = formConfigSchema.safeParse({
+      version: 1,
+      steps: [{ key: 'consent', type: 'checkbox', question: 'Acepto la [política](https://a.co)', required: true }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+});

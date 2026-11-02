@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /**
  * The `multiple_choice` render matrix: layout (`resolveOptionLayout`) and
  * selection mode (`isMultiSelect`) are independent axes. The regression pinned
@@ -5,7 +6,9 @@
  * fell back to the checkbox ROW list — the builder canvas draws the card grid
  * for that exact config, so the published form disagreed with its own preview.
  */
-import { describe, expect, it } from 'vitest';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { FormStep } from '@quill/engine';
 import { StepInput } from './step-input';
@@ -170,5 +173,98 @@ describe('name: one-page field labels', () => {
   it('renders today\'s markup with showFieldLabels but no label configured', () => {
     const { fieldLabels: _labels, ...bare } = name;
     expect(renderName(bare, true)).toBe(renderName(bare));
+  });
+});
+
+describe('checkbox', () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const consent: FormStep = {
+    key: 'consent',
+    type: 'checkbox',
+    question: 'Acepto la [política](https://a.co) y [esto](javascript:alert(1))',
+    required: true,
+  };
+
+  async function mount(props: Partial<Parameters<typeof StepInput>[0]> = {}) {
+    const onChange = vi.fn();
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <StepInput
+          step={consent}
+          value={undefined}
+          answers={{}}
+          onChange={onChange}
+          onFieldChange={() => {}}
+          onSelect={() => {}}
+          dropdownPlaceholder="Pick one"
+          dropdownEmpty="No matches"
+          {...props}
+        />,
+      ),
+    );
+    const done = async () => {
+      await act(async () => root.unmount());
+      host.remove();
+    };
+    return { host, onChange, done };
+  }
+
+  it('renders a native box and a safe link that opens in a new tab', () => {
+    const html = render(consent);
+    expect(html).toContain('type="checkbox" class="pf-checkbox__box"');
+    expect(html).toContain('<a class="pf-checkbox__link" href="https://a.co" target="_blank" rel="noopener noreferrer">política</a>');
+    // A javascript: link stays literal text.
+    expect(html).toContain('[esto](javascript:alert(1))');
+    expect(html).not.toContain('href="javascript');
+  });
+
+  it('a click on the box answers true, and on a ticked box answers undefined', async () => {
+    const off = await mount();
+    await act(async () => off.host.querySelector<HTMLInputElement>('input.pf-checkbox__box')!.click());
+    expect(off.onChange).toHaveBeenCalledWith(true);
+    await off.done();
+
+    const on = await mount({ value: true });
+    expect(on.host.querySelector<HTMLInputElement>('input.pf-checkbox__box')!.checked).toBe(true);
+    await act(async () => on.host.querySelector<HTMLInputElement>('input.pf-checkbox__box')!.click());
+    expect(on.onChange).toHaveBeenCalledWith(undefined);
+    await on.done();
+  });
+
+  it('a click on the link does not change the box', async () => {
+    const t = await mount();
+    const link = t.host.querySelector<HTMLAnchorElement>('a.pf-checkbox__link')!;
+    // The test DOM must not try to navigate.
+    link.addEventListener('click', (e) => e.preventDefault());
+    await act(async () => link.click());
+    expect(t.onChange).not.toHaveBeenCalled();
+    await t.done();
+  });
+
+  it('paints the required mark only when asked, and takes the label id', () => {
+    expect(render(consent)).not.toContain('pf-v__required');
+    const html = renderToStaticMarkup(
+      <StepInput
+        step={consent}
+        value={undefined}
+        answers={{}}
+        onChange={() => {}}
+        onFieldChange={() => {}}
+        onSelect={() => {}}
+        dropdownPlaceholder="Pick one"
+        dropdownEmpty="No matches"
+        showRequiredMark
+        labelId="q-consent"
+      />,
+    );
+    expect(html).toContain('<span class="pf-checkbox__text" id="q-consent">');
+    expect(html).toContain('class="pf-v__required"');
+  });
+
+  it('an empty text falls back to the step key', () => {
+    expect(render({ ...consent, question: '' })).toContain('<span class="pf-checkbox__text">consent</span>');
   });
 });

@@ -99,6 +99,8 @@ export function recallTokenOptionsBefore(steps: FormStep[], index: number): Toke
   const out: TokenOption[] = [];
   const seen = new Set<string>();
   steps.slice(0, Math.max(0, index)).forEach((s, i) => {
+    // A checkbox is consent, not copy: it is never offered as a token.
+    if (s.type === 'checkbox') return;
     for (const key of stepRecallKeys(s)) {
       if (seen.has(key)) continue; // duplicate keys: the earliest capture wins
       seen.add(key);

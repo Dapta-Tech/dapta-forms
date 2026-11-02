@@ -174,3 +174,95 @@ describe('QuestionSettings: name field labels (one page only)', () => {
     expect(onUpdate).toHaveBeenLastCalledWith({ fields: ['nombre', 'lastname'], fieldLabels: { nombre: 'Nombre' } });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Checkbox (#128): what the panel offers, and its links section.
+
+describe('QuestionSettings: checkbox', () => {
+  const consent: FormStep = {
+    key: 'consent',
+    type: 'checkbox',
+    question: 'Acepto la política de datos',
+    required: true,
+  };
+  const testId = (id: string) => host!.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+  const openAdvanced = async () => {
+    const toggle = host!.querySelector<HTMLButtonElement>('[data-testid="advanced-settings"] button[aria-expanded]')!;
+    if (toggle.getAttribute('aria-expanded') !== 'true') await act(async () => toggle.click());
+  };
+
+  it('shows Required and the links section, and none of the controls a checkbox ignores', async () => {
+    await mount(consent, 'vertical');
+    expect(host!.querySelector(`[aria-label="${bm.settings.required}"]`)).not.toBeNull();
+    expect(testId('checkbox-links')).not.toBeNull();
+    await openAdvanced();
+    expect(testId('step-placeholder')).toBeNull();
+    expect(testId('default-answer')).toBeNull();
+    expect(testId('prefill-row')).toBeNull();
+    expect(host!.querySelector(`[aria-label="${em.behavior.hidden}"]`)).toBeNull();
+    expect(host!.querySelector(`[aria-label="${em.behavior.terminal}"]`)).toBeNull();
+    expect(host!.textContent).not.toContain(em.variants.title);
+  });
+
+  it('a text step still has them (the check above is not vacuous)', async () => {
+    await mount({ key: 'company', type: 'text', question: 'Company?' }, 'vertical');
+    await openAdvanced();
+    expect(testId('default-answer')).not.toBeNull();
+    expect(host!.querySelector(`[aria-label="${em.behavior.hidden}"]`)).not.toBeNull();
+    expect(testId('checkbox-links')).toBeNull();
+  });
+
+  async function addLink(text: string, url: string) {
+    await typeInto(testId('checkbox-link-text') as HTMLInputElement, text);
+    await typeInto(testId('checkbox-link-url') as HTMLInputElement, url);
+  }
+
+  it('wraps the first appearance of the link text', async () => {
+    const onUpdate = await mount({ ...consent, question: 'Acepto la política y la política' }, 'vertical');
+    await addLink('política', 'https://example.com/p');
+    await act(async () => testId('checkbox-link-add')!.click());
+    expect(onUpdate).toHaveBeenLastCalledWith({ question: 'Acepto la [política](https://example.com/p) y la política' });
+    // The fields are cleared for the next one.
+    expect((testId('checkbox-link-text') as HTMLInputElement).value).toBe('');
+    expect((testId('checkbox-link-url') as HTMLInputElement).value).toBe('');
+  });
+
+  it('appends the link when its text is not in the question', async () => {
+    const onUpdate = await mount(consent, 'vertical');
+    await addLink('términos', 'https://example.com/t');
+    await act(async () => testId('checkbox-link-add')!.click());
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      question: 'Acepto la política de datos [términos](https://example.com/t)',
+    });
+  });
+
+  it('does not wrap text that already sits inside a link', async () => {
+    const onUpdate = await mount({ ...consent, question: 'Lee la [política](https://a.co)' }, 'vertical');
+    await addLink('política', 'https://b.co');
+    await act(async () => testId('checkbox-link-add')!.click());
+    expect(onUpdate).toHaveBeenLastCalledWith({ question: 'Lee la [política](https://a.co) [política](https://b.co)' });
+  });
+
+  it('lists the links and removes one back to its text', async () => {
+    const onUpdate = await mount(
+      { ...consent, question: 'Acepto la [política](https://a.co) y los [términos](https://b.co)' },
+      'vertical',
+    );
+    const rows = host!.querySelectorAll('[data-testid="checkbox-link"]');
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!.textContent).toContain('https://b.co');
+    const remove = rows[1]!.querySelector<HTMLButtonElement>(`[aria-label="${bm.settings.checkboxLinkRemove}"]`)!;
+    await act(async () => remove.click());
+    expect(onUpdate).toHaveBeenLastCalledWith({ question: 'Acepto la [política](https://a.co) y los términos' });
+  });
+
+  it('keeps Add disabled without text or with a URL that is not http(s)', async () => {
+    await mount(consent, 'vertical');
+    const add = () => testId('checkbox-link-add') as HTMLButtonElement;
+    expect(add().disabled).toBe(true);
+    await addLink('política', 'javascript:x');
+    expect(add().disabled).toBe(true);
+    await typeInto(testId('checkbox-link-url') as HTMLInputElement, 'https://example.com/p');
+    expect(add().disabled).toBe(false);
+  });
+});

@@ -14,6 +14,7 @@ import {
   resolveFormLogos,
   resolveRevealPresentation,
   uniqueKey,
+  parseInlineLinks,
 } from '@quill/engine';
 import { onAccent, DEFAULT_ACCENT, getMessages, resolveThemeMode } from '@quill/shared';
 import { resolveFormLabels } from '@quill/shared';
@@ -526,22 +527,35 @@ function QuestionEditableBody({
           engine interpolates `[key]` tokens in BOTH `question` and the
           description/`helper` from EARLIER answers (resolveStepDisplay), so
           both fields get the picker. */}
-      <TokenTextarea
-        value={step.question ?? ''}
-        onChange={(v) => onUpdate({ question: v })}
-        placeholder={m.canvas.titlePlaceholder}
-        ariaLabel={m.canvas.titlePlaceholder}
-        autoGrow
-        tokens={recallTokenOptionsBefore(config.steps, index)}
-        allKeys={allTokenKeys(config.steps)}
-        m={m.tokens}
-        hint={m.tokens.hint}
-        testId="canvas-title-input"
-        className={cn(
-          'canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]',
-          centred && 'text-center',
-        )}
-      />
+      {/* A checkbox's text is shown as written (no `[key]` tokens, so an
+          inline `[text](https://...)` link is never read as one): a plain
+          textarea at the size the box's text has on the form. */}
+      {step.type === 'checkbox' ? (
+        <AutoTextarea
+          value={step.question ?? ''}
+          onChange={(v) => onUpdate({ question: v })}
+          placeholder={m.canvas.checkboxPlaceholder}
+          ariaLabel={m.canvas.checkboxPlaceholder}
+          className={cn('canvas-title text-[15px] leading-relaxed text-foreground', centred && 'text-center')}
+        />
+      ) : (
+        <TokenTextarea
+          value={step.question ?? ''}
+          onChange={(v) => onUpdate({ question: v })}
+          placeholder={m.canvas.titlePlaceholder}
+          ariaLabel={m.canvas.titlePlaceholder}
+          autoGrow
+          tokens={recallTokenOptionsBefore(config.steps, index)}
+          allKeys={allTokenKeys(config.steps)}
+          m={m.tokens}
+          hint={m.tokens.hint}
+          testId="canvas-title-input"
+          className={cn(
+            'canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]',
+            centred && 'text-center',
+          )}
+        />
+      )}
       {/* Still editable: it names the response column and the field group for
           screen readers, even though the form shows the labels instead. */}
       {nameLabels ? (
@@ -702,6 +716,10 @@ function QuestionEditableBody({
           <SchedulerEmbedPreview step={step} m={m} />
         ) : step.type === 'file' ? (
           <FileDropPreview step={step} m={m} />
+        ) : step.type === 'checkbox' ? (
+          // One page reads every question from the left (public-form.css), so
+          // the row is only centred on a slide.
+          <CheckboxPreview step={step} centred={centred && !onePage} />
         ) : (
           <div className="rounded-xl border border-input bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
             {step.placeholder ||
@@ -716,6 +734,40 @@ function QuestionEditableBody({
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * A checkbox step's row as the form draws it: an 18px box and its text, links
+ * underlined but not followed (this is the editor), `*` when required.
+ */
+function CheckboxPreview({ step, centred }: { step: FormStep; centred: boolean }) {
+  const segments = parseInlineLinks(step.question ?? '');
+  return (
+    <div
+      data-testid="canvas-checkbox"
+      className={cn('flex items-start gap-2.5 text-[15px] leading-[1.45] text-foreground', centred && 'justify-center')}
+    >
+      <span aria-hidden className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded-[4px] border border-input bg-background" />
+      <span className="text-left">
+        {segments.length === 0
+          ? step.key
+          : segments.map((seg, i) =>
+              seg.kind === 'link' ? (
+                <span key={i} className="underline underline-offset-2">
+                  {seg.text}
+                </span>
+              ) : (
+                <span key={i}>{seg.text}</span>
+              ),
+            )}
+        {step.required ? (
+          <span aria-hidden className="ml-0.5 text-muted-foreground">
+            *
+          </span>
+        ) : null}
+      </span>
+    </div>
   );
 }
 

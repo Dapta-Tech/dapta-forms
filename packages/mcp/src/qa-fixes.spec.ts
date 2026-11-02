@@ -477,6 +477,24 @@ describe('a problem the form already had says so', () => {
     expect(second).not.toContain('already in the config get_form returned');
   });
 
+  it('counts a checkbox with an empty question as EMPTY_QUESTION (it has no title of its own to fall back on)', async () => {
+    const stored = config([step('consent', { type: 'checkbox', question: '' })]);
+    const { c } = await client({
+      backend: {
+        getForm: async () => form({ hasDraft: true, draftConfig: stored }),
+        updateForm: async () => {
+          throw new BackendError(400, 'BAD_REQUEST', 'Every step needs a question.', [
+            { path: 'config.steps.0.question', message: 'Every step needs a question.', code: 'EMPTY_QUESTION' },
+          ]);
+        },
+      },
+    });
+    const error = errorText(await c.callTool({ name: 'update_form', arguments: { form_id: 'form-1', config: stored, expected_updated_at: NOW } }));
+    const [first] = error.split('\n').filter((l) => l.startsWith('- '));
+    expect(first).toContain('config.steps.0.question [EMPTY_QUESTION]');
+    expect(first).toContain('already in the config get_form returned');
+  });
+
   it('refuses a problem the agent added, and not one an editor-built form already had', async () => {
     const stored = config([step('a', { hideWhen: { field: 'gone', values: ['x'] } }), step('b')]);
     const { h, c } = await client({ backend: { getForm: async () => form({ config: stored }) } });

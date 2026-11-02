@@ -46,7 +46,8 @@ export function LogicConditions({
   onUpdate: (patch: Partial<FormStep>) => void;
   m: LogicMessages;
 }) {
-  const prior = steps.slice(0, index);
+  // A checkbox is never a source: consent does not drive logic or copy.
+  const prior = steps.slice(0, index).filter((s) => s.type !== 'checkbox');
 
   // The running score is only worth offering when something ahead can move it;
   // with no scoring question above, every gate would read a constant 0.

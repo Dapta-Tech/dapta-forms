@@ -144,7 +144,8 @@ export function QuestionVariants({
   onUpdate: (patch: Partial<FormStep>) => void;
   m: EditorMessages['variants'];
 }) {
-  const prior = steps.slice(0, index);
+  // A checkbox is never a source: consent does not drive logic or copy.
+  const prior = steps.slice(0, index).filter((s) => s.type !== 'checkbox');
   const enabled = !!step.questionField;
   const source = prior.find((s) => s.key === step.questionField);
   const sourceOptions = source && hasOptions(source.type) ? (source.options ?? []) : null;

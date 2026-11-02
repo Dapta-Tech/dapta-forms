@@ -105,6 +105,8 @@ export interface FormsMessages {
       too_long: string;
       option: string;
       file: string;
+      /** A required checkbox left unchecked. */
+      consent: string;
       submit: string;
       /**
        * The final submit's human check did not pass (spam protection), or the
@@ -2640,6 +2642,7 @@ export const en: FormsMessages = {
       too_long: 'Your answer is too long.',
       option: 'Choose one of the available options.',
       file: 'Upload a file to continue.',
+      consent: 'Check the box to continue.',
       submit: 'Could not submit. Please try again.',
       captcha: 'We couldn’t verify that you’re human. Please try again.',
       captcha_required: 'This form now checks that you’re human. Refresh the page and submit again.',
@@ -5204,6 +5207,7 @@ export const es: FormsMessages = {
       too_long: 'Tu respuesta es muy larga.',
       option: 'Elige una de las opciones disponibles.',
       file: 'Sube un archivo para continuar.',
+      consent: 'Marca la casilla para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
       captcha: 'No pudimos verificar que eres una persona. Inténtalo de nuevo.',
       captcha_required:

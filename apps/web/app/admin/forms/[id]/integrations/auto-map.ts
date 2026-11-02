@@ -40,6 +40,9 @@ export function suggestProperty(q: QuestionMeta, byLower: Map<string, string>): 
   // sweep below from matching on a question like "Upload your company logo"
   // and mapping a PDF into `company`.
   if (type === 'file') return null;
+  // A checkbox answers `true`: no contact property should guess it from the
+  // words of a consent line ("... de la empresa" is not a company name).
+  if (type === 'checkbox') return null;
   if (/last\s?name|surname|apellidos?/.test(hay)) return pick('lastname');
   if (/first\s?name|given\s?name|primer\s?nombre/.test(hay)) return pick('firstname');
   // Website before company so "company website" maps to website, not company.

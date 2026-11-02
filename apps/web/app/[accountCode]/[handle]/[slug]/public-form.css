@@ -876,6 +876,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Checkbox ── */
+/* One native box with its text beside it (a consent line). The text is the
+   step's only title; the browser paints the tick in the brand colour. */
+.pf-checkbox-field { display: flex; flex-direction: column; gap: 6px; }
+.pf-checkbox { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 15px; line-height: 1.45; color: var(--foreground); text-align: left; }
+.pf-checkbox__box { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--pf-primary); cursor: pointer; }
+.pf-checkbox__box:focus-visible { outline: 2px solid var(--pf-primary-edge); outline-offset: 2px; }
+.pf-checkbox__link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.pf-checkbox__link:hover { color: var(--pf-primary-edge); }
+.pf-checkbox__helper { margin: 0 0 0 28px; }
+.pf[data-pf-align='center'] .pf-checkbox { justify-content: center; }
+.pf[data-pf-align='center'] .pf-checkbox__helper { margin-left: 0; text-align: center; }
+.pf-v__question--error .pf-checkbox__box,
+.pf-s__member--error .pf-checkbox__box { outline: 2px solid var(--destructive); outline-offset: 2px; }
+
 /* ── Slider ── */
 .pf-slider {
   padding: 8px 4px 4px;
@@ -2968,3 +2983,11 @@
   mask-image: none;
   animation: none;
 }
+
+/* ── Checkbox: overrides that must win over the layout rules above ── */
+/* One page reads every question from the left whatever the alignment (see
+   `.pf-v__question .pf__question`), so its box does too. */
+.pf .pf-v__question .pf-checkbox { justify-content: flex-start; }
+.pf .pf-v__question .pf-checkbox__helper { margin-left: 28px; text-align: left; }
+/* A checkbox has no title above it, so its fields keep no title gap. */
+.pf .pf__fields:has(> .pf-checkbox-field:first-child) { margin-top: 0; }
