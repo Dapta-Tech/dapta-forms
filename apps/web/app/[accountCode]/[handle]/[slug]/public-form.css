@@ -1188,11 +1188,18 @@
   flex-shrink: 0;
   padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
 }
+/* The pill is dForms speaking, not the form: it keeps the brand face whatever
+   `branding.fontFamily` (or an uploaded custom font) the author picked. Inheriting
+   `--pf-font` made the product's own signature change voice with every form, and
+   in a display or script face it read as a knock-off. `--font-sans` is Hanken
+   Grotesk, declared on `<html>` and preloaded on every page, so this costs no
+   extra download. */
 .pf__attribution-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   font-size: 14px;
   font-weight: 500;
   line-height: 1.2;
