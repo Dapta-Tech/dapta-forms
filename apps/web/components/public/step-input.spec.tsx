@@ -334,7 +334,7 @@ describe('checkbox with no text', () => {
     expect(render(step)).toContain('I agree');
     expect(render(step)).not.toContain('check1');
     const es = renderToStaticMarkup(
-      <StepInput step={step} value={undefined} answers={{}} locale="es" onChange={() => {}} onFieldChange={() => {}} onSelect={() => {}} />,
+      <StepInput step={step} value={undefined} answers={{}} locale="es" onChange={() => {}} onFieldChange={() => {}} onSelect={() => {}} dropdownPlaceholder="" dropdownEmpty="" />,
     );
     expect(es).toContain('Acepto');
   });
