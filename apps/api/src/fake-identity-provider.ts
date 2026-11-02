@@ -20,8 +20,12 @@ export interface FakeIdentityProvider {
   token(subject: string, audience: string, over?: Record<string, unknown>): string;
   /** Sign with a key the JWKS does not publish, under the published key id. */
   forge(claims: Record<string, unknown>): string;
-  /** Register a client the token endpoint accepts; its tokens name `subject`. */
-  client(subject: string): { clientId: string; clientSecret: string };
+  /**
+   * Register a client the token endpoint accepts; its tokens name `subject`,
+   * plus `claims` (what an AuthKit JWT template adds, such as `email` and
+   * `email_verified`).
+   */
+  client(subject: string, claims?: Record<string, unknown>): { clientId: string; clientSecret: string };
   /** Publish a new key (and keep the old one) and sign with it from now on. */
   rotate(): void;
   close(): Promise<void>;
@@ -50,7 +54,7 @@ function signWith(key: KeyObject, header: Record<string, unknown>, claims: Recor
 export async function startFakeIdentityProvider(): Promise<FakeIdentityProvider> {
   const keys: Key[] = [newKey()];
   const stranger = newKey();
-  const clients = new Map<string, { secret: string; subject: string }>();
+  const clients = new Map<string, { secret: string; subject: string; claims?: Record<string, unknown> }>();
   let fetches = 0;
   let issuer = '';
 
@@ -100,7 +104,7 @@ export async function startFakeIdentityProvider(): Promise<FakeIdentityProvider>
         // RFC 8707: the token is for the resource the client names, as the hosted provider issues them.
         const resource = form.get('resource');
         if (!resource) return json(400, { error: 'invalid_target' });
-        return json(200, { access_token: token(client.subject, resource), token_type: 'Bearer', expires_in: 3600 });
+        return json(200, { access_token: token(client.subject, resource, client.claims), token_type: 'Bearer', expires_in: 3600 });
       });
       return;
     }
@@ -115,10 +119,10 @@ export async function startFakeIdentityProvider(): Promise<FakeIdentityProvider>
     sign,
     token,
     forge: (claims) => signWith(stranger.privateKey, { alg: 'RS256', typ: 'JWT', kid: current().kid }, claims),
-    client(subject) {
+    client(subject, claims) {
       const clientId = `client_${randomUUID().slice(0, 8)}`;
       const clientSecret = randomUUID();
-      clients.set(clientId, { secret: clientSecret, subject });
+      clients.set(clientId, { secret: clientSecret, subject, claims });
       return { clientId, clientSecret };
     },
     rotate() {
