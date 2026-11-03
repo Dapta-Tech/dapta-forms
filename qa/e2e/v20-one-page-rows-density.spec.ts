@@ -246,7 +246,6 @@ test.describe('one page: rows, name labels and compact density', () => {
   test('builder preview at 1280 and 390 matches the public form', async ({ page, browserName }) => {
     // The preview iframe stays blank under Playwright's WebKit for every form,
     // a one-question legacy one included: a harness limit, not this layout.
-    test.skip(browserName === 'webkit', 'preview iframe does not render under Playwright WebKit');
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto(`/admin/forms/${reference.id}/edit?tab=design`);
     const frameOf = async () => {
