@@ -309,3 +309,14 @@ describe("checkbox answers", () => {
     ]);
   });
 });
+
+describe("stepLabel for a checkbox with no text", () => {
+  it("names the column with its description, not the key", () => {
+    expect(stepLabel({ key: "check1", type: "checkbox", question: "", helper: "Autorizo el [tratamiento](https://a.co)" })).toBe(
+      "Autorizo el tratamiento",
+    );
+  });
+  it("falls back to the key only when there is nothing else", () => {
+    expect(stepLabel({ key: "check1", type: "checkbox", question: "" })).toBe("check1");
+  });
+});

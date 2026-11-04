@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   FORM_FIELD_TYPES,
   canonicalizeAnswer,
+  checkboxText,
+  stepQuestionText,
   inlineLinksPlainText,
   isCheckboxChecked,
   parseInlineLinks,
@@ -202,5 +204,36 @@ describe('checkbox: goto and terminal have no effect', () => {
     const shown = resolveStepDisplay(box({ terminal: true, goto: [{ values: ['*'], target: 'c' }] }), {});
     expect(shown.terminal).toBeUndefined();
     expect(shown.goto).toBeUndefined();
+  });
+});
+
+describe('checkboxText', () => {
+  it('uses the text and keeps the description under it', () => {
+    expect(checkboxText({ question: 'Acepto', helper: 'Detalle' })).toEqual({ text: 'Acepto', helper: 'Detalle' });
+  });
+  it('promotes the description when the text is empty, and does not repeat it', () => {
+    expect(checkboxText({ question: '  ', helper: 'Autorizo el tratamiento' })).toEqual({
+      text: 'Autorizo el tratamiento',
+      helper: null,
+    });
+  });
+  it('returns null with neither, never the key', () => {
+    expect(checkboxText({ question: '', helper: null })).toEqual({ text: null, helper: null });
+    expect(checkboxText({})).toEqual({ text: null, helper: null });
+  });
+});
+
+describe('stepQuestionText', () => {
+  it('flattens a checkbox text with links', () => {
+    expect(stepQuestionText({ type: 'checkbox', question: 'Acepto la [política](https://a.co)' })).toBe('Acepto la política');
+  });
+  it('uses the description of a checkbox with no text', () => {
+    expect(stepQuestionText({ type: 'checkbox', question: '', helper: 'Autorizo el [uso](https://a.co).' })).toBe('Autorizo el uso.');
+  });
+  it('is empty for a checkbox with neither, never the key', () => {
+    expect(stepQuestionText({ type: 'checkbox', question: '' })).toBe('');
+  });
+  it('returns other questions as written', () => {
+    expect(stepQuestionText({ type: 'text', question: 'Hola [name]' })).toBe('Hola [name]');
   });
 });

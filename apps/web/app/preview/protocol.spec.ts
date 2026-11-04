@@ -198,3 +198,12 @@ describe('config message: locale is narrowed to a shipped language', () => {
     expect(post(undefined)).toMatchObject({ type: 'config', locale: 'en' });
   });
 });
+
+describe('readPreviewMessage — ping', () => {
+  it('accepts a ping from the expected source, and still gates its origin', () => {
+    expect(readPreviewMessage(msg({ data: { channel: PREVIEW_CHANNEL, type: 'ping' } }), parentWindow, ORIGIN)?.type).toBe('ping');
+    expect(
+      readPreviewMessage(msg({ origin: 'https://evil.example', data: { channel: PREVIEW_CHANNEL, type: 'ping' } }), parentWindow, ORIGIN),
+    ).toBeNull();
+  });
+});

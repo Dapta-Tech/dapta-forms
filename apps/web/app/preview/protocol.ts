@@ -42,6 +42,18 @@ export interface PreviewReadyMessage {
   type: 'ready';
 }
 
+/**
+ * Parent → child, until a `ready` arrives: "are you listening?". The child's
+ * one `ready` can land before the editor hydrates and registers its listener
+ * (the iframe is in the server HTML and starts loading first), and a lost
+ * `ready` used to leave the preview blank for good. The child answers every
+ * ping with a fresh `ready`.
+ */
+export interface PreviewPingMessage {
+  channel: typeof PREVIEW_CHANNEL;
+  type: 'ping';
+}
+
 /** Parent → child: the whole preview input, re-sent on every editor change. */
 export interface PreviewConfigMessage {
   channel: typeof PREVIEW_CHANNEL;
@@ -67,7 +79,7 @@ export interface PreviewConfigMessage {
   screen?: number | 'cover';
 }
 
-export type PreviewMessage = PreviewReadyMessage | PreviewConfigMessage;
+export type PreviewMessage = PreviewReadyMessage | PreviewPingMessage | PreviewConfigMessage;
 
 /**
  * Read an inbound `message` event as one of ours, or return null.
@@ -101,6 +113,7 @@ export function readPreviewMessage(
   if (body.channel !== PREVIEW_CHANNEL) return null;
 
   if (body.type === 'ready') return { channel: PREVIEW_CHANNEL, type: 'ready' };
+  if (body.type === 'ping') return { channel: PREVIEW_CHANNEL, type: 'ping' };
 
   if (body.type === 'config') {
     const config = body.config;

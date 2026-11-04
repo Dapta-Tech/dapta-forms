@@ -212,6 +212,28 @@ export function PreviewFrame({
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  // Until the frame has said `ready`, keep asking. Its one announcement can
+  // arrive before this component hydrates (the iframe is in the server HTML
+  // and starts loading first), and a lost `ready` left the preview blank until
+  // a reload. Bounded: a frame that never answers stops being asked after ~15s.
+  useEffect(() => {
+    if (readyTick > 0) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      if (tries > 60) {
+        window.clearInterval(timer);
+        return;
+      }
+      try {
+        frameRef.current?.contentWindow?.postMessage({ channel: PREVIEW_CHANNEL, type: 'ping' }, window.location.origin);
+      } catch {
+        // The frame is mid-navigation; the next tick tries again.
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [readyTick]);
+
   // Re-posted on every editor change, which is what makes the preview show the
   // IN-MEMORY draft: no 900ms autosave wait, no publish. Addressed to this exact
   // origin — never '*', which would hand a draft config to any embedder.

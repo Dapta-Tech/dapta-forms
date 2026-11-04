@@ -12,6 +12,7 @@ import {
   resolveOptionIcon,
   optionInitials,
   canonicalizeAnswer,
+  checkboxText,
   isCheckboxChecked,
   parseInlineLinks,
 } from '@quill/engine';
@@ -234,9 +235,15 @@ export function StepInput({
     case 'checkbox': {
       // One native box; the step's text is its label and the only title it
       // has. Links open in a new tab and never toggle the box.
-      const segments = parseInlineLinks(step.question ?? '');
-      const text = segments.length > 0 ? segments : [{ kind: 'text' as const, text: step.key }];
-      const helper = step.helper?.trim();
+      // No text but a description: the description becomes the box's text.
+      // Neither: a localized "I agree". Never the internal step key.
+      const own = checkboxText(step);
+      const segments = parseInlineLinks(own.text ?? '');
+      const text =
+        segments.length > 0
+          ? segments
+          : [{ kind: 'text' as const, text: getMessages(locale).renderer.checkboxDefault }];
+      const helper = own.helper?.trim();
       return (
         <div className="pf-checkbox-field">
           <label className="pf-checkbox">
@@ -273,7 +280,7 @@ export function StepInput({
               ) : null}
             </span>
           </label>
-          {helper ? <p className="pf__helper pf-checkbox__helper">{step.helper}</p> : null}
+          {helper ? <p className="pf__helper pf-checkbox__helper">{own.helper}</p> : null}
         </div>
       );
     }

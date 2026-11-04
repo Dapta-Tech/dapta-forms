@@ -110,6 +110,10 @@ describe('DesignPanel: button text color', () => {
   it('warns at 2.9:1 (white on #009DFF)', async () => {
     await mount('vertical', { primaryColor: '#009DFF', buttonTextColor: '#FFFFFF' });
     expect(lowContrast()?.textContent).toContain('2.9:1');
+    // One warning only: the picker keeps its ratio badge but not its own note.
+    const field = control()!.closest('div')!.parentElement!;
+    expect(field.textContent).not.toContain(d.contrastFail);
+    expect(field.querySelector('[data-testid="contrast-badge"]')?.textContent).toContain('2.9:1');
   });
 
   it('does not warn at 6.7:1 (white on #1A4FD6)', async () => {

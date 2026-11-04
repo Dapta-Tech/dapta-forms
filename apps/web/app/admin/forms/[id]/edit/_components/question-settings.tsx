@@ -16,6 +16,7 @@ import {
   sliderBounds,
   sliderHasNoTravel,
   screensActive,
+  stepQuestionText,
 } from '@quill/engine';
 import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
@@ -1040,7 +1041,7 @@ function LogicCard({
   // A catch-all that can never fire (a stale `*` on a message or a reveal) is
   // not logic: it is not counted, not bordered and not spelled out below.
   const count = liveRuleCount(step);
-  const titleOf = (s: FormStep, i: number): string => s.question?.trim() || tb(bm.canvas.questionN, { n: i + 1 });
+  const titleOf = (s: FormStep, i: number): string => stepQuestionText(s).trim() || tb(bm.canvas.questionN, { n: i + 1 });
   const targetLabel = (target: string): string => {
     const ti = steps.findIndex((s) => s.key === target);
     const t = ti >= 0 ? steps[ti] : undefined;

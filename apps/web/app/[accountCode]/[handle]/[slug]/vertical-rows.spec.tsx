@@ -266,4 +266,54 @@ describe('a tap that reveals a question does not pull the caret back', () => {
     await act(async () => root.unmount());
     host.remove();
   });
+  it('a click with no pointer events (assistive tech) never pulls focus back to a remounted input', async () => {
+    const steps = [
+      half('a'),
+      { ...half('x'), showWhen: { field: 'm', values: ['yes'] } },
+      half('b'),
+      {
+        key: 'm',
+        type: 'multiple_choice',
+        question: 'm?',
+        options: [
+          { label: 'Yes', value: 'yes' },
+          { label: 'No', value: 'no' },
+        ],
+      },
+    ];
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <VerticalFormRenderer
+          accountCode="acme"
+          slug="f"
+          name="Clinic contact"
+          config={{ version: 1, layout: 'vertical', steps } as never}
+          locale="en"
+        />,
+      ),
+    );
+    const b = host.querySelector<HTMLInputElement>('[data-vf-step="b"] input')!;
+    await act(async () => b.focus());
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(b, 'Ana');
+      b.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => b.blur());
+    const yes = [...host.querySelectorAll<HTMLElement>('[data-vf-step="m"] [role="radio"]')].find((o) =>
+      o.textContent?.includes('Yes'),
+    )!;
+    // No pointerdown: VoiceOver / Switch Control activation.
+    await act(async () => yes.click());
+
+    // x now pairs with a, so b left its row and remounted.
+    expect(host.querySelector('[data-vf-step="x"]')).not.toBeNull();
+    expect(host.querySelector<HTMLInputElement>('[data-vf-step="b"] input')).not.toBe(b);
+    expect(document.activeElement).toBe(document.body);
+
+    await act(async () => root.unmount());
+    host.remove();
+  });
 });

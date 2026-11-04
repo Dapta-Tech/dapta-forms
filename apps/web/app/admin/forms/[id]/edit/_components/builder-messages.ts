@@ -281,6 +281,10 @@ export interface BuilderMessages {
     nameLabelsTitleHidden: string;
     /** A checkbox step's text, before the author writes any. */
     checkboxPlaceholder: string;
+    /** Under the checkbox text field while it is empty. */
+    checkboxTextEmpty: string;
+    /** What an empty checkbox says on the form when it has no description either. */
+    checkboxDefault: string;
   };
   settings: {
     /** A reveal STEP owns its copy here — there is no form-level reveal. */
@@ -765,6 +769,8 @@ const en: BuilderMessages = {
     questionN: 'Question {n}',
     titlePlaceholder: 'Type your question…',
     checkboxPlaceholder: 'I accept the privacy policy',
+    checkboxTextEmpty: 'Write the text that goes beside the box here. While it is empty, the form shows the description as that text.',
+    checkboxDefault: 'I agree',
     descriptionPlaceholder: 'Add a description (optional)',
     optionPlaceholder: 'Option',
     addOption: 'Add option',
@@ -1241,6 +1247,8 @@ const es: BuilderMessages = {
     questionN: 'Pregunta {n}',
     titlePlaceholder: 'Escribe tu pregunta…',
     checkboxPlaceholder: 'Acepto la política de tratamiento de datos',
+    checkboxTextEmpty: 'Escribe aquí el texto que va junto a la casilla. Mientras esté vacío, el formulario muestra la descripción como ese texto.',
+    checkboxDefault: 'Acepto',
     descriptionPlaceholder: 'Añade una descripción (opcional)',
     optionPlaceholder: 'Opción',
     addOption: 'Añadir opción',

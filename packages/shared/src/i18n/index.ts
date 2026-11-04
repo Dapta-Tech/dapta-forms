@@ -70,6 +70,8 @@ export interface FormsMessages {
     dropdownEmpty: string;
     trustedBy: string;
     newTab: string;
+    /** A checkbox the author left with no text and no description: what the box says. */
+    checkboxDefault: string;
     /** The public error boundary and the 404, in the visitor's language. */
     errorTitle: string;
     errorBody: string;
@@ -2616,6 +2618,7 @@ export const en: FormsMessages = {
     dropdownEmpty: 'No results found',
     trustedBy: 'Trusted by',
     newTab: '(opens in a new tab)',
+    checkboxDefault: 'I agree',
     errorTitle: 'This page didn\u2019t load',
     errorBody: 'Something went wrong reaching the forms service.',
     errorRetry: 'Try again',
@@ -5185,6 +5188,7 @@ export const es: FormsMessages = {
     dropdownEmpty: 'No se encontraron resultados',
     trustedBy: 'Confían en nosotros',
     newTab: '(se abre en una pestaña nueva)',
+    checkboxDefault: 'Acepto',
     errorTitle: 'Esta página no cargó',
     errorBody: 'Algo falló al conectar con el servicio de formularios.',
     errorRetry: 'Intentar de nuevo',

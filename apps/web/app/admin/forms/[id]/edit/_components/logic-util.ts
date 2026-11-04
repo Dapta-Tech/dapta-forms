@@ -4,7 +4,7 @@
  * the declarative `showWhen`/`hideWhen` conditions still work (honored by the
  * engine, drawn on the map) and count toward a question's rule total.
  */
-import { SCORE_FIELD, authoredScreens, screensActive, type AuthoredScreen, type FormLayout, type FormStep } from '@quill/engine';
+import { SCORE_FIELD, authoredScreens, screensActive, type AuthoredScreen, type FormLayout, type FormStep, stepQuestionText } from '@quill/engine';
 import type { GotoRule } from '@quill/engine';
 import { isInputlessType } from './question-types';
 
@@ -127,7 +127,7 @@ export function jumpTargetsAfter(
   return steps
     .map((s, i) => ({ s, i }))
     .filter(({ s, i }) => i > index && (offered(i) || keep.includes(s.key)))
-    .map(({ s, i }) => ({ key: s.key, label: s.question?.trim() || `${fallback} ${i + 1}` }));
+    .map(({ s, i }) => ({ key: s.key, label: stepQuestionText(s).trim() || `${fallback} ${i + 1}` }));
 }
 
 /** The human label for an option value on a choice/dropdown step (falls back to the raw value). */
@@ -183,7 +183,7 @@ export function describeCondition(
   const field = onScore
     ? labels.score
     : source
-      ? source.question?.trim() || labels.fallbackQuestion(sourceIndex)
+      ? stepQuestionText(source).trim() || labels.fallbackQuestion(sourceIndex)
       : cond.field;
   const dangling = !onScore && !source;
 

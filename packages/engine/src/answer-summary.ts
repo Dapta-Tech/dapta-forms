@@ -8,6 +8,7 @@
  * escapes HTML: the email renderer owns that boundary.
  */
 import {
+  checkboxText,
   inlineLinksPlainText,
   isCheckboxChecked,
   isInputlessStep,
@@ -88,10 +89,11 @@ export interface AnswerFormatOptions {
  * [política](https://x)` reads `Acepto la política`.
  */
 export function stepLabel(
-  step: Pick<FormStep, "key" | "question"> & { type?: FormStep["type"] },
+  step: Pick<FormStep, "key" | "question"> & { type?: FormStep["type"]; helper?: FormStep["helper"] },
 ): string {
   const question = step.question ?? "";
-  const text = step.type === "checkbox" ? inlineLinksPlainText(question) : question;
+  const text =
+    step.type === "checkbox" ? inlineLinksPlainText(checkboxText(step).text ?? "") : question;
   return text.trim() || step.key;
 }
 
@@ -186,7 +188,7 @@ export function summarizeAnswersByStep(
     }
     const question = (
       step.type === "checkbox"
-        ? inlineLinksPlainText(step.question ?? "")
+        ? inlineLinksPlainText(checkboxText(step).text ?? "")
         : resolveQuestion(step, answers)
     ).trim();
     rows.push({

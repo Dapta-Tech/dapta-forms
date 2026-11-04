@@ -452,6 +452,8 @@ export function DesignPanel({
                   emptyLabel={d.buttonTextAuto}
                   against={accent}
                   againstLabel={d.contrastButton}
+                  // The warning below already says it, with the fix.
+                  hideFailNote
                   m={d}
                 />
               </Field>

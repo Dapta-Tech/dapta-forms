@@ -19,6 +19,7 @@ import { createHostVisit, utmParams, type HostVisit, type ResolvedVisit } from '
 import { isTransportError, type TransportError } from '@/lib/call-action';
 import { CaptchaChallenge, type CaptchaWidgetEvent } from '@/components/public/captcha-challenge';
 import { isPreloadableCalendlyUrl } from '@/lib/calendly-preload';
+import { randomId } from '@/lib/random-id';
 
 type RendererMessages = ReturnType<typeof getMessages>['renderer'];
 
@@ -27,7 +28,8 @@ export function useSessionId(key: string): string {
     if (typeof window === 'undefined') return '';
     const existing = window.sessionStorage.getItem(key);
     if (existing) return existing;
-    const fresh = crypto.randomUUID();
+    // Not `crypto.randomUUID`: it throws on a non-secure (http://) embed host.
+    const fresh = randomId();
     window.sessionStorage.setItem(key, fresh);
     return fresh;
   });

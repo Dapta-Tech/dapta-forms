@@ -1293,15 +1293,29 @@ function useKeepFocusAcrossRows(questions: readonly FormStep[]) {
       const saved = last.current;
       if (saved && !saved.el.contains(e.target as Node | null)) last.current = null;
     };
+    // Focus that moves to ANOTHER element means the respondent moved on. A
+    // remount fires no focusout with a destination, so it never forgets then.
+    const forgetOnLeave = (e: FocusEvent) => {
+      const saved = last.current;
+      const next = e.relatedTarget as Node | null;
+      if (saved && next && !saved.el.contains(next)) last.current = null;
+    };
     document.addEventListener('focusin', remember);
     document.addEventListener('input', remember, true);
     document.addEventListener('keyup', remember, true);
     document.addEventListener('pointerdown', forget, true);
+    // A click with no pointer events before it (VoiceOver, Switch Control,
+    // `element.click()`): capture runs before React's handler, so the option's
+    // re-render already finds nothing to restore.
+    document.addEventListener('click', forget, true);
+    document.addEventListener('focusout', forgetOnLeave, true);
     return () => {
       document.removeEventListener('focusin', remember);
       document.removeEventListener('input', remember, true);
       document.removeEventListener('keyup', remember, true);
       document.removeEventListener('pointerdown', forget, true);
+      document.removeEventListener('click', forget, true);
+      document.removeEventListener('focusout', forgetOnLeave, true);
     };
   }, []);
 

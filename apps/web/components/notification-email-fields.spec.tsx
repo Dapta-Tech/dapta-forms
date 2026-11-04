@@ -141,3 +141,12 @@ describe('recipient list', () => {
     expect(render({ recipients: ['ceo@acme.io'] }, { max: 5 })).not.toContain('Following the account');
   });
 });
+
+describe('receipt preview', () => {
+  it('drops the {{formLink}} line, which the real receipt never carries', () => {
+    const receipt = render({ body: 'Thanks.\nView or edit: {{formLink}}' });
+    expect(receipt).not.toContain('forms.example.com/admin');
+    const owner = render({ body: 'New answer.\nSee it: {{formLink}}' }, { max: 5 });
+    expect(owner).toContain('forms.example.com/admin');
+  });
+});
