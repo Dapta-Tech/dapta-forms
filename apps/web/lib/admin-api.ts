@@ -4,6 +4,7 @@
  * for the local dev provider. A `401` throws an ApiError the /admin gate turns
  * into a redirect to /login.
  */
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type {
   AnalyticsResponse,
@@ -21,6 +22,8 @@ import type {
 import type { SubmissionFacets, SubmissionsSummary, SummaryAnswer } from '@quill/engine';
 import { serverApiUrl } from './api-url';
 import { getSession, clearSession, authProvider, getWorkspace } from './auth-session';
+import { analyticsSessionHeaders } from './analytics-session';
+import { resolveProductAnalytics } from './product-analytics';
 
 const API_URL = serverApiUrl;
 
@@ -59,6 +62,8 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
   if (session?.provider === 'workos') headers['authorization'] = `Bearer ${session.accessToken}`;
   else if (session?.provider === 'local') headers['x-quill-email'] = session.email;
   if (workspace) headers['x-quill-workspace'] = workspace;
+  // Lets the events this call emits link to the session recording it came from.
+  Object.assign(headers, analyticsSessionHeaders(await cookies(), resolveProductAnalytics()));
 
   const res = await fetch(`${API_URL}${path}`, {
     method,
