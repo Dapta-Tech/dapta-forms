@@ -2589,8 +2589,15 @@
 .pf--vertical[data-pf-density='compact'] .pf-v__footer {
   padding-top: 16px;
 }
+/* Compact strips the header and hero down to 14 / 8 px so the form reads like a
+   regular web form, which is right inside an embed (the host page frames it)
+   but left a standalone page with its title glued to the top edge of the
+   browser. The page itself carries the breathing room instead: 32 px above on
+   a phone, 56 px on desktop, and the same bottom as the comfortable layout.
+   `?embed=1` keeps the tight values (see the `.pf-embed-root` block below). */
 .pf--vertical[data-pf-density='compact'] .pf-v__page {
-  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  padding-top: 32px;
+  padding-bottom: calc(56px + env(safe-area-inset-bottom));
 }
 @media (max-width: 399px) {
   .pf--vertical[data-pf-density='compact'] .pf-v__row > .pf-v__question:first-child {
@@ -2604,6 +2611,10 @@
   }
   .pf-v__question {
     padding: 30px 0;
+  }
+  .pf--vertical[data-pf-density='compact'] .pf-v__page {
+    padding-top: 56px;
+    padding-bottom: 88px;
   }
 }
 @media (max-width: 480px) {
@@ -2623,6 +2634,12 @@
 }
 .pf-embed-root .pf--vertical {
   min-height: 0;
+}
+/* The host page already frames an embedded form, so compact keeps its tight
+   page padding there (the standalone breathing room above is not for it). */
+.pf-embed-root .pf--vertical[data-pf-density='compact'] .pf-v__page {
+  padding-top: 0;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }
 
 /* --- Public member page (/[accountCode]/[handle]) --------------------------
