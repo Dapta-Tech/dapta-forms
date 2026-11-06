@@ -1,7 +1,5 @@
 ---
 '@quill/notifications': minor
-'@quill/web': patch
-'@quill/api': patch
 '@quill/shared': patch
 '@quill/config': patch
 ---

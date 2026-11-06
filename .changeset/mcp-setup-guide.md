@@ -1,5 +1,4 @@
 ---
-'@quill/web': minor
 '@quill/shared': minor
 ---
 
