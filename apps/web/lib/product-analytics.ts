@@ -14,6 +14,12 @@
  * into an open-source repo for a feature that ships OFF.
  */
 
+/**
+ * The cookie that carries the browser's analytics session id to the server.
+ * Written by the snippet below, read by `analytics-session.ts`.
+ */
+export const ANALYTICS_SESSION_COOKIE = 'quill_ph_session';
+
 /** Vendor default ingestion host, used when nothing is configured. */
 export const DEFAULT_ANALYTICS_HOST = 'https://us.i.posthog.com';
 
@@ -123,7 +129,12 @@ function js(value: unknown): string {
 export function buildAnalyticsSnippet(key: string, host: string): string {
   return (
     `!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);` +
-    `posthog.init(${js(key)},{api_host:${js(host)},person_profiles:'always'});`
+    // `loaded` runs once the real library is in place; a listener queued on the
+    // stub before that is dropped and never fires. The listener mirrors the
+    // live session id into a first-party cookie the server can read, so the
+    // API's events link to this session's recording. It fires again on every
+    // rotation, so the cookie never names a session that has ended.
+    `posthog.init(${js(key)},{api_host:${js(host)},person_profiles:'always',loaded:function(ph){ph.onSessionId(function(id){document.cookie=${js(`${ANALYTICS_SESSION_COOKIE}=`)}+encodeURIComponent(id)+';path=/;SameSite=Lax'+(location.protocol==='https:'?';Secure':'')})}});`
   );
 }
 
