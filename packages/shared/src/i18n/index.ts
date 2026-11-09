@@ -535,6 +535,8 @@ export interface FormsMessages {
       readOnly: string;
       saved: string;
       saveFailed: string;
+      /** The API refused turning it off: no paid verdict (it lapsed since the page loaded). */
+      notSubscribed: string;
     };
     /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
@@ -2986,6 +2988,7 @@ export const en: FormsMessages = {
       readOnly: 'Only an admin or owner can change this.',
       saved: 'Saved.',
       saveFailed: 'Could not save. Try again.',
+      notSubscribed: 'Hiding the attribution is only for Dapta AI subscribers.',
     },
     brandKit: {
       title: 'Brand kit',
@@ -5570,6 +5573,7 @@ export const es: FormsMessages = {
       readOnly: 'Solo un admin o el owner puede cambiar esto.',
       saved: 'Guardado.',
       saveFailed: 'No se pudo guardar. Inténtalo de nuevo.',
+      notSubscribed: 'Ocultar la atribución es solo para suscriptores de Dapta AI.',
     },
     brandKit: {
       title: 'Kit de marca',

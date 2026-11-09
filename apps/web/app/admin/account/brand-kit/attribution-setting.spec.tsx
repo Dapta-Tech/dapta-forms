@@ -177,11 +177,41 @@ describe('AttributionSetting', () => {
     expect(q('attribution-subscribers-only')).not.toBeNull();
   });
 
-  it('a refused save leaves the switch where it was and says so', async () => {
-    actions.saveAttributionAction.mockResolvedValue({ ok: false, code: 'DAPTA_SUBSCRIPTION_REQUIRED' });
-    const { sw, el } = await mount(ON);
+  it('any other failure leaves the switch where it was, with the generic message', async () => {
+    for (const result of [{ ok: false, code: 'FORBIDDEN' }, { ok: false }, { ok: false, transport: true, message: 'x' }]) {
+      actions.saveAttributionAction.mockResolvedValue(result);
+      const { sw, el, q } = await mount(ON);
+      await act(async () => sw().click());
+      expect(sw().getAttribute('aria-checked')).toBe('true');
+      expect(sw().disabled).toBe(false);
+      expect(q('attribution-save-error')!.textContent).toBe(en.saveFailed);
+      expect(el.textContent).not.toContain(en.notSubscribed);
+      expect(q('attribution-subscribers-only')).toBeNull();
+      await act(async () => root?.unmount());
+      container?.remove();
+    }
+  });
+
+  it('a 403 DAPTA_SUBSCRIPTION_REQUIRED says why and rests the row in the state the server sends', async () => {
+    // The verdict lapsed between the page load and the click.
+    actions.saveAttributionAction.mockResolvedValue({ ok: false, code: 'DAPTA_SUBSCRIPTION_REQUIRED', status: NOT_PAID });
+    const { sw, q, row } = await mount(ON);
     await act(async () => sw().click());
+    expect(actions.saveAttributionAction).toHaveBeenCalledWith(true);
+    expect(q('attribution-save-error')!.textContent).toBe('Hiding the attribution is only for Dapta AI subscribers.');
+    // Not paid: grey switch, tooltip, and the note with its link.
     expect(sw().getAttribute('aria-checked')).toBe('true');
-    expect(el.textContent).toContain(en.saveFailed);
+    expect(sw().disabled).toBe(true);
+    expect(row().getAttribute('title')).toBe('Only for Dapta AI subscribers.');
+    expect(q('attribution-subscribers-only')!.querySelector('a')!.getAttribute('href')).toBe(LANDING);
+  });
+
+  it('the same refusal with no server state still greys the switch out, in Spanish too', async () => {
+    actions.saveAttributionAction.mockResolvedValue({ ok: false, code: 'DAPTA_SUBSCRIPTION_REQUIRED' });
+    const { sw, q } = await mount(ON, { locale: 'es' });
+    await act(async () => sw().click());
+    expect(q('attribution-save-error')!.textContent).toBe('Ocultar la atribución es solo para suscriptores de Dapta AI.');
+    expect(sw().disabled).toBe(true);
+    expect(q('attribution-subscribers-only')!.textContent).toBe('Solo para suscriptores de Dapta AI.');
   });
 });

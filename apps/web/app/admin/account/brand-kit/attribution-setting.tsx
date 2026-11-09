@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 import { SettingsRow } from '@/components/ui/settings';
 import { Switch } from '@/components/ui/switch';
 import { saveAttributionAction } from './actions';
+import { DAPTA_SUBSCRIPTION_REQUIRED } from './attribution-codes';
 
 type AttributionMessages = FormsMessages['admin']['attributionSetting'];
 
@@ -54,7 +55,7 @@ export function AttributionSetting({
 }) {
   const [state, setState] = useState<AttributionStatus>(initial);
   const [pending, start] = useTransition();
-  const [notice, setNotice] = useState<'saved' | 'failed' | null>(null);
+  const [notice, setNotice] = useState<'saved' | 'failed' | 'notSubscribed' | null>(null);
   const noteId = useId();
   const mode = attributionMode(state);
   // Only turning the attribution OFF needs the subscription. Turning it back
@@ -71,6 +72,13 @@ export function AttributionSetting({
       if (!isTransportError(r) && r.ok) {
         setState(r.value);
         setNotice('saved');
+      } else if (!isTransportError(r) && r.code === DAPTA_SUBSCRIPTION_REQUIRED) {
+        // The verdict lapsed (or was never paid) since the page loaded: show
+        // the row as the server now has it, so the switch greys out with the
+        // subscribers note. Without that read, the refusal itself says the
+        // workspace cannot hide it, and nothing was stored.
+        setState((s) => r.status ?? { ...s, canHide: false });
+        setNotice('notSubscribed');
       } else {
         setNotice('failed');
       }
@@ -128,9 +136,9 @@ export function AttributionSetting({
           <p role="status" className="text-xs font-medium text-foreground">
             {m.saved}
           </p>
-        ) : notice === 'failed' ? (
-          <p role="alert" className="text-xs text-destructive">
-            {m.saveFailed}
+        ) : notice === 'failed' || notice === 'notSubscribed' ? (
+          <p role="alert" data-testid="attribution-save-error" className="text-xs text-destructive">
+            {notice === 'notSubscribed' ? m.notSubscribed : m.saveFailed}
           </p>
         ) : null}
       </div>
