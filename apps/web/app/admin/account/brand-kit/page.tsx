@@ -2,6 +2,7 @@ import { getMessages } from '@quill/shared';
 import { adminApi, isAdminRole, type AttributionStatus } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { signupHref } from '@/lib/growth';
+import { daptaAiUrl } from '@/lib/dapta-ai-url';
 import { BrandKitPanel } from './brand-kit-panel';
 import { AttributionSetting } from './attribution-setting';
 import { ManagingChip } from '../_components/managing-chip';
@@ -72,22 +73,4 @@ export default async function BrandKitPage() {
       />
     </div>
   );
-}
-
-/**
- * The Dapta AI landing the "Only for Dapta AI subscribers" note links to:
- * `DAPTA_AI_URL`, a server-side runtime variable of the DEPLOYMENT (no host
- * is written in this tree, like `NEXT_PUBLIC_PLATFORM_URL` in `lib/suite.ts`).
- * Read at request time, so a deployment changes it without a rebuild. Anything
- * that is not an http(s) URL reads as unset, and the note stays plain text.
- */
-function daptaAiUrl(): string | null {
-  const raw = process.env.DAPTA_AI_URL?.trim();
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
-  } catch {
-    return null;
-  }
 }

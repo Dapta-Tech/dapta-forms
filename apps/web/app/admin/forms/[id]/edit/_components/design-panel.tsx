@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import type { FormBranding, FormConfig, FormCover, FormLabels, FormLanguage, FormLayout } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import {
@@ -32,6 +32,11 @@ import { FontPicker } from './font-picker';
 import { ThemePresets } from './theme-presets';
 import { PreviewFrame, type PreviewDevice } from './preview-frame';
 import { cn } from '@/lib/cn';
+import type { AttributionStatus } from '@/lib/admin-api';
+import { callAction, isTransportError } from '@/lib/call-action';
+import { saveAttributionAction } from '@/app/admin/account/brand-kit/actions';
+import { DAPTA_SUBSCRIPTION_REQUIRED } from '@/app/admin/account/brand-kit/attribution-codes';
+import { attributionMode } from '@/app/admin/account/brand-kit/attribution-setting';
 import type { EditorMessages } from './messages';
 
 /**
@@ -64,6 +69,7 @@ export function DesignPanel({
   onBrandingChange,
   children,
   showAttribution = true,
+  attribution = null,
   m,
 }: {
   config: FormConfig;
@@ -93,6 +99,18 @@ export function DesignPanel({
    * a pointer to Brand kit, and the preview renders without it.
    */
   showAttribution?: boolean;
+  /**
+   * The workspace attribution switch (the same setting as Brand kit), offered
+   * here as the badge control's third option, "Off", because this is where
+   * people look for it. Null when the deployment draws no attribution or the
+   * read failed: the control is then the size alone, as before.
+   */
+  attribution?: {
+    status: AttributionStatus;
+    canEdit: boolean;
+    daptaAiUrl: string | null;
+    onChange: (next: AttributionStatus) => void;
+  } | null;
   m: EditorMessages;
 }) {
   const [device, setDevice] = useState<PreviewDevice>('desktop');
@@ -609,20 +627,30 @@ export function DesignPanel({
               off in Brand kit: the badge is then absent everywhere, so a size
               means nothing, and the hint says where the switch lives. The
               stored size is kept for when it comes back. */}
-          <div data-testid="design-badge-size" data-disabled={showAttribution ? undefined : 'true'}>
-            <InlineField label={d.badgeSize} hint={showAttribution ? d.badgeSizeHint : d.badgeSizeHiddenHint}>
-              <SegmentedToggle
-                value={design.badgeSize}
-                onChange={(badgeSize) => onBrandingChange({ badgeSize })}
-                options={[
-                  { value: 'sm' as const, label: d.sizeSm },
-                  { value: 'md' as const, label: d.sizeMd },
-                ]}
-                ariaLabel={d.badgeSize}
-                disabled={!showAttribution}
-              />
-            </InlineField>
-          </div>
+          {attribution ? (
+            <BadgeControl
+              size={design.badgeSize}
+              onSize={(badgeSize) => onBrandingChange({ badgeSize })}
+              attribution={attribution}
+              locale={locale}
+              d={d}
+            />
+          ) : (
+            <div data-testid="design-badge-size" data-disabled={showAttribution ? undefined : 'true'}>
+              <InlineField label={d.badgeSize} hint={showAttribution ? d.badgeSizeHint : d.badgeSizeHiddenHint}>
+                <SegmentedToggle
+                  value={design.badgeSize}
+                  onChange={(badgeSize) => onBrandingChange({ badgeSize })}
+                  options={[
+                    { value: 'sm' as const, label: d.sizeSm },
+                    { value: 'md' as const, label: d.sizeMd },
+                  ]}
+                  ariaLabel={d.badgeSize}
+                  disabled={!showAttribution}
+                />
+              </InlineField>
+            </div>
+          )}
           {vertical ? null : (
           <InlineField label={d.contentAlign}>
             <SegmentedToggle
@@ -1061,6 +1089,132 @@ function SharePreview({
           {publicPath.split('/')[1] ?? ''}
         </span>
         <span className="truncate text-xs font-medium">{headline}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The attribution badge control with the workspace switch built in:
+ * Small | Medium | Off.
+ *
+ *  - Small / Medium are this FORM's badge size (`branding.badgeSize`), as they
+ *    always were. Picking one while the workspace hides the attribution also
+ *    turns it back on, since that is the only way the size means anything.
+ *  - Off is the WORKSPACE setting (the same one as Brand kit): it hides the
+ *    attribution on every form, page and email of the workspace, at once,
+ *    with no "apply". The hint under the control says so.
+ *
+ * Who may pick Off: an owner or admin of a paying Dapta AI workspace. For
+ * everyone else Off stays visible but cannot be chosen, with "Only for
+ * Dapta AI subscribers." as its hover text and as a note with the link. A
+ * member sees the sizes only while the attribution shows (turning it back on
+ * is the workspace's call too). Lapsed (stored off, no longer paid): the
+ * attribution is showing again, so the size is selected, with the lapsed
+ * sentence; any size click shows it for good.
+ */
+function BadgeControl({
+  size,
+  onSize,
+  attribution,
+  locale,
+  d,
+}: {
+  size: 'sm' | 'md';
+  onSize: (size: 'sm' | 'md') => void;
+  attribution: {
+    status: AttributionStatus;
+    canEdit: boolean;
+    daptaAiUrl: string | null;
+    onChange: (next: AttributionStatus) => void;
+  };
+  locale: string;
+  d: EditorMessages['design'];
+}) {
+  const { status, canEdit, daptaAiUrl, onChange } = attribution;
+  const a = getMessages(locale === 'es' ? 'es' : 'en').admin.attributionSetting;
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<'failed' | 'notSubscribed' | null>(null);
+  const mode = attributionMode(status);
+  const off = mode === 'off';
+  const subscribersOnly = a.subscribersOnly.replace('{product}', a.product);
+  const [before, after = ''] = a.subscribersOnly.split('{product}');
+
+  const save = (hide: boolean, then?: () => void) =>
+    start(async () => {
+      setError(null);
+      const r = await callAction(() => saveAttributionAction(hide));
+      if (!isTransportError(r) && r.ok) {
+        onChange(r.value);
+        then?.();
+      } else if (!isTransportError(r) && r.code === DAPTA_SUBSCRIPTION_REQUIRED) {
+        onChange(r.status ?? { ...status, canHide: false });
+        setError('notSubscribed');
+      } else {
+        setError('failed');
+      }
+    });
+
+  const choose = (next: 'sm' | 'md' | 'off') => {
+    if (next === 'off') {
+      save(true);
+      return;
+    }
+    // A size while the workspace stores "hidden" (off, lapsed or unpaid) turns
+    // the attribution back on too; otherwise it is just this form's size.
+    if (status.hideAttribution) save(false, () => onSize(next));
+    else onSize(next);
+  };
+
+  const offBlocked = !canEdit || !status.canHide;
+  const offTitle = !status.canHide ? subscribersOnly : !canEdit ? a.readOnly : undefined;
+  // A member cannot change the workspace setting in either direction.
+  const sizesLocked = status.hideAttribution && !canEdit;
+
+  return (
+    <div data-testid="design-badge-size" data-disabled={off ? 'true' : undefined}>
+      <InlineField label={d.badgeSize} hint={off ? d.badgeOffHint : d.badgeSizeHint}>
+        <SegmentedToggle
+          value={off ? 'off' : size}
+          onChange={choose}
+          options={[
+            { value: 'sm' as const, label: d.sizeSm, disabled: sizesLocked },
+            { value: 'md' as const, label: d.sizeMd, disabled: sizesLocked },
+            { value: 'off' as const, label: d.badgeOff, disabled: offBlocked && !off, title: offTitle },
+          ]}
+          ariaLabel={d.badgeSize}
+          disabled={pending}
+        />
+      </InlineField>
+      <div className="mt-1.5 flex flex-col gap-1">
+        {mode === 'lapsed' ? (
+          <p data-testid="design-badge-lapsed" className="text-xs text-muted-foreground">
+            {a.lapsed}
+          </p>
+        ) : null}
+        {!status.canHide ? (
+          <p data-testid="design-badge-subscribers-only" className="text-xs text-muted-foreground">
+            {before}
+            {daptaAiUrl ? (
+              <a href={daptaAiUrl} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
+                {a.product}
+              </a>
+            ) : (
+              a.product
+            )}
+            {after}
+          </p>
+        ) : null}
+        {!canEdit && status.canHide ? (
+          <p data-testid="design-badge-read-only" className="text-xs text-muted-foreground">
+            {a.readOnly}
+          </p>
+        ) : null}
+        {error ? (
+          <p role="alert" data-testid="design-badge-error" className="text-xs text-destructive">
+            {error === 'notSubscribed' ? a.notSubscribed : a.saveFailed}
+          </p>
+        ) : null}
       </div>
     </div>
   );

@@ -25,6 +25,7 @@ import { callAction, isTransportError } from '@/lib/call-action';
 import { useAutosave } from '@/lib/use-autosave';
 import { clearDraftBackup, readDraftBackup, writeDraftBackup } from '@/lib/draft-backup';
 import { cn } from '@/lib/cn';
+import type { AttributionStatus } from '@/lib/admin-api';
 import { anchorRevealsLast } from './_components/logic-util';
 import {
   moveStep,
@@ -153,7 +154,8 @@ export function FormEditor({
   lockedValues = {},
   uploads,
   captcha,
-  showAttribution = true,
+  showAttribution: showAttributionInitial = true,
+  attribution = null,
 }: {
   id: string;
   initialName: string;
@@ -192,8 +194,20 @@ export function FormEditor({
    * builder shows what the public form will. Absent = true.
    */
   showAttribution?: boolean;
+  /**
+   * The workspace attribution switch, for the Design panel's "Off" option (the
+   * same setting as Brand kit). Null when the deployment draws no attribution
+   * or the read failed: the panel then offers the size alone.
+   */
+  attribution?: { initial: AttributionStatus; canEdit: boolean; daptaAiUrl: string | null } | null;
 }) {
   const bm = getBuilderMessages(locale);
+  // The switch's live state: turning it off from Design updates both previews
+  // at once, without a reload, because they read `showAttribution` from here.
+  const [attributionStatus, setAttributionStatus] = useState<AttributionStatus | null>(
+    attribution?.initial ?? null,
+  );
+  const showAttribution = attributionStatus ? attributionStatus.showing : showAttributionInitial;
   /** The publish copy, for the badge this component now draws (Publish itself reads its own). */
   const publishM = getMessages(locale).admin.publish;
   const searchParams = useSearchParams();
@@ -1374,6 +1388,16 @@ export function FormEditor({
             onCoverChange={patchCover}
             onBrandingChange={patchBranding}
             showAttribution={showAttribution}
+            attribution={
+              attribution && attributionStatus
+                ? {
+                    status: attributionStatus,
+                    canEdit: attribution.canEdit,
+                    daptaAiUrl: attribution.daptaAiUrl,
+                    onChange: setAttributionStatus,
+                  }
+                : null
+            }
             m={m}
           >
             <FlowPanel partialNote={bm.partial.designNote} m={m} />

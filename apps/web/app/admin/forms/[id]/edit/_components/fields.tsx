@@ -219,8 +219,14 @@ export function SegmentedToggle<T extends string>({
 }: {
   value: T;
   onChange: (value: T) => void;
-  /** `icon` is a PrimeIcon class (`pi-sun`); omit it for a text-only chip. */
-  options: { value: T; label: string; icon?: string }[];
+  /**
+   * `icon` is a PrimeIcon class (`pi-sun`); omit it for a text-only chip.
+   * `disabled` makes ONE option unchoosable while the rest work; `title` is its
+   * hover text (why it cannot be chosen). The option stays visible and
+   * hoverable (`aria-disabled`, not `disabled`), so the reason shows on hover in
+   * every browser, and the arrow keys skip it.
+   */
+  options: { value: T; label: string; icon?: string; disabled?: boolean; title?: string }[];
   ariaLabel: string;
   /** Read-only mode: options render but cannot be chosen. */
   disabled?: boolean;
@@ -257,7 +263,7 @@ export function SegmentedToggle<T extends string>({
   function move(delta: number | 'first' | 'last') {
     if (disabled || options.length === 0) return;
     const from = index < 0 ? 0 : index;
-    const next =
+    let next =
       delta === 'first'
         ? 0
         : delta === 'last'
@@ -265,8 +271,14 @@ export function SegmentedToggle<T extends string>({
           : // Wraps, because a radiogroup is a ring: arrowing right off the end
             // of three visible options and stopping dead reads as a broken key.
             (from + delta + options.length) % options.length;
+    // Step past options that cannot be chosen, in the direction of travel
+    // (Home walks forward, End walks back).
+    const step = delta === 'first' ? 1 : delta === 'last' ? -1 : delta;
+    for (let guard = 0; options[next]?.disabled && guard < options.length; guard++) {
+      next = (next + step + options.length) % options.length;
+    }
     const option = options[next];
-    if (!option) return;
+    if (!option || option.disabled) return;
     refs.current[next]?.focus();
     // Home on the first option, or End on the last, is a no-op for the VALUE —
     // so it must not write. Firing `onChange` with the value already selected
@@ -313,15 +325,20 @@ export function SegmentedToggle<T extends string>({
           role="radio"
           aria-checked={value === o.value}
           disabled={disabled}
+          aria-disabled={o.disabled || undefined}
+          title={o.title}
           // The roving tabindex: the group is one stop, and it is the CHECKED
           // option that owns it — so tabbing in lands on the current answer
           // rather than on whichever option happens to be first. Nothing checked
           // (a value outside the option list) falls back to the first, because a
           // group where every member is -1 cannot be reached by keyboard at all.
           tabIndex={value === o.value || (index < 0 && i === 0) ? 0 : -1}
-          onClick={() => onChange(o.value)}
+          onClick={() => {
+            if (o.disabled) return;
+            onChange(o.value);
+          }}
           className={cn(
-            'inline-flex items-center gap-2 whitespace-nowrap rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card disabled:opacity-60',
+            'inline-flex items-center gap-2 whitespace-nowrap rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card disabled:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-60',
             size === 'md' ? 'px-3.5 py-1.5 text-sm' : 'px-3 py-1 text-xs',
             // The chosen option is ink, the app-wide mark for "this one": 16:1
             // against the track, so the state never rests on a faint wash.
