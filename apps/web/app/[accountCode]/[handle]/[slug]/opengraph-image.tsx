@@ -144,6 +144,11 @@ export default async function OgImage({
   }
 
   const mark = daptaFormsMark(style.isDark);
+  // A workspace that turned the attribution off (a paying Dapta AI workspace,
+  // `PublicForm.showAttribution`) gets a card with no dForms mark anywhere,
+  // the same as its page carries no "Made with dForms". Absent = true: an older
+  // API, or a workspace that never touched the switch, keeps today's card.
+  const showProductMark = form?.showAttribution !== false;
 
   /**
    * Where the two marks go.
@@ -200,10 +205,10 @@ export default async function OgImage({
             // Width is left to Satori, which reads it off the file: the author's
             // logo has no fixed proportion and forcing one would squash it.
             <img src={logo} height={style.logo.height} alt="" />
-          ) : (
+          ) : showProductMark ? (
             productMark
-          )}
-          {logo && !style.logo.centered ? productMark : null}
+          ) : null}
+          {logo && !style.logo.centered && showProductMark ? productMark : null}
         </div>
 
         {/* Body. */}
@@ -256,7 +261,7 @@ export default async function OgImage({
             <div style={{ display: 'flex', alignItems: 'center', gap: 22, fontSize: 19, color: style.faint }}>
               {steps > 0 ? <div style={{ display: 'flex' }}>{t(messages.growth.shareCardSteps, { count: steps })}</div> : null}
               {host ? <div style={{ display: 'flex' }}>{host}</div> : null}
-              {logo && style.logo.centered ? productMark : null}
+              {logo && style.logo.centered && showProductMark ? productMark : null}
             </div>
             <div
               style={{
