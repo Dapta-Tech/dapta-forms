@@ -101,14 +101,33 @@ describe('AttributionSetting', () => {
     expect(q('attribution-lapsed')).toBeNull();
   });
 
-  it('lapsed: the stored choice shows, with the sentence; turning it back on stays possible', async () => {
-    const { sw, q } = await mount(LAPSED);
+  it('lapsed: the stored choice, the sentence, and who can hide it (note, link, tooltip); turning it back on stays possible', async () => {
+    const { sw, q, row } = await mount(LAPSED);
     expect(sw().getAttribute('aria-checked')).toBe('false');
     expect(sw().disabled).toBe(false);
-    expect(q('attribution-lapsed')!.textContent).toBe(
+    const lapsed = q('attribution-lapsed')!;
+    expect(lapsed.textContent).toBe(
       'Your Dapta AI subscription ended, so the attribution is showing again. Your choice is saved.',
     );
+    const note = q('attribution-subscribers-only')!;
+    expect(note.textContent).toBe('Only for Dapta AI subscribers.');
+    expect(note.querySelector('a')!.getAttribute('href')).toBe(LANDING);
+    expect(row().getAttribute('title')).toBe('Only for Dapta AI subscribers.');
+    // The sentence first, then the note; the switch is described by both.
+    expect(lapsed.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sw().getAttribute('aria-describedby')).toBe(`${lapsed.id} ${note.id}`);
+  });
+
+  it('lapsed, with no landing configured: the note is plain text', async () => {
+    const { q } = await mount(LAPSED, { daptaAiUrl: null });
+    expect(q('attribution-subscribers-only')!.querySelector('a')).toBeNull();
+    expect(q('attribution-lapsed')).not.toBeNull();
+  });
+
+  it('off while paying carries neither note nor tooltip', async () => {
+    const { q, row } = await mount(OFF);
     expect(q('attribution-subscribers-only')).toBeNull();
+    expect(row().getAttribute('title')).toBeNull();
   });
 
   it('not paid: disabled, muted, with the note as tooltip and as text, "Dapta AI" linked to the landing', async () => {

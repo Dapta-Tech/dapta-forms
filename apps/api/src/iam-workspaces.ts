@@ -74,12 +74,14 @@ export interface IamWorkspace {
 }
 
 /**
- * Upstream account statuses that do NOT count as paying: 1 free, 3 cancelled,
- * 4 suspended. Everything else does (2 paid, 5 scheduled cancellation, which
- * keeps access until the period ends), the same rule the search's `isPaid`
- * applies upstream.
+ * Upstream account statuses that count as paying, read on the workspace
+ * DETAIL: 2 paid and 5 scheduled cancellation (access until the period ends).
+ * Anything else is not paid: 1 free, 3 cancelled, 4 suspended, and any status
+ * this code does not know (fail closed: an unknown status shows the
+ * attribution). The search's `isPaid` is taken as the identity service
+ * computes it.
  */
-const UNPAID_ACCOUNT_STATUS_IDS: ReadonlySet<number> = new Set([1, 3, 4]);
+const PAID_ACCOUNT_STATUS_IDS: ReadonlySet<number> = new Set([2, 5]);
 
 /**
  * Whether this workspace's owning account pays for Dapta AI, as the identity
@@ -94,7 +96,7 @@ export function paidVerdictOf(ws: Pick<IamWorkspace, 'isPaid' | 'account'> | nul
   if (raw === null || raw === undefined || raw === '') return null;
   const status = Number(raw);
   if (!Number.isInteger(status)) return null;
-  return !UNPAID_ACCOUNT_STATUS_IDS.has(status);
+  return PAID_ACCOUNT_STATUS_IDS.has(status);
 }
 
 export interface IamAccount {

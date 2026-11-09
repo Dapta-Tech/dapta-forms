@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HttpException } from '@nestjs/common';
 import { cacheDaptaPaid, createDb, getAttributionSwitch, migrate, seed, sql, type Db } from '@quill/db';
-import { attributionPremiumMode, vanityPremiumMode, type ServerEnv } from '@quill/config/env';
+import { attributionPremiumMode, iamWorkspacesEnabled, vanityPremiumMode, type ServerEnv } from '@quill/config/env';
 import { ATTRIBUTION_VERDICT_MAX_AGE_MS, type PremiumMode } from '@quill/shared';
 import {
   LogOnlyEmailProvider,
@@ -322,11 +322,22 @@ describe('every surface reads the same answer', () => {
 });
 
 describe('the premium mode', () => {
-  it('attribution: explicit wins; unset is locked with the identity service, open without', () => {
-    expect(attributionPremiumMode({ PREMIUM_FEATURES: undefined, IAM_BASE_URL: undefined })).toBe('open');
-    expect(attributionPremiumMode({ PREMIUM_FEATURES: undefined, IAM_BASE_URL: 'https://iam.example.test' })).toBe('locked');
-    expect(attributionPremiumMode({ PREMIUM_FEATURES: 'open', IAM_BASE_URL: 'https://iam.example.test' })).toBe('open');
-    expect(attributionPremiumMode({ PREMIUM_FEATURES: 'locked', IAM_BASE_URL: undefined })).toBe('locked');
+  it('attribution: explicit wins; unset is locked exactly when the projection runs (IAM + workos)', () => {
+    const IAM = 'https://iam.example.test';
+    expect(attributionPremiumMode({ PREMIUM_FEATURES: undefined, IAM_BASE_URL: undefined, AUTH_PROVIDER: 'local' })).toBe('open');
+    expect(attributionPremiumMode({ PREMIUM_FEATURES: undefined, IAM_BASE_URL: undefined, AUTH_PROVIDER: 'workos' })).toBe('open');
+    expect(attributionPremiumMode({ PREMIUM_FEATURES: undefined, IAM_BASE_URL: IAM, AUTH_PROVIDER: 'workos' })).toBe('locked');
+    // IAM configured but another auth provider: no projection, no verdict, so open.
+    expect(attributionPremiumMode({ PREMIUM_FEATURES: undefined, IAM_BASE_URL: IAM, AUTH_PROVIDER: 'local' })).toBe('open');
+    expect(attributionPremiumMode({ PREMIUM_FEATURES: 'open', IAM_BASE_URL: IAM, AUTH_PROVIDER: 'workos' })).toBe('open');
+    expect(attributionPremiumMode({ PREMIUM_FEATURES: 'locked', IAM_BASE_URL: undefined, AUTH_PROVIDER: 'local' })).toBe('locked');
+  });
+
+  it('iamWorkspacesEnabled is the projection switch: IAM_BASE_URL and workos, both', () => {
+    expect(iamWorkspacesEnabled({ IAM_BASE_URL: 'https://iam.example.test', AUTH_PROVIDER: 'workos' })).toBe(true);
+    expect(iamWorkspacesEnabled({ IAM_BASE_URL: 'https://iam.example.test', AUTH_PROVIDER: 'local' })).toBe(false);
+    expect(iamWorkspacesEnabled({ IAM_BASE_URL: undefined, AUTH_PROVIDER: 'workos' })).toBe(false);
+    expect(iamWorkspacesEnabled({ IAM_BASE_URL: '', AUTH_PROVIDER: 'workos' })).toBe(false);
   });
 
   it('vanity: unset stays open, as it always was', () => {

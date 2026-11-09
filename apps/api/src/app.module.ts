@@ -2,7 +2,13 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { createDb } from '@quill/db';
 import { createEmailProvider, SubmissionNotifier, type EmailProvider } from '@quill/notifications';
-import { attributionPremiumMode, loadServerEnv, vanityPremiumMode, type ServerEnv } from '@quill/config/env';
+import {
+  attributionPremiumMode,
+  iamWorkspacesEnabled,
+  loadServerEnv,
+  vanityPremiumMode,
+  type ServerEnv,
+} from '@quill/config/env';
 import { emailGrowthCta } from './email-growth-cta';
 import {
   API_KEY_RATE_LIMITER,
@@ -169,7 +175,7 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     {
       provide: WORKSPACE_PROJECTION,
       useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects) =>
-        env.AUTH_PROVIDER === 'workos' && env.IAM_BASE_URL
+        iamWorkspacesEnabled(env) && env.IAM_BASE_URL
           ? new WorkspaceProjection(db, new IamWorkspacesClient({ baseUrl: env.IAM_BASE_URL }), {
               seedEnv: env,
               onSignup: signupObserver(productAnalytics),

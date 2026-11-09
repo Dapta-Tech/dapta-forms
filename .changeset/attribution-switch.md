@@ -34,8 +34,8 @@ the email with no growth button and no text line, decided at send time.
 
 **Config.** `PREMIUM_FEATURES` is optional now. Read it through
 `vanityPremiumMode` (unset is `open`, as it always was) or
-`attributionPremiumMode` (unset is `locked` when `IAM_BASE_URL` is set, else
-`open`).
+`attributionPremiumMode` (unset is `locked` when `iamWorkspacesEnabled`, that
+is `IAM_BASE_URL` with `AUTH_PROVIDER=workos`, else `open`).
 
 **Copy.** `admin.attributionSetting` (the Brand kit row) and
 `admin.editor.design.badgeSizeHiddenHint`, in English and Spanish.

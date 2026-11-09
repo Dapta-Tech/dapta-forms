@@ -8,8 +8,8 @@
  *
  *   1. search `isPaid` true / false writes 1 / 0 with the time of the read;
  *      absent writes nothing and keeps the old verdict;
- *   2. detail `account_status_id` 1, 3, 4 are not paid; 2 and 5 are; absent
- *      writes nothing;
+ *   2. detail `account_status_id` 2 and 5 are paid; 1, 3, 4 and any other
+ *      value (0, 6, unknown) are not; absent writes nothing;
  *   3. no plan name, status or billing id from the upstream row is stored.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -114,11 +114,14 @@ describe('the paid verdict, from the rows the projection already reads', () => {
 
   describe('workspace detail: account.account_status_id', () => {
     for (const [status, paid] of [
+      [0, false],
       [1, false],
       [2, true],
       [3, false],
       [4, false],
       [5, true],
+      [6, false],
+      [99, false],
     ] as const) {
       it(`status ${status} is ${paid ? 'paid' : 'not paid'}`, async () => {
         iam.detailRow = row({ account: { account_status_id: status, stripe_id: 'cus_STRIPE_SECRET', plan_name: 'GROWTH_PLAN_X' } });
@@ -158,6 +161,11 @@ describe('paidVerdictOf', () => {
     expect(paidVerdictOf({ isPaid: false, account: { account_status_id: 2 } })).toBe(false);
     expect(paidVerdictOf({ account: { account_status_id: '2' } })).toBe(true);
     expect(paidVerdictOf({ account: { account_status_id: '4' } })).toBe(false);
+    expect(paidVerdictOf({ account: { account_status_id: '5' } })).toBe(true);
+    expect(paidVerdictOf({ account: { account_status_id: 6 } })).toBe(false);
+    expect(paidVerdictOf({ account: { account_status_id: 0 } })).toBe(false);
+    // The search's boolean is taken as the identity service computes it.
+    expect(paidVerdictOf({ isPaid: true, account: { account_status_id: 6 } })).toBe(true);
     expect(paidVerdictOf({ account: { account_status_id: 'abc' } })).toBeNull();
     expect(paidVerdictOf({ account: { account_status_id: null } })).toBeNull();
     expect(paidVerdictOf({ account: null })).toBeNull();

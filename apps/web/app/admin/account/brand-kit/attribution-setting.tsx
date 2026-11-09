@@ -30,8 +30,9 @@ export function attributionMode(s: AttributionStatus): AttributionMode {
  *    choice is saved. Turning it back on never needs the subscription, so the
  *    switch stays usable.
  *
- * Not paid (and not lapsed): the switch is disabled with a muted label, and
- * "Only for Dapta AI subscribers." both as its tooltip and as a note under it,
+ * Not paid: the switch is disabled with a muted label, and "Only for Dapta AI
+ * subscribers." both as its tooltip and as a note under it (lapsed carries
+ * the same note and tooltip under its own sentence),
  * "Dapta AI" linked to the landing the deployment names (`DAPTA_AI_URL`, read
  * by the server page: no host is written in this tree). Members see the row
  * read-only: only owners and admins change it.
@@ -56,7 +57,8 @@ export function AttributionSetting({
   const [state, setState] = useState<AttributionStatus>(initial);
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<'saved' | 'failed' | 'notSubscribed' | null>(null);
-  const noteId = useId();
+  const lapsedId = useId();
+  const subscribersId = useId();
   const mode = attributionMode(state);
   // Only turning the attribution OFF needs the subscription. Turning it back
   // ON never does, so a lapsed choice (stored off, not paying) stays usable.
@@ -84,13 +86,20 @@ export function AttributionSetting({
       }
     });
 
-  const note =
+  // Whenever the workspace cannot hide it now (not paid, or lapsed), the row
+  // says who can, with the link, as a note and as the tooltip. Lapsed adds the
+  // sentence that the subscription ended; its switch stays usable, but only
+  // to show the attribution again.
+  const showSubscribersOnly = !state.canHide;
+  const lapsedNote =
     mode === 'lapsed' ? (
-      <p id={noteId} data-testid="attribution-lapsed" className="text-xs text-muted-foreground">
+      <p id={lapsedId} data-testid="attribution-lapsed" className="text-xs text-muted-foreground">
         {m.lapsed}
       </p>
-    ) : !usable ? (
-      <p id={noteId} data-testid="attribution-subscribers-only" className="text-xs text-muted-foreground">
+    ) : null;
+  const subscribersNote =
+    showSubscribersOnly ? (
+      <p id={subscribersId} data-testid="attribution-subscribers-only" className="text-xs text-muted-foreground">
         {before}
         {daptaAiUrl ? (
           <a href={daptaAiUrl} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
@@ -102,6 +111,7 @@ export function AttributionSetting({
         {after}
       </p>
     ) : null;
+  const describedBy = [lapsedNote ? lapsedId : null, subscribersNote ? subscribersId : null].filter(Boolean).join(' ');
 
   return (
     <SettingsRow first={first} title={m.title} hint={m.hint} testId="attribution-setting">
@@ -111,14 +121,14 @@ export function AttributionSetting({
           // The reason a disabled switch cannot move, on hover. A disabled
           // button fires no pointer events in some browsers, so the tooltip
           // sits on the row around it.
-          title={!usable ? subscribersOnly : undefined}
+          title={showSubscribersOnly ? subscribersOnly : undefined}
           data-testid="attribution-switch-row"
         >
           <Switch
             checked={!state.hideAttribution}
             disabled={!enabled}
             aria-label={m.switchLabel}
-            aria-describedby={note ? noteId : undefined}
+            aria-describedby={describedBy || undefined}
             onCheckedChange={save}
             data-testid="attribution-switch"
           />
@@ -126,7 +136,8 @@ export function AttributionSetting({
             {m.switchLabel}
           </span>
         </span>
-        {note}
+        {lapsedNote}
+        {subscribersNote}
         {!canEdit ? (
           <p data-testid="attribution-read-only" className="text-xs text-muted-foreground">
             {m.readOnly}
