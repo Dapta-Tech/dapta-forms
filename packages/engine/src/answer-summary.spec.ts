@@ -277,3 +277,46 @@ describe("formatAnswerCell", () => {
     expect(formatAnswerCell(t, "  hi ")).toBe("hi");
   });
 });
+
+describe("checkbox answers", () => {
+  const box = step({
+    key: "consent",
+    type: "checkbox",
+    question: "Acepto la [política de datos](https://a.co)",
+    required: true,
+  });
+
+  it("formatAnswerValue prints a check, or nothing", () => {
+    expect(formatAnswerValue(box, true)).toBe("✓");
+    expect(formatAnswerValue(box, "true")).toBe("✓");
+    expect(formatAnswerValue(box, undefined)).toBe("");
+    expect(formatAnswerValue(box, false)).toBe("");
+    expect(formatAnswerCell(box, true)).toBe("✓");
+  });
+
+  it("stepLabel shows the link as its text", () => {
+    expect(stepLabel(box)).toBe("Acepto la política de datos");
+    // Other types keep their question verbatim.
+    expect(stepLabel({ key: "t", type: "text", question: "Ver [x](https://a.co)" })).toBe("Ver [x](https://a.co)");
+  });
+
+  it("summarizeAnswersByStep omits an unchecked box and labels a checked one", () => {
+    const cfg: FormConfig = { version: 1, steps: [box] };
+    expect(summarizeAnswersByStep(cfg, {})).toEqual([]);
+    expect(summarizeAnswersByStep(cfg, { consent: false })).toEqual([]);
+    expect(summarizeAnswersByStep(cfg, { consent: true })).toEqual([
+      { label: "Acepto la política de datos", value: "✓", key: "consent", type: "checkbox" },
+    ]);
+  });
+});
+
+describe("stepLabel for a checkbox with no text", () => {
+  it("names the column with its description, not the key", () => {
+    expect(stepLabel({ key: "check1", type: "checkbox", question: "", helper: "Autorizo el [tratamiento](https://a.co)" })).toBe(
+      "Autorizo el tratamiento",
+    );
+  });
+  it("falls back to the key only when there is nothing else", () => {
+    expect(stepLabel({ key: "check1", type: "checkbox", question: "" })).toBe("check1");
+  });
+});

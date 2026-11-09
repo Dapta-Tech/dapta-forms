@@ -69,6 +69,7 @@ import {
   submitFinal,
   captureUtm,
   captureDefaults,
+  withAnswer,
   capturePrefill,
   schedulerToBooking,
   preloadableCalendlyKeys,
@@ -145,6 +146,7 @@ export function FormRenderer({
   visitCapture,
   startAt,
   resume,
+  showAttribution = true,
 }: {
   accountCode: string;
   slug: string;
@@ -178,6 +180,13 @@ export function FormRenderer({
    * builder preview never does, so a preview neither keeps nor restores one.
    */
   resume?: boolean;
+  /**
+   * Whether this workspace's form carries the "Made with dForms" attribution
+   * (the badge and the thank-you CTA), exactly as the API answered it
+   * (`PublicForm.showAttribution`). Absent = true: today's behavior, and every
+   * legacy-markup snapshot. The deployment rule (`signupHref`) applies on top.
+   */
+  showAttribution?: boolean;
 }) {
   const m = getMessages(locale).renderer;
   // The form's button copy: author overrides, else the stock copy of `locale`.
@@ -944,7 +953,7 @@ export function FormRenderer({
     // The first answer arms spam protection's check, which then loads once
     // the end of the form is on screen, as on the one-page layout.
     gateRef.current.arm();
-    setAnswers((a) => ({ ...a, [field]: value }));
+    setAnswers((a) => withAnswer(a, field, value));
     setError(null);
     setErrors((e) => {
       if (!(owner in e)) return e;
@@ -1097,6 +1106,7 @@ export function FormRenderer({
         accountCode={accountCode}
         cover={chrome}
         design={design}
+        showAttribution={showAttribution}
       />
     );
   }
@@ -1218,7 +1228,7 @@ export function FormRenderer({
           </button>
           {/* Under the CTA: every respondent sees the cover, so this is the
               highest-value slot for the attribution and it displaces nothing. */}
-          <MadeWithBadge locale={locale} accountCode={accountCode} />
+          <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
         </div>
       </PhaseShell>
     );
@@ -1230,7 +1240,7 @@ export function FormRenderer({
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1304,19 +1314,23 @@ export function FormRenderer({
                     aria-labelledby={memberId(member.key, 'q')}
                     aria-describedby={code ? memberId(member.key, 'e') : undefined}
                   >
-                    <div className="pf__question-wrap">
-                      <h2 className="pf__question" id={memberId(member.key, 'q')}>
-                        {member.question ?? member.key}
-                        {several && member.required && member.type !== 'message' ? (
-                          <span aria-hidden className="pf-v__required">
-                            *
-                          </span>
+                    {/* A checkbox's text sits beside its box and carries the
+                        `q` id the group is labelled by (StepInput paints it). */}
+                    {member.type === 'checkbox' ? null : (
+                      <div className="pf__question-wrap">
+                        <h2 className="pf__question" id={memberId(member.key, 'q')}>
+                          {member.question ?? member.key}
+                          {several && member.required && member.type !== 'message' ? (
+                            <span aria-hidden className="pf-v__required">
+                              *
+                            </span>
+                          ) : null}
+                        </h2>
+                        {member.helper && member.type !== 'message' ? (
+                          <p className="pf__helper">{member.helper}</p>
                         ) : null}
-                      </h2>
-                      {member.helper && member.type !== 'message' ? (
-                        <p className="pf__helper">{member.helper}</p>
-                      ) : null}
-                    </div>
+                      </div>
+                    )}
                     {member.type !== 'message' || member.helper ? (
                       <div className="pf__fields">
                         <StepInput
@@ -1337,6 +1351,9 @@ export function FormRenderer({
                           locale={locale}
                           onRequestUpload={requestUploadTicket}
                           uploadMaxMb={uploadMaxMb}
+                          labelId={memberId(member.key, 'q')}
+                          showRequiredMark={several && member.required === true}
+                          invalid={Boolean(code)}
                         />
                         {/* Quiet per question: the summary below is the one alert. */}
                         {code ? (
@@ -1376,7 +1393,7 @@ export function FormRenderer({
         </div>
         {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
         {gate.honeypot}
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1496,7 +1513,7 @@ export function FormRenderer({
         {/* Last child of `.pf__main`, in flow — one DOM position that lands
             correctly on all three bands: it ends the fluid column below 769px
             and rides the centered card group above it. */}
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1535,12 +1552,15 @@ export function FormRenderer({
       <div className="pf__body">
         <div className="pf__inner">
           <div className="pf__content pf-animate" key={animKey}>
-            <div className="pf__question-wrap">
-              <h2 className="pf__question">{step.question ?? step.key}</h2>
-              {step.helper && step.type !== 'message' ? (
-                <p className="pf__helper">{step.helper}</p>
-              ) : null}
-            </div>
+            {/* A checkbox's text sits beside its box (StepInput paints it). */}
+            {step.type === 'checkbox' ? null : (
+              <div className="pf__question-wrap">
+                <h2 className="pf__question">{step.question ?? step.key}</h2>
+                {step.helper && step.type !== 'message' ? (
+                  <p className="pf__helper">{step.helper}</p>
+                ) : null}
+              </div>
+            )}
 
             <div className="pf__fields">
               <StepInput
@@ -1549,7 +1569,7 @@ export function FormRenderer({
                 answers={answers}
                 onChange={(v: AnswerValue) => {
                   if (sendingRef.current) return;
-                  setAnswers((a) => ({ ...a, [step.key]: v }));
+                  setAnswers((a) => withAnswer(a, step.key, v));
                   setError(null);
                 }}
                 onFieldChange={(field, v) => {
@@ -1563,6 +1583,7 @@ export function FormRenderer({
                 locale={locale}
                 onRequestUpload={requestUploadTicket}
                 uploadMaxMb={uploadMaxMb}
+                invalid={Boolean(error)}
               />
 
               {error ? (
@@ -1596,7 +1617,7 @@ export function FormRenderer({
       {/* See the scheduler screen above: in flow at the end of `.pf__main`,
           never fixed — a floating pill would fight the Continue button and the
           mobile keyboard. */}
-      <MadeWithBadge locale={locale} accountCode={accountCode} />
+      <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
     </PhaseShell>
   );
 }

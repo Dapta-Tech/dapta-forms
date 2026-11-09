@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  onePageRows,
+  nameFieldLabels,
+  HALF_WIDTH_TYPES,
+  canHalfWidth,
   visibleSteps,
   validateAnswer,
   validateAnswerCode,
@@ -2450,5 +2454,74 @@ describe('renameStepKey — logicLayout follows the key', () => {
     const { logicLayout: _dropped, ...bare } = cfg;
     const next = renameStepKey(bare, 'budget', 'annual_budget');
     expect('logicLayout' in next).toBe(false);
+  });
+});
+
+describe('onePageRows', () => {
+  type Row = Parameters<typeof onePageRows>[0][number];
+  const half = (type: Row['type'] = 'text', extra: Partial<Row> = {}): Row => ({ type, width: 'half', ...extra });
+  const full = (type: Row['type'] = 'text'): Row => ({ type });
+
+  it('an empty list has no rows; full steps get a row each', () => {
+    expect(onePageRows([])).toEqual([]);
+    expect(onePageRows([full(), full('email'), full('textarea')])).toEqual([[0], [1], [2]]);
+  });
+
+  it('pairs two consecutive half steps', () => {
+    expect(onePageRows([half(), half('email')])).toEqual([[0, 1]]);
+  });
+
+  it('a lone half between two full steps takes its own row', () => {
+    expect(onePageRows([full(), half('phone'), full()])).toEqual([[0], [1], [2]]);
+  });
+
+  it('three halves make a pair and a full row; four make two pairs; never three columns', () => {
+    expect(onePageRows([half(), half(), half()])).toEqual([[0, 1], [2]]);
+    expect(onePageRows([half(), half(), half(), half()])).toEqual([[0, 1], [2, 3]]);
+  });
+
+  it('a half on a type that cannot be half is a full row', () => {
+    for (const type of ['textarea', 'name', 'multiple_choice', 'slider', 'file', 'scheduler', 'message', 'reveal'] as const) {
+      expect(HALF_WIDTH_TYPES.has(type)).toBe(false);
+      expect(onePageRows([half(type), half('email')])).toEqual([[0], [1]]);
+      expect(onePageRows([half('email'), half(type)])).toEqual([[0], [1]]);
+    }
+    for (const type of ['text', 'email', 'phone', 'url', 'dropdown'] as const) expect(canHalfWidth({ type })).toBe(true);
+  });
+
+  it('a hidden half is a full row and does not pair with its neighbour', () => {
+    expect(canHalfWidth({ type: 'email', hidden: true })).toBe(false);
+    expect(onePageRows([half('text', { hidden: true }), half('email')])).toEqual([[0], [1]]);
+    expect(onePageRows([half(), half('email', { hidden: true }), half('phone')])).toEqual([[0], [1], [2]]);
+  });
+});
+
+describe('nameFieldLabels', () => {
+  const name = (extra: Record<string, unknown> = {}) =>
+    ({ key: 'name', type: 'name', question: 'Your name?', ...extra }) as Parameters<typeof nameFieldLabels>[0];
+
+  it('is null without labels, with blank labels, and on another step type', () => {
+    expect(nameFieldLabels(name())).toBeNull();
+    expect(nameFieldLabels(name({ fieldLabels: {} }))).toBeNull();
+    expect(nameFieldLabels(name({ fieldLabels: { firstname: '', lastname: '   ' } }))).toBeNull();
+    expect(
+      nameFieldLabels({ key: 'q', type: 'text', question: 'Q', fieldLabels: { firstname: 'Nombre' } } as Parameters<
+        typeof nameFieldLabels
+      >[0]),
+    ).toBeNull();
+  });
+
+  it('returns both labels, with an empty string where one is missing', () => {
+    expect(nameFieldLabels(name({ fieldLabels: { firstname: 'Nombre' } }))).toEqual(['Nombre', '']);
+    expect(nameFieldLabels(name({ fieldLabels: { firstname: 'Nombre', lastname: 'Apellido' } }))).toEqual([
+      'Nombre',
+      'Apellido',
+    ]);
+  });
+
+  it('reads the custom sub-field keys', () => {
+    expect(
+      nameFieldLabels(name({ fields: ['nombre', 'apellido'], fieldLabels: { firstname: 'x', apellido: 'Apellido' } })),
+    ).toEqual(['', 'Apellido']);
   });
 });

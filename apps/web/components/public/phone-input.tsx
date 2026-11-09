@@ -67,6 +67,7 @@ export function PhoneInput({
   ariaLabel,
   defaultCountry,
   autoFocus = true,
+  placeholder,
 }: {
   /** Full number including the dial code ('+525512345678'), or ''. */
   value: string;
@@ -83,6 +84,11 @@ export function PhoneInput({
    * but its first, or the phone would take focus from the one above it.
    */
   autoFocus?: boolean;
+  /**
+   * The step's own placeholder. Shown as is when it is not blank, and it does
+   * not follow the country; absent or blank keeps the automatic number mask.
+   */
+  placeholder?: string | null;
 }) {
   const m = getMessages(locale).renderer.phonePicker;
   const listId = useId();
@@ -214,7 +220,7 @@ export function PhoneInput({
             const d = e.target.value.replace(/\D/g, '').slice(0, maxLen);
             onChange(d ? `${country.dial}${d}` : '');
           }}
-          placeholder={formatPhoneDigits(country.dial, '0'.repeat(minLen))}
+          placeholder={placeholder?.trim() ? placeholder : formatPhoneDigits(country.dial, '0'.repeat(minLen))}
           aria-label={ariaLabel}
           aria-invalid={tooShort || undefined}
           autoFocus={autoFocus}

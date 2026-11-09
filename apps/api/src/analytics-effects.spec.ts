@@ -141,6 +141,39 @@ describe('AnalyticsCapture — delivery', () => {
     expect(props.$groups).toEqual({ forms_account: 'acc_1' });
   });
 
+  it('sets the email on the person when the distinct id is an email', async () => {
+    // MCP, API-key and tracker-blocked users never run the browser identify,
+    // so the server event is the only place their person learns its email.
+    const calls: RecordedCall[] = [];
+    await newCapture(envWith(KEY), calls).deliver(
+      'forms_form_created',
+      JSON.stringify({ event: 'forms_form_created', distinctId: 'a@b.com', accountId: 'acc_1', timestamp: 1 }),
+    );
+    expect((calls[0]!.body.properties as Record<string, unknown>).$set).toEqual({ email: 'a@b.com' });
+  });
+
+  it('sets no email for account ids or profile-less events', async () => {
+    const calls: RecordedCall[] = [];
+    const capture = newCapture(envWith(KEY), calls);
+    await capture.deliver(
+      'forms_link_page_viewed',
+      JSON.stringify({ event: 'forms_link_page_viewed', distinctId: 'account:acc_1', accountId: 'acc_1', timestamp: 1 }),
+    );
+    await capture.deliver(
+      '$mcp_tool_call',
+      JSON.stringify({
+        event: '$mcp_tool_call',
+        distinctId: 'a@b.com',
+        accountId: 'acc_1',
+        properties: { $process_person_profile: false },
+        timestamp: 1,
+      }),
+    );
+    for (const c of calls) {
+      expect((c.body.properties as Record<string, unknown>).$set).toBeUndefined();
+    }
+  });
+
   it('omits the group when the event has no account', async () => {
     const calls: RecordedCall[] = [];
     await newCapture(envWith(KEY), calls).deliver(

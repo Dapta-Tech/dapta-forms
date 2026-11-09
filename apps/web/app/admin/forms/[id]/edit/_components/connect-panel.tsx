@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useMemo, useState } from 'react';
-import { contactKeyReadiness, type ContactKeyReadiness, type FormConfig } from '@quill/engine';
+import { contactKeyReadiness, hasScoringSignal, type ContactKeyReadiness, type FormConfig, stepQuestionText } from '@quill/engine';
 import type { FormSpamProtection, FormTracking } from '@quill/types';
 import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
@@ -70,7 +70,7 @@ export function ConnectPanel({
     () =>
       config.steps
         .filter((s) => s.type !== 'message')
-        .map((s) => ({ key: s.key, label: s.question?.trim() || s.key, type: s.type })),
+        .map((s) => ({ key: s.key, label: stepQuestionText(s).trim() || s.key, type: s.type })),
     [config.steps],
   );
 
@@ -105,7 +105,7 @@ export function ConnectPanel({
       />
       <div className="flex min-w-0 flex-col gap-4">
         <TrackingSection config={config} onTrackingChange={onTrackingChange} mc={mc} />
-        <ConnectEmailsSection formId={formId} m={mc} locale={locale} />
+        <ConnectEmailsSection formId={formId} m={mc} locale={locale} scored={hasScoringSignal(config)} />
         {/* Last on the tab: a setting most forms never need, placed after
             everything the form sends and tracks. */}
         <SpamProtectionSection

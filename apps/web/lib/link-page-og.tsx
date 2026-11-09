@@ -90,7 +90,11 @@ export async function linkPageCardResponse(page: PublicLinkPage | null): Promise
             {clip(page.bio, 120)}
           </div>
         ) : null}
-        <img src={mark} width={Math.round(24 * DAPTA_FORMS_MARK_RATIO)} height={24} alt="" style={{ marginTop: 12 }} />
+        {/* No dForms mark for a workspace that turned the attribution off, as its
+            page carries no "Made with dForms" (`showAttribution`, absent = true). */}
+        {page.showAttribution !== false ? (
+          <img src={mark} width={Math.round(24 * DAPTA_FORMS_MARK_RATIO)} height={24} alt="" style={{ marginTop: 12 }} />
+        ) : null}
       </div>
     ),
     { ...SIZE, fonts: cardFonts(style.font), headers: { 'cache-control': CACHE_CONTROL } },

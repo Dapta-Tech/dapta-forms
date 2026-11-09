@@ -15,6 +15,7 @@ import {
   FORM_CLIENT_LOGO_SCOPES,
   FORM_CONTENT_ALIGNS,
   FORM_CONTENT_WIDTHS,
+  FORM_DENSITIES,
   FORM_FIELD_TYPES,
   FORM_FONTS,
   FORM_LAYOUTS,
@@ -25,6 +26,7 @@ import {
   FORM_RADII,
   FORM_REVEAL_LOADERS,
   FORM_REVEAL_SIZES,
+  FORM_STEP_WIDTHS,
   FORM_TRANSITIONS,
   isImageIcon,
   isSafeHttpUrl,
@@ -260,6 +262,13 @@ export const formStepSchema = z.object({
   questionVariants: z.record(z.string(), z.string().max(500)).optional(),
   fields: z.array(z.string().min(1).max(64)).max(4).optional(),
   placeholders: z.record(z.string(), z.string().max(200)).optional(),
+  /**
+   * ADDITIVE. `name` steps on the `vertical` layout only: a visible label above
+   * each input, keyed like `placeholders` (the sub-field keys of `fields`,
+   * firstname and lastname by default). Ignored on `slides` and on any other
+   * step type. See `nameFieldLabels` in @quill/engine.
+   */
+  fieldLabels: z.record(z.string(), z.string().max(200)).optional(),
   sliderLabelVariants: z.record(z.string(), z.string().max(80)).optional(),
   sliderUnitLabel: z.string().max(80).nullable().optional(),
   /** ADDITIVE. Absent falls back to `showIcons` — see `resolveOptionLayout`. */
@@ -286,6 +295,13 @@ export const formStepSchema = z.object({
    * silently lose their screens. See `screenIds` in @quill/engine.
    */
   screenGroup: z.string().min(1).max(64).optional(),
+  /**
+   * ADDITIVE. Column width on the one-page form; only the `vertical` layout
+   * reads it. Absent = `'full'`. Two consecutive `half` steps share a row; a
+   * `half` on a type that cannot be half, or with no half neighbour, renders
+   * full width (not rejected here). See `onePageRows` in @quill/engine.
+   */
+  width: z.enum(FORM_STEP_WIDTHS).optional(),
   /**
    * `phone` step: ISO 3166-1 alpha-2 the public country picker defaults to
    * (e.g. "CO"). ADDITIVE — absent = the locale-based default. Two-char cap so a
@@ -403,6 +419,9 @@ export const formBrandingSchema = z.object({
   // Shape & controls.
   radius: z.enum(FORM_RADII).optional(),
   buttonStyle: z.enum(FORM_BUTTON_STYLES).optional(),
+  // Additive: the label colour of a SOLID button. Absent / null / blank keeps
+  // the automatic contrast colour; ignored for `outline` and `soft`.
+  buttonTextColor: cssColor.nullable().optional(),
   buttonFullWidth: z.boolean().optional(),
   progressStyle: z.enum(FORM_PROGRESS_STYLES).optional(),
 
@@ -413,6 +432,20 @@ export const formBrandingSchema = z.object({
   contentAlign: z.enum(FORM_CONTENT_ALIGNS).optional(),
   contentWidth: z.enum(FORM_CONTENT_WIDTHS).optional(),
   transition: z.enum(FORM_TRANSITIONS).optional(),
+  /**
+   * ADDITIVE. Whether the one-page form paints its header (the form logo, or the
+   * form name when there is no logo) above the questions. Only the `vertical`
+   * layout reads it; `slides` ignores it. Absent = `true`, the behavior every
+   * form had before this field existed.
+   */
+  showHeader: z.boolean().optional(),
+  /**
+   * ADDITIVE. How tightly the one-page form packs its questions; only the
+   * `vertical` layout reads it. `compact` drops the lines between questions
+   * and spaces fields 16 px apart. Absent = `'comfortable'`. Per form, not
+   * part of the brand kit.
+   */
+  density: z.enum(FORM_DENSITIES).optional(),
 
   /** Editor bookkeeping — which preset was last applied. Never read at render. */
   themePreset: z.string().max(32).nullable().optional(),
@@ -1342,6 +1375,14 @@ export const publicFormSchema = z.object({
    * nothing from the challenge provider without it.
    */
   captcha: publicCaptchaSchema.optional(),
+  /**
+   * Whether this form carries the "Made with dForms" attribution (the badge and
+   * the thank-you CTA), decided by the API from the workspace's choice and its
+   * paid verdict (`showAttribution` in @quill/shared). The deployment rule
+   * (`NEXT_PUBLIC_SIGNUP_URL` / `NEXT_PUBLIC_HIDE_BADGE`) still applies on top.
+   * Absent (an API older than the setting) reads as true: exactly as before.
+   */
+  showAttribution: z.boolean().optional(),
 });
 export type PublicForm = z.infer<typeof publicFormSchema>;
 

@@ -4,6 +4,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { serverApiUrl } from '@/lib/api-url';
 import { setSession, workosSessionIdFromJwt } from '@/lib/auth-session';
 import { asLocale, LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/locale';
+import { analyticsSessionHeaders } from '@/lib/analytics-session';
+import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { requestOrigin } from '@/lib/request-origin';
 
 const OAUTH_STATE_COOKIE = 'quill_oauth_state';
@@ -45,7 +47,12 @@ async function recordAttribution(
   try {
     const res = await fetch(`${serverApiUrl}/v1/account/attribution`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${accessToken}`,
+        // A new member's signup is recorded on their first API call, which can be this one.
+        ...analyticsSessionHeaders(jar, resolveProductAnalytics()),
+      },
       body: parked,
       cache: 'no-store',
       signal: AbortSignal.timeout(3000),
@@ -88,7 +95,10 @@ async function seedLocale(
   if (jar.get(LOCALE_COOKIE)?.value) return;
   try {
     const res = await fetch(`${serverApiUrl}/v1/me`, {
-      headers: { authorization: `Bearer ${accessToken}` },
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        ...analyticsSessionHeaders(jar, resolveProductAnalytics()),
+      },
       cache: 'no-store',
       signal: AbortSignal.timeout(3000),
     });

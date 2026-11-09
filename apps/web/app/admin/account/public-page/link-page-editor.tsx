@@ -90,12 +90,18 @@ export function LinkPageEditor({
   m,
   networks,
   locale,
+  showAttribution = true,
 }: {
   initial: LinkPageEditorView;
   m: Msgs;
   /** Each network's display name, from the public catalog the page itself uses. */
   networks: Record<LinkPageSocial, string>;
   locale: string;
+  /**
+   * The workspace's "Made with dForms" setting (`/v1/me`), so the preview
+   * carries the badge exactly when the public page will. Absent = shown.
+   */
+  showAttribution?: boolean;
 }) {
   const { success, error } = useToast();
   const [pending, start] = useTransition();
@@ -214,13 +220,16 @@ export function LinkPageEditor({
       socials: Object.fromEntries(LINK_PAGE_SOCIALS.map((n) => [n, normalizeSocial(n, socials[n])])),
       ...(colorsOut() ? { colors: colorsOut() } : {}),
     };
-    return resolveLinkPage(page, {
-      accountCode: initial.accountCode,
-      accountName: initial.accountName,
-      forms: initial.forms,
-      brandKit: initial.brandKit,
-    });
-  }, [name, bio, logoMode, logo, rows, socials, colors, initial]);
+    return {
+      ...resolveLinkPage(page, {
+        accountCode: initial.accountCode,
+        accountName: initial.accountName,
+        forms: initial.forms,
+        brandKit: initial.brandKit,
+      }),
+      showAttribution,
+    };
+  }, [name, bio, logoMode, logo, rows, socials, colors, initial, showAttribution]);
 
   /**
    * Write the page. `withMeta` also sends the internal name and the slug:

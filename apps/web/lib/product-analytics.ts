@@ -14,6 +14,12 @@
  * into an open-source repo for a feature that ships OFF.
  */
 
+/**
+ * The cookie that carries the browser's analytics session id to the server.
+ * Written by the snippet below, read by `analytics-session.ts`.
+ */
+export const ANALYTICS_SESSION_COOKIE = 'quill_ph_session';
+
 /** Vendor default ingestion host, used when nothing is configured. */
 export const DEFAULT_ANALYTICS_HOST = 'https://us.i.posthog.com';
 
@@ -123,7 +129,12 @@ function js(value: unknown): string {
 export function buildAnalyticsSnippet(key: string, host: string): string {
   return (
     `!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);` +
-    `posthog.init(${js(key)},{api_host:${js(host)},person_profiles:'always'});`
+    // `loaded` runs once the real library is in place; a listener queued on the
+    // stub before that is dropped and never fires. The listener mirrors the
+    // live session id into a first-party cookie the server can read, so the
+    // API's events link to this session's recording. It fires again on every
+    // rotation, so the cookie never names a session that has ended.
+    `posthog.init(${js(key)},{api_host:${js(host)},person_profiles:'always',loaded:function(ph){ph.onSessionId(function(id){document.cookie=${js(`${ANALYTICS_SESSION_COOKIE}=`)}+encodeURIComponent(id)+';path=/;SameSite=Lax'+(location.protocol==='https:'?';Secure':'')})}});`
   );
 }
 
@@ -171,15 +182,15 @@ export function identifyMember(identity: AnalyticsIdentity): void {
   const ph = client();
   if (!ph || !identity.email) return;
   ph.identify(identity.email, {
+    // The email as a person PROPERTY, not only as the distinct id: person lists
+    // and recordings display the `email` property, so without it every Forms
+    // user who never opened the Dapta app shows up as a bare id.
+    email: identity.email,
     member_id: identity.memberId,
     account_id: identity.accountId,
     role: identity.role,
   });
-  // AFTER identify, never before: `alias` links its argument to the CURRENT
-  // distinct id, and before identify that is this origin's anonymous id — the
-  // landing visit would be chained to a session that identify then merges,
-  // instead of pinned to the person directly.
-  aliasLandingVisit(ph, identity.landingDistinctId);
+  aliasLandingVisit(ph, identity.landingDistinctId, identity.email);
   ph.register({
     product: 'forms',
     account_id: identity.accountId,
@@ -212,9 +223,22 @@ export function identifyMember(identity: AnalyticsIdentity): void {
  * every render inside that window would otherwise re-send the merge. When
  * storage is blocked the alias fires anyway — the vendor drops a repeated
  * merge on the floor, and a join that never happens is the only real loss.
+ *
+ * The person's email is passed as the alias ORIGINAL on purpose. Called from
+ * the stub, the vendor replays queued `alias` calls before `identify`, so a
+ * one-argument alias would resolve "the current id" to the landing id itself
+ * (the landing and the app share one cookie on the apex domain). The vendor
+ * then identifies the browser AS the landing id, and the later
+ * `identify(email)` never merges: the visit and its recording end up on a
+ * person with no email. With the original named, the order no longer matters.
  */
-function aliasLandingVisit(ph: PosthogBrowser, landingId: string | null | undefined): void {
-  if (!landingId) return;
+function aliasLandingVisit(
+  ph: PosthogBrowser,
+  landingId: string | null | undefined,
+  email: string,
+): void {
+  // Aliasing an id to itself is a no-op the vendor turns into an identify.
+  if (!landingId || landingId === email) return;
   try {
     const key = `dapta_forms_ph_alias:${landingId}`;
     if (window.localStorage.getItem(key)) return;
@@ -222,7 +246,7 @@ function aliasLandingVisit(ph: PosthogBrowser, landingId: string | null | undefi
   } catch {
     // Private mode: fall through and alias anyway.
   }
-  ph.alias(landingId);
+  ph.alias(landingId, email);
 }
 
 /** The campaign subset of the attribution blob, snake_cased. Empty when absent. */

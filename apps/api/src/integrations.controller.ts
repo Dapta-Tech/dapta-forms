@@ -1159,6 +1159,10 @@ function sampleAnswers(steps: { key: string; type: string }[]): Record<string, u
       case 'dropdown':
         out[s.key] = 'sample-option';
         break;
+      case 'checkbox':
+        // Checked is the JSON boolean; an unchecked box sends no key at all.
+        out[s.key] = true;
+        break;
       case 'name':
         out.firstname = 'Sample';
         out.lastname = 'Respondent';

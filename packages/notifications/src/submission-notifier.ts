@@ -18,6 +18,19 @@ export type EmailCtaMedium = 'email-receipt' | 'email-notice';
  */
 export type EmailCtaResolver = (input: { locale: NotificationLocale; medium: EmailCtaMedium }) => EmailCta | null;
 
+/**
+ * Per-send options for a submission email, decided by the caller at SEND time
+ * (never stored in the queued payload).
+ */
+export interface SubmissionSendOptions {
+  /**
+   * False when the workspace turned the "Made with dForms" attribution off:
+   * the email goes out with no growth button and no text-version line. Absent
+   * or true, the resolver decides as before (the deployment's rule).
+   */
+  growthCta?: boolean;
+}
+
 /** Everything a submission notification needs to render, provider-agnostic. */
 /** Everything the invitation email needs, resolved before it is enqueued. */
 export interface MemberInvitedNotification {
@@ -117,8 +130,14 @@ export class SubmissionNotifier {
   }
 
   /** The HTML document and the text body of one submission email, with its button. */
-  private body(locale: NotificationLocale, html: string[], text: string[], medium: EmailCtaMedium) {
-    const cta = this.ctaFor({ locale, medium });
+  private body(
+    locale: NotificationLocale,
+    html: string[],
+    text: string[],
+    medium: EmailCtaMedium,
+    opts: SubmissionSendOptions = {},
+  ) {
+    const cta = opts.growthCta === false ? null : this.ctaFor({ locale, medium });
     return {
       html: emailDocument({ lang: locale, lines: html, logoUrl: this.logoUrl, cta }),
       // The text twin carries the same invitation, as a plain line and URL.
@@ -127,7 +146,7 @@ export class SubmissionNotifier {
   }
 
   /** Internal notice to the account: a new submission landed. */
-  sendSubmissionReceived(n: SubmissionNotification): Promise<EmailResult> {
+  sendSubmissionReceived(n: SubmissionNotification, opts: SubmissionSendOptions = {}): Promise<EmailResult> {
     const locale = normalizeLocale(n.locale);
     const { subject, text, html } = renderSubmissionEmail(
       'submission_received',
@@ -139,7 +158,7 @@ export class SubmissionNotifier {
       accountId: n.accountId,
       to: n.to,
       subject,
-      ...this.body(locale, html, text, 'email-notice'),
+      ...this.body(locale, html, text, 'email-notice', opts),
       locale,
       headers: { 'X-Submission-Id': n.submissionId },
       idempotencyKey: `submission:${n.submissionId}:received:${addresseeKey(n.to)}`,
@@ -169,7 +188,7 @@ export class SubmissionNotifier {
   }
 
   /** Confirmation to the respondent that their answers were recorded. */
-  sendSubmissionConfirmed(n: SubmissionNotification): Promise<EmailResult> {
+  sendSubmissionConfirmed(n: SubmissionNotification, opts: SubmissionSendOptions = {}): Promise<EmailResult> {
     const locale = normalizeLocale(n.locale);
     const { subject, text, html } = renderSubmissionEmail(
       'submission_confirmed',
@@ -181,7 +200,7 @@ export class SubmissionNotifier {
       accountId: n.accountId,
       to: n.respondentEmail ? [n.respondentEmail] : n.to,
       subject,
-      ...this.body(locale, html, text, 'email-receipt'),
+      ...this.body(locale, html, text, 'email-receipt', opts),
       locale,
       headers: { 'X-Submission-Id': n.submissionId },
       // The receipt has exactly one addressee (the respondent), so its key is

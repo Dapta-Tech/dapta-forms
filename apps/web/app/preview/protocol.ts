@@ -42,6 +42,18 @@ export interface PreviewReadyMessage {
   type: 'ready';
 }
 
+/**
+ * Parent → child, until a `ready` arrives: "are you listening?". The child's
+ * one `ready` can land before the editor hydrates and registers its listener
+ * (the iframe is in the server HTML and starts loading first), and a lost
+ * `ready` used to leave the preview blank for good. The child answers every
+ * ping with a fresh `ready`.
+ */
+export interface PreviewPingMessage {
+  channel: typeof PREVIEW_CHANNEL;
+  type: 'ping';
+}
+
 /** Parent → child: the whole preview input, re-sent on every editor change. */
 export interface PreviewConfigMessage {
   channel: typeof PREVIEW_CHANNEL;
@@ -65,9 +77,14 @@ export interface PreviewConfigMessage {
    * the requested screen rather than puppeting its internal state.
    */
   screen?: number | 'cover';
+  /**
+   * The workspace's "Made with dForms" setting (`/v1/me` `attribution.showing`),
+   * so the preview shows exactly what the public form will. Absent = true.
+   */
+  showAttribution?: boolean;
 }
 
-export type PreviewMessage = PreviewReadyMessage | PreviewConfigMessage;
+export type PreviewMessage = PreviewReadyMessage | PreviewPingMessage | PreviewConfigMessage;
 
 /**
  * Read an inbound `message` event as one of ours, or return null.
@@ -101,6 +118,7 @@ export function readPreviewMessage(
   if (body.channel !== PREVIEW_CHANNEL) return null;
 
   if (body.type === 'ready') return { channel: PREVIEW_CHANNEL, type: 'ready' };
+  if (body.type === 'ping') return { channel: PREVIEW_CHANNEL, type: 'ping' };
 
   if (body.type === 'config') {
     const config = body.config;
@@ -124,6 +142,8 @@ export function readPreviewMessage(
       locale: body.locale === 'es' ? 'es' : 'en',
       layout: body.layout === 'vertical' ? 'vertical' : 'slides',
       screen,
+      // Only an explicit false hides it: anything else is today's default.
+      showAttribution: body.showAttribution !== false,
     };
   }
 

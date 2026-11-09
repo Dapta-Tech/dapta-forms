@@ -285,3 +285,14 @@ describe('buildResponseDetail', () => {
     });
   });
 });
+
+describe('answerView for a checkbox with no text', () => {
+  it('labels it with its description, never the key', () => {
+    const v = answerView(
+      step({ key: 'check1', type: 'checkbox', question: '', helper: 'Autorizo el [tratamiento](https://a.co).' }),
+      { check1: true },
+      TZ,
+    );
+    expect(v.label).toBe('Autorizo el tratamiento.');
+  });
+});

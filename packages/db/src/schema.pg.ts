@@ -17,6 +17,16 @@ export const account = pgTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: bigint('entitlement_checked_at', { mode: 'number' }),
+  /**
+   * The workspace's choice to hide the "Made with dForms" attribution (0028),
+   * 0/1. Honoured only with a fresh paid verdict below (`showAttribution` in
+   * @quill/shared), or on a deployment with PREMIUM_FEATURES=open.
+   */
+  hideAttribution: integer('hide_attribution').notNull().default(0),
+  /** The cached Dapta AI paid verdict (0028), 1/0, from the identity service's workspace rows; NULL = never seen. */
+  daptaPaid: integer('dapta_paid'),
+  /** Epoch ms that verdict was written (0028). */
+  daptaPaidCheckedAt: bigint('dapta_paid_checked_at', { mode: 'number' }),
   /** First-touch acquisition context (see 0010). Written once by `claimAccountAttribution`. */
   attribution: jsonb('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */

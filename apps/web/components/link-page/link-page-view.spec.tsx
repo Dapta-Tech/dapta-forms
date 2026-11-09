@@ -103,6 +103,14 @@ describe('LinkPageView', () => {
     expect(html).toContain('href="https://landing.example/?');
   });
 
+  it('drops the pill when the workspace hides the attribution, and keeps it when the API says nothing', () => {
+    expect(render(page({ showAttribution: false }))).not.toContain('pf__attribution');
+    expect(render(page({ showAttribution: false }), true)).not.toContain('pf__attribution');
+    expect(render(page({ showAttribution: true }))).toContain('pf__attribution');
+    // An older API sends no field: the page renders exactly as before.
+    expect(render(page())).toContain('pf__attribution');
+  });
+
   it('renders one button and twelve buttons alike, and no list at all with none', () => {
     const one = render(page({ buttons: [{ type: 'form', label: 'Only', slug: 'only' }] }));
     expect(one.match(/pf-lp__btn/g)).toHaveLength(1);

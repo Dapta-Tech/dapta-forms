@@ -210,6 +210,9 @@ export default async function PublicFormPage({
           // A reload of this tab picks the response in progress back up. The
           // builder preview never passes it.
           resume
+          // The workspace's "Made with dForms" setting, as the API decided it.
+          // Absent on an older API: the renderers then show it, as before.
+          showAttribution={form.showAttribution}
         />
       </div>
     </>

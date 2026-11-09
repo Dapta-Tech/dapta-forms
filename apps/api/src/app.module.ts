@@ -2,7 +2,13 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { createDb } from '@quill/db';
 import { createEmailProvider, SubmissionNotifier, type EmailProvider } from '@quill/notifications';
-import { loadServerEnv, type ServerEnv } from '@quill/config/env';
+import {
+  attributionPremiumMode,
+  iamWorkspacesEnabled,
+  loadServerEnv,
+  vanityPremiumMode,
+  type ServerEnv,
+} from '@quill/config/env';
 import { emailGrowthCta } from './email-growth-cta';
 import {
   API_KEY_RATE_LIMITER,
@@ -16,6 +22,7 @@ import {
   NOTIFIER,
   ONBOARDING_ENABLED,
   PREMIUM_MODE,
+  ATTRIBUTION_MODE,
   RATE_LIMITER,
   STORAGE,
   WORKSPACE_PROJECTION,
@@ -49,6 +56,8 @@ import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
 import { BrandingController } from './branding.controller';
+import { AttributionController } from './attribution.controller';
+import { AttributionService } from './attribution.service';
 import { LinkPageController } from './link-page.controller';
 import { LinkPageService } from './link-page.service';
 import { AnalyticsController } from './analytics.controller';
@@ -89,6 +98,7 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     AdminCrudController,
     ApiKeysController,
     BrandingController,
+    AttributionController,
     LinkPageController,
     AnalyticsController,
     IntegrationsController,
@@ -144,7 +154,12 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // customer's Dapta AI subscription via the upstream service. OSS default:
     // disabled provider + PREMIUM_FEATURES=open (everything unlocked).
     { provide: ENTITLEMENTS, useFactory: (env: ServerEnv) => resolveEntitlementsProvider(env), inject: [ENV] },
-    { provide: PREMIUM_MODE, useFactory: (env: ServerEnv) => env.PREMIUM_FEATURES, inject: [ENV] },
+    { provide: PREMIUM_MODE, useFactory: (env: ServerEnv) => vanityPremiumMode(env), inject: [ENV] },
+    // Hiding the "Made with dForms" attribution: the same variable, but unset
+    // means locked whenever the identity service (the paid verdict's only
+    // source) is configured. See `attributionPremiumMode`.
+    { provide: ATTRIBUTION_MODE, useFactory: (env: ServerEnv) => attributionPremiumMode(env), inject: [ENV] },
+    AttributionService,
     // The first-run wizard's switch, resolved ONCE and injected, so the API is
     // the single authority on whether onboarding is required. The web app reads
     // the answer off `/v1/me` rather than keeping its own copy of the flag —
@@ -160,7 +175,7 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     {
       provide: WORKSPACE_PROJECTION,
       useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects) =>
-        env.AUTH_PROVIDER === 'workos' && env.IAM_BASE_URL
+        iamWorkspacesEnabled(env) && env.IAM_BASE_URL
           ? new WorkspaceProjection(db, new IamWorkspacesClient({ baseUrl: env.IAM_BASE_URL }), {
               seedEnv: env,
               onSignup: signupObserver(productAnalytics),

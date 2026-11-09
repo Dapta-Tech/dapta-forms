@@ -45,6 +45,7 @@ export function BrandKitPanel({
   locale,
   workspaceName,
   heading,
+  topRow,
 }: {
   initialKit: BrandKit;
   updatedAt: number | null;
@@ -57,6 +58,12 @@ export function BrandKitPanel({
   workspaceName: string;
   /** The screen's title block, set beside the Save button it shares a row with. */
   heading: ReactNode;
+  /**
+   * A row that leads the settings list and saves on its own (the "Made with
+   * dForms" attribution switch), outside the kit the Save button writes.
+   * It takes the list's first slot, so the logo row draws its rule.
+   */
+  topRow?: ReactNode;
 }) {
   const timeZone = useWorkspaceTimeZone();
   const [kit, setKit] = useState<BrandKit>(initialKit);
@@ -170,7 +177,8 @@ export function BrandKitPanel({
         ) : null}
 
         <div className="border-t border-border">
-          <SettingsRow title={bk.logoTitle} hint={bk.logoSubtitle} first>
+          {topRow}
+          <SettingsRow title={bk.logoTitle} hint={bk.logoSubtitle} first={!topRow}>
             <div className="flex items-center gap-3">
               <span
                 aria-hidden

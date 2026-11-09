@@ -70,6 +70,8 @@ export interface FormsMessages {
     dropdownEmpty: string;
     trustedBy: string;
     newTab: string;
+    /** A checkbox the author left with no text and no description: what the box says. */
+    checkboxDefault: string;
     /** The public error boundary and the 404, in the visitor's language. */
     errorTitle: string;
     errorBody: string;
@@ -105,6 +107,8 @@ export interface FormsMessages {
       too_long: string;
       option: string;
       file: string;
+      /** A required checkbox left unchecked. */
+      consent: string;
       submit: string;
       /**
        * The final submit's human check did not pass (spam protection), or the
@@ -508,6 +512,31 @@ export interface FormsMessages {
         placeholder: string;
         connected: string;
       };
+    };
+    /**
+     * Brand kit, first row: whether the workspace's forms, link pages and
+     * emails carry the "Made with dForms" attribution. Hiding it comes with a
+     * paid Dapta AI subscription; showing it again never needs one.
+     */
+    attributionSetting: {
+      title: string;
+      hint: string;
+      switchLabel: string;
+      /**
+       * Not paid: the note under the disabled switch and its tooltip. `{product}`
+       * is replaced by `product`, a link to the Dapta AI landing when the
+       * deployment names one.
+       */
+      subscribersOnly: string;
+      product: string;
+      /** Stored off, verdict not paid: the attribution shows again. */
+      lapsed: string;
+      /** Members see the row read-only. */
+      readOnly: string;
+      saved: string;
+      saveFailed: string;
+      /** The API refused turning it off: no paid verdict (it lapsed since the page loaded). */
+      notSubscribed: string;
     };
     /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
@@ -1236,6 +1265,9 @@ export interface FormsMessages {
         /** Explains the field key doubles as a URL parameter for prefill. */
         fieldKeyHint: string;
         placeholder: string;
+        /** One page only: a visible label above each input. */
+        label: string;
+        labelHint: string;
       };
       /** Partial-submission threshold ("save a partial after step N"). */
       partial: {
@@ -1402,6 +1434,9 @@ export interface FormsMessages {
         buttonSolid: string;
         buttonOutline: string;
         buttonSoft: string;
+        buttonTextColor: string;
+        buttonTextAuto: string;
+        buttonTextLowContrast: string;
         buttonFullWidth: string;
         progress: string;
         progressBar: string;
@@ -1412,6 +1447,8 @@ export interface FormsMessages {
         layoutSubtitle: string;
         formLogo: string;
         formLogoHint: string;
+        showHeader: string;
+        showHeaderHint: string;
         logoSize: string;
         sizeSm: string;
         sizeMd: string;
@@ -1419,12 +1456,19 @@ export interface FormsMessages {
         logoPosition: string;
         badgeSize: string;
         badgeSizeHint: string;
+        /** The workspace hides the attribution (Brand kit), so the size does nothing. */
+        badgeSizeHiddenHint: string;
         alignLeft: string;
         alignCenter: string;
         contentAlign: string;
         contentWidth: string;
         widthNarrow: string;
         widthWide: string;
+        /** One page only: how tightly the questions are packed. */
+        density: string;
+        densityHint: string;
+        densityComfortable: string;
+        densityCompact: string;
         transition: string;
         transitionSlide: string;
         transitionFade: string;
@@ -2601,6 +2645,7 @@ export const en: FormsMessages = {
     dropdownEmpty: 'No results found',
     trustedBy: 'Trusted by',
     newTab: '(opens in a new tab)',
+    checkboxDefault: 'I agree',
     errorTitle: 'This page didn\u2019t load',
     errorBody: 'Something went wrong reaching the forms service.',
     errorRetry: 'Try again',
@@ -2630,6 +2675,7 @@ export const en: FormsMessages = {
       too_long: 'Your answer is too long.',
       option: 'Choose one of the available options.',
       file: 'Upload a file to continue.',
+      consent: 'Check the box to continue.',
       submit: 'Could not submit. Please try again.',
       captcha: 'We couldn’t verify that you’re human. Please try again.',
       captcha_required: 'This form now checks that you’re human. Refresh the page and submit again.',
@@ -2931,6 +2977,18 @@ export const en: FormsMessages = {
         placeholder: 'Ask {app}…',
         connected: 'dForms connected',
       },
+    },
+    attributionSetting: {
+      title: 'dForms attribution',
+      hint: 'The badge on your forms and pages, and the invitation in their emails.',
+      switchLabel: 'Show “Made with dForms” on my forms and pages',
+      subscribersOnly: 'Only for {product} subscribers.',
+      product: 'Dapta AI',
+      lapsed: 'Your Dapta AI subscription ended, so the attribution is showing again. Your choice is saved.',
+      readOnly: 'Only an admin or owner can change this.',
+      saved: 'Saved.',
+      saveFailed: 'Could not save. Try again.',
+      notSubscribed: 'Hiding the attribution is only for Dapta AI subscribers.',
     },
     brandKit: {
       title: 'Brand kit',
@@ -3569,6 +3627,8 @@ export const en: FormsMessages = {
         fieldKey: 'Field key',
         fieldKeyHint: 'Used as a URL parameter to prefill this field.',
         placeholder: 'Placeholder',
+        label: 'Label',
+        labelHint: 'Shown above the field on One page. With a label, the question title is only read by screen readers.',
       },
       partial: {
         title: 'Partial submissions',
@@ -3731,6 +3791,10 @@ export const en: FormsMessages = {
         buttonSolid: 'Solid',
         buttonOutline: 'Outline',
         buttonSoft: 'Soft',
+        buttonTextColor: 'Button text color',
+        buttonTextAuto: 'Automatic',
+        buttonTextLowContrast:
+          'The button text has a {ratio}:1 contrast on the accent color. Use 4.5:1 or more so it reads well.',
         buttonFullWidth: 'Full-width button',
         progress: 'Progress',
         progressBar: 'Bar',
@@ -3741,6 +3805,9 @@ export const en: FormsMessages = {
         layoutSubtitle: 'Where things sit and how the form moves between steps.',
         formLogo: 'Form logo URL',
         formLogoHint: 'Shown on every question screen. Leave empty for no logo.',
+        showHeader: 'Show header',
+        showHeaderHint:
+          'The logo above the form, or the form name when there is no logo. Turn it off when the form is embedded in a page that already shows your brand.',
         logoSize: 'Logo size',
         sizeSm: 'Small',
         sizeMd: 'Medium',
@@ -3748,12 +3815,18 @@ export const en: FormsMessages = {
         logoPosition: 'Logo position',
         badgeSize: 'Attribution badge',
         badgeSizeHint: 'The "Made with" pill under the form.',
+        badgeSizeHiddenHint: 'Your workspace hides the attribution. Change it in Brand kit.',
         alignLeft: 'Left',
         alignCenter: 'Center',
         contentAlign: 'Question alignment',
         contentWidth: 'Content width',
         widthNarrow: 'Narrow',
         widthWide: 'Wide',
+        density: 'Density',
+        densityHint:
+          'Compact removes the lines between questions and spaces fields like a regular web form (16 px apart). One page only.',
+        densityComfortable: 'Comfortable',
+        densityCompact: 'Compact',
         transition: 'Step transition',
         transitionSlide: 'Slide',
         transitionFade: 'Fade',
@@ -5155,6 +5228,7 @@ export const es: FormsMessages = {
     dropdownEmpty: 'No se encontraron resultados',
     trustedBy: 'Confían en nosotros',
     newTab: '(se abre en una pestaña nueva)',
+    checkboxDefault: 'Acepto',
     errorTitle: 'Esta página no cargó',
     errorBody: 'Algo falló al conectar con el servicio de formularios.',
     errorRetry: 'Intentar de nuevo',
@@ -5184,6 +5258,7 @@ export const es: FormsMessages = {
       too_long: 'Tu respuesta es muy larga.',
       option: 'Elige una de las opciones disponibles.',
       file: 'Sube un archivo para continuar.',
+      consent: 'Marca la casilla para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
       captcha: 'No pudimos verificar que eres una persona. Inténtalo de nuevo.',
       captcha_required:
@@ -5487,6 +5562,18 @@ export const es: FormsMessages = {
         placeholder: 'Pregúntale a {app}…',
         connected: 'dForms conectado',
       },
+    },
+    attributionSetting: {
+      title: 'Atribución de dForms',
+      hint: 'La insignia en tus formularios y páginas, y la invitación en sus correos.',
+      switchLabel: 'Mostrar «Hecho con dForms» en mis formularios y páginas',
+      subscribersOnly: 'Solo para suscriptores de {product}.',
+      product: 'Dapta AI',
+      lapsed: 'Tu suscripción de Dapta AI terminó, así que la atribución volvió a aparecer. Tu elección queda guardada.',
+      readOnly: 'Solo un admin o el owner puede cambiar esto.',
+      saved: 'Guardado.',
+      saveFailed: 'No se pudo guardar. Inténtalo de nuevo.',
+      notSubscribed: 'Ocultar la atribución es solo para suscriptores de Dapta AI.',
     },
     brandKit: {
       title: 'Kit de marca',
@@ -6128,6 +6215,9 @@ export const es: FormsMessages = {
         fieldKey: 'Clave del campo',
         fieldKeyHint: 'Se usa como parámetro de URL para prellenar este campo.',
         placeholder: 'Texto de ejemplo',
+        label: 'Etiqueta',
+        labelHint:
+          'Se muestra encima del campo en Una página. Con etiqueta, el título de la pregunta solo lo leen los lectores de pantalla.',
       },
       partial: {
         title: 'Envíos parciales',
@@ -6291,6 +6381,10 @@ export const es: FormsMessages = {
         buttonSolid: 'Sólido',
         buttonOutline: 'Contorno',
         buttonSoft: 'Suave',
+        buttonTextColor: 'Color del texto del botón',
+        buttonTextAuto: 'Automático',
+        buttonTextLowContrast:
+          'El texto del botón tiene contraste {ratio}:1 sobre el color de acento. Usa 4.5:1 o más para que se lea bien.',
         buttonFullWidth: 'Botón de ancho completo',
         progress: 'Progreso',
         progressBar: 'Barra',
@@ -6301,6 +6395,9 @@ export const es: FormsMessages = {
         layoutSubtitle: 'Dónde va cada cosa y cómo se mueve el formulario entre pasos.',
         formLogo: 'URL del logo del formulario',
         formLogoHint: 'Se muestra en cada pantalla de pregunta. Vacío = sin logo.',
+        showHeader: 'Mostrar encabezado',
+        showHeaderHint:
+          'El logo arriba del formulario, o su nombre si no tiene logo. Apágalo si el formulario va embebido en una página que ya muestra tu marca.',
         logoSize: 'Tamaño del logo',
         sizeSm: 'Pequeño',
         sizeMd: 'Mediano',
@@ -6308,12 +6405,18 @@ export const es: FormsMessages = {
         logoPosition: 'Posición del logo',
         badgeSize: 'Insignia de atribución',
         badgeSizeHint: 'La píldora «Hecho con» que aparece debajo del formulario.',
+        badgeSizeHiddenHint: 'Tu workspace oculta la atribución. Cámbialo en Kit de marca.',
         alignLeft: 'Izquierda',
         alignCenter: 'Centro',
         contentAlign: 'Alineación de la pregunta',
         contentWidth: 'Ancho del contenido',
         widthNarrow: 'Angosto',
         widthWide: 'Amplio',
+        density: 'Densidad',
+        densityHint:
+          'Compacta quita las líneas entre preguntas y separa los campos como un formulario web normal (16 px). Solo en Una página.',
+        densityComfortable: 'Cómoda',
+        densityCompact: 'Compacta',
         transition: 'Transición entre pasos',
         transitionSlide: 'Deslizar',
         transitionFade: 'Desvanecer',

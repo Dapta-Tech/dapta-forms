@@ -13,7 +13,9 @@ import {
   getAccountOwner,
 } from '@quill/db';
 import {
+  canonicalizeAnswer,
   computeScore,
+  hasScoringSignal,
   publicTitle,
   resolveOutcome,
   respondentFullName,
@@ -36,6 +38,7 @@ import { AnalyticsEffects } from './analytics-effects';
 import { UploadService } from './upload.service';
 import { captchaActive, captchaStrict, type CaptchaVerifier } from './captcha';
 import { hutkRefused, storedVisit } from './submission-visit';
+import { AttributionService } from './attribution.service';
 import { CAPTCHA, DB } from './tokens';
 
 export type ServiceError = { error: string; message: string; status: number };
@@ -91,6 +94,9 @@ export class SubmissionService {
     // service positionally. Absent reads as a deployment without keys, so the
     // check never runs and every form behaves exactly as it did before.
     @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
+    // The workspace's "Made with dForms" attribution. Optional and LAST for
+    // the same positional reason; absent, every form carries it, as before.
+    @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
   ) {}
 
   /**
@@ -147,6 +153,9 @@ export class SubmissionService {
   async publicForm(accountCode: string, slug: string): Promise<PublicForm | null> {
     const f = await getPublishedForm(this.db, accountCode, slug);
     if (!f) return null;
+    // Decided here, from the workspace row, and handed down as a plain boolean:
+    // the web never re-derives it.
+    const showAttribution = this.attribution ? await this.attribution.showFor(f.accountId) : true;
     // NEVER leak destination config (webhook URLs/secrets, CRM mappings) to the
     // public renderer — it is server-only integration config.
     return {
@@ -168,6 +177,7 @@ export class SubmissionService {
             },
           }
         : {}),
+      showAttribution,
     };
   }
 
@@ -255,7 +265,11 @@ export class SubmissionService {
     // or scored: an unverified answer must never reach the row, the score, or
     // an outbound effect. What comes back has its keys rewritten out of the
     // staging prefix, which lifecycle deletes.
-    let data = input.data;
+    // A checkbox is stored as `true` or not at all, whatever an API client
+    // sent: `'true'` becomes the boolean, and any other value drops the key
+    // (validation above still read the raw value), so a CRM never receives
+    // "false" over a consent it already holds.
+    let data = checkboxAnswers(config, input.data);
     if (this.uploads) {
       const verified = await this.uploads.verifyAnswers(form, input.sessionId, data);
       if ('error' in verified) return verified;
@@ -304,7 +318,9 @@ export class SubmissionService {
           formName: form.name,
           respondentEmail,
           respondentName,
-          score,
+          // A form with no scoring has no score to report: null drops the
+          // owner notice's "Score: {{score}}" line instead of printing 0.
+          score: hasScoringSignal(config) ? score : null,
           outcomeLabel: outcome?.label ?? null,
           answers,
         },
@@ -643,4 +659,29 @@ function pickEmail(data: Record<string, unknown>): string | null {
     }
   }
   return null;
+}
+
+/**
+ * `data` with every `checkbox` answer in its stored shape: `'true'` read as
+ * `true`, and any other value removed. Partials and completes alike. Returns `data` itself when nothing changes.
+ */
+export function checkboxAnswers<T extends Record<string, unknown>>(config: FormConfig, data: T): T {
+  let out: Record<string, unknown> | null = null;
+  for (const step of config.steps ?? []) {
+    if (step.type !== 'checkbox' || !(step.key in data)) continue;
+    const raw = data[step.key];
+    // Only a checked box is kept. Anything else ('false', 'on', 0, a stray
+    // object) is not a consent, and a partial is never validated, so it must
+    // not ride into a destination as one.
+    if (canonicalizeAnswer(step, raw as never) === true) {
+      if (raw !== true) {
+        out ??= { ...data };
+        out[step.key] = true;
+      }
+    } else {
+      out ??= { ...data };
+      delete out[step.key];
+    }
+  }
+  return (out ?? data) as T;
 }

@@ -132,6 +132,7 @@ const MAP = {
   trash: 'trash-2',
   user: 'user',
   users: 'users',
+  verified: 'badge-check',
   'window-maximize': 'maximize-2',
   'window-minimize': 'minimize-2',
 };

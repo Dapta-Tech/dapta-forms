@@ -8,7 +8,7 @@
  * browser-only capture helpers; every flow decision stays in `@quill/engine`.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Answers, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
+import type { Answers, AnswerValue, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
 import { nameFields, isSafeHttpUrl, interpolate, showBanner } from '@quill/engine';
 import { captchaCData, type OutcomeBooking, type PublicCaptcha, type SubmissionVisit } from '@quill/types';
 import type { getMessages } from '@quill/shared';
@@ -19,6 +19,7 @@ import { createHostVisit, utmParams, type HostVisit, type ResolvedVisit } from '
 import { isTransportError, type TransportError } from '@/lib/call-action';
 import { CaptchaChallenge, type CaptchaWidgetEvent } from '@/components/public/captcha-challenge';
 import { isPreloadableCalendlyUrl } from '@/lib/calendly-preload';
+import { randomId } from '@/lib/random-id';
 
 type RendererMessages = ReturnType<typeof getMessages>['renderer'];
 
@@ -27,7 +28,8 @@ export function useSessionId(key: string): string {
     if (typeof window === 'undefined') return '';
     const existing = window.sessionStorage.getItem(key);
     if (existing) return existing;
-    const fresh = crypto.randomUUID();
+    // Not `crypto.randomUUID`: it throws on a non-secure (http://) embed host.
+    const fresh = randomId();
     window.sessionStorage.setItem(key, fresh);
     return fresh;
   });
@@ -203,6 +205,8 @@ export function capturePrefill(steps: FormStep[]): Answers {
   const declared = new Set<string>();
   for (const step of steps) {
     if (step.type === 'message') continue; // message steps capture no answer
+    // Consent is given by the person on the page, never by a link.
+    if (step.type === 'checkbox') continue;
     for (const key of nameFields(step)) declared.add(key);
   }
   if (declared.size === 0) return {};
@@ -215,6 +219,20 @@ export function capturePrefill(steps: FormStep[]): Answers {
     seed[key] = value.slice(0, PREFILL_MAX_LEN);
   }
   return seed;
+}
+
+/**
+ * `answers` with `key` set to `value`, or without `key` when `value` is
+ * `undefined`: an unchecked checkbox leaves no key behind (never `false`).
+ */
+export function withAnswer(answers: Answers, key: string, value: AnswerValue): Answers {
+  if (value === undefined) {
+    if (!(key in answers)) return answers;
+    const rest = { ...answers };
+    delete rest[key];
+    return rest;
+  }
+  return { ...answers, [key]: value };
 }
 
 /**
@@ -232,6 +250,8 @@ export function captureDefaults(steps: FormStep[]): Answers {
   const seed: Answers = {};
   for (const step of steps) {
     if (step.type === 'message' || step.type === 'name') continue;
+    // A checkbox never starts checked: consent is given, not defaulted.
+    if (step.type === 'checkbox') continue;
     const value = step.defaultValue;
     if (typeof value === 'string' && value !== '') seed[step.key] = value;
   }
@@ -401,6 +421,7 @@ export function DoneScreen({
   accountCode,
   cover,
   design,
+  showAttribution = true,
 }: {
   ending: ResolvedEnding;
   answers: Answers;
@@ -408,8 +429,10 @@ export function DoneScreen({
   accountCode: string;
   cover?: FormCover | null;
   design?: FormDesignProps;
+  /** The workspace's attribution setting: false drops the growth CTA too. */
+  showAttribution?: boolean;
 }) {
-  const cta = signupHref('confirmation', accountCode);
+  const cta = showAttribution ? signupHref('confirmation', accountCode) : null;
   return (
     <PhaseShell className="pf pf--done" design={design} cover={cover}>
       <div className="pf-done__inner pf-animate">

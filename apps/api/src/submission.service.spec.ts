@@ -93,6 +93,34 @@ describe('submit', () => {
     expect(payload.respondentEmail).toBe('lead@acme.io');
   });
 
+  it('the owner notice carries no score for a form with no scoring, and the score for a scored one', async () => {
+    const account = await db.get<{ id: string }>(sql`SELECT id FROM account WHERE code = 'acme' LIMIT 1`);
+    const config: FormConfig = {
+      version: 1,
+      steps: [
+        { key: 'email', type: 'email', question: 'Email?' },
+        { key: 'plan', type: 'multiple_choice', question: 'Plan?', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+      ],
+    } as FormConfig;
+    // No points, ranges or outcomes anywhere: the form has no scoring.
+    const created = await createForm(db, account!.id, { name: 'No scoring', config });
+    if (!created.ok) throw new Error('createForm failed');
+    const slug = created.value.slug;
+    const out = await svc.submit('acme', slug, { sessionId: 'sess-noscore', data: { email: 'x@acme.io', plan: 'a' } });
+    expect('error' in out).toBe(false);
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-scored',
+      data: { role: 'founder', team_size: 20, company: 'Acme', email: 'lead@acme.io' },
+    });
+    await flushEffects();
+
+    const notices = (await listOutbox(db, { kind: 'email' }))
+      .filter((r) => r.action === 'submission_received')
+      .map((r) => JSON.parse(r.payload!) as { formName: string; score: number | null });
+    expect(notices.find((n) => n.formName === 'No scoring')!.score).toBeNull();
+    expect(notices.find((n) => n.formName === 'Lead Qualifier')!.score).toBe(18);
+  });
+
   it('the respondent receipt renders in the language the respondent saw, then the form language, then none', async () => {
     const localeOf = async (sessionId: string, extra: Record<string, unknown>, language?: 'en' | 'es') => {
       if (language) {
@@ -1248,5 +1276,63 @@ describe('submit: a complete must be one the form could have produced', () => {
     // The disqualify step ends the form: the calendar after it was never shown.
     const out = await svc.submit('acme', form.slug, { sessionId: 'sess-out', data: { gate: 'no', bye: 'ok' } });
     expect('error' in out).toBe(false);
+  });
+});
+
+describe('submit: a checkbox is stored as true or not at all (#128)', () => {
+  async function checkboxForm(required: boolean): Promise<{ id: string; slug: string }> {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: `Consent ${required ? 'required' : 'optional'}`,
+      config: {
+        version: 1,
+        steps: [
+          { key: 'email', type: 'email', question: 'Email?' },
+          { key: 'consent', type: 'checkbox', question: 'Acepto la [política](https://example.com/p)', required },
+        ],
+      } as never,
+    });
+    if (!created.ok) throw new Error('createForm failed');
+    return { id: created.value.id, slug: created.value.slug };
+  }
+  const stored = async (formId: string, sessionId: string) =>
+    (await listSubmissions(db, formId)).find((r) => r.sessionId === sessionId)!.data as Record<string, unknown>;
+
+  it("drops false on a complete, and stores 'true' as the boolean", async () => {
+    const form = await checkboxForm(false);
+    const off = await svc.submit('acme', form.slug, { sessionId: 's-false', data: { email: 'a@acme.io', consent: false } });
+    expect('error' in off).toBe(false);
+    expect('consent' in (await stored(form.id, 's-false'))).toBe(false);
+
+    const on = await svc.submit('acme', form.slug, { sessionId: 's-true', data: { email: 'a@acme.io', consent: 'true' } });
+    expect('error' in on).toBe(false);
+    expect((await stored(form.id, 's-true')).consent).toBe(true);
+  });
+
+  it("keeps only a checked box: 'false', 'on' and 0 drop the key on a partial and an optional complete", async () => {
+    const partialForm = await checkboxForm(true);
+    const optionalForm = await checkboxForm(false);
+    for (const [i, value] of (['false', 'on', 0] as const).entries()) {
+      await svc.submit('acme', partialForm.slug, { sessionId: `p-odd-${i}`, data: { email: 'a@acme.io', consent: value }, partial: true });
+      expect('consent' in (await stored(partialForm.id, `p-odd-${i}`))).toBe(false);
+    }
+    // A complete validates the raw value first: these are not a checkbox answer.
+    const odd = await svc.submit('acme', optionalForm.slug, { sessionId: 's-odd', data: { email: 'a@acme.io', consent: 'on' } });
+    expect('error' in odd && odd.error).toBe('INVALID_ANSWERS');
+  });
+
+  it("does the same on a partial save", async () => {
+    const form = await checkboxForm(true);
+    await svc.submit('acme', form.slug, { sessionId: 'p-false', data: { email: 'a@acme.io', consent: false }, partial: true });
+    expect('consent' in (await stored(form.id, 'p-false'))).toBe(false);
+    await svc.submit('acme', form.slug, { sessionId: 'p-true', data: { email: 'a@acme.io', consent: 'true' }, partial: true });
+    expect((await stored(form.id, 'p-true')).consent).toBe(true);
+  });
+
+  it('a required box sent as false is still refused on a complete', async () => {
+    const form = await checkboxForm(true);
+    const out = await svc.submit('acme', form.slug, { sessionId: 's-refused', data: { email: 'a@acme.io', consent: false } });
+    expect('error' in out && out.error).toBe('INVALID_ANSWERS');
+    expect(await listSubmissions(db, form.id)).toHaveLength(0);
   });
 });

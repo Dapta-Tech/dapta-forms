@@ -115,11 +115,19 @@ export const serverEnvSchema = z.object({
   // from whatever the callback carried). Never sent to the browser.
   CALENDLY_API_TOKEN: z.string().optional(),
 
-  // Premium features (vanity slug + future perks). Forms is ALWAYS free —
-  // `locked` gates premium on the customer's Dapta AI subscription via the
-  // entitlement service below; `open` (default) unlocks everything, so a bare
-  // OSS fork gets every feature with no upstream wired.
-  PREMIUM_FEATURES: z.enum(['open', 'locked']).default('open'),
+  // Premium features. Forms is ALWAYS free: `locked` gates premium on the
+  // customer's PAID Dapta AI subscription; `open` unlocks everything, so a bare
+  // OSS fork gets every feature with no upstream wired. OPTIONAL, and what
+  // "unset" means depends on the feature, so read it through the helpers:
+  //  - the vanity slug (`vanityPremiumMode`): unset = `open`, as it always was;
+  //    `locked` asks the entitlement service below.
+  //  - hiding the "Made with dForms" attribution (`attributionPremiumMode`):
+  //    unset = `locked` when IAM_BASE_URL is set AND AUTH_PROVIDER=workos (the
+  //    workspace projection runs, and the paid verdict comes from the identity
+  //    service's own workspace rows, read with the caller's token), else
+  //    `open`, so a fork or a local dev without it can hide it freely and the
+  //    switch is never a dead control.
+  PREMIUM_FEATURES: z.enum(['open', 'locked']).optional(),
   // Upstream entitlement service (cloud only): base URL + service key. Unset
   // selects the disabled provider (OSS default).
   ENTITLEMENTS_API_URL: z.string().url().optional(),
@@ -424,6 +432,34 @@ export const serverEnvSchema = z.object({
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+/** `PREMIUM_FEATURES` for the vanity slug: unset reads as `open`, the default it always had. */
+export function vanityPremiumMode(env: Pick<ServerEnv, 'PREMIUM_FEATURES'>): 'open' | 'locked' {
+  return env.PREMIUM_FEATURES ?? 'open';
+}
+
+/**
+ * Whether the identity service's workspaces are on: `IAM_BASE_URL` with the
+ * `workos` auth provider. The API builds its workspace projection exactly
+ * then, and the projection is what writes the Dapta AI paid verdict.
+ */
+export function iamWorkspacesEnabled(env: Pick<ServerEnv, 'IAM_BASE_URL' | 'AUTH_PROVIDER'>): boolean {
+  return env.AUTH_PROVIDER === 'workos' && !!env.IAM_BASE_URL;
+}
+
+/**
+ * `PREMIUM_FEATURES` for hiding the attribution. Explicit wins; unset is
+ * `locked` exactly when the workspace projection runs (`iamWorkspacesEnabled`,
+ * the only writer of the paid verdict), else `open`: without it no workspace
+ * could ever prove it pays, and the switch would be a control that can never
+ * move (a fork with IAM_BASE_URL but another auth provider included).
+ */
+export function attributionPremiumMode(
+  env: Pick<ServerEnv, 'PREMIUM_FEATURES' | 'IAM_BASE_URL' | 'AUTH_PROVIDER'>,
+): 'open' | 'locked' {
+  if (env.PREMIUM_FEATURES) return env.PREMIUM_FEATURES;
+  return iamWorkspacesEnabled(env) ? 'locked' : 'open';
+}
 
 /**
  * True when the `file` question type is available on this deployment.

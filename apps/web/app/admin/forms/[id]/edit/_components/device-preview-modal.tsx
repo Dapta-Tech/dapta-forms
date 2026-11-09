@@ -39,6 +39,7 @@ export function DevicePreviewModal({
   name,
   locale,
   layout = 'slides',
+  showAttribution = true,
   m,
 }: {
   open: boolean;
@@ -48,6 +49,8 @@ export function DevicePreviewModal({
   locale: string;
   /** One page scrolls rather than stepping — the renderer handles the shape. */
   layout?: FormLayout;
+  /** The workspace's attribution setting, so the frame matches the public form. */
+  showAttribution?: boolean;
   m: EditorMessages['preview'];
 }) {
   const [device, setDevice] = useState<PreviewDevice>('mobile');
@@ -89,6 +92,7 @@ export function DevicePreviewModal({
             locale={locale}
             formLocale={config.language ?? locale}
             layout={layout}
+            showAttribution={showAttribution}
             m={m}
             hideAddressBar
             endSlot={

@@ -34,18 +34,21 @@ export function PreviewDocument() {
   const [input, setInput] = useState<PreviewConfigMessage | null>(null);
 
   useEffect(() => {
+    // Targeted at this exact origin — never '*', which would leak a draft
+    // config to any embedder.
+    const announce = () =>
+      window.parent?.postMessage({ channel: PREVIEW_CHANNEL, type: 'ready' }, window.location.origin);
     function onMessage(event: MessageEvent) {
       const message = readPreviewMessage(event, window.parent, window.location.origin);
       if (message?.type === 'config') setInput(message);
+      // The editor asks until it hears us: our first `ready` may have gone out
+      // before it was listening.
+      else if (message?.type === 'ping') announce();
     }
     window.addEventListener('message', onMessage);
     // Announce readiness only AFTER the listener exists, so the config posted in
-    // reply can never land in the gap before we can hear it. Targeted at this
-    // exact origin — never '*', which would leak a draft config to any embedder.
-    window.parent?.postMessage(
-      { channel: PREVIEW_CHANNEL, type: 'ready' },
-      window.location.origin,
-    );
+    // reply can never land in the gap before we can hear it.
+    announce();
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
@@ -77,6 +80,7 @@ export function PreviewDocument() {
               name={input.name}
               config={input.config as unknown as PublicFormConfig}
               locale={input.locale}
+              showAttribution={input.showAttribution}
             />
           ) : (
             <FormRenderer
@@ -87,6 +91,7 @@ export function PreviewDocument() {
               config={input.config as unknown as PublicFormConfig}
               locale={input.locale}
               startAt={input.screen}
+              showAttribution={input.showAttribution}
             />
           )
         ) : null}

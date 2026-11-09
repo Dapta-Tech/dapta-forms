@@ -277,6 +277,14 @@ export interface BuilderMessages {
      *  `renderer.name.*` so the canvas shows exactly what publishes. */
     nameFirstPlaceholder: string;
     nameLastPlaceholder: string;
+    /** One page: a name step with field labels hides its title on the form. */
+    nameLabelsTitleHidden: string;
+    /** A checkbox step's text, before the author writes any. */
+    checkboxPlaceholder: string;
+    /** Under the checkbox text field while it is empty. */
+    checkboxTextEmpty: string;
+    /** What an empty checkbox says on the form when it has no description either. */
+    checkboxDefault: string;
   };
   settings: {
     /** A reveal STEP owns its copy here — there is no form-level reveal. */
@@ -348,6 +356,13 @@ export interface BuilderMessages {
     title: string;
     questionType: string;
     required: string;
+    /** A checkbox step: its inline `[text](https://...)` links. */
+    checkboxLinks: string;
+    checkboxLinksHint: string;
+    checkboxLinkText: string;
+    checkboxLinkUrl: string;
+    checkboxLinkAdd: string;
+    checkboxLinkRemove: string;
     options: string;
     addOption: string;
     /** How a choice question lays its options out: a list, or a card grid. */
@@ -383,6 +398,11 @@ export interface BuilderMessages {
     placeholder: string;
     placeholderHint: string;
     placeholderEmpty: string;
+    /** One page only: full or half width (two halves share a row). */
+    width: string;
+    widthHint: string;
+    widthFull: string;
+    widthHalf: string;
     /** A value the answer starts with; anything in the URL wins over it. */
     defaultAnswer: string;
     defaultAnswerHint: string;
@@ -581,7 +601,8 @@ export type GalleryItemId =
   | 'file'
   | 'message'
   | 'reveal'
-  | 'scheduler';
+  | 'scheduler'
+  | 'checkbox';
 
 export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
 
@@ -747,6 +768,9 @@ const en: BuilderMessages = {
   canvas: {
     questionN: 'Question {n}',
     titlePlaceholder: 'Type your question…',
+    checkboxPlaceholder: 'I accept the privacy policy',
+    checkboxTextEmpty: 'Write the text that goes beside the box here. While it is empty, the form shows the description as that text.',
+    checkboxDefault: 'I agree',
     descriptionPlaceholder: 'Add a description (optional)',
     optionPlaceholder: 'Option',
     addOption: 'Add option',
@@ -765,11 +789,18 @@ const en: BuilderMessages = {
     schedulerLoadError: 'The calendar could not load. Check the event type is still available.',
     nameFirstPlaceholder: 'First name',
     nameLastPlaceholder: 'Last name',
+    nameLabelsTitleHidden: 'Hidden on the form: each field shows its own label.',
   },
   settings: {
     title: 'Question settings',
     questionType: 'Question type',
     required: 'Required',
+    checkboxLinks: 'Links in the text',
+    checkboxLinksHint: 'Type [text](https://...) in the checkbox text, or add it here.',
+    checkboxLinkText: 'Link text',
+    checkboxLinkUrl: 'URL',
+    checkboxLinkAdd: 'Add link',
+    checkboxLinkRemove: 'Remove link',
     options: 'Options',
     addOption: 'Add option',
     optionLayout: 'Show options as',
@@ -865,6 +896,10 @@ const en: BuilderMessages = {
     placeholder: 'Placeholder',
     placeholderHint: 'Ghost text shown inside the input while it is empty.',
     placeholderEmpty: 'Leave empty for none',
+    width: 'Width',
+    widthHint: 'On desktop, two half width questions in a row share a line. On phones they stack.',
+    widthFull: 'Full',
+    widthHalf: 'Half',
     defaultAnswer: 'Default answer',
     defaultAnswerHint: 'Used when the link carries no value. Anything in the URL wins over this.',
     defaultAnswerPlaceholder: 'Leave empty for none',
@@ -935,6 +970,7 @@ const en: BuilderMessages = {
       name: { title: 'Name', desc: 'Full name field' },
       email: { title: 'Email', desc: 'Validated email' },
       phone: { title: 'Phone', desc: 'Number with country' },
+      checkbox: { title: 'Checkbox', desc: 'One box to tick, with links' },
       single: { title: 'Single choice', desc: 'Pick one' },
       multiple: { title: 'Multiple choice', desc: 'Pick several' },
       dropdown: { title: 'Dropdown', desc: 'Compact list' },
@@ -1210,6 +1246,9 @@ const es: BuilderMessages = {
   canvas: {
     questionN: 'Pregunta {n}',
     titlePlaceholder: 'Escribe tu pregunta…',
+    checkboxPlaceholder: 'Acepto la política de tratamiento de datos',
+    checkboxTextEmpty: 'Escribe aquí el texto que va junto a la casilla. Mientras esté vacío, el formulario muestra la descripción como ese texto.',
+    checkboxDefault: 'Acepto',
     descriptionPlaceholder: 'Añade una descripción (opcional)',
     optionPlaceholder: 'Opción',
     addOption: 'Añadir opción',
@@ -1228,11 +1267,18 @@ const es: BuilderMessages = {
     schedulerLoadError: 'No se pudo cargar el calendario. Revisa que el tipo de evento siga disponible.',
     nameFirstPlaceholder: 'Nombre',
     nameLastPlaceholder: 'Apellidos',
+    nameLabelsTitleHidden: 'Oculto en el formulario: cada campo muestra su etiqueta.',
   },
   settings: {
     title: 'Ajustes de la pregunta',
     questionType: 'Tipo de pregunta',
     required: 'Obligatoria',
+    checkboxLinks: 'Links en el texto',
+    checkboxLinksHint: 'Escribe [texto](https://...) en el texto de la casilla, o agrégalo aquí.',
+    checkboxLinkText: 'Texto del link',
+    checkboxLinkUrl: 'URL',
+    checkboxLinkAdd: 'Agregar link',
+    checkboxLinkRemove: 'Quitar link',
     options: 'Opciones',
     addOption: 'Añadir opción',
     optionLayout: 'Mostrar opciones como',
@@ -1329,6 +1375,10 @@ const es: BuilderMessages = {
     placeholder: 'Placeholder',
     placeholderHint: 'Texto guía que se muestra dentro del campo mientras está vacío.',
     placeholderEmpty: 'Vacío para ninguno',
+    width: 'Ancho',
+    widthHint: 'En escritorio, dos preguntas seguidas a media columna comparten fila. En celular se apilan.',
+    widthFull: 'Completo',
+    widthHalf: 'Media',
     defaultAnswer: 'Respuesta por defecto',
     defaultAnswerHint: 'Se usa cuando el link no trae valor. Lo que venga en la URL gana sobre esto.',
     defaultAnswerPlaceholder: 'Vacío para ninguna',
@@ -1399,6 +1449,7 @@ const es: BuilderMessages = {
       name: { title: 'Nombre', desc: 'Campo de nombre completo' },
       email: { title: 'Correo', desc: 'Correo validado' },
       phone: { title: 'Teléfono', desc: 'Número con país' },
+      checkbox: { title: 'Casilla de verificación', desc: 'Una casilla para marcar, con links' },
       single: { title: 'Opción única', desc: 'Elegir una' },
       multiple: { title: 'Opción múltiple', desc: 'Elegir varias' },
       dropdown: { title: 'Desplegable', desc: 'Lista compacta' },

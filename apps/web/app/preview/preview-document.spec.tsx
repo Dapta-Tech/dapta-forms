@@ -37,7 +37,7 @@ afterEach(async () => {
   host?.remove();
 });
 
-async function preview(layout: 'slides' | 'vertical') {
+async function preview(layout: 'slides' | 'vertical', extra: Record<string, unknown> = {}) {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -52,6 +52,7 @@ async function preview(layout: 'slides' | 'vertical') {
       name: 'Protected',
       locale: 'en',
       layout,
+      ...extra,
       config: {
         version: 1,
         steps: [{ key: 'email', type: 'email', question: 'Email?' }],
@@ -77,5 +78,43 @@ describe('the builder preview and spam protection', () => {
     const props = seen.vertical.at(-1)!;
     expect(props.config).toBeTruthy();
     expect(props).not.toHaveProperty('captcha');
+  });
+});
+
+describe('the builder preview and the workspace attribution setting', () => {
+  for (const layout of ['slides', 'vertical'] as const) {
+    it(`${layout}: hands the renderer the workspace's answer, shown when the editor says nothing`, async () => {
+      const last = () => (layout === 'slides' ? seen.slides : seen.vertical).at(-1)!;
+      await preview(layout);
+      expect(last().showAttribution).toBe(true);
+      await act(async () => root?.unmount());
+      host?.remove();
+      await preview(layout, { showAttribution: false });
+      expect(last().showAttribution).toBe(false);
+    });
+  }
+});
+
+describe('the ready handshake', () => {
+  it('announces ready on load and again on every ping, so a lost first ready is recovered', async () => {
+    const post = vi.spyOn(window.parent, 'postMessage');
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => root!.render(<PreviewDocument />));
+    const readies = () =>
+      post.mock.calls.filter(([data]) => (data as { type?: string })?.type === 'ready').length;
+    expect(readies()).toBe(1);
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          origin: window.location.origin,
+          source: window.parent,
+          data: { channel: PREVIEW_CHANNEL, type: 'ping' },
+        }),
+      );
+    });
+    expect(readies()).toBe(2);
+    post.mockRestore();
   });
 });
