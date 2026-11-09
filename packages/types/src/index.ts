@@ -1375,6 +1375,14 @@ export const publicFormSchema = z.object({
    * nothing from the challenge provider without it.
    */
   captcha: publicCaptchaSchema.optional(),
+  /**
+   * Whether this form carries the "Made with dForms" attribution (the badge and
+   * the thank-you CTA), decided by the API from the workspace's choice and its
+   * paid verdict (`showAttribution` in @quill/shared). The deployment rule
+   * (`NEXT_PUBLIC_SIGNUP_URL` / `NEXT_PUBLIC_HIDE_BADGE`) still applies on top.
+   * Absent (an API older than the setting) reads as true: exactly as before.
+   */
+  showAttribution: z.boolean().optional(),
 });
 export type PublicForm = z.infer<typeof publicFormSchema>;
 

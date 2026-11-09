@@ -117,7 +117,13 @@ export function LinkPageView({
           </ul>
         ) : null}
       </main>
-      <MadeWithBadge locale={locale} accountCode={page.accountCode} medium="link-page" />
+      {/* The workspace's setting, as the API answered it (absent = shown). */}
+      <MadeWithBadge
+        locale={locale}
+        accountCode={page.accountCode}
+        medium="link-page"
+        show={page.showAttribution !== false}
+      />
     </div>
   );
 }

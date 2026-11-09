@@ -346,6 +346,12 @@ export interface PublicLinkPage {
    */
   pageSlug?: string;
   isDefault?: boolean;
+  /**
+   * Whether the page carries the "Made with dForms" attribution, the
+   * workspace's setting as the API decides it. Absent (an older API, or the
+   * editor's preview before it knows) reads as true: exactly as before.
+   */
+  showAttribution?: boolean;
 }
 
 /** The brand kit fields that style the page. The kit's logo is handled apart. */

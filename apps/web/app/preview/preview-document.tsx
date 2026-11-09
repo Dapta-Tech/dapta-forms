@@ -80,6 +80,7 @@ export function PreviewDocument() {
               name={input.name}
               config={input.config as unknown as PublicFormConfig}
               locale={input.locale}
+              showAttribution={input.showAttribution}
             />
           ) : (
             <FormRenderer
@@ -90,6 +91,7 @@ export function PreviewDocument() {
               config={input.config as unknown as PublicFormConfig}
               locale={input.locale}
               startAt={input.screen}
+              showAttribution={input.showAttribution}
             />
           )
         ) : null}

@@ -10,7 +10,9 @@
  * a few minutes so role writes do not re-read it every time.
  *
  * Only the shapes this product reads are typed. Upstream returns far more per
- * row (phone numbers, plans, stripe ids); it is dropped at the boundary.
+ * row (phone numbers, plans, stripe ids); it is dropped at the boundary. The
+ * one billing fact read is a BOOLEAN, whether the workspace's owning account
+ * pays for Dapta AI (`paidVerdictOf`): never a plan, a status or an id.
  *
  * Kept behind `IAM_BASE_URL`: unset (every fork, plain local dev) means this
  * client is never constructed and the auth provider keeps its pre-0015 shape.
@@ -58,6 +60,41 @@ export interface IamWorkspace {
   is_active: boolean;
   isOwner?: boolean;
   users?: IamWorkspaceUser[];
+  /**
+   * The workspace SEARCH's own answer to "does the owning account pay for
+   * Dapta AI": status NOT IN (1 free, 3 cancelled, 4 suspended), computed
+   * upstream. Absent on an identity service older than the field.
+   */
+  isPaid?: boolean | null;
+  /**
+   * The workspace DETAIL nests the owning account. Only its status is read,
+   * and only to derive the same boolean (see `paidVerdictOf`).
+   */
+  account?: { account_status_id?: number | string | null } | null;
+}
+
+/**
+ * Upstream account statuses that do NOT count as paying: 1 free, 3 cancelled,
+ * 4 suspended. Everything else does (2 paid, 5 scheduled cancellation, which
+ * keeps access until the period ends), the same rule the search's `isPaid`
+ * applies upstream.
+ */
+const UNPAID_ACCOUNT_STATUS_IDS: ReadonlySet<number> = new Set([1, 3, 4]);
+
+/**
+ * Whether this workspace's owning account pays for Dapta AI, as the identity
+ * service said on this read: the search's `isPaid` when present, else derived
+ * from the detail's `account.account_status_id`. Null when the row carries
+ * neither (an older identity service), so the caller writes nothing.
+ */
+export function paidVerdictOf(ws: Pick<IamWorkspace, 'isPaid' | 'account'> | null | undefined): boolean | null {
+  if (!ws) return null;
+  if (typeof ws.isPaid === 'boolean') return ws.isPaid;
+  const raw = ws.account?.account_status_id;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const status = Number(raw);
+  if (!Number.isInteger(status)) return null;
+  return !UNPAID_ACCOUNT_STATUS_IDS.has(status);
 }
 
 export interface IamAccount {

@@ -421,6 +421,7 @@ export function DoneScreen({
   accountCode,
   cover,
   design,
+  showAttribution = true,
 }: {
   ending: ResolvedEnding;
   answers: Answers;
@@ -428,8 +429,10 @@ export function DoneScreen({
   accountCode: string;
   cover?: FormCover | null;
   design?: FormDesignProps;
+  /** The workspace's attribution setting: false drops the growth CTA too. */
+  showAttribution?: boolean;
 }) {
-  const cta = signupHref('confirmation', accountCode);
+  const cta = showAttribution ? signupHref('confirmation', accountCode) : null;
   return (
     <PhaseShell className="pf pf--done" design={design} cover={cover}>
       <div className="pf-done__inner pf-animate">

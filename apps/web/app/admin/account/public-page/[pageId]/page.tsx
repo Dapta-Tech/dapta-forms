@@ -18,8 +18,9 @@ export default async function LinkPageEditPage({ params }: { params: Promise<{ p
   const locale = await getLocale();
   const messages = getMessages(locale);
   let view;
+  let me;
   try {
-    view = await adminApi.linkPageById(pageId);
+    [view, me] = await Promise.all([adminApi.linkPageById(pageId), adminApi.me()]);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
@@ -33,6 +34,8 @@ export default async function LinkPageEditPage({ params }: { params: Promise<{ p
         m={messages.admin.linkPage}
         networks={messages.linkPage.social}
         locale={locale}
+        // The preview shows the badge exactly when the public page will.
+        showAttribution={me?.attributionBadge?.showing !== false}
       />
     </div>
   );

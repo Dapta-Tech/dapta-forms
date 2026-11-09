@@ -47,6 +47,20 @@ describe('readPreviewMessage — the three gates', () => {
     expect(out?.type).toBe('config');
   });
 
+  it('carries the workspace attribution setting: only an explicit false hides it', () => {
+    const read = (value: unknown) => {
+      const base = msg({});
+      const data = { ...(base.data as Record<string, unknown>), showAttribution: value };
+      const out = readPreviewMessage({ ...base, data } as MessageEvent, parentWindow, ORIGIN);
+      return out?.type === 'config' ? out.showAttribution : 'not a config';
+    };
+    expect(read(false)).toBe(false);
+    expect(read(true)).toBe(true);
+    expect(read(undefined)).toBe(true);
+    expect(read('false')).toBe(true);
+    expect(read(0)).toBe(true);
+  });
+
   it('rejects a foreign origin — even a lookalike prefix', () => {
     expect(readPreviewMessage(msg({ origin: 'https://evil.example.com' }), parentWindow, ORIGIN)).toBeNull();
     expect(

@@ -67,6 +67,8 @@ const DENIED = new Set([
   'POST /v1/workspaces/estate/:workspaceId/enter',
   // Onboarding and attribution.
   'POST /v1/account/attribution',
+  'GET /v1/account/attribution-badge',
+  'PUT /v1/account/attribution-badge',
   'PATCH /v1/account/onboarding',
   'POST /v1/account/onboarding/complete',
   // Writing the profile, the language and the public page.

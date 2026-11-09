@@ -128,6 +128,7 @@ export function PreviewFrame({
   layout,
   hideAddressBar = false,
   endSlot,
+  showAttribution = true,
   m,
 }: {
   device: PreviewDevice;
@@ -154,6 +155,11 @@ export function PreviewFrame({
   hideAddressBar?: boolean;
   /** Rendered at the toolbar's right end — the modal parks its Close here. */
   endSlot?: ReactNode;
+  /**
+   * The workspace's "Made with dForms" setting (`/v1/me`), posted with the
+   * config so the frame shows the badge exactly when the public form will.
+   */
+  showAttribution?: boolean;
   m: EditorMessages['preview'];
 }) {
   const x = getPreviewExtras(locale);
@@ -199,8 +205,9 @@ export function PreviewFrame({
       locale: rendererLocale,
       layout,
       screen: effectiveScreen,
+      showAttribution,
     }),
-    [revision, config, name, rendererLocale, layout, effectiveScreen],
+    [revision, config, name, rendererLocale, layout, effectiveScreen, showAttribution],
   );
 
   useEffect(() => {

@@ -63,6 +63,7 @@ export function DesignPanel({
   onCoverChange,
   onBrandingChange,
   children,
+  showAttribution = true,
   m,
 }: {
   config: FormConfig;
@@ -86,6 +87,12 @@ export function DesignPanel({
   onBrandingChange: (patch: Partial<FormBranding>) => void;
   /** Non-design panels that share this tab (flow note, ending) — rendered last. */
   children?: React.ReactNode;
+  /**
+   * The workspace's "Made with dForms" setting (`/v1/me`). False: the badge
+   * is absent on every public surface, so its size control is disabled with
+   * a pointer to Brand kit, and the preview renders without it.
+   */
+  showAttribution?: boolean;
   m: EditorMessages;
 }) {
   const [device, setDevice] = useState<PreviewDevice>('desktop');
@@ -596,18 +603,26 @@ export function DesignPanel({
               exactly what the local QA harness does, so gating on it would make
               the control invisible on the only surface an author can check it
               on. A fork that sets `NEXT_PUBLIC_HIDE_BADGE` keeps hiding the
-              badge regardless of what is stored here. */}
-          <InlineField label={d.badgeSize} hint={d.badgeSizeHint}>
-            <SegmentedToggle
-              value={design.badgeSize}
-              onChange={(badgeSize) => onBrandingChange({ badgeSize })}
-              options={[
-                { value: 'sm' as const, label: d.sizeSm },
-                { value: 'md' as const, label: d.sizeMd },
-              ]}
-              ariaLabel={d.badgeSize}
-            />
-          </InlineField>
+              badge regardless of what is stored here.
+
+              Disabled (not hidden) when the WORKSPACE turned the attribution
+              off in Brand kit: the badge is then absent everywhere, so a size
+              means nothing, and the hint says where the switch lives. The
+              stored size is kept for when it comes back. */}
+          <div data-testid="design-badge-size" data-disabled={showAttribution ? undefined : 'true'}>
+            <InlineField label={d.badgeSize} hint={showAttribution ? d.badgeSizeHint : d.badgeSizeHiddenHint}>
+              <SegmentedToggle
+                value={design.badgeSize}
+                onChange={(badgeSize) => onBrandingChange({ badgeSize })}
+                options={[
+                  { value: 'sm' as const, label: d.sizeSm },
+                  { value: 'md' as const, label: d.sizeMd },
+                ]}
+                ariaLabel={d.badgeSize}
+                disabled={!showAttribution}
+              />
+            </InlineField>
+          </div>
           {vertical ? null : (
           <InlineField label={d.contentAlign}>
             <SegmentedToggle
@@ -699,6 +714,7 @@ export function DesignPanel({
           locale={locale}
           formLocale={config.language ?? locale}
           layout={layout}
+          showAttribution={showAttribution}
           m={m.preview}
         />
       </div>

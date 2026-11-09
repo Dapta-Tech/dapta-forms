@@ -108,6 +108,7 @@ import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from '
 import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
 import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } from './submission-filter';
 import type { CaptchaVerifier } from './captcha';
+import { AttributionService } from './attribution.service';
 import { CAPTCHA, DB, ENV } from './tokens';
 
 function unwrapCrud<T>(r: CrudResult<T>): T {
@@ -202,6 +203,10 @@ export class AdminCrudController {
     // run here. Last and optional for the positional-construction reason; absent
     // reads as "not available", which is the safe answer.
     @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
+    // Workspace setting reporting only (`me`): whether this workspace's public
+    // surfaces carry the "Made with dForms" attribution. Last and optional for
+    // the positional reason; absent reads as showing, as before the setting.
+    @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
   ) {}
 
   /**
@@ -258,7 +263,13 @@ export class AdminCrudController {
     // keys). The editor disables the switch without it, for the same reason the
     // file question hides without a bucket: the API is the one authority.
     const captcha = { available: this.captcha?.enabled === true };
-    return { ...view, staff, uploads, captcha };
+    // Whether this WORKSPACE's forms carry the attribution, by the same rule
+    // the public payload uses. The builder disables the badge size when it is
+    // hidden and shows the preview without it.
+    // `attributionBadge`, not `attribution`: that key is the signup's UTM
+    // record, already on `view`.
+    const attributionBadge = { showing: this.attribution ? await this.attribution.showFor(p.accountId) : true };
+    return { ...view, staff, uploads, captcha, attributionBadge };
   }
 
   /**

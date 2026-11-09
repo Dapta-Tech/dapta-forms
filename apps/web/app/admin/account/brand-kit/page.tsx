@@ -1,7 +1,9 @@
 import { getMessages } from '@quill/shared';
-import { adminApi, isAdminRole } from '@/lib/admin-api';
+import { adminApi, isAdminRole, type AttributionStatus } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { signupHref } from '@/lib/growth';
 import { BrandKitPanel } from './brand-kit-panel';
+import { AttributionSetting } from './attribution-setting';
 import { ManagingChip } from '../_components/managing-chip';
 
 export const dynamic = 'force-dynamic';
@@ -20,10 +22,17 @@ export default async function BrandKitPage() {
   const messages = getMessages(locale).admin;
   const bk = messages.brandKit;
 
-  const [me, branding, forms] = await Promise.all([
+  // The attribution row exists only where the deployment draws the
+  // attribution at all: with no signup URL (or NEXT_PUBLIC_HIDE_BADGE) nothing
+  // ever shows, and a switch for it would be a dead control.
+  const attributionOn = signupHref('form-button') !== null;
+  const [me, branding, forms, attribution] = await Promise.all([
     adminApi.me(),
     adminApi.getBranding(),
     adminApi.listForms(),
+    // An API older than the setting has no route: the row is left out rather
+    // than failing the whole page.
+    attributionOn ? adminApi.attributionStatus().catch((): AttributionStatus | null => null) : null,
   ]);
 
   return (
@@ -37,6 +46,17 @@ export default async function BrandKitPage() {
         design={messages.editor.design}
         locale={locale}
         workspaceName={me.accountName}
+        topRow={
+          attribution ? (
+            <AttributionSetting
+              first
+              initial={attribution}
+              canEdit={isAdminRole(me.role)}
+              daptaAiUrl={daptaAiUrl()}
+              m={messages.attributionSetting}
+            />
+          ) : null
+        }
         heading={
           <>
             <h2 className="text-xl font-semibold tracking-tight">{bk.title}</h2>
@@ -49,4 +69,22 @@ export default async function BrandKitPage() {
       />
     </div>
   );
+}
+
+/**
+ * The Dapta AI landing the "Only for Dapta AI subscribers" note links to:
+ * `DAPTA_AI_URL`, a server-side runtime variable of the DEPLOYMENT (no host
+ * is written in this tree, like `NEXT_PUBLIC_PLATFORM_URL` in `lib/suite.ts`).
+ * Read at request time, so a deployment changes it without a rebuild. Anything
+ * that is not an http(s) URL reads as unset, and the note stays plain text.
+ */
+function daptaAiUrl(): string | null {
+  const raw = process.env.DAPTA_AI_URL?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }

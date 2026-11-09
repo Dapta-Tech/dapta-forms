@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { mockBodyLines } from '@/lib/notification-preview';
 import { NotificationEmailMock, type NotificationMockLabels } from './notification-email-mock';
 import { NotificationEmailFields } from './notification-email-fields';
+import { WorkspaceAttributionProvider } from './workspace-attribution';
 
 const MOCK: NotificationMockLabels = {
   title: 'How the email arrives',
@@ -124,6 +125,25 @@ describe('NotificationEmailMock', () => {
       const html = mock(true);
       expect(html).toContain('data-testid="email-mock-cta"');
       expect(html).toContain('Create your form, free');
+    } finally {
+      if (saved === undefined) delete process.env.NEXT_PUBLIC_SIGNUP_URL;
+      else process.env.NEXT_PUBLIC_SIGNUP_URL = saved;
+    }
+  });
+
+  it('draws no growth button for a workspace that hid the attribution, as the real email', () => {
+    const saved = process.env.NEXT_PUBLIC_SIGNUP_URL;
+    try {
+      process.env.NEXT_PUBLIC_SIGNUP_URL = 'https://example.com/signup';
+      const within = (showing: boolean) =>
+        renderToStaticMarkup(
+          <WorkspaceAttributionProvider showing={showing}>
+            <NotificationEmailMock open onClose={noop} subject="S" body="B" labels={MOCK} />
+          </WorkspaceAttributionProvider>,
+        );
+      expect(within(false)).not.toContain('data-testid="email-mock-cta"');
+      expect(within(false)).not.toContain('Create your form, free');
+      expect(within(true)).toContain('data-testid="email-mock-cta"');
     } finally {
       if (saved === undefined) delete process.env.NEXT_PUBLIC_SIGNUP_URL;
       else process.env.NEXT_PUBLIC_SIGNUP_URL = saved;

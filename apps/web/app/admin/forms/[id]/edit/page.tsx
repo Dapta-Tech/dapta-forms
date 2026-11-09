@@ -49,6 +49,9 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // Same rule for spam protection: the API says whether this deployment
         // can run the human check, and the editor never guesses.
         captcha={me.captcha}
+        // Same rule for the workspace's attribution setting: the API's answer
+        // (absent on an older API = shown).
+        showAttribution={me.attributionBadge?.showing !== false}
         updatedAt={form.updatedAt}
         publicPath={publicPath}
         locale={locale}
