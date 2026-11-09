@@ -7,9 +7,14 @@
 # mistake, so the gate must always scan them. If a documented placeholder
 # false-positives, allowlist that single FINDING (detector + file + line) in
 # publish-gate-allowlist.txt instead.
-/node_modules/
-/\.git/
-/dist/
-/\.next/
-/\.turbo/
-/\.data/
+#
+# Each pattern starts with (^|/): trufflehog reports paths relative to the repo
+# root WITHOUT a leading slash (`.git/FETCH_HEAD`), so a bare `/\.git/` never
+# matched a top-level directory and the runner's own `.git/FETCH_HEAD` (branch
+# names next to 40-hex SHAs) got scanned and flagged.
+(^|/)node_modules/
+(^|/)\.git/
+(^|/)dist/
+(^|/)\.next/
+(^|/)\.turbo/
+(^|/)\.data/

@@ -1458,6 +1458,10 @@ export interface FormsMessages {
         badgeSizeHint: string;
         /** The workspace hides the attribution (Brand kit), so the size does nothing. */
         badgeSizeHiddenHint: string;
+        /** The third option of the badge control: hide the attribution for the whole workspace. */
+        badgeOff: string;
+        /** Under the badge control while the workspace hides it: the choice reaches every form. */
+        badgeOffHint: string;
         alignLeft: string;
         alignCenter: string;
         contentAlign: string;
@@ -2980,7 +2984,7 @@ export const en: FormsMessages = {
     },
     attributionSetting: {
       title: 'dForms attribution',
-      hint: 'The badge on your forms and pages, and the invitation in their emails.',
+      hint: 'The badge on your forms and pages, and the invitation in their emails. Applies to all of them at once, no need to apply the kit.',
       switchLabel: 'Show “Made with dForms” on my forms and pages',
       subscribersOnly: 'Only for {product} subscribers.',
       product: 'Dapta AI',
@@ -3816,6 +3820,8 @@ export const en: FormsMessages = {
         badgeSize: 'Attribution badge',
         badgeSizeHint: 'The "Made with" pill under the form.',
         badgeSizeHiddenHint: 'Your workspace hides the attribution. Change it in Brand kit.',
+        badgeOff: 'Off',
+        badgeOffHint: 'Hidden on every form and page of this workspace, and in their emails.',
         alignLeft: 'Left',
         alignCenter: 'Center',
         contentAlign: 'Question alignment',
@@ -5565,7 +5571,7 @@ export const es: FormsMessages = {
     },
     attributionSetting: {
       title: 'Atribución de dForms',
-      hint: 'La insignia en tus formularios y páginas, y la invitación en sus correos.',
+      hint: 'La insignia en tus formularios y páginas, y la invitación en sus correos. Se aplica a todos al instante, sin aplicar el kit.',
       switchLabel: 'Mostrar «Hecho con dForms» en mis formularios y páginas',
       subscribersOnly: 'Solo para suscriptores de {product}.',
       product: 'Dapta AI',
@@ -6406,6 +6412,8 @@ export const es: FormsMessages = {
         badgeSize: 'Insignia de atribución',
         badgeSizeHint: 'La píldora «Hecho con» que aparece debajo del formulario.',
         badgeSizeHiddenHint: 'Tu workspace oculta la atribución. Cámbialo en Kit de marca.',
+        badgeOff: 'Oculto',
+        badgeOffHint: 'Oculto en todos los formularios y páginas de este workspace, y en sus correos.',
         alignLeft: 'Izquierda',
         alignCenter: 'Centro',
         contentAlign: 'Alineación de la pregunta',

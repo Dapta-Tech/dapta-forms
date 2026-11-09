@@ -2,7 +2,9 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { getMessages } from '@quill/shared';
 import { lockedOptionValues } from '@quill/engine';
-import { adminApi, ApiError } from '@/lib/admin-api';
+import { adminApi, ApiError, isAdminRole, type AttributionStatus } from '@/lib/admin-api';
+import { daptaAiUrl } from '@/lib/dapta-ai-url';
+import { signupHref } from '@/lib/growth';
 import { getLocale } from '@/lib/locale';
 import { publicFormPath } from '@/lib/public-form-path';
 import { FormEditor } from './form-editor';
@@ -15,10 +17,19 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
   const locale = await getLocale();
   const m = getMessages(locale).admin.editor;
 
+  // The workspace attribution switch is offered in the Design panel only where
+  // the deployment draws the attribution at all (as Brand kit does). A failed
+  // read leaves the panel with the size control alone, never a broken switch.
+  const attributionOn = signupHref('form-button') !== null;
   let form: Awaited<ReturnType<typeof adminApi.getForm>>;
   let me: Awaited<ReturnType<typeof adminApi.me>>;
+  let attribution: AttributionStatus | null;
   try {
-    [form, me] = await Promise.all([adminApi.getForm(id), adminApi.me()]);
+    [form, me, attribution] = await Promise.all([
+      adminApi.getForm(id),
+      adminApi.me(),
+      attributionOn ? adminApi.attributionStatus().catch((): AttributionStatus | null => null) : null,
+    ]);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
@@ -52,6 +63,11 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // Same rule for the workspace's attribution setting: the API's answer
         // (absent on an older API = shown).
         showAttribution={me.attributionBadge?.showing !== false}
+        // The full switch state for the Design panel's "Off" option: the same
+        // workspace setting as Brand kit, editable by owners and admins.
+        attribution={
+          attribution ? { initial: attribution, canEdit: isAdminRole(me.role), daptaAiUrl: daptaAiUrl() } : null
+        }
         updatedAt={form.updatedAt}
         publicPath={publicPath}
         locale={locale}
