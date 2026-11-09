@@ -182,15 +182,15 @@ export function identifyMember(identity: AnalyticsIdentity): void {
   const ph = client();
   if (!ph || !identity.email) return;
   ph.identify(identity.email, {
+    // The email as a person PROPERTY, not only as the distinct id: person lists
+    // and recordings display the `email` property, so without it every Forms
+    // user who never opened the Dapta app shows up as a bare id.
+    email: identity.email,
     member_id: identity.memberId,
     account_id: identity.accountId,
     role: identity.role,
   });
-  // AFTER identify, never before: `alias` links its argument to the CURRENT
-  // distinct id, and before identify that is this origin's anonymous id — the
-  // landing visit would be chained to a session that identify then merges,
-  // instead of pinned to the person directly.
-  aliasLandingVisit(ph, identity.landingDistinctId);
+  aliasLandingVisit(ph, identity.landingDistinctId, identity.email);
   ph.register({
     product: 'forms',
     account_id: identity.accountId,
@@ -223,9 +223,22 @@ export function identifyMember(identity: AnalyticsIdentity): void {
  * every render inside that window would otherwise re-send the merge. When
  * storage is blocked the alias fires anyway — the vendor drops a repeated
  * merge on the floor, and a join that never happens is the only real loss.
+ *
+ * The person's email is passed as the alias ORIGINAL on purpose. Called from
+ * the stub, the vendor replays queued `alias` calls before `identify`, so a
+ * one-argument alias would resolve "the current id" to the landing id itself
+ * (the landing and the app share one cookie on the apex domain). The vendor
+ * then identifies the browser AS the landing id, and the later
+ * `identify(email)` never merges: the visit and its recording end up on a
+ * person with no email. With the original named, the order no longer matters.
  */
-function aliasLandingVisit(ph: PosthogBrowser, landingId: string | null | undefined): void {
-  if (!landingId) return;
+function aliasLandingVisit(
+  ph: PosthogBrowser,
+  landingId: string | null | undefined,
+  email: string,
+): void {
+  // Aliasing an id to itself is a no-op the vendor turns into an identify.
+  if (!landingId || landingId === email) return;
   try {
     const key = `dapta_forms_ph_alias:${landingId}`;
     if (window.localStorage.getItem(key)) return;
@@ -233,7 +246,7 @@ function aliasLandingVisit(ph: PosthogBrowser, landingId: string | null | undefi
   } catch {
     // Private mode: fall through and alias anyway.
   }
-  ph.alias(landingId);
+  ph.alias(landingId, email);
 }
 
 /** The campaign subset of the attribution blob, snake_cased. Empty when absent. */
