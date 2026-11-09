@@ -17,6 +17,13 @@ export interface AttributionStatus {
   canHide: boolean;
   /** What the public surfaces carry right now (before the deployment's own rule). */
   showing: boolean;
+  /**
+   * Whether the identity service ever gave this workspace a paid verdict
+   * (paid or not). The row tells "your subscription ended" (a verdict was
+   * seen) apart from "only for subscribers" (none ever was), so it never
+   * claims a subscription that did not exist. A boolean only.
+   */
+  verdictSeen: boolean;
 }
 
 /** The stable error code a refused "turn it off" answers with. */
@@ -100,6 +107,7 @@ export class AttributionService {
       hideAttribution: row?.hideAttribution ?? false,
       canHide: this.canHide(row),
       showing: this.showForRow(row),
+      verdictSeen: row?.paid != null,
     };
   }
 

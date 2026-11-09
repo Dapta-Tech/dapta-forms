@@ -48,7 +48,10 @@ export default async function BrandKitPage() {
         workspaceName={me.accountName}
         topRow={
           attribution ? (
+            // Keyed: an element made here and placed by the client panel among
+            // its own rows reads to React as a list child, and warned without it.
             <AttributionSetting
+              key="attribution"
               first
               initial={attribution}
               canEdit={isAdminRole(me.role)}

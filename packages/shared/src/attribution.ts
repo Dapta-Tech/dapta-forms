@@ -38,6 +38,14 @@
  */
 export const ATTRIBUTION_VERDICT_MAX_AGE_MS = 30 * 24 * 3_600_000;
 
+/**
+ * How far in the future a verdict's timestamp may sit and still count: a few
+ * minutes of clock skew between the pods that write and read it. Anything
+ * further ahead is a broken clock or corrupt data, and would otherwise read as
+ * fresh for longer than the max age ever allows, so it counts as not paid.
+ */
+export const ATTRIBUTION_VERDICT_MAX_SKEW_MS = 5 * 60_000;
+
 /** `PREMIUM_FEATURES`: `open` lets any workspace hide it; `locked` needs the paid verdict. */
 export type PremiumMode = 'open' | 'locked';
 
@@ -57,7 +65,8 @@ export interface AttributionInput {
 export function paidVerdictFresh(paid: boolean | null, checkedAt: number | null, now: number): boolean {
   if (paid !== true || checkedAt == null || !Number.isFinite(checkedAt)) return false;
   const age = now - checkedAt;
-  return age >= 0 ? age < ATTRIBUTION_VERDICT_MAX_AGE_MS : true;
+  if (age < 0) return -age <= ATTRIBUTION_VERDICT_MAX_SKEW_MS;
+  return age < ATTRIBUTION_VERDICT_MAX_AGE_MS;
 }
 
 /** May this workspace hide the attribution right now (the switch's "can turn it off")? */

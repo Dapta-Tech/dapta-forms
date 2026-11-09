@@ -679,6 +679,12 @@ export interface AttributionStatus {
   canHide: boolean;
   /** What the public surfaces carry right now. */
   showing: boolean;
+  /**
+   * Whether a paid verdict (paid or not) was ever seen for the workspace, so
+   * "your subscription ended" is said only where there was one. Optional: an
+   * API older than the field reads as seen (the old wording).
+   */
+  verdictSeen?: boolean;
 }
 
 export const adminApi = {

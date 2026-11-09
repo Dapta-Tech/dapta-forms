@@ -12,12 +12,19 @@ import { DAPTA_SUBSCRIPTION_REQUIRED } from './attribution-codes';
 
 type AttributionMessages = FormsMessages['admin']['attributionSetting'];
 
-/** The three states a workspace can be in, named once so the copy and the tests agree. */
-export type AttributionMode = 'on' | 'off' | 'lapsed';
+/**
+ * The states a stored choice can be in, named once so the copy and the tests
+ * agree. `unpaid` is a choice stored off that no paid verdict ever backed (the
+ * deployment was open when it was saved, or the verdict was never written):
+ * there was no subscription to have ended, so it is not `lapsed`.
+ */
+export type AttributionMode = 'on' | 'off' | 'lapsed' | 'unpaid';
 
 export function attributionMode(s: AttributionStatus): AttributionMode {
   if (!s.hideAttribution) return 'on';
-  return s.canHide ? 'off' : 'lapsed';
+  if (s.canHide) return 'off';
+  // An API older than `verdictSeen` reads as seen: the old wording.
+  return s.verdictSeen === false ? 'unpaid' : 'lapsed';
 }
 
 /**
@@ -29,6 +36,8 @@ export function attributionMode(s: AttributionStatus): AttributionMode {
  *    choice, with the sentence that the attribution is showing again and the
  *    choice is saved. Turning it back on never needs the subscription, so the
  *    switch stays usable.
+ *  - unpaid (stored off, no verdict ever seen): the same switch, without the
+ *    sentence that a subscription ended; only the subscribers note.
  *
  * Not paid: the switch is disabled with a muted label, and "Only for Dapta AI
  * subscribers." both as its tooltip and as a note under it (lapsed carries

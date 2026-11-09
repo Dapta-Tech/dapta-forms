@@ -63,7 +63,9 @@ async function mount(
 
 const ON: AttributionStatus = { hideAttribution: false, canHide: true, showing: true };
 const OFF: AttributionStatus = { hideAttribution: true, canHide: true, showing: false };
-const LAPSED: AttributionStatus = { hideAttribution: true, canHide: false, showing: true };
+const LAPSED: AttributionStatus = { hideAttribution: true, canHide: false, showing: true, verdictSeen: true };
+/** Stored off, but no paid verdict ever seen: no subscription ever ended. */
+const STORED_UNPAID: AttributionStatus = { hideAttribution: true, canHide: false, showing: true, verdictSeen: false };
 const NOT_PAID: AttributionStatus = { hideAttribution: false, canHide: false, showing: true };
 
 const en = getMessages('en').admin.attributionSetting;
@@ -75,6 +77,9 @@ describe('attributionMode', () => {
     expect(attributionMode(NOT_PAID)).toBe('on');
     expect(attributionMode(OFF)).toBe('off');
     expect(attributionMode(LAPSED)).toBe('lapsed');
+    expect(attributionMode(STORED_UNPAID)).toBe('unpaid');
+    // An API older than `verdictSeen`: the old wording.
+    expect(attributionMode({ hideAttribution: true, canHide: false, showing: true })).toBe('lapsed');
   });
 });
 
@@ -116,6 +121,20 @@ describe('AttributionSetting', () => {
     // The sentence first, then the note; the switch is described by both.
     expect(lapsed.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(sw().getAttribute('aria-describedby')).toBe(`${lapsed.id} ${note.id}`);
+  });
+
+  it('stored off with no verdict ever seen: the subscribers note, never "your subscription ended"', async () => {
+    const { sw, q, row, el } = await mount(STORED_UNPAID);
+    expect(q('attribution-lapsed')).toBeNull();
+    expect(el.textContent).not.toContain('subscription ended');
+    const note = q('attribution-subscribers-only')!;
+    expect(note.textContent).toBe('Only for Dapta AI subscribers.');
+    expect(note.querySelector('a')!.getAttribute('href')).toBe(LANDING);
+    expect(row().getAttribute('title')).toBe('Only for Dapta AI subscribers.');
+    expect(sw().getAttribute('aria-describedby')).toBe(note.id);
+    // The stored choice shows, and turning it back on stays possible.
+    expect(sw().getAttribute('aria-checked')).toBe('false');
+    expect(sw().disabled).toBe(false);
   });
 
   it('lapsed, with no landing configured: the note is plain text', async () => {

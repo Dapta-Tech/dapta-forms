@@ -94,8 +94,8 @@ afterEach(async () => {
 describe('GET / PUT /v1/account/attribution-badge', () => {
   it('reads the default: showing, not hidden', async () => {
     const { controller } = wire('locked');
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: false, showing: true });
-    expect(await wire('open').controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: false, showing: true, verdictSeen: false });
+    expect(await wire('open').controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true, verdictSeen: false });
   });
 
   it('locked, not paid: turning it off is a 403 with a stable code, and nothing is stored', async () => {
@@ -116,6 +116,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
       hideAttribution: true,
       canHide: true,
       showing: false,
+      verdictSeen: true,
     });
   });
 
@@ -127,7 +128,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     await cacheDaptaPaid(db, accountId, true);
     await controller.set(asOwner(), { hideAttribution: true });
     service.now = () => Date.now() + ATTRIBUTION_VERDICT_MAX_AGE_MS + 1000;
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true });
   });
 
   it('a lapse keeps the choice, shows the attribution again, and turning it back on needs nothing', async () => {
@@ -135,11 +136,12 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     await cacheDaptaPaid(db, accountId, true);
     await controller.set(asOwner(), { hideAttribution: true });
     await cacheDaptaPaid(db, accountId, false);
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true });
     expect(await controller.set(asOwner(), { hideAttribution: false })).toEqual({
       hideAttribution: false,
       canHide: false,
       showing: true,
+      verdictSeen: true,
     });
   });
 
@@ -149,7 +151,21 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
       hideAttribution: true,
       canHide: true,
       showing: false,
+      verdictSeen: false,
     });
+  });
+
+  it('verdictSeen tells a choice no verdict ever backed from a lapse, as a boolean only', async () => {
+    // Hidden while the deployment was open, then the deployment locks: no
+    // verdict was ever written, so no subscription ever ended.
+    await wire('open').controller.set(asOwner(), { hideAttribution: true });
+    const { controller } = wire('locked');
+    const never = await controller.status(asOwner());
+    expect(never).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: false });
+    await cacheDaptaPaid(db, accountId, false);
+    expect(await controller.status(asOwner())).toMatchObject({ canHide: false, verdictSeen: true });
+    // Nothing about billing beyond booleans.
+    expect(Object.values(await controller.status(asOwner())).every((v) => typeof v === 'boolean')).toBe(true);
   });
 
   it('a body without a boolean is a 400', async () => {

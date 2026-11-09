@@ -13,7 +13,8 @@ workspace's choice and its cached paid verdict: the attribution is hidden only
 when the workspace asked for it and the deployment runs `PREMIUM_FEATURES=open`
 or the verdict reads paid and is under `ATTRIBUTION_VERDICT_MAX_AGE_MS` (30
 days) old. A stale verdict fails closed: the attribution shows again until a
-member opens dForms. The deployment rule (`NEXT_PUBLIC_SIGNUP_URL`,
+member opens dForms. So does one stamped more than
+`ATTRIBUTION_VERDICT_MAX_SKEW_MS` (5 minutes) in the future. The deployment rule (`NEXT_PUBLIC_SIGNUP_URL`,
 `NEXT_PUBLIC_HIDE_BADGE`) still applies on top.
 
 **Data.** Migration 0028 adds `account.hide_attribution` (0/1, default 0, so
