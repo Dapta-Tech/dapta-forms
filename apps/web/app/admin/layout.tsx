@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { getMessages } from '@quill/shared';
 import { adminApi, ApiError, isAdminRole } from '@/lib/admin-api';
 import { WorkspaceTimeZoneProvider } from '@/components/workspace-timezone';
+import { WorkspaceAttributionProvider } from '@/components/workspace-attribution';
 import { WorkspaceTimezoneBootstrap } from './_components/workspace-timezone-bootstrap';
 import { AdminShell } from '@/components/admin-shell';
 import { getLocale } from '@/lib/locale';
@@ -101,7 +102,13 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         staff={me.staff}
         user={{ displayName: me.displayName, email: me.email }}
       >
-        <WorkspaceTimeZoneProvider timeZone={me.timezone}>{children}</WorkspaceTimeZoneProvider>
+        <WorkspaceTimeZoneProvider timeZone={me.timezone}>
+          {/* The workspace's "Made with dForms" setting, for the previews that
+              draw a copy of it (absent on an older API = shown). */}
+          <WorkspaceAttributionProvider showing={me.attributionBadge?.showing !== false}>
+            {children}
+          </WorkspaceAttributionProvider>
+        </WorkspaceTimeZoneProvider>
       </AdminShell>
     </ToastProvider>
   );

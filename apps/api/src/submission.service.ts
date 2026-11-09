@@ -38,6 +38,7 @@ import { AnalyticsEffects } from './analytics-effects';
 import { UploadService } from './upload.service';
 import { captchaActive, captchaStrict, type CaptchaVerifier } from './captcha';
 import { hutkRefused, storedVisit } from './submission-visit';
+import { AttributionService } from './attribution.service';
 import { CAPTCHA, DB } from './tokens';
 
 export type ServiceError = { error: string; message: string; status: number };
@@ -93,6 +94,9 @@ export class SubmissionService {
     // service positionally. Absent reads as a deployment without keys, so the
     // check never runs and every form behaves exactly as it did before.
     @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
+    // The workspace's "Made with dForms" attribution. Optional and LAST for
+    // the same positional reason; absent, every form carries it, as before.
+    @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
   ) {}
 
   /**
@@ -149,6 +153,9 @@ export class SubmissionService {
   async publicForm(accountCode: string, slug: string): Promise<PublicForm | null> {
     const f = await getPublishedForm(this.db, accountCode, slug);
     if (!f) return null;
+    // Decided here, from the workspace row, and handed down as a plain boolean:
+    // the web never re-derives it.
+    const showAttribution = this.attribution ? await this.attribution.showFor(f.accountId) : true;
     // NEVER leak destination config (webhook URLs/secrets, CRM mappings) to the
     // public renderer — it is server-only integration config.
     return {
@@ -170,6 +177,7 @@ export class SubmissionService {
             },
           }
         : {}),
+      showAttribution,
     };
   }
 

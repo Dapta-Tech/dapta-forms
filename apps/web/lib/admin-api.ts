@@ -227,6 +227,13 @@ export interface Me {
    * as unavailable rather than crashing the editor.
    */
   captcha?: { available: boolean };
+  /**
+   * Whether this WORKSPACE's public surfaces carry the "Made with dForms"
+   * attribution, as the API decides it (the setting and the paid verdict).
+   * Optional so an API older than the setting reads as showing. Not
+   * `attribution`, which is the signup's acquisition tags above.
+   */
+  attributionBadge?: { showing: boolean };
   /** `'staff'` when the caller is in this workspace by access grant, not by membership. */
   accessGrant: 'staff' | null;
   /** Staff of the deployment (by email domain, identity-backed only): may search and enter the whole estate. */
@@ -664,6 +671,22 @@ export interface FormNotificationsResponse {
   settings: FormNotificationView[];
 }
 
+/** The Brand kit row's view of the attribution switch (`GET /v1/account/attribution-badge`). */
+export interface AttributionStatus {
+  /** The stored choice, kept even while a lapsed subscription does not honour it. */
+  hideAttribution: boolean;
+  /** The workspace may turn it off now (a paying Dapta AI subscriber, or an open deployment). */
+  canHide: boolean;
+  /** What the public surfaces carry right now. */
+  showing: boolean;
+  /**
+   * Whether a paid verdict (paid or not) was ever seen for the workspace, so
+   * "your subscription ended" is said only where there was one. Optional: an
+   * API older than the field reads as seen (the old wording).
+   */
+  verdictSeen?: boolean;
+}
+
 export const adminApi = {
   /** Who am I, in the cookie's workspace — or in `opts.workspace` when managing another one. */
   me: (opts?: ReqOptions) => req<Me>('GET', '/v1/me', undefined, opts),
@@ -728,6 +751,9 @@ export const adminApi = {
 
   // Workspace brand kit (reads open to members; writes + apply/revert admin/owner)
   getBranding: () => req<BrandingResponse>('GET', '/v1/branding'),
+  attributionStatus: () => req<AttributionStatus>('GET', '/v1/account/attribution-badge'),
+  setAttribution: (hideAttribution: boolean) =>
+    req<AttributionStatus>('PUT', '/v1/account/attribution-badge', { hideAttribution }),
   saveBranding: (config: BrandKit) => req<BrandingResponse>('PUT', '/v1/branding', config),
   /** Snapshot-apply the kit to the given forms (live config + pending draft). */
   applyBranding: (formIds: string[]) =>

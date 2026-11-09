@@ -31,18 +31,27 @@ import type { SignupMedium } from '@quill/shared';
  *
  * Renders only when the deployment configures NEXT_PUBLIC_SIGNUP_URL, and never
  * when NEXT_PUBLIC_HIDE_BADGE is set (open-core: forks aren't forced to carry
- * Dapta branding).
+ * Dapta branding). On top of that deployment rule, `show={false}` drops it for
+ * a workspace that turned the attribution off (Brand kit); the API decides
+ * that and the caller passes its answer through, never re-deriving it.
  */
 export function MadeWithBadge({
   locale = 'en',
   accountCode,
   medium = 'form-button',
+  show = true,
 }: {
   locale?: string;
   accountCode?: string | null;
   /** Which surface the pill sits on: the form itself, or a workspace link page. */
   medium?: Extract<SignupMedium, 'form-button' | 'link-page'>;
+  /**
+   * The workspace's attribution setting as the API decided it
+   * (`showAttribution`). Absent = true, exactly as before the setting.
+   */
+  show?: boolean;
 }) {
+  if (!show) return null;
   const href = signupHref(medium, accountCode);
   if (!href) return null;
   const m = getMessages(locale);

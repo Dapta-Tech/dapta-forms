@@ -13,6 +13,7 @@ import { PRODUCT_NAME } from '@/lib/product-name';
 import { getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { signupHref } from '@/lib/growth';
+import { useWorkspaceAttribution } from '@/components/workspace-attribution';
 
 export interface NotificationMockLabels {
   title: string;
@@ -80,9 +81,11 @@ export function NotificationEmailMock({
   const lines = useMemo(() => mockBodyLines(body, sample), [body, sample]);
   const renderedSubject = useMemo(() => interpolate(subject, sample), [subject, sample]);
   // The growth button the email carries under its card, by the badge's rule:
-  // only when this deployment has the loop on. Its copy is the dashboard's
-  // language here; the real email uses the respondent's.
-  const ctaOn = signupHref('email-receipt') !== null;
+  // only when this deployment has the loop on, and never for a workspace that
+  // turned the attribution off (the API leaves it out of the real email). Its
+  // copy is the dashboard's language here; the real email uses the respondent's.
+  const workspaceShows = useWorkspaceAttribution();
+  const ctaOn = workspaceShows && signupHref('email-receipt') !== null;
   const growth = getMessages(clientLocale()).growth;
 
   return (

@@ -513,6 +513,31 @@ export interface FormsMessages {
         connected: string;
       };
     };
+    /**
+     * Brand kit, first row: whether the workspace's forms, link pages and
+     * emails carry the "Made with dForms" attribution. Hiding it comes with a
+     * paid Dapta AI subscription; showing it again never needs one.
+     */
+    attributionSetting: {
+      title: string;
+      hint: string;
+      switchLabel: string;
+      /**
+       * Not paid: the note under the disabled switch and its tooltip. `{product}`
+       * is replaced by `product`, a link to the Dapta AI landing when the
+       * deployment names one.
+       */
+      subscribersOnly: string;
+      product: string;
+      /** Stored off, verdict not paid: the attribution shows again. */
+      lapsed: string;
+      /** Members see the row read-only. */
+      readOnly: string;
+      saved: string;
+      saveFailed: string;
+      /** The API refused turning it off: no paid verdict (it lapsed since the page loaded). */
+      notSubscribed: string;
+    };
     /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
       title: string;
@@ -1431,6 +1456,8 @@ export interface FormsMessages {
         logoPosition: string;
         badgeSize: string;
         badgeSizeHint: string;
+        /** The workspace hides the attribution (Brand kit), so the size does nothing. */
+        badgeSizeHiddenHint: string;
         alignLeft: string;
         alignCenter: string;
         contentAlign: string;
@@ -2951,6 +2978,18 @@ export const en: FormsMessages = {
         connected: 'dForms connected',
       },
     },
+    attributionSetting: {
+      title: 'dForms attribution',
+      hint: 'The badge on your forms and pages, and the invitation in their emails.',
+      switchLabel: 'Show “Made with dForms” on my forms and pages',
+      subscribersOnly: 'Only for {product} subscribers.',
+      product: 'Dapta AI',
+      lapsed: 'Your Dapta AI subscription ended, so the attribution is showing again. Your choice is saved.',
+      readOnly: 'Only an admin or owner can change this.',
+      saved: 'Saved.',
+      saveFailed: 'Could not save. Try again.',
+      notSubscribed: 'Hiding the attribution is only for Dapta AI subscribers.',
+    },
     brandKit: {
       title: 'Brand kit',
       subtitle:
@@ -3776,6 +3815,7 @@ export const en: FormsMessages = {
         logoPosition: 'Logo position',
         badgeSize: 'Attribution badge',
         badgeSizeHint: 'The "Made with" pill under the form.',
+        badgeSizeHiddenHint: 'Your workspace hides the attribution. Change it in Brand kit.',
         alignLeft: 'Left',
         alignCenter: 'Center',
         contentAlign: 'Question alignment',
@@ -5523,6 +5563,18 @@ export const es: FormsMessages = {
         connected: 'dForms conectado',
       },
     },
+    attributionSetting: {
+      title: 'Atribución de dForms',
+      hint: 'La insignia en tus formularios y páginas, y la invitación en sus correos.',
+      switchLabel: 'Mostrar «Hecho con dForms» en mis formularios y páginas',
+      subscribersOnly: 'Solo para suscriptores de {product}.',
+      product: 'Dapta AI',
+      lapsed: 'Tu suscripción de Dapta AI terminó, así que la atribución volvió a aparecer. Tu elección queda guardada.',
+      readOnly: 'Solo un admin o el owner puede cambiar esto.',
+      saved: 'Guardado.',
+      saveFailed: 'No se pudo guardar. Inténtalo de nuevo.',
+      notSubscribed: 'Ocultar la atribución es solo para suscriptores de Dapta AI.',
+    },
     brandKit: {
       title: 'Kit de marca',
       subtitle:
@@ -6353,6 +6405,7 @@ export const es: FormsMessages = {
         logoPosition: 'Posición del logo',
         badgeSize: 'Insignia de atribución',
         badgeSizeHint: 'La píldora «Hecho con» que aparece debajo del formulario.',
+        badgeSizeHiddenHint: 'Tu workspace oculta la atribución. Cámbialo en Kit de marca.',
         alignLeft: 'Izquierda',
         alignCenter: 'Centro',
         contentAlign: 'Alineación de la pregunta',

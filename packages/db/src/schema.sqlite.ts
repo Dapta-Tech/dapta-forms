@@ -26,6 +26,12 @@ export const account = sqliteTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: integer('entitlement_checked_at'),
+  /** The workspace's choice to hide the attribution (0028), 0/1. See the Postgres twin. */
+  hideAttribution: integer('hide_attribution').notNull().default(0),
+  /** The cached Dapta AI paid verdict (0028), 1/0, NULL = never seen. */
+  daptaPaid: integer('dapta_paid'),
+  /** Epoch ms that verdict was written (0028). */
+  daptaPaidCheckedAt: integer('dapta_paid_checked_at'),
   /** First-touch acquisition context (TEXT JSON, see 0010). Written once by `claimAccountAttribution`. */
   attribution: text('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */

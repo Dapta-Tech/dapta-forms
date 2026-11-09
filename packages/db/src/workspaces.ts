@@ -37,6 +37,14 @@ export interface ProjectedMembership {
    * rosters and counts, and are not pruned by a later membership projection.
    */
   accessGrant?: AccessGrant | null;
+  /**
+   * Whether the workspace's owning upstream account pays for Dapta AI, as the
+   * identity service reported it on this read (see `paidVerdictOf` in the
+   * API). Written onto the account with the time of the read; `undefined` or
+   * null (the read carried no verdict, an older identity service) leaves the
+   * stored verdict exactly as it was.
+   */
+  paid?: boolean | null;
 }
 
 /** The identity being projected — always the authenticated principal, never the request. */
@@ -354,6 +362,14 @@ export async function projectMemberships(
             synced_at = ${now}
           WHERE id = ${account.id}`,
     );
+    // The paid verdict, only when this read carried one: a workspace the
+    // identity service said nothing about keeps the verdict it had.
+    if (typeof m.paid === 'boolean') {
+      await db.run(
+        sql`UPDATE account SET dapta_paid = ${m.paid ? 1 : 0}, dapta_paid_checked_at = ${now}
+            WHERE id = ${account.id}`,
+      );
+    }
 
     const existing = await db.get<{ id: string; status: string }>(
       sql`SELECT id, status FROM member WHERE account_id = ${account.id} AND external_id = ${identity.externalId} LIMIT 1`,
@@ -486,7 +502,7 @@ export async function projectMemberships(
 export async function grantStaffAccess(
   db: Db,
   identity: ProjectedIdentity,
-  workspace: { workspaceId: string; workspaceName: string; iamAccountId: string | null },
+  workspace: { workspaceId: string; workspaceName: string; iamAccountId: string | null; paid?: boolean | null },
   opts: { now?: number } = {},
 ): Promise<{ accountId: string; memberId: string }> {
   await projectMemberships(
@@ -501,6 +517,7 @@ export async function grantStaffAccess(
         role: 'admin',
         active: true,
         accessGrant: 'staff',
+        paid: workspace.paid,
       },
     ],
     { inheritOnboarding: false, pruneMissing: false, now: opts.now },

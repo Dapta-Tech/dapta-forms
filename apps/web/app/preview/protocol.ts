@@ -77,6 +77,11 @@ export interface PreviewConfigMessage {
    * the requested screen rather than puppeting its internal state.
    */
   screen?: number | 'cover';
+  /**
+   * The workspace's "Made with dForms" setting (`/v1/me` `attribution.showing`),
+   * so the preview shows exactly what the public form will. Absent = true.
+   */
+  showAttribution?: boolean;
 }
 
 export type PreviewMessage = PreviewReadyMessage | PreviewPingMessage | PreviewConfigMessage;
@@ -137,6 +142,8 @@ export function readPreviewMessage(
       locale: body.locale === 'es' ? 'es' : 'en',
       layout: body.layout === 'vertical' ? 'vertical' : 'slides',
       screen,
+      // Only an explicit false hides it: anything else is today's default.
+      showAttribution: body.showAttribution !== false,
     };
   }
 

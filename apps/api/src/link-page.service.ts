@@ -30,6 +30,7 @@ import {
   type PublicLinkPage,
 } from '@quill/types';
 import { AnalyticsEffects } from './analytics-effects';
+import { AttributionService } from './attribution.service';
 import type { ServiceError } from './http';
 import { DB } from './tokens';
 
@@ -156,6 +157,9 @@ export class LinkPageService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Optional() @Inject(AnalyticsEffects) private readonly analytics?: AnalyticsEffects,
+    // The workspace's "Made with dForms" attribution. Optional and LAST so a
+    // positional construction keeps working; absent, every page carries it.
+    @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
   ) {}
 
   /**
@@ -170,9 +174,10 @@ export class LinkPageService {
     if (!found?.page) return null;
     const page = parseStoredLinkPage(found.page.config);
     if (!page?.enabled) return null;
-    const [forms, kit] = await Promise.all([
+    const [forms, kit, showAttribution] = await Promise.all([
       listLinkPageForms(this.db, found.accountId),
       getAccountBranding(this.db, found.accountId),
+      this.attribution ? this.attribution.showFor(found.accountId) : true,
     ]);
     return {
       ...resolveLinkPage(page, {
@@ -183,6 +188,7 @@ export class LinkPageService {
       }),
       pageSlug: found.page.slug,
       isDefault: found.page.isDefault,
+      showAttribution,
     };
   }
 

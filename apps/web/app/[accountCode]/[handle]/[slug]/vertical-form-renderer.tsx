@@ -189,6 +189,7 @@ export function VerticalFormRenderer({
   captcha,
   visitCapture,
   resume,
+  showAttribution = true,
 }: {
   accountCode: string;
   slug: string;
@@ -215,6 +216,13 @@ export function VerticalFormRenderer({
    * builder preview never does, so a preview neither keeps nor restores one.
    */
   resume?: boolean;
+  /**
+   * Whether this workspace's form carries the "Made with dForms" attribution
+   * (the badge and the thank-you CTA), exactly as the API answered it
+   * (`PublicForm.showAttribution`). Absent = true: today's behavior, and every
+   * legacy-markup snapshot. The deployment rule (`signupHref`) applies on top.
+   */
+  showAttribution?: boolean;
 }) {
   const m = getMessages(locale).renderer;
   // The form's button copy: author overrides, else the stock copy of `locale`.
@@ -863,6 +871,7 @@ export function VerticalFormRenderer({
         accountCode={accountCode}
         cover={chrome}
         design={design}
+        showAttribution={showAttribution}
       />
     );
   }
@@ -1108,7 +1117,7 @@ export function VerticalFormRenderer({
           {/* In-flow page footer, at the end of the column — deliberately NOT
               sticky on this layout: the page reads as a document, and a pinned
               pill would trail the respondent past every question. */}
-          <MadeWithBadge locale={locale} accountCode={accountCode} />
+          <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
         </div>
       </div>
     </div>

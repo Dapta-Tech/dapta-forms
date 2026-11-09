@@ -183,6 +183,34 @@ describe('SubmissionNotifier', () => {
     expect(provider.sent[0]!.text).not.toContain('dforms.ai');
   });
 
+  it('sends no button, in either email, when the workspace hid the attribution', async () => {
+    const provider = new CaptureProvider();
+    let asked = 0;
+    const notifier = new SubmissionNotifier(provider, {
+      cta: () => {
+        asked += 1;
+        return { question: 'Want your own form?', action: 'Create your form, free', href: 'https://dforms.ai/' };
+      },
+    });
+    const base = { accountId: 'acc-1', formName: 'Survey', to: ['owner@example.com'] };
+    await notifier.sendSubmissionConfirmed(
+      { ...base, submissionId: 'h1', respondentEmail: 'lead@example.com' },
+      { growthCta: false },
+    );
+    await notifier.sendSubmissionReceived({ ...base, submissionId: 'h2' }, { growthCta: false });
+    // Not even asked: the workspace's setting wins over the deployment's loop.
+    expect(asked).toBe(0);
+    for (const sent of provider.sent) {
+      expect(sent.html).not.toContain('Create your form, free');
+      expect(sent.html).not.toContain('bgcolor=');
+      expect(sent.text).not.toContain('dforms.ai');
+      expect(sent.text).not.toContain('Want your own form?');
+    }
+    // And `growthCta: true` is the default behaviour.
+    await notifier.sendSubmissionReceived({ ...base, submissionId: 'h3' }, { growthCta: true });
+    expect(provider.sent[2]!.html).toContain('Create your form, free');
+  });
+
   it('heads the email with the dForms wordmark served from the app URL', async () => {
     const provider = new CaptureProvider();
     const notifier = new SubmissionNotifier(provider, { appUrl: 'https://app.example.com/' });

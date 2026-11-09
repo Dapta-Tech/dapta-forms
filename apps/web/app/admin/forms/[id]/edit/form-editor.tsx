@@ -153,6 +153,7 @@ export function FormEditor({
   lockedValues = {},
   uploads,
   captcha,
+  showAttribution = true,
 }: {
   id: string;
   initialName: string;
@@ -184,6 +185,13 @@ export function FormEditor({
    * as before: the API holds nothing where it cannot check anything.
    */
   captcha?: { available: boolean };
+  /**
+   * Whether this workspace's forms carry the "Made with dForms" attribution
+   * (`/v1/me` `attribution.showing`, the API's answer). False disables the
+   * badge size in Design and drops the badge from both previews, so the
+   * builder shows what the public form will. Absent = true.
+   */
+  showAttribution?: boolean;
 }) {
   const bm = getBuilderMessages(locale);
   /** The publish copy, for the badge this component now draws (Publish itself reads its own). */
@@ -1365,6 +1373,7 @@ export function FormEditor({
             onEndRevealChange={setEndReveal}
             onCoverChange={patchCover}
             onBrandingChange={patchBranding}
+            showAttribution={showAttribution}
             m={m}
           >
             <FlowPanel partialNote={bm.partial.designNote} m={m} />
@@ -1449,6 +1458,7 @@ export function FormEditor({
         name={name}
         locale={locale}
         layout={layout}
+        showAttribution={showAttribution}
         m={m.preview}
       />
     </div>

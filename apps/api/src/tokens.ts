@@ -9,6 +9,8 @@ export const RATE_LIMITER = Symbol('RATE_LIMITER');
 export const API_KEY_RATE_LIMITER = Symbol('API_KEY_RATE_LIMITER');
 export const ENTITLEMENTS = Symbol('ENTITLEMENTS');
 export const PREMIUM_MODE = Symbol('PREMIUM_MODE');
+/** `attributionPremiumMode(env)`: whether hiding the attribution needs the paid verdict. */
+export const ATTRIBUTION_MODE = Symbol('ATTRIBUTION_MODE');
 export const ONBOARDING_ENABLED = Symbol('ONBOARDING_ENABLED');
 export const WORKSPACE_PROJECTION = Symbol('WORKSPACE_PROJECTION');
 export const STORAGE = Symbol('STORAGE');

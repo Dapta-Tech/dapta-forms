@@ -146,6 +146,7 @@ export function FormRenderer({
   visitCapture,
   startAt,
   resume,
+  showAttribution = true,
 }: {
   accountCode: string;
   slug: string;
@@ -179,6 +180,13 @@ export function FormRenderer({
    * builder preview never does, so a preview neither keeps nor restores one.
    */
   resume?: boolean;
+  /**
+   * Whether this workspace's form carries the "Made with dForms" attribution
+   * (the badge and the thank-you CTA), exactly as the API answered it
+   * (`PublicForm.showAttribution`). Absent = true: today's behavior, and every
+   * legacy-markup snapshot. The deployment rule (`signupHref`) applies on top.
+   */
+  showAttribution?: boolean;
 }) {
   const m = getMessages(locale).renderer;
   // The form's button copy: author overrides, else the stock copy of `locale`.
@@ -1098,6 +1106,7 @@ export function FormRenderer({
         accountCode={accountCode}
         cover={chrome}
         design={design}
+        showAttribution={showAttribution}
       />
     );
   }
@@ -1219,7 +1228,7 @@ export function FormRenderer({
           </button>
           {/* Under the CTA: every respondent sees the cover, so this is the
               highest-value slot for the attribution and it displaces nothing. */}
-          <MadeWithBadge locale={locale} accountCode={accountCode} />
+          <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
         </div>
       </PhaseShell>
     );
@@ -1231,7 +1240,7 @@ export function FormRenderer({
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1384,7 +1393,7 @@ export function FormRenderer({
         </div>
         {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
         {gate.honeypot}
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1504,7 +1513,7 @@ export function FormRenderer({
         {/* Last child of `.pf__main`, in flow — one DOM position that lands
             correctly on all three bands: it ends the fluid column below 769px
             and rides the centered card group above it. */}
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1608,7 +1617,7 @@ export function FormRenderer({
       {/* See the scheduler screen above: in flow at the end of `.pf__main`,
           never fixed — a floating pill would fight the Continue button and the
           mobile keyboard. */}
-      <MadeWithBadge locale={locale} accountCode={accountCode} />
+      <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
     </PhaseShell>
   );
 }
