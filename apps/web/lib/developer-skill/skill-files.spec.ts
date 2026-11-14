@@ -40,6 +40,12 @@ describe('buildSkillFiles', () => {
     expect(front![1]).toMatch(/Use it whenever/);
   });
 
+  it('documents ending.forwardUtm next to the redirect placeholders', () => {
+    const skill = files.get(`${SKILL_DIR}/SKILL.md`)!;
+    expect(skill).toContain('`ending.forwardUtm: true`');
+    expect(skill).toMatch(/forwardUtm[^\n]*embedded/);
+  });
+
   it('states the rules the agent must follow', () => {
     const skill = files.get(`${SKILL_DIR}/SKILL.md`)!;
     expect(skill).toContain('GET /v1/forms'); // list before retrying a POST

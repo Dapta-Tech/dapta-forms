@@ -1230,6 +1230,9 @@ export interface FormsMessages {
         delay: string;
         delayHint: string;
         delayHelp: string;
+        /** Switch label: append the visitor's `utm_*` params to every redirect. */
+        forwardUtm: string;
+        forwardUtmHint: string;
         /** Shown when score ranges exist — they can override any field here. */
         outcomesNote: string;
       };
@@ -3366,7 +3369,7 @@ export const en: FormsMessages = {
         overrideIsAnyOf: '{field} is any of {bound}',
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
-          'Leave empty to show the thank-you screen. If set, respondents are sent here instead. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out.',
+          'Leave empty to show the thank-you screen. If set, respondents are sent here instead. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out. Keep in mind that an answer placed in the URL, such as an email, ends up in the destination site’s browser history and server logs.',
         messageLabel: 'Message shown for this outcome',
         messageHelp:
           'The thank-you body respondents see for this range. Use [field] to insert an answer. Leave empty to use the default message.',
@@ -3384,12 +3387,15 @@ export const en: FormsMessages = {
         bodyPlaceholder: 'We’ll be in touch shortly.',
         redirect: 'Redirect URL (optional)',
         redirectHint:
-          'Leave empty to show the thank-you screen. If set, everyone is sent here. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out.',
+          'Leave empty to show the thank-you screen. If set, everyone is sent here. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out. Keep in mind that an answer placed in the URL, such as an email, ends up in the destination site’s browser history and server logs.',
         redirectPlaceholder: 'https://…',
         delay: 'Show the thank-you first for (ms)',
         delayHint: '0 redirects immediately.',
         delayHelp:
           'Hold the thank-you screen this long so the respondent can read it, then send them to the URL above. Only applies when a redirect is set.',
+        forwardUtm: 'Forward UTM parameters',
+        forwardUtmHint:
+          'Adds the visitor’s UTM parameters (utm_source, utm_campaign and the rest) to every redirect, including the ones set on a score range, so the destination can attribute the visit. A UTM parameter already in the URL is kept as written.',
         outcomesNote:
           'These are the defaults. A score range in Results that fills the same field wins for the people who land in it; a range that leaves it empty uses what you set here.',
       },
@@ -5956,7 +5962,7 @@ export const es: FormsMessages = {
         overrideIsAnyOf: '{field} es alguno de {bound}',
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
-          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten.',
+          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten. Ten en cuenta que una respuesta incluida en la URL, como un correo electrónico, queda en el historial del navegador y en los registros del servidor del sitio de destino.',
         messageLabel: 'Mensaje mostrado para este resultado',
         messageHelp:
           'El cuerpo de agradecimiento que ven los respondientes en este rango. Usa [campo] para insertar una respuesta. Déjalo vacío para usar el mensaje por defecto.',
@@ -5974,12 +5980,15 @@ export const es: FormsMessages = {
         bodyPlaceholder: 'Te contactamos en breve.',
         redirect: 'URL de redirección (opcional)',
         redirectHint:
-          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige a todos ahí. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten.',
+          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige a todos ahí. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten. Ten en cuenta que una respuesta incluida en la URL, como un correo electrónico, queda en el historial del navegador y en los registros del servidor del sitio de destino.',
         redirectPlaceholder: 'https://…',
         delay: 'Mostrar el agradecimiento antes durante (ms)',
         delayHint: '0 redirige de inmediato.',
         delayHelp:
           'Mantiene la pantalla de agradecimiento este tiempo para que el respondiente la lea y luego lo envía a la URL de arriba. Solo aplica si hay redirección.',
+        forwardUtm: 'Reenviar parámetros UTM',
+        forwardUtmHint:
+          'Agrega los parámetros UTM del visitante (utm_source, utm_campaign y los demás) a cada redirección, incluidas las definidas en un rango de puntaje, para que el destino pueda atribuir la visita. Un parámetro UTM que ya esté en la URL se conserva tal como está escrito.',
         outcomesNote:
           'Estos son los valores por defecto. Un rango de puntaje en Resultados que llene el mismo campo gana para quienes caigan en él; un rango que lo deje vacío usa lo que definas aquí.',
       },

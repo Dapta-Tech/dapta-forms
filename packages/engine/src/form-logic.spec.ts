@@ -53,6 +53,8 @@ import {
   interpolateUrl,
   stripUrlTokens,
   redirectUrlFor,
+  appendUtm,
+  forwardedUtm,
   resolveFormLayout,
   FORM_LAYOUTS,
   type FormConfig,
@@ -1699,6 +1701,150 @@ describe('redirectUrlFor', () => {
     const out = redirectUrlFor(url, answers, true);
     expect(out).toBe('https://example.com/w?src=form');
     for (const value of ['Ana', 'Ruiz', 'ana%40example.com', 'ana@example.com']) expect(out).not.toContain(value);
+  });
+});
+
+describe('appendUtm (forward the visitor UTM params to a redirect)', () => {
+  const utm = { utm_source: 'google', utm_campaign: 'spring sale' };
+
+  it('appends every utm_* entry, encoded, keeping the query and the hash', () => {
+    expect(appendUtm('https://example.com/thanks?ref=form#top', utm)).toBe(
+      'https://example.com/thanks?ref=form&utm_source=google&utm_campaign=spring%20sale#top',
+    );
+  });
+
+  it('leaves the existing query bytes exactly as they were', () => {
+    expect(appendUtm('https://example.com/w?who=Ana%20Ruiz&x=a+b', { utm_source: 'g' })).toBe(
+      'https://example.com/w?who=Ana%20Ruiz&x=a+b&utm_source=g',
+    );
+    expect(appendUtm('https://example.com/w?', { utm_source: 'g' })).toBe(
+      'https://example.com/w?utm_source=g',
+    );
+  });
+
+  it('never overwrites a utm_* key the owner already wrote, case-insensitively', () => {
+    expect(appendUtm('https://example.com/t?UTM_SOURCE=newsletter', utm)).toBe(
+      'https://example.com/t?UTM_SOURCE=newsletter&utm_campaign=spring%20sale',
+    );
+    expect(appendUtm('https://example.com/t?utm_source=newsletter&utm_campaign=x', utm)).toBe(
+      'https://example.com/t?utm_source=newsletter&utm_campaign=x',
+    );
+  });
+
+  it('ignores keys that are not utm_*', () => {
+    const mixed = { gclid: 'abc', email: 'a@b.co', utm_medium: 'cpc' };
+    expect(appendUtm('https://example.com/t', mixed)).toBe('https://example.com/t?utm_medium=cpc');
+  });
+
+  it('returns the url byte-identical when there is nothing to append', () => {
+    const url = 'https://example.com/w?who=Ana%20Ruiz&x=a+b#h';
+    expect(appendUtm(url, {})).toBe(url);
+    expect(appendUtm(url, { gclid: 'abc' })).toBe(url);
+    expect(appendUtm('https://example.com/t?utm_source=a', { utm_source: 'b' })).toBe(
+      'https://example.com/t?utm_source=a',
+    );
+  });
+
+  it('trims a stored url before appending, so no space lands before the ?', () => {
+    expect(appendUtm('https://x.com/p ', { utm_source: 'a' })).toBe('https://x.com/p?utm_source=a');
+  });
+
+  it('puts the UTMs before the # of a hash-routed destination, fragment untouched', () => {
+    expect(appendUtm('https://x.com/#/r?utm_source=a', { utm_source: 'b' })).toBe(
+      'https://x.com/?utm_source=b#/r?utm_source=a',
+    );
+  });
+
+  it('returns an unparseable url unchanged', () => {
+    expect(appendUtm('not a url', utm)).toBe('not a url');
+  });
+});
+
+describe('forwardedUtm', () => {
+  const utm = { utm_source: 'google' };
+  it('hands the UTMs through only when the form forwards them', () => {
+    const on: FormConfig = { version: 1, steps: [], ending: { forwardUtm: true } };
+    const off: FormConfig = { version: 1, steps: [], ending: { forwardUtm: false } };
+    expect(forwardedUtm(on, utm)).toEqual(utm);
+    expect(forwardedUtm(off, utm)).toBeUndefined();
+    expect(forwardedUtm({ version: 1, steps: [] }, utm)).toBeUndefined();
+    expect(forwardedUtm(on, undefined)).toBeUndefined();
+  });
+});
+
+describe('redirectUrlFor with forwarded UTMs', () => {
+  it('appends the UTMs after the tokens are filled or stripped', () => {
+    const url = 'https://example.com/w?who=[name]';
+    const answers = { name: 'Ana' };
+    expect(redirectUrlFor(url, answers, false, { utm_source: 'x' })).toBe(
+      'https://example.com/w?who=Ana&utm_source=x',
+    );
+    expect(redirectUrlFor(url, answers, true, { utm_source: 'x' })).toBe(
+      'https://example.com/w?utm_source=x',
+    );
+  });
+});
+
+describe('resolveEnding: forwardUtm', () => {
+  const utm = { utm_source: 'google', utm_medium: 'cpc' };
+  const base: FormConfig = {
+    version: 1,
+    steps: [],
+    ending: { redirectUrl: 'https://example.com/hi?n=[name]', forwardUtm: true },
+  };
+  const answers = { name: 'Ana' };
+
+  it('appends the UTMs to the form-level redirect when forwardUtm is on', () => {
+    expect(resolveEnding(base, null, answers, { utm }).redirectUrl).toBe(
+      'https://example.com/hi?n=Ana&utm_source=google&utm_medium=cpc',
+    );
+  });
+
+  it('leaves the redirect alone when forwardUtm is off or absent', () => {
+    const off: FormConfig = { ...base, ending: { ...base.ending, forwardUtm: false } };
+    expect(resolveEnding(off, null, answers, { utm }).redirectUrl).toBe(
+      'https://example.com/hi?n=Ana',
+    );
+    const absent: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com/hi' },
+    };
+    expect(resolveEnding(absent, null, answers, { utm }).redirectUrl).toBe(
+      'https://example.com/hi',
+    );
+  });
+
+  it('embedded: strips the answer tokens but still forwards the UTMs', () => {
+    const out = resolveEnding(base, null, answers, { embedded: true, utm }).redirectUrl;
+    expect(out).toBe('https://example.com/hi?utm_source=google&utm_medium=cpc');
+    expect(out).not.toContain('Ana');
+  });
+
+  it('forwards the UTMs to an outcome that brings its own URL', () => {
+    const own: FormOutcome = { id: 'o', label: '', redirectUrl: 'https://example.com/vip' };
+    expect(resolveEnding(base, own, answers, { utm }).redirectUrl).toBe(
+      'https://example.com/vip?utm_source=google&utm_medium=cpc',
+    );
+  });
+
+  it('an empty utm with no answers leaves the template untouched', () => {
+    expect(resolveEnding(base, null, undefined, { utm: {} }).redirectUrl).toBe(
+      'https://example.com/hi?n=[name]',
+    );
+  });
+
+  it('applies even without answers, and is a no-op with no redirect', () => {
+    const plain: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com/a', forwardUtm: true },
+    };
+    expect(resolveEnding(plain, null, undefined, { utm }).redirectUrl).toBe(
+      'https://example.com/a?utm_source=google&utm_medium=cpc',
+    );
+    const none: FormConfig = { version: 1, steps: [], ending: { forwardUtm: true } };
+    expect(resolveEnding(none, null, answers, { utm }).redirectUrl).toBeNull();
   });
 });
 

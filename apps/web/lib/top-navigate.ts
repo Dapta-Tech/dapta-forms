@@ -36,11 +36,12 @@ import { isSafeHttpUrl } from '@quill/engine';
  * NOT embedded — the ordinary case — is left exactly as it was: one
  * `window.location.href`, and nothing is posted to anyone.
  *
- * Security posture of route 1: `redirectUrl` is a static string from the
- * PUBLISHED form config (an embedded form never fills its `[key]` tokens with
- * answers: `isEmbeddedRender` makes the renderers drop them), so the message is
- * exactly as public as the form document any visitor can already fetch. It
- * carries no answers, no keys and
+ * Security posture of route 1: the URL is the PUBLISHED form config's
+ * `redirectUrl` with every answer token dropped (an embedded form never fills
+ * its `[key]` tokens: `isEmbeddedRender` makes the renderers drop them), plus,
+ * when the form turned on `ending.forwardUtm`, the visitor's utm_* params.
+ * Those come from the iframe src or the host page's own URL, so nothing crosses
+ * that the host page does not already hold. It carries no answers, no keys and
  * no identifiers, which is why `targetOrigin: '*'` is acceptable here, the same
  * reasoning the height reporter runs on: the embedding site is by definition
  * unknown to us, and `window.parent` delivers to that host page and nowhere
