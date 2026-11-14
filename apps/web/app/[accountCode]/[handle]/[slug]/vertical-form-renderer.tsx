@@ -33,6 +33,7 @@ import {
   resolveOutcome,
   resolveEnding,
   redirectUrlFor,
+  forwardedUtm,
   computeScore,
   partialSubmitKey,
   revealAfterKey,
@@ -319,6 +320,9 @@ export function VerticalFormRenderer({
   const finalizeRun = useRef(0);
 
   const utmRef = useRef<Record<string, string>>({});
+  // The UTMs this run submitted (form's own, else the landing's), kept for the
+  // redirects that fire after `finalize` (deferred, post-booking).
+  const redirectUtm = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const startTracked = useRef(false);
@@ -583,6 +587,9 @@ export function VerticalFormRenderer({
           }),
         );
       }
+      // The campaign the submit carried, for the redirect below and the ones
+      // that fire later (deferred, post-booking) when the form forwards UTMs.
+      redirectUtm.current = mergeHostUtm(utmRef.current, (await visitReady)?.hostUtm);
       const score = res.score ?? 0;
       const outcome = resolveOutcome(engineConfig, score, finalAnswers);
       if (outcome?.booking) {
@@ -593,6 +600,7 @@ export function VerticalFormRenderer({
       }
       const ending = resolveEnding(engineConfig, outcome, finalAnswers, {
         embedded: isEmbeddedRender(),
+        utm: redirectUtm.current,
       });
       if (ending.redirectUrl) {
         if (isSafeHttpUrl(ending.redirectUrl)) {
@@ -620,6 +628,7 @@ export function VerticalFormRenderer({
     const outcome = resolveOutcome(engineConfig, done.score, answersRef.current);
     const ending = resolveEnding(engineConfig, outcome, answersRef.current, {
       embedded: isEmbeddedRender(),
+      utm: redirectUtm.current,
     });
     if (!ending.redirectUrl || ending.redirectDelayMs <= 0) return;
     if (!isSafeHttpUrl(ending.redirectUrl)) return;
@@ -782,7 +791,12 @@ export function VerticalFormRenderer({
       );
       if (isTransportError(rec)) console.warn('[forms] post-submit booking record failed');
       const redirectUrl = outcome?.redirectUrl
-        ? redirectUrlFor(outcome.redirectUrl, answersRef.current, isEmbeddedRender())
+        ? redirectUrlFor(
+            outcome.redirectUrl,
+            answersRef.current,
+            isEmbeddedRender(),
+            forwardedUtm(engineConfig, redirectUtm.current),
+          )
         : null;
       if (redirectUrl && isSafeHttpUrl(redirectUrl)) {
         navigateTop(redirectUrl);
@@ -790,7 +804,7 @@ export function VerticalFormRenderer({
       }
       setPhase('done'); // `done` state was set in finalize
     },
-    [accountCode, slug, sessionId, booking],
+    [accountCode, slug, sessionId, booking, engineConfig],
   );
 
   /** Submit the whole page: validate the walk, scroll to the first error. */

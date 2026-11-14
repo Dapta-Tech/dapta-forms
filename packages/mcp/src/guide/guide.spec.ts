@@ -27,6 +27,12 @@ describe('formGuide', () => {
     );
   });
 
+  it('tells an agent how to forward the visitor UTMs to every redirect', () => {
+    const logic = formGuide('rules').logic!.join(' ');
+    expect(logic).toContain('ending.forwardUtm true');
+    expect(logic).toMatch(/never overwrites/);
+  });
+
   it('tells an agent how to make a one-page form look like a regular web form', () => {
     const rules = formGuide('rules').rules!;
     expect(rules).toContain(

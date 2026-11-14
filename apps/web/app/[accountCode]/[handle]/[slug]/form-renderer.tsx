@@ -21,6 +21,7 @@ import {
   resolveOutcome,
   resolveEnding,
   redirectUrlFor,
+  forwardedUtm,
   computeScore,
   partialSubmitKey,
   revealAfterKey,
@@ -313,6 +314,9 @@ export function FormRenderer({
   const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
 
   const utmRef = useRef<Record<string, string>>({});
+  // The UTMs this run submitted (form's own, else the landing's), kept for the
+  // redirects that fire after `finalize` (deferred, post-booking).
+  const redirectUtm = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const startSent = useRef(false); // one `start` per session, whichever path emits it
@@ -344,6 +348,7 @@ export function FormRenderer({
     const outcome = resolveOutcome(engineConfig, done.score, answers);
     const ending = resolveEnding(engineConfig, outcome, answers, {
       embedded: isEmbeddedRender(),
+      utm: redirectUtm.current,
     });
     if (!ending.redirectUrl || ending.redirectDelayMs <= 0) return;
     if (!isSafeHttpUrl(ending.redirectUrl)) return;
@@ -679,6 +684,9 @@ export function FormRenderer({
           }),
         );
       }
+      // The campaign the submit carried, for the redirect below and the ones
+      // that fire later (deferred, post-booking) when the form forwards UTMs.
+      redirectUtm.current = mergeHostUtm(utmRef.current, (await visitReady)?.hostUtm);
       const score = res.score ?? 0;
       const outcome = resolveOutcome(engineConfig, score, finalAnswers);
       // An outcome with a booking config shows the inline scheduling screen
@@ -694,6 +702,7 @@ export function FormRenderer({
       // repeating the URL on every range.
       const ending = resolveEnding(engineConfig, outcome, finalAnswers, {
         embedded: isEmbeddedRender(),
+        utm: redirectUtm.current,
       });
       if (ending.redirectUrl) {
         // Runtime XSS guard: only navigate to http(s). A non-http(s) protocol
@@ -740,7 +749,12 @@ export function FormRenderer({
       );
       if (isTransportError(rec)) console.warn('[forms] post-submit booking record failed');
       const redirectUrl = outcome?.redirectUrl
-        ? redirectUrlFor(outcome.redirectUrl, answers, isEmbeddedRender())
+        ? redirectUrlFor(
+            outcome.redirectUrl,
+            answers,
+            isEmbeddedRender(),
+            forwardedUtm(engineConfig, redirectUtm.current),
+          )
         : null;
       if (redirectUrl && isSafeHttpUrl(redirectUrl)) {
         navigateTop(redirectUrl);
@@ -748,7 +762,7 @@ export function FormRenderer({
       }
       setPhase('done'); // `done` state was set in finalize
     },
-    [accountCode, slug, sessionId, booking, answers],
+    [accountCode, slug, sessionId, booking, answers, engineConfig],
   );
 
   // Completes the current screen and moves on. `members` are the questions

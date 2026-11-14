@@ -1119,6 +1119,12 @@ export const formEndingSchema = z.object({
     .nullable()
     .optional(),
   redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
+  /**
+   * Append the visitor's `utm_*` params to every redirect (the ending's, an
+   * outcome's own and the post-booking one). Absent = off. A `utm_*` key the
+   * owner already wrote into the URL is never overwritten.
+   */
+  forwardUtm: z.boolean().optional(),
 });
 export type FormEndingInput = z.infer<typeof formEndingSchema>;
 
