@@ -80,7 +80,7 @@ import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { header } from './auth.provider';
 import { apiKeyFromRequest } from './api-keys';
-import { DcalService, type DcalEventTypesResponse } from './dcal.service';
+import { DcalService, type DcalEventTypesResponse, dcalCreateEventUrl } from './dcal.service';
 import { assertAdmin } from './permissions';
 import { parse } from './validation';
 import { keyDestinationsBodyIssues } from './strict-config';
@@ -618,6 +618,13 @@ export class IntegrationsController {
     serverProvided: IntegrationProvider[];
     unavailable: IntegrationProvider[];
     googlePicker: boolean;
+    /**
+     * dCal is not a connection (the scheduler picker forwards the author's own
+     * session), so it is not in `providers`. The Connections page still shows
+     * it, and this says whether it exists on this deployment and where event
+     * types are created. Null when the deployment has no dCal.
+     */
+    dcal: { createEventUrl: string } | null;
   }> {
     const p = await this.auth.resolveHost(req);
     const providers = await listIntegrationStatuses(this.db, p.accountId);
@@ -641,6 +648,10 @@ export class IntegrationsController {
       // Whether "choose an existing spreadsheet" can be offered. Asked through
       // the same function the picker route asks, for the same reason as above.
       googlePicker: googlePickerConfig(this.env) !== null,
+      dcal: (() => {
+        const createEventUrl = dcalCreateEventUrl(this.env);
+        return createEventUrl ? { createEventUrl } : null;
+      })(),
     };
   }
 

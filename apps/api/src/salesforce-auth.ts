@@ -30,8 +30,16 @@ export interface SalesforceCredentials {
   consumerSecret: string;
 }
 
-/** Give up on a token or probe call that never settles. */
-const SALESFORCE_AUTH_TIMEOUT_MS = 15_000;
+/**
+ * Give up on a token or probe call that never settles.
+ *
+ * Eight seconds, not fifteen: connecting makes two of these calls in a row,
+ * and the browser gives a server action fifteen seconds by default. At fifteen
+ * each, a slow or unreachable org outlived the button, which then reported a
+ * generic "could not connect" instead of the "Salesforce did not answer" this
+ * route returns.
+ */
+const SALESFORCE_AUTH_TIMEOUT_MS = 8_000;
 
 /**
  * Re-mint at least this often. Salesforce's shortest session timeout an admin

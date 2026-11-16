@@ -3,6 +3,18 @@ import type { ServerEnv } from '@quill/config/env';
 import { ENV } from './tokens';
 
 /**
+ * Where an author creates dCal event types, or null when this deployment has
+ * no dCal. The SAME condition `DcalService.configured()` uses, so the
+ * Connections card and the scheduler picker cannot disagree about whether
+ * dCal exists here.
+ */
+export function dcalCreateEventUrl(env: ServerEnv | undefined): string | null {
+  const api = env?.DCAL_API_BASE_URL?.trim();
+  const app = env?.DCAL_APP_URL?.trim().replace(/\/+$/, '');
+  return api && app ? `${app}/admin/event-types` : null;
+}
+
+/**
  * dCal as a scheduling provider, read with the AUTHOR'S OWN SESSION.
  *
  * Every other integration in this app is a pasted credential: the account
