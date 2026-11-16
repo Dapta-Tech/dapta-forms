@@ -320,7 +320,7 @@ export function SchedulerPanel({
         </p>
         <p className="text-xs text-muted-foreground">{s.schedulerDcalHint}</p>
         {providerField}
-        <SchedulerDcalPicker scheduler={scheduler} onChange={onChange} s={s} />
+        <SchedulerDcalPicker scheduler={scheduler} onChange={onChange} fields={fields} s={s} />
         {/* Deliberately no "show event details" switch here: dCal's embed has
             no such parameter, and an option that changes nothing is worse than
             an absent one. The renderer ignores it for dCal for the same

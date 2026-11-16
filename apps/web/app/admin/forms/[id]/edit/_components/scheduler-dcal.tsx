@@ -67,10 +67,13 @@ async function fetchDcalEventTypes(
 export function SchedulerDcalPicker({
   scheduler,
   onChange,
+  fields,
   s,
 }: {
   scheduler: FormScheduler;
   onChange: (next: FormScheduler) => void;
+  /** Answers captured BEFORE this step: the only ones that can prefill it. */
+  fields: { key: string; label: string }[];
   s: Msgs;
 }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -136,6 +139,20 @@ export function SchedulerDcalPicker({
   // Only a real choice is a choice: one workspace needs no switcher, and the
   // empty state must not offer to switch to the workspace they are already in.
   const canSwitch = workspaces.length > 1;
+
+  /** The picked event, which is what defines the fields there are to map. */
+  const selected = eventTypes.find((e) => e.id === scheduler.eventTypeUri);
+  /**
+   * The rows of the autofill table: the three fields dCal's booking form always
+   * asks by itself, then whatever THIS event type adds. `notes` is here and is
+   * not in the Calendly panel, because Calendly's form has no notes field.
+   */
+  const mapRows: { name: string; label: string }[] = [
+    { name: 'name', label: s.schedulerMapName },
+    { name: 'email', label: s.schedulerMapEmail },
+    { name: 'notes', label: s.schedulerMapNotes },
+    ...(selected?.bookingFields ?? []).map((f) => ({ name: f.name, label: f.label || f.name })),
+  ];
 
   const pick = (id: string) => {
     const et = eventTypes.find((e) => e.id === id);
@@ -229,6 +246,40 @@ export function SchedulerDcalPicker({
         <p className="text-xs text-muted-foreground">
           {s.schedulerDcalScopedTo.replace('{email}', connectedAs)}
         </p>
+      ) : null}
+
+      {/* Autofill: which earlier answer feeds each field THIS event's booking
+          form asks for. Keyed by the field's NAME, which is what dCal prefills
+          by, so reordering the host's questions cannot aim a value at the
+          wrong one. Only rendered once an event is picked, because until then
+          there are no fields to map: the three built-ins are the same on every
+          event, but a mapping saved against no event would be a mapping the
+          author cannot see the other half of. */}
+      {selected ? (
+        <div className="flex flex-col gap-2 border-t border-border pt-3" data-testid="scheduler-dcal-map">
+          <p className="text-xs font-medium text-foreground">{s.schedulerMapTitle}</p>
+          <p className="text-xs text-muted-foreground">{s.schedulerMapHint}</p>
+          {mapRows.map((row) => (
+            <Field key={row.name} label={row.label}>
+              <div data-testid={`scheduler-dcal-map-${row.name}`}>
+                <Select
+                  ariaLabel={row.label}
+                  value={scheduler.prefillMap?.[row.name] ?? ''}
+                  options={[
+                    { value: '', label: s.schedulerMapAuto },
+                    ...fields.map((f) => ({ value: f.key, label: f.label })),
+                  ]}
+                  onChange={(key) =>
+                    onChange({
+                      ...scheduler,
+                      prefillMap: { ...scheduler.prefillMap, [row.name]: key || null },
+                    })
+                  }
+                />
+              </div>
+            </Field>
+          ))}
+        </div>
       ) : null}
     </div>
   );

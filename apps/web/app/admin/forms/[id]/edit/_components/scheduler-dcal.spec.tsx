@@ -33,6 +33,12 @@ const EVENT = {
   bookingFields: [{ name: 'company', label: 'Company', type: 'text', required: true }],
 };
 
+/** Answers captured before the scheduler, the only ones a mapping may use. */
+const FIELDS = [
+  { key: 'email_1', label: 'What is your email?' },
+  { key: 'company_1', label: 'Where do you work?' },
+];
+
 const ONE_WORKSPACE = [{ id: 'ws_1', name: 'Acme', current: true }];
 const TWO_WORKSPACES = [
   { id: 'ws_1', name: 'Acme', current: true },
@@ -85,7 +91,9 @@ async function mount(
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root!.render(<SchedulerDcalPicker scheduler={scheduler} onChange={onChange} s={s} />);
+    root!.render(
+      <SchedulerDcalPicker scheduler={scheduler} onChange={onChange} fields={FIELDS} s={s} />,
+    );
   });
   return container;
 }
@@ -200,5 +208,51 @@ describe('the dCal picker when dCal is not there', () => {
         .click(),
     );
     expect(el.querySelector('[data-testid="scheduler-dcal-event-type"]')).not.toBeNull();
+  });
+});
+
+describe('the autofill mapping', () => {
+  it('appears only once an event type is picked', async () => {
+    answer(ready({ eventTypes: [EVENT] }));
+    const none = await mount();
+    expect(none.querySelector('[data-testid="scheduler-dcal-map"]')).toBeNull();
+
+    await act(async () => root?.unmount());
+    container?.remove();
+    answer(ready({ eventTypes: [EVENT] }));
+    const picked = await mount({ provider: 'dcal', eventTypeUri: EVENT.id });
+    expect(picked.querySelector('[data-testid="scheduler-dcal-map"]')).not.toBeNull();
+  });
+
+  it('offers the three fields dCal always asks, then the event’s own', async () => {
+    answer(ready({ eventTypes: [EVENT] }));
+    const el = await mount({ provider: 'dcal', eventTypeUri: EVENT.id });
+    for (const name of ['name', 'email', 'notes', 'company']) {
+      expect(el.querySelector(`[data-testid="scheduler-dcal-map-${name}"]`), name).not.toBeNull();
+    }
+  });
+
+  it('writes the mapping under the field’s NAME, which is what dCal prefills by', async () => {
+    answer(ready({ eventTypes: [EVENT] }));
+    const seen: NonNullable<FormStep['scheduler']>[] = [];
+    const el = await mount({ provider: 'dcal', eventTypeUri: EVENT.id }, (next) => seen.push(next));
+    await act(async () =>
+      el.querySelector<HTMLButtonElement>('[data-testid="scheduler-dcal-map-company"] button')!.click(),
+    );
+    await act(async () => {
+      const option = [...el.querySelectorAll<HTMLElement>('[role="option"] button')].find((o) =>
+        o.textContent?.includes('Where do you work?'),
+      );
+      option!.click();
+    });
+    expect(seen.at(-1)?.prefillMap).toEqual({ company: 'company_1' });
+  });
+
+  it('maps nothing for an event whose form asks nothing extra', async () => {
+    answer(ready({ eventTypes: [{ ...EVENT, bookingFields: [] }] }));
+    const el = await mount({ provider: 'dcal', eventTypeUri: EVENT.id });
+    expect(el.querySelector('[data-testid="scheduler-dcal-map-company"]')).toBeNull();
+    // The three built-ins are still there: every dCal booking form asks them.
+    expect(el.querySelector('[data-testid="scheduler-dcal-map-email"]')).not.toBeNull();
   });
 });

@@ -3,9 +3,66 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormStep } from '@quill/engine';
 import { loadCalendlyScript } from '@/lib/booking-embed';
+import { DcalLogo } from '@/components/ui/dcal-logo';
+import { Button } from '@/components/ui/button';
 import type { BuilderMessages } from './builder-messages';
 
 type EmbedState = 'loading' | 'ready' | 'failed';
+
+/** `embed=1` is what puts dCal's booking page in embed chrome. */
+function dcalPreviewUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    u.searchParams.set('embed', '1');
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Open the event-type picker in the settings panel.
+ *
+ * The canvas card's primary action has to reach a control that is not its
+ * own, and the alternative was a second picker inside the card: two controls
+ * for one value, which is how they come to disagree. Reaching for the panel's
+ * trigger keeps one. A panel that is not on screen simply does nothing, which
+ * is the honest outcome rather than a thrown error.
+ */
+function openSchedulerEventPicker(): void {
+  if (typeof document === 'undefined') return;
+  const trigger = document.querySelector<HTMLButtonElement>(
+    '[data-testid="scheduler-dcal-event-type"] button',
+  );
+  if (!trigger) return;
+  trigger.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  trigger.click();
+}
+
+/**
+ * Where to send an author who has no event type yet, read from the same list
+ * endpoint the picker reads. It is not a build-time constant: dCal's host
+ * differs per environment, and `NEXT_PUBLIC_*` bakes at build. Null until it
+ * answers, and null if it cannot, which simply drops the link.
+ */
+function useDcalCreateEventUrl(enabled: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    fetch('/admin/integrations/dcal/event-types', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { enabled?: boolean; createEventUrl?: string | null } | null) => {
+        if (cancelled || !body?.enabled) return;
+        setUrl(body.createEventUrl ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return url;
+}
 
 /**
  * The REAL Calendly widget on the builder canvas.
@@ -19,6 +76,10 @@ type EmbedState = 'loading' | 'ready' | 'failed';
 export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
   const scheduler = step.scheduler;
   const rawUrl = scheduler?.url?.trim() ?? '';
+  // Absent means Calendly, as it does everywhere else: a step authored before
+  // dCal existed carries no provider and must keep rendering as it did.
+  const provider = scheduler?.provider === 'dcal' ? 'dcal' : 'calendly';
+  const createEventUrl = useDcalCreateEventUrl(provider === 'dcal' && !rawUrl);
   const hideDetails = scheduler?.hideEventDetails === true;
   const name = scheduler?.eventTypeName?.trim();
 
@@ -65,6 +126,95 @@ export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderM
       cancelled = true;
     };
   }, [embedUrl]);
+
+  /**
+   * dCal, already pointed at an event: a plain iframe, the way dCal's own
+   * snippet embeds it and the way the public form will. No script to load.
+   */
+  if (provider === 'dcal' && rawUrl) {
+    return (
+      <div
+        data-testid="canvas-scheduler-preview"
+        className="overflow-hidden rounded-xl border border-border bg-background"
+      >
+        {name ? (
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+            <DcalLogo width={44} className="shrink-0" />
+            <span className="text-sm font-medium">{name}</span>
+          </div>
+        ) : null}
+        <iframe
+          data-testid="canvas-scheduler-dcal"
+          src={dcalPreviewUrl(rawUrl)}
+          title={name ?? 'dCal'}
+          loading="lazy"
+          className="block w-full"
+          style={{ height: 560, border: 0 }}
+        />
+      </div>
+    );
+  }
+
+  /**
+   * dCal with nothing picked yet: the SETUP card.
+   *
+   * This stands where Calendly's "No event type picked yet" line does, and
+   * says more on purpose. It is the first place most authors meet dCal, and a
+   * dashed box reading "nothing configured" tells them neither what it is nor
+   * why they would want it. The two actions are the only two that make sense
+   * here: pick one of the event types they already have, or go make one.
+   */
+  if (provider === 'dcal') {
+    return (
+      <div
+        data-testid="canvas-scheduler-dcal-setup"
+        className="overflow-hidden rounded-xl border border-border bg-background"
+      >
+        <div className="flex flex-col gap-3 px-4 py-5">
+          <DcalLogo width={78} />
+          <div className="flex flex-col gap-1.5">
+            <p className="text-sm font-semibold text-foreground">{m.canvas.schedulerDcalSetupTitle}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {m.canvas.schedulerDcalSetupBody}
+            </p>
+          </div>
+          <ul className="flex flex-col gap-1.5">
+            {[m.canvas.schedulerDcalSetupPointOne, m.canvas.schedulerDcalSetupPointTwo].map((point) => (
+              <li key={point} className="flex items-start gap-2 text-xs text-muted-foreground">
+                <span aria-hidden className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[#3DDC84]" />
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              data-testid="canvas-scheduler-dcal-pick"
+              // The picker itself lives in the settings panel, where every
+              // other question type is configured. This opens it rather than
+              // duplicating it, so there is one control and not two that can
+              // disagree.
+              onClick={() => openSchedulerEventPicker()}
+            >
+              {m.canvas.schedulerDcalSetupPick}
+            </Button>
+            {createEventUrl ? (
+              <a
+                data-testid="canvas-scheduler-dcal-create"
+                href={createEventUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-xs font-medium underline"
+              >
+                {m.canvas.schedulerDcalSetupCreate}
+              </a>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // No event type picked yet — nothing to embed.
   if (!embedUrl) {

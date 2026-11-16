@@ -268,6 +268,18 @@ export interface BuilderMessages {
     revealPlays: string;
     /** Vertical layout: where the reveal actually plays (page-canvas block). */
     revealVerticalNote: string;
+    /**
+     * The canvas card a dCal scheduler shows before an event type is picked.
+     * It stands where `schedulerUnset` does for Calendly, and says what dCal
+     * is rather than only that nothing is configured: this is the first place
+     * most authors will meet it.
+     */
+    schedulerDcalSetupTitle: string;
+    schedulerDcalSetupBody: string;
+    schedulerDcalSetupPointOne: string;
+    schedulerDcalSetupPointTwo: string;
+    schedulerDcalSetupPick: string;
+    schedulerDcalSetupCreate: string;
     /** V6 — the scheduler's live Calendly embed on the canvas. */
     schedulerUnset: string;
     schedulerNote: string;
@@ -347,6 +359,8 @@ export interface BuilderMessages {
     schedulerMapPickFirst: string;
     schedulerMapName: string;
     schedulerMapEmail: string;
+    /** dCal's booking form asks for notes by itself, where Calendly's does not. */
+    schedulerMapNotes: string;
     schedulerMapAuto: string;
     /**
      * dCal, the third provider. It needs no connected credential: the author's
@@ -816,6 +830,13 @@ const en: BuilderMessages = {
     revealSubtitlePlaceholder: 'Add a line of reassurance (optional)',
     revealPlays: 'Plays for {ms} ms, then the form continues on its own.',
     revealVerticalNote: 'Plays once, after Submit, before the result.',
+    schedulerDcalSetupTitle: 'Book the meeting without leaving the form',
+    schedulerDcalSetupBody:
+      'dCal is Dapta\u2019s own scheduler. Pick one of your event types and its booking page runs right here, inside this question.',
+    schedulerDcalSetupPointOne: 'Nothing to connect: your own account already lists your event types.',
+    schedulerDcalSetupPointTwo: 'Their name and email carry over, so nobody types them twice.',
+    schedulerDcalSetupPick: 'Pick an event type',
+    schedulerDcalSetupCreate: 'Create one in dCal',
     schedulerUnset: 'No event type picked yet',
     schedulerNote: 'Respondents pick a time here. Booking answers this question and moves the form on.',
     schedulerLoading: 'Loading the calendar…',
@@ -901,6 +922,7 @@ const en: BuilderMessages = {
     schedulerMapPickFirst: 'Pick an event type to see the fields its booking form asks for.',
     schedulerMapName: 'Name',
     schedulerMapEmail: 'Email',
+    schedulerMapNotes: 'Notes',
     schedulerMapAuto: 'Automatic',
     schedulerAfter: 'After booking',
     schedulerAfterHint: 'What happens once the respondent picks a time.',
@@ -1307,6 +1329,13 @@ const es: BuilderMessages = {
     revealSubtitlePlaceholder: 'Añade una línea que tranquilice (opcional)',
     revealPlays: 'Se muestra {ms} ms y luego el formulario continúa solo.',
     revealVerticalNote: 'Se muestra una vez, después de Enviar y antes del resultado.',
+    schedulerDcalSetupTitle: 'Agenda la reunión sin salir del formulario',
+    schedulerDcalSetupBody:
+      'dCal es el agendador de Dapta. Elige uno de tus tipos de evento y su página de agendamiento corre aquí mismo, dentro de esta pregunta.',
+    schedulerDcalSetupPointOne: 'No hay nada que conectar: tu propia cuenta ya lista tus tipos de evento.',
+    schedulerDcalSetupPointTwo: 'El nombre y el correo viajan solos, así nadie los escribe dos veces.',
+    schedulerDcalSetupPick: 'Elegir un tipo de evento',
+    schedulerDcalSetupCreate: 'Crear uno en dCal',
     schedulerUnset: 'Aún no eliges un tipo de evento',
     schedulerNote: 'Aquí eligen un horario. Agendar responde esta pregunta y avanza el formulario.',
     schedulerLoading: 'Cargando el calendario…',
@@ -1393,6 +1422,7 @@ const es: BuilderMessages = {
       'Elige un tipo de evento para ver los campos que pide su formulario de agendamiento.',
     schedulerMapName: 'Nombre',
     schedulerMapEmail: 'Correo electrónico',
+    schedulerMapNotes: 'Notas',
     schedulerMapAuto: 'Automático',
     schedulerAfter: 'Al agendar',
     schedulerAfterHint: 'Qué pasa cuando la persona elige un horario.',
