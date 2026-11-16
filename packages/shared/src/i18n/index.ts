@@ -1987,6 +1987,7 @@ export interface FormsMessages {
       /** Per-card headings; the shared panel takes them as props. */
       historyWebhookTitle: string;
       historyHubspotTitle: string;
+      historySalesforceTitle: string;
       historyEmailTitle: string;
       historyHelp: string;
       /** How a test delivery differs from a real one, since both are listed. */
@@ -2017,6 +2018,46 @@ export interface FormsMessages {
       /** `{n}` = delivery attempts, shown only past the first. */
       historyAttempts: string;
       historyNoReason: string;
+      salesforce: {
+        title: string;
+        desc: string;
+        /** Shown in place of the mapping when the account has no Salesforce connection. */
+        notConnected: string;
+        connectLink: string;
+        /** Why the org's fields could not be read, by the API's reason. */
+        fieldsRejected: string;
+        fieldsUnavailable: string;
+        refreshFields: string;
+        refreshing: string;
+        /** How a delivery finds the respondent, so nobody expects duplicates. */
+        howItMatches: string;
+        mappingTitle: string;
+        mappingHint: string;
+        questionPlaceholder: string;
+        fieldPlaceholder: string;
+        addMapping: string;
+        remove: string;
+        /** No question feeds Email: the record cannot be found or created. */
+        emailMissing: string;
+        /** A required Lead field nothing feeds, and the value a new Lead gets there. */
+        requiredFallback: string;
+        companyFallback: string;
+        /** Mapped Lead fields that a matched Contact does not have, skipped there. */
+        contactSkips: string;
+        utmTitle: string;
+        utmHint: string;
+        scoreLabel: string;
+        dateLabel: string;
+        dayTimezoneLabel: string;
+        dayTimezoneHint: string;
+        none: string;
+        staticTitle: string;
+        staticHint: string;
+        addStatic: string;
+        valuePlaceholder: string;
+        /** A stored config carries more than one Salesforce destination. */
+        extraStored: string;
+      };
       // Google Sheets: the per-form spreadsheet card.
       gsheetsTitle: string;
       gsheetsDesc: string;
@@ -2091,6 +2132,27 @@ export interface FormsMessages {
        */
       gsheetsConnectNote: string;
       connectWithGoogle: string;
+      salesforceName: string;
+      salesforceDesc: string;
+      /** Salesforce connects with three values, not one token. */
+      salesforceDomainLabel: string;
+      salesforceDomainPlaceholder: string;
+      salesforceKeyLabel: string;
+      salesforceSecretLabel: string;
+      /** What the Salesforce admin has to set up first, as a short checklist. */
+      salesforceSetupTitle: string;
+      salesforceSetupSteps: string[];
+      /** API access is not in every Salesforce edition: the likeliest silent failure. */
+      salesforceEditionNote: string;
+      salesforceFieldsRequired: string;
+      /** Why a connection was refused, one sentence per reason the API returns. */
+      salesforceErrors: {
+        domain_invalid: string;
+        invalid_client: string;
+        no_run_as: string;
+        rejected: string;
+        unreachable: string;
+      };
       /** What the page says when the consent round trip comes back. */
       googleConnected: string;
       googleCancelled: string;
@@ -4333,6 +4395,7 @@ export const en: FormsMessages = {
         'Spam protection is on: contacts are created or updated when a respondent completes the form, not from partial answers.',
       historyWebhookTitle: 'Webhook history',
       historyHubspotTitle: 'HubSpot history',
+      historySalesforceTitle: 'Salesforce history',
       historyEmailTitle: 'Email history',
       historyHelp: 'The last deliveries this form made, newest first. Open one to see what was sent.',
       historyPingNote:
@@ -4355,6 +4418,43 @@ export const en: FormsMessages = {
       historySkipped: 'Skipped',
       historyAttempts: '{n} attempts',
       historyNoReason: 'No reason was recorded.',
+      salesforce: {
+        title: 'Salesforce',
+        desc: 'Send each completed response to Salesforce as a Lead.',
+        notConnected: 'Connect Salesforce on the Connections page to use it here.',
+        connectLink: 'Go to Connections',
+        fieldsRejected: 'Salesforce refused to list its fields. Check that the Run As user can read Leads.',
+        fieldsUnavailable: 'Salesforce did not answer. Try refreshing the fields.',
+        refreshFields: 'Refresh fields',
+        refreshing: 'Refreshing…',
+        howItMatches:
+          'dForms looks the email up first: an existing Contact or Lead with that email is updated, otherwise a new Lead is created.',
+        mappingTitle: 'Questions to Lead fields',
+        mappingHint: 'Pick a question and the Salesforce field it fills. One question can fill several fields.',
+        questionPlaceholder: 'Question…',
+        fieldPlaceholder: 'Salesforce field…',
+        addMapping: 'Add a field',
+        remove: 'Remove',
+        emailMissing: 'Map a question to Email. Without it Salesforce cannot find or create the record.',
+        requiredFallback: '{field} is not mapped. A new Lead gets “{value}” there.',
+        companyFallback:
+          'Company is not mapped. A new Lead gets the company from a work email, or “{value}” for a personal one.',
+        contactSkips:
+          'When the email belongs to a Contact, these fields are skipped because Contact does not have them: {fields}.',
+        utmTitle: 'Campaign (UTM) fields',
+        utmHint: 'Where each UTM parameter of the visit is written.',
+        scoreLabel: 'Score',
+        dateLabel: 'Submission date',
+        dayTimezoneLabel: 'Day in time zone',
+        dayTimezoneHint: 'Which calendar day a date field gets. Blank is UTC.',
+        none: 'Do not send',
+        staticTitle: 'Fixed values',
+        staticHint: 'Written on every record, unless an answer already filled that field.',
+        addStatic: 'Add a fixed value',
+        valuePlaceholder: 'Value…',
+        extraStored:
+          'This form has more than one Salesforce destination. Only the first is shown here, and saving keeps only this one.',
+      },
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
       comingSoon: 'Coming soon',
@@ -4425,6 +4525,32 @@ export const en: FormsMessages = {
       gsheetsConnectNote:
         'Google will ask you to sign in. dForms can only reach the spreadsheets it creates for you and the ones you choose, never the rest of your Drive.',
       connectWithGoogle: 'Continue with Google',
+      salesforceName: 'Salesforce',
+      salesforceDesc: 'Send respondents to Salesforce as Leads, or update them if they already exist, and map questions to fields.',
+      salesforceDomainLabel: 'My Domain',
+      salesforceDomainPlaceholder: 'yourcompany.my.salesforce.com',
+      salesforceKeyLabel: 'Consumer Key',
+      salesforceSecretLabel: 'Consumer Secret',
+      salesforceSetupTitle: 'Before you connect, a Salesforce admin sets this up once:',
+      salesforceSetupSteps: [
+        'In Setup, create an External Client App with OAuth enabled.',
+        'Turn on Client Credentials Flow and choose a Run As user (an integration user is best). dForms writes with that user’s permissions.',
+        'Copy the Consumer Key and Consumer Secret from the app, and your My Domain from Setup → My Domain.',
+      ],
+      salesforceEditionNote:
+        'API access is included in Enterprise, Unlimited, Performance and Developer editions. Professional needs the API add-on.',
+      salesforceFieldsRequired: 'Fill in all three fields.',
+      salesforceErrors: {
+        domain_invalid:
+          'That is not a Salesforce My Domain. Use the address that ends in .my.salesforce.com.',
+        invalid_client:
+          'Salesforce did not accept the Consumer Key or Secret. If you just created the app, wait up to 10 minutes and try again.',
+        no_run_as:
+          'The app has no Run As user. Choose one under Client Credentials Flow in the app’s policies, then try again.',
+        rejected:
+          'Salesforce refused the connection. Check that Client Credentials Flow is on and that your edition has API access.',
+        unreachable: 'Salesforce did not answer. Try again in a moment.',
+      },
       googleConnected: 'Google Sheets is connected.',
       googleCancelled: 'Google Sheets was not connected.',
       googleError: 'Google could not connect your account. Try again.',
@@ -6989,6 +7115,7 @@ export const es: FormsMessages = {
         'La protección contra spam está activa: los contactos se crean o actualizan cuando alguien completa el formulario, no con respuestas parciales.',
       historyWebhookTitle: 'Historial del webhook',
       historyHubspotTitle: 'Historial de HubSpot',
+      historySalesforceTitle: 'Historial de Salesforce',
       historyEmailTitle: 'Historial de correos',
       historyHelp:
         'Las últimas entregas que hizo este formulario, de la más reciente a la más antigua. Abrí una para ver qué se envió.',
@@ -7012,6 +7139,43 @@ export const es: FormsMessages = {
       historySkipped: 'Omitida',
       historyAttempts: '{n} intentos',
       historyNoReason: 'No se registró un motivo.',
+      salesforce: {
+        title: 'Salesforce',
+        desc: 'Envía cada respuesta completa a Salesforce como Lead.',
+        notConnected: 'Conecta Salesforce en la página de Conexiones para usarlo aquí.',
+        connectLink: 'Ir a Conexiones',
+        fieldsRejected: 'Salesforce no quiso listar sus campos. Revisa que el usuario Run As pueda leer Leads.',
+        fieldsUnavailable: 'Salesforce no respondió. Intenta actualizar los campos.',
+        refreshFields: 'Actualizar campos',
+        refreshing: 'Actualizando…',
+        howItMatches:
+          'dForms busca primero el correo: si ya existe un Contact o un Lead con ese correo, lo actualiza; si no, crea un Lead nuevo.',
+        mappingTitle: 'Preguntas a campos del Lead',
+        mappingHint: 'Elige una pregunta y el campo de Salesforce que llena. Una pregunta puede llenar varios campos.',
+        questionPlaceholder: 'Pregunta…',
+        fieldPlaceholder: 'Campo de Salesforce…',
+        addMapping: 'Agregar un campo',
+        remove: 'Quitar',
+        emailMissing: 'Asigna una pregunta a Email. Sin eso, Salesforce no puede encontrar ni crear el registro.',
+        requiredFallback: '{field} no está asignado. Un Lead nuevo recibe “{value}” ahí.',
+        companyFallback:
+          'Company no está asignado. Un Lead nuevo toma la empresa de un correo de trabajo, o “{value}” si el correo es personal.',
+        contactSkips:
+          'Cuando el correo es de un Contact, estos campos se omiten porque Contact no los tiene: {fields}.',
+        utmTitle: 'Campos de campaña (UTM)',
+        utmHint: 'Dónde se escribe cada parámetro UTM de la visita.',
+        scoreLabel: 'Puntaje',
+        dateLabel: 'Fecha de envío',
+        dayTimezoneLabel: 'Día en la zona horaria',
+        dayTimezoneHint: 'Qué día del calendario recibe un campo de fecha. Vacío es UTC.',
+        none: 'No enviar',
+        staticTitle: 'Valores fijos',
+        staticHint: 'Se escriben en cada registro, salvo que una respuesta ya haya llenado ese campo.',
+        addStatic: 'Agregar un valor fijo',
+        valuePlaceholder: 'Valor…',
+        extraStored:
+          'Este formulario tiene más de un destino de Salesforce. Aquí solo se muestra el primero, y al guardar queda solo este.',
+      },
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
       comingSoon: 'Muy pronto',
@@ -7082,6 +7246,32 @@ export const es: FormsMessages = {
       gsheetsConnectNote:
         'Google te va a pedir que entres. dForms solo alcanza las hojas que crea para ti y las que tú eliges, nunca el resto de tu Drive.',
       connectWithGoogle: 'Continuar con Google',
+      salesforceName: 'Salesforce',
+      salesforceDesc: 'Envía las respuestas a Salesforce como Leads, o actualízalos si ya existen, y asigna preguntas a campos.',
+      salesforceDomainLabel: 'My Domain',
+      salesforceDomainPlaceholder: 'tuempresa.my.salesforce.com',
+      salesforceKeyLabel: 'Consumer Key',
+      salesforceSecretLabel: 'Consumer Secret',
+      salesforceSetupTitle: 'Antes de conectar, un admin de Salesforce configura esto una sola vez:',
+      salesforceSetupSteps: [
+        'En Setup, crea una External Client App con OAuth activado.',
+        'Activa Client Credentials Flow y elige un usuario Run As (lo ideal es un usuario de integración). dForms escribe con los permisos de ese usuario.',
+        'Copia el Consumer Key y el Consumer Secret de la app, y tu My Domain desde Setup → My Domain.',
+      ],
+      salesforceEditionNote:
+        'El acceso por API viene en las ediciones Enterprise, Unlimited, Performance y Developer. Professional necesita el add-on de API.',
+      salesforceFieldsRequired: 'Completa los tres campos.',
+      salesforceErrors: {
+        domain_invalid:
+          'Esa no es una dirección My Domain de Salesforce. Usa la que termina en .my.salesforce.com.',
+        invalid_client:
+          'Salesforce no aceptó el Consumer Key o el Secret. Si acabas de crear la app, espera hasta 10 minutos y vuelve a intentar.',
+        no_run_as:
+          'La app no tiene usuario Run As. Elige uno en Client Credentials Flow, en las políticas de la app, y vuelve a intentar.',
+        rejected:
+          'Salesforce rechazó la conexión. Revisa que Client Credentials Flow esté activado y que tu edición tenga acceso por API.',
+        unreachable: 'Salesforce no respondió. Vuelve a intentar en un momento.',
+      },
       googleConnected: 'Google Sheets quedó conectado.',
       googleCancelled: 'Google Sheets no se conectó.',
       googleError: 'Google no pudo conectar tu cuenta. Inténtalo de nuevo.',

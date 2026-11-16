@@ -40,8 +40,10 @@ import {
   formDestinationSchema,
   MAX_SHEET_COLUMNS,
   hasExtraHubspotDestination,
+  hasExtraSalesforceDestination,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
+  ONE_SALESFORCE_DESTINATION_MESSAGE,
   type DestinationEvent,
   type FormDestination,
 } from '@quill/types';
@@ -53,6 +55,14 @@ import {
   type SheetTabDto,
 } from './google-sheets-api';
 import { GoogleSheetsAccessTokens } from './google-sheets-token';
+import {
+  mintSalesforceToken,
+  normalizeSalesforceDomain,
+  readOrgName,
+  SalesforceAccessTokens,
+  salesforceLast4,
+} from './salesforce-auth';
+import { SalesforceFieldsService, type SalesforceFieldsResponse } from './salesforce-fields';
 import {
   exchangeGoogleCode,
   googleAuthorizeUrl,
@@ -427,6 +437,24 @@ function bearerOf(req: ReqLike): string | null {
 /** Connect-body contract: a non-empty pasted provider token. */
 const connectBodySchema = z.object({ token: z.string().min(1) });
 
+/** The three values a Salesforce Client Credentials connection is made of. */
+const salesforceConnectSchema = z.object({
+  domain: z.string().trim().min(1).max(300),
+  consumerKey: z.string().trim().min(1).max(500),
+  consumerSecret: z.string().trim().min(1).max(500),
+});
+
+/**
+ * Why a Salesforce connection was refused, as a code the admin UI turns into a
+ * sentence. Never Salesforce's own error body.
+ */
+export type SalesforceConnectError =
+  | 'domain_invalid'
+  | 'invalid_client'
+  | 'no_run_as'
+  | 'rejected'
+  | 'unreachable';
+
 const headerRowBodySchema = z.object({
   spreadsheetId: z.string().min(1).max(200),
   sheetTitle: z.string().max(200).optional(),
@@ -563,6 +591,13 @@ export class IntegrationsController {
     @Optional()
     @Inject(GoogleSheetsAccessTokens)
     private readonly googleTokens: GoogleSheetsAccessTokens = new GoogleSheetsAccessTokens(),
+    /** Salesforce's token cache and field list. Last, for the positional specs. */
+    @Optional()
+    @Inject(SalesforceAccessTokens)
+    private readonly salesforceTokens: SalesforceAccessTokens = new SalesforceAccessTokens(),
+    @Optional()
+    @Inject(SalesforceFieldsService)
+    private readonly salesforceFields?: SalesforceFieldsService,
   ) {}
 
   /**
@@ -667,6 +702,63 @@ export class IntegrationsController {
         };
       }),
     };
+  }
+
+  /**
+   * Connect a Salesforce org with Client Credentials: the org's My Domain plus
+   * an External Client App's consumer key and secret.
+   *
+   * Declared ahead of `:provider/connect`, which would otherwise capture it and
+   * ask for a single `token`. The three values are proved BEFORE anything is
+   * stored: a token is minted with them and the org's name is read with it, so
+   * a connection the card shows as connected is one a delivery can use.
+   */
+  @Post('salesforce/connect')
+  async connectSalesforce(@Req() req: ReqLike, @Body() body: unknown): Promise<IntegrationStatus> {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const refuse = (reason: SalesforceConnectError): never => {
+      throw new BadRequestException({ error: 'SALESFORCE_REJECTED', reason, message: `salesforce: ${reason}` });
+    };
+    let input: z.infer<typeof salesforceConnectSchema>;
+    try {
+      input = salesforceConnectSchema.parse(body);
+    } catch (err) {
+      if (err instanceof ZodError)
+        throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
+      throw err;
+    }
+    // Checked before anything leaves the server: the secret is posted to this
+    // host, so it must be the org's own My Domain and nothing else.
+    const domain = normalizeSalesforceDomain(input.domain);
+    if (!domain) refuse('domain_invalid');
+    const key = this.env.FORMS_ENCRYPTION_KEY;
+    if (!hasEncryptionKey(key)) {
+      throw new BadRequestException({
+        error: 'ENCRYPTION_UNAVAILABLE',
+        message: 'server encryption key not configured',
+      });
+    }
+    const creds = { domain: domain!, consumerKey: input.consumerKey, consumerSecret: input.consumerSecret };
+    let minted: Awaited<ReturnType<typeof mintSalesforceToken>>;
+    try {
+      minted = await mintSalesforceToken(creds, this.fetchImpl);
+    } catch {
+      return refuse('unreachable');
+    }
+    if (!minted.ok) return refuse(minted.reason);
+    const orgName = await readOrgName(minted, this.fetchImpl);
+    const status = await upsertIntegration(
+      this.db,
+      p.accountId,
+      'salesforce',
+      JSON.stringify(creds),
+      key!,
+      orgName ?? 'Salesforce',
+      salesforceLast4(creds),
+    );
+    this.invalidatePickerCache(p.accountId, 'salesforce');
+    return status;
   }
 
   /**
@@ -995,6 +1087,13 @@ export class IntegrationsController {
       case 'calendly':
         this.calendly.invalidate(accountId);
         return;
+      case 'salesforce':
+        // Both caches: the token (so a disconnect stops deliveries now, not in
+        // ten minutes) and the field list (so a reconnect to ANOTHER org does
+        // not keep offering the previous org's fields).
+        this.salesforceTokens.invalidate(accountId);
+        this.salesforceFields?.invalidate(accountId);
+        return;
       default:
         return;
     }
@@ -1006,6 +1105,25 @@ export class IntegrationsController {
     // Any authenticated host may read the property list (it drives their mapping UI).
     const p = await this.auth.resolveHost(req);
     return this.hubspot.listProperties(p.accountId);
+  }
+
+  /**
+   * The connected org's writable Lead fields (and Contact's field names) for
+   * the Salesforce mapping UI. `refresh=1` re-reads the org, which is what an
+   * author needs after adding a custom field; rate-limited because a cache
+   * bypass with outbound calls behind it can be looped.
+   */
+  @Get('salesforce/fields')
+  @UseGuards(RateLimitGuard)
+  async salesforceFieldList(
+    @Req() req: ReqLike,
+    @Query('refresh') refresh?: string,
+  ): Promise<SalesforceFieldsResponse> {
+    const p = await this.auth.resolveHost(req);
+    if (!this.salesforceFields) return { enabled: false, reason: 'unavailable' };
+    return this.salesforceFields.listFields(p.accountId, {
+      refresh: refresh === '1' || refresh === 'true',
+    });
   }
 
   /** Calendly event-type picker for the scheduler step (per-account token, 5-min cache). */
@@ -1196,6 +1314,12 @@ export class FormDestinationsController {
       throw new BadRequestException({
         error: 'BAD_REQUEST',
         message: ONE_HUBSPOT_DESTINATION_MESSAGE,
+      });
+    }
+    if (hasExtraSalesforceDestination(destinations, stored)) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: ONE_SALESFORCE_DESTINATION_MESSAGE,
       });
     }
     // Bring the HubSpot mirror form in line BEFORE storing, so the guid it

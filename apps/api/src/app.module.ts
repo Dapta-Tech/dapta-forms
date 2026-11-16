@@ -33,6 +33,8 @@ import { AuthService } from './auth.service';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { GoogleSheetsAccessTokens } from './google-sheets-token';
+import { SalesforceAccessTokens } from './salesforce-auth';
+import { SalesforceFieldsService } from './salesforce-fields';
 import { BookingEffects } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
 import { AnalyticsEffects } from './analytics-effects';
@@ -283,6 +285,10 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // and the delivery path mints with it, and a second cache would let a
     // disconnect clear one of them while the other kept writing.
     GoogleSheetsAccessTokens,
+    // One token cache and one field cache app-wide, shared by the controller
+    // and the delivery path so a disconnect clears what both of them read.
+    SalesforceAccessTokens,
+    SalesforceFieldsService,
     // Drains the durable outbox (submission emails + destinations) with
     // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).
     OutboxWorker,

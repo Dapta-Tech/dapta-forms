@@ -223,6 +223,8 @@ function IntegrationsSection({
           googleSheetsConnected={state.data.googleSheetsConnected}
           googleSheetsAvailable={state.data.googleSheetsAvailable}
           googlePickerAvailable={state.data.googlePickerAvailable}
+          salesforceConnected={state.data.salesforceConnected}
+          salesforceFields={state.data.salesforceFields}
           formName={state.data.formName}
           questions={questions}
           readiness={readiness}

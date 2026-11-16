@@ -52,6 +52,7 @@ export const OUTBOX_KINDS = [
   // missing for Google Sheets, behind a cast, and every spreadsheet delivery
   // was rejected by the worker as an unknown kind.
   'google-sheets',
+  'salesforce',
   'booking_sync',
   'analytics',
   'dapta_sync',

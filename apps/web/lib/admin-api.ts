@@ -462,7 +462,15 @@ export interface HubSpotProperty {
 
 /** The property-picker response: disabled (no server token) or the property list. */
 /** What was being delivered. Mirrors `OutboxKind` in @quill/db. */
-export type DeliveryKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync' | 'analytics' | 'dapta_sync';
+export type DeliveryKind =
+  | 'webhook'
+  | 'email'
+  | 'hubspot'
+  | 'google-sheets'
+  | 'salesforce'
+  | 'booking_sync'
+  | 'analytics'
+  | 'dapta_sync';
 
 /**
  * How a delivery ended. `pending` covers both "not attempted yet" and "waiting
@@ -505,7 +513,34 @@ export type HubSpotPropertiesResponse =
  * `authorizeGoogleSheets` and `connectIntegration` refuses it outright (the API
  * answers 400 rather than storing a credential that would die within the hour).
  */
-export type IntegrationProvider = 'hubspot' | 'calendly' | 'google-sheets';
+export type IntegrationProvider = 'hubspot' | 'calendly' | 'google-sheets' | 'salesforce';
+
+/**
+ * Why a Salesforce connection was refused (the API's `reason`), one per thing
+ * the admin has to go and fix. Never Salesforce's own error text.
+ */
+export type SalesforceConnectError =
+  | 'domain_invalid'
+  | 'invalid_client'
+  | 'no_run_as'
+  | 'rejected'
+  | 'unreachable';
+
+/** One writable Lead field of the connected org, for the mapping editor. */
+export interface SalesforceField {
+  /** API name, what a mapping stores. */
+  name: string;
+  label: string;
+  type: string;
+  /** Salesforce refuses a NEW Lead without it. */
+  required: boolean;
+  options?: { value: string; label: string }[];
+}
+
+/** GET /v1/integrations/salesforce/fields. */
+export type SalesforceFieldsResponse =
+  | { enabled: false; reason: 'not_connected' | 'rejected' | 'unavailable' }
+  | { enabled: true; cached: boolean; lead: SalesforceField[]; contact: string[] };
 
 /**
  * One account-level connection's token-free status (GET /v1/integrations). The
@@ -1010,6 +1045,15 @@ export const adminApi = {
   /** Write the header row of the chosen tab, once. Never overwrites a used row 1. */
   googleSheetsHeaderRow: (body: { spreadsheetId: string; sheetTitle?: string; headers: string[] }) =>
     req<GoogleSheetsHeaderRowResponse>('POST', '/v1/integrations/google-sheets/header-row', body),
+  /**
+   * Connect a Salesforce org with Client Credentials. The API proves the three
+   * values before storing them and answers the token-free status.
+   */
+  connectSalesforce: (body: { domain: string; consumerKey: string; consumerSecret: string }) =>
+    req<IntegrationStatus>('POST', '/v1/integrations/salesforce/connect', body),
+  /** The connected org's writable Lead fields; `refresh` re-reads the org. */
+  salesforceFields: (refresh = false) =>
+    req<SalesforceFieldsResponse>('GET', `/v1/integrations/salesforce/fields${refresh ? '?refresh=1' : ''}`),
   /** Disconnect a provider for this account (idempotent → 204). */
   disconnectIntegration: (provider: IntegrationProvider) =>
     req<void>('DELETE', `/v1/integrations/${provider}`),

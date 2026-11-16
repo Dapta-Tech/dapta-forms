@@ -11,6 +11,7 @@ import { useToast } from '@/components/toast';
 import { IntegrationMark } from '@/components/ui/provider-logo';
 import {
   connectIntegrationAction,
+  connectSalesforceAction,
   disconnectIntegrationAction,
   startGoogleSheetsAuthAction,
 } from './actions';
@@ -37,7 +38,7 @@ interface ProviderMeta {
    * browser to the provider's own consent screen and comes back through the
    * API's callback, so there is no token field and nothing to validate here.
    */
-  how: 'paste' | 'oauth';
+  how: 'paste' | 'oauth' | 'salesforce';
   /** Shown above the Connect button on an `oauth` card, so the round trip is no surprise. */
   note?: string;
 }
@@ -87,6 +88,9 @@ export function ConnectionsPanel({
       how: 'oauth',
       note: m.gsheetsConnectNote,
     },
+    // Three values, not one token: Salesforce has no API keys, and Client
+    // Credentials is the one server-to-server credential an admin can paste.
+    { id: 'salesforce', name: m.salesforceName, desc: m.salesforceDesc, how: 'salesforce' },
   ];
 
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus | null>>(() => {
@@ -94,6 +98,7 @@ export function ConnectionsPanel({
       hubspot: null,
       calendly: null,
       'google-sheets': null,
+      salesforce: null,
     };
     for (const s of initialProviders) if (s.connected) map[s.provider] = s;
     return map;
@@ -293,6 +298,16 @@ function ProviderCard({
               {pending ? m.connecting : m.connectWithGoogle}
             </Button>
           </div>
+        ) : meta.how === 'salesforce' && showConnect ? (
+          <SalesforceConnectForm
+            onConnected={(s) => {
+              onStatusChange(s);
+              setShowConnect(false);
+              success(fill(m.connectSuccess, { provider: meta.name }));
+            }}
+            onCancel={() => setShowConnect(false)}
+            m={m}
+          />
         ) : showConnect ? (
           // Connecting stays available while the server supplies a token — an
           // account can override the shared one with its own.
@@ -465,6 +480,115 @@ function ConnectForm({
       <p className="text-xs text-muted-foreground">{m.tokenHelp}</p>
       <div className="mt-1 flex items-center gap-2">
         <Button onClick={onConnect} disabled={pending}>
+          {pending ? m.connecting : m.connect}
+        </Button>
+        <Button variant="ghost" onClick={onCancel} disabled={pending}>
+          {m.cancel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Salesforce's connect form: the org's My Domain and an External Client App's
+ * consumer key and secret, with the one-time setup the admin has to do first.
+ *
+ * The setup steps are ON the card rather than behind a docs link because the
+ * person filling this in is often not the Salesforce admin, and they need to
+ * be able to forward exactly what to ask for. A refusal names which of the
+ * three things to fix, including the ten-minute wait after creating the app,
+ * which otherwise reads as "I did something wrong".
+ */
+function SalesforceConnectForm({
+  onConnected,
+  onCancel,
+  m,
+}: {
+  onConnected: (status: IntegrationStatus) => void;
+  onCancel: () => void;
+  m: Msgs;
+}) {
+  const [domain, setDomain] = useState('');
+  const [consumerKey, setConsumerKey] = useState('');
+  const [consumerSecret, setConsumerSecret] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  function connect() {
+    const input = {
+      domain: domain.trim(),
+      consumerKey: consumerKey.trim(),
+      consumerSecret: consumerSecret.trim(),
+    };
+    if (!input.domain || !input.consumerKey || !input.consumerSecret) {
+      setProblem(m.salesforceFieldsRequired);
+      return;
+    }
+    setProblem(null);
+    start(async () => {
+      const res = await callAction(() => connectSalesforceAction(input));
+      if (res.ok) {
+        setConsumerSecret('');
+        onConnected(res.status);
+      } else {
+        // A transport failure (no answer from our own server) has no reason.
+        const reason = 'reason' in res ? res.reason : undefined;
+        setProblem(reason ? m.salesforceErrors[reason] : m.connectError);
+      }
+    });
+  }
+
+  const field = (
+    id: string,
+    label: string,
+    value: string,
+    set: (v: string) => void,
+    opts: { secret?: boolean; placeholder?: string } = {},
+  ) => (
+    <div className="flex flex-col gap-1">
+      <label className="text-sm font-medium" htmlFor={id}>
+        {label}
+      </label>
+      <Input
+        id={id}
+        type={opts.secret ? 'password' : 'text'}
+        value={value}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder={opts.placeholder}
+        onChange={(e) => set(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') connect();
+        }}
+      />
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3" data-testid="salesforce-connect-form">
+      <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+        <p className="font-medium text-foreground">{m.salesforceSetupTitle}</p>
+        <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+          {m.salesforceSetupSteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <p className="mt-2">{m.salesforceEditionNote}</p>
+      </div>
+      {field('sf-domain', m.salesforceDomainLabel, domain, setDomain, {
+        placeholder: m.salesforceDomainPlaceholder,
+      })}
+      {field('sf-key', m.salesforceKeyLabel, consumerKey, setConsumerKey)}
+      {field('sf-secret', m.salesforceSecretLabel, consumerSecret, setConsumerSecret, { secret: true })}
+      <p className="text-xs text-muted-foreground">{m.tokenHelp}</p>
+      {problem ? (
+        <p role="alert" data-testid="salesforce-connect-problem" className="text-sm text-destructive">
+          {problem}
+        </p>
+      ) : null}
+      <div className="mt-1 flex items-center gap-2">
+        <Button onClick={connect} disabled={pending}>
           {pending ? m.connecting : m.connect}
         </Button>
         <Button variant="ghost" onClick={onCancel} disabled={pending}>

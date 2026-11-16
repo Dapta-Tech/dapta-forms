@@ -84,6 +84,14 @@ const DENIED = new Set([
   // "unavailable". Its two siblings above are allowed because they read a
   // token the account connected once, which a key can use.
   'GET /v1/integrations/dcal/event-types',
+  // Salesforce, both routes. Connecting is the same admin action as
+  // `:provider/connect` (it takes a secret), only with three values instead of
+  // one. The field list is a key-readable integration read in principle, like
+  // HubSpot's property list, but opening it also opens the public API
+  // reference, the developer skill and an MCP tool with its own parity; that
+  // is its own change, so it stays shut until then rather than half-open.
+  'POST /v1/integrations/salesforce/connect',
+  'GET /v1/integrations/salesforce/fields',
   // The Google Sheets consent flow, both halves. A key cannot start one (there
   // is no browser to send anywhere and no human to consent), and cannot finish
   // one either.

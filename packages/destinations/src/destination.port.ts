@@ -15,10 +15,10 @@ import type { SubmissionVisit } from '@quill/types';
  */
 
 /** Which integration actually handled (or would handle) the delivery. */
-export type DestinationDriver = 'log-only' | 'webhook' | 'hubspot' | 'google-sheets';
+export type DestinationDriver = 'log-only' | 'webhook' | 'hubspot' | 'google-sheets' | 'salesforce';
 
 /** The configurable destination kinds a form may declare. */
-export type DestinationType = 'webhook' | 'hubspot' | 'google-sheets';
+export type DestinationType = 'webhook' | 'hubspot' | 'google-sheets' | 'salesforce';
 
 /**
  * The snapshot a destination receives for one submission. Built at ENQUEUE time
