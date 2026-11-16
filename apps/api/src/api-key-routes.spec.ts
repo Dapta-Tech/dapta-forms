@@ -84,6 +84,19 @@ const DENIED = new Set([
   // "unavailable". Its two siblings above are allowed because they read a
   // token the account connected once, which a key can use.
   'GET /v1/integrations/dcal/event-types',
+  // The Google Sheets consent flow, both halves. A key cannot start one (there
+  // is no browser to send anywhere and no human to consent), and cannot finish
+  // one either.
+  //
+  // The callback is additionally the one route on the admin surface that
+  // authenticates nobody: Google redirects a browser to it with no header and no
+  // cookie this host could read, and its signed `state` is what authorizes the
+  // write instead (see `google-oauth.ts`). `isAdminRoute` classes it as admin on
+  // its path alone, so if a blanket auth guard is ever put over the admin
+  // surface, this route has to be excluded from it or connecting Google Sheets
+  // breaks with no error anyone would connect to the cause.
+  'POST /v1/integrations/google-sheets/authorize',
+  'GET /v1/integrations/google-sheets/callback',
 ]);
 
 /** Allowlisted ahead of the route landing in its own change (revert, #60). */

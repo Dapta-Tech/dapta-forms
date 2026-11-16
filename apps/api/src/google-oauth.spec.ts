@@ -1,0 +1,284 @@
+/**
+ * The Google OAuth exchange, and above all its `state`.
+ *
+ * The callback route is unauthenticated by necessity: a browser arriving from
+ * Google carries no session this host can read. The signed state is therefore
+ * the ONLY thing standing between a consent flow and a refresh token written
+ * against somebody else's account, so these specs are written from the
+ * attacker's side first: forge it, tamper with it, re-sign it, replay it late.
+ */
+import { describe, expect, it, vi } from 'vitest';
+import {
+  exchangeGoogleCode,
+  googleAuthorizeUrl,
+  googleOAuthClient,
+  googleStateKey,
+  grantedSheetsAccess,
+  refreshGoogleAccessToken,
+  signGoogleState,
+  verifyGoogleState,
+  GOOGLE_STATE_MAX_LENGTH,
+  GOOGLE_STATE_TTL_MS,
+  type GoogleOAuthClient,
+} from './google-oauth';
+
+const KEY_A = Buffer.alloc(32, 1);
+const KEY_B = Buffer.alloc(32, 2);
+const ACCOUNT = 'acc_8f3c1d2e-0000-4000-8000-000000000001';
+const NOW = 1_763_000_000_000;
+
+const CLIENT: GoogleOAuthClient = {
+  clientId: 'client-id.apps.googleusercontent.com',
+  clientSecret: 'client-secret',
+  redirectUri: 'https://api.example.test/v1/integrations/google-sheets/callback',
+};
+
+/** A token-endpoint answer, as Google shapes it. */
+function tokenResponse(body: Record<string, unknown>, ok = true) {
+  return vi.fn(async () => ({ ok, json: async () => body })) as unknown as typeof fetch;
+}
+
+/** An unverified id_token: only its middle segment is ever read. */
+function idToken(claims: Record<string, unknown>): string {
+  const part = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
+  return `header.${part}.signature`;
+}
+
+describe('googleStateKey', () => {
+  it('derives a key from the 32-byte encryption key', () => {
+    const key = googleStateKey({ FORMS_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64') });
+    expect(key).toHaveLength(32);
+  });
+
+  it('is never the encryption key itself, so one cannot stand in for the other', () => {
+    const raw = Buffer.alloc(32, 7);
+    const key = googleStateKey({ FORMS_ENCRYPTION_KEY: raw.toString('base64') });
+    expect(key!.equals(raw)).toBe(false);
+  });
+
+  it('is null without a key, and null for a key of the wrong size', () => {
+    expect(googleStateKey(undefined)).toBeNull();
+    expect(googleStateKey({})).toBeNull();
+    expect(googleStateKey({ FORMS_ENCRYPTION_KEY: Buffer.alloc(16, 7).toString('base64') })).toBeNull();
+  });
+});
+
+describe('the state round trip', () => {
+  it('carries the account it was minted for', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    expect(verifyGoogleState(state, KEY_A, NOW + 1000)).toEqual({
+      accountId: ACCOUNT,
+      issuedAt: NOW,
+    });
+  });
+
+  it('gives two flows started in the same millisecond different states', () => {
+    const a = signGoogleState(ACCOUNT, KEY_A, NOW);
+    const b = signGoogleState(ACCOUNT, KEY_A, NOW);
+    expect(a).not.toBe(b);
+    expect(verifyGoogleState(a, KEY_A, NOW)?.accountId).toBe(ACCOUNT);
+    expect(verifyGoogleState(b, KEY_A, NOW)?.accountId).toBe(ACCOUNT);
+  });
+});
+
+describe('a state this deployment did not sign is refused', () => {
+  it('refuses a signature from another key', () => {
+    const state = signGoogleState(ACCOUNT, KEY_B, NOW);
+    expect(verifyGoogleState(state, KEY_A, NOW)).toBeNull();
+  });
+
+  it('refuses a swapped account id, which is the whole attack', () => {
+    // The payload is readable by anyone holding the state. Rewriting it to name
+    // another account must not verify, or a stranger's consent would store a
+    // refresh token against that account.
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    const [version, payload, signature] = state.split('.');
+    const fields = Buffer.from(payload!, 'base64url').toString('utf8').split('\n');
+    const forged = Buffer.from(
+      `acc_victim\n${fields[1]}\n${fields[2]}`,
+      'utf8',
+    ).toString('base64url');
+    expect(verifyGoogleState(`${version}.${forged}.${signature}`, KEY_A, NOW)).toBeNull();
+  });
+
+  it('refuses a tampered signature', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    const parts = state.split('.');
+    const flipped = parts[2]!.slice(0, -1) + (parts[2]!.endsWith('A') ? 'B' : 'A');
+    expect(verifyGoogleState(`${parts[0]}.${parts[1]}.${flipped}`, KEY_A, NOW)).toBeNull();
+  });
+
+  it('refuses an unsigned state', () => {
+    const payload = Buffer.from(`${ACCOUNT}\n${NOW}\nnonce`, 'utf8').toString('base64url');
+    expect(verifyGoogleState(`v1.${payload}.`, KEY_A, NOW)).toBeNull();
+    expect(verifyGoogleState(`v1.${payload}`, KEY_A, NOW)).toBeNull();
+  });
+
+  it('refuses a version it does not know, so a v1 signature cannot be reused later', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    expect(verifyGoogleState(state.replace(/^v1\./, 'v2.'), KEY_A, NOW)).toBeNull();
+  });
+
+  it('refuses junk, empty and non-base64url input', () => {
+    for (const bad of ['', 'x', 'v1..', 'v1.@@@.@@@', 'a.b.c.d']) {
+      expect(verifyGoogleState(bad, KEY_A, NOW)).toBeNull();
+    }
+  });
+
+  it('refuses an over-long state before hashing it', () => {
+    const state = `v1.${'A'.repeat(GOOGLE_STATE_MAX_LENGTH)}.${'A'.repeat(43)}`;
+    expect(state.length).toBeGreaterThan(GOOGLE_STATE_MAX_LENGTH);
+    expect(verifyGoogleState(state, KEY_A, NOW)).toBeNull();
+  });
+});
+
+describe('a state is short lived', () => {
+  it('is good inside the window', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    expect(verifyGoogleState(state, KEY_A, NOW + GOOGLE_STATE_TTL_MS - 1)).not.toBeNull();
+  });
+
+  it('expires after it', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    expect(verifyGoogleState(state, KEY_A, NOW + GOOGLE_STATE_TTL_MS + 1)).toBeNull();
+  });
+
+  it('refuses one issued in the future beyond the clock allowance', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW + 10 * 60_000);
+    expect(verifyGoogleState(state, KEY_A, NOW)).toBeNull();
+  });
+});
+
+describe('googleOAuthClient', () => {
+  it('needs all three values', () => {
+    expect(
+      googleOAuthClient({
+        GOOGLE_OAUTH_CLIENT_ID: 'id',
+        GOOGLE_OAUTH_CLIENT_SECRET: 'secret',
+        GOOGLE_OAUTH_REDIRECT_URI: 'https://api.example.test/cb',
+      }),
+    ).toEqual({ clientId: 'id', clientSecret: 'secret', redirectUri: 'https://api.example.test/cb' });
+  });
+
+  it('is null when any one of them is missing or blank', () => {
+    expect(googleOAuthClient(undefined)).toBeNull();
+    expect(googleOAuthClient({ GOOGLE_OAUTH_CLIENT_ID: 'id' })).toBeNull();
+    expect(
+      googleOAuthClient({
+        GOOGLE_OAUTH_CLIENT_ID: 'id',
+        GOOGLE_OAUTH_CLIENT_SECRET: '   ',
+        GOOGLE_OAUTH_REDIRECT_URI: 'https://api.example.test/cb',
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('googleAuthorizeUrl', () => {
+  it('asks for offline access with a forced consent, so a refresh token always comes back', () => {
+    const url = new URL(googleAuthorizeUrl(CLIENT, 'the-state'));
+    expect(url.origin + url.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
+    expect(url.searchParams.get('access_type')).toBe('offline');
+    expect(url.searchParams.get('prompt')).toBe('consent');
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('state')).toBe('the-state');
+    expect(url.searchParams.get('redirect_uri')).toBe(CLIENT.redirectUri);
+    expect(url.searchParams.get('client_id')).toBe(CLIENT.clientId);
+  });
+
+  it('asks for the spreadsheets scope and no Drive scope', () => {
+    const url = new URL(googleAuthorizeUrl(CLIENT, 's'));
+    const scopes = url.searchParams.get('scope')!.split(' ');
+    expect(scopes).toContain('https://www.googleapis.com/auth/spreadsheets');
+    expect(scopes.some((s) => s.includes('/auth/drive'))).toBe(false);
+  });
+
+  it('never puts the client secret in the URL the browser follows', () => {
+    expect(googleAuthorizeUrl(CLIENT, 's')).not.toContain(CLIENT.clientSecret);
+  });
+});
+
+describe('exchangeGoogleCode', () => {
+  it('returns the refresh token, the granted scopes and the connected email', async () => {
+    const fetchImpl = tokenResponse({
+      access_token: 'at',
+      refresh_token: 'rt',
+      expires_in: 3599,
+      scope: 'https://www.googleapis.com/auth/spreadsheets openid email',
+      id_token: idToken({ email: 'ops@example.com' }),
+    });
+    await expect(exchangeGoogleCode(CLIENT, 'the-code', fetchImpl)).resolves.toEqual({
+      refreshToken: 'rt',
+      accessToken: 'at',
+      expiresInSec: 3599,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets', 'openid', 'email'],
+      email: 'ops@example.com',
+    });
+  });
+
+  it('posts the code and the secret as a form, never as a query string', async () => {
+    const fetchImpl = tokenResponse({ access_token: 'at', refresh_token: 'rt' });
+    await exchangeGoogleCode(CLIENT, 'the-code', fetchImpl);
+    const [url, init] = (fetchImpl as unknown as { mock: { calls: [string, RequestInit][] } }).mock
+      .calls[0]!;
+    expect(url).toBe('https://oauth2.googleapis.com/token');
+    expect(url).not.toContain('the-code');
+    const body = new URLSearchParams(String(init.body));
+    expect(body.get('grant_type')).toBe('authorization_code');
+    expect(body.get('code')).toBe('the-code');
+    expect(body.get('client_secret')).toBe(CLIENT.clientSecret);
+  });
+
+  it('is null when Google answers without a refresh token', async () => {
+    // An access token alone would give a connection that stops delivering in an
+    // hour with no way to renew it. Refusing to connect is the better answer.
+    const fetchImpl = tokenResponse({ access_token: 'at', expires_in: 3600 });
+    await expect(exchangeGoogleCode(CLIENT, 'c', fetchImpl)).resolves.toBeNull();
+  });
+
+  it('is null when Google refuses the code', async () => {
+    const fetchImpl = tokenResponse({ error: 'invalid_grant' }, false);
+    await expect(exchangeGoogleCode(CLIENT, 'c', fetchImpl)).resolves.toBeNull();
+  });
+
+  it('leaves the email null when the id_token is absent or unreadable', async () => {
+    for (const id of [undefined, 'not-a-jwt', 'a.@@@.c']) {
+      const fetchImpl = tokenResponse({ access_token: 'at', refresh_token: 'rt', id_token: id });
+      const tokens = await exchangeGoogleCode(CLIENT, 'c', fetchImpl);
+      expect(tokens?.email).toBeNull();
+    }
+  });
+});
+
+describe('refreshGoogleAccessToken', () => {
+  it('trades the refresh token for an access token', async () => {
+    const fetchImpl = tokenResponse({ access_token: 'fresh', expires_in: 3599 });
+    await expect(refreshGoogleAccessToken(CLIENT, 'rt', fetchImpl)).resolves.toEqual({
+      accessToken: 'fresh',
+      expiresInSec: 3599,
+    });
+    const [, init] = (fetchImpl as unknown as { mock: { calls: [string, RequestInit][] } }).mock
+      .calls[0]!;
+    expect(new URLSearchParams(String(init.body)).get('grant_type')).toBe('refresh_token');
+  });
+
+  it('is null when Google refuses, which is a permanent refusal and not a retry', async () => {
+    const fetchImpl = tokenResponse({ error: 'invalid_grant' }, false);
+    await expect(refreshGoogleAccessToken(CLIENT, 'rt', fetchImpl)).resolves.toBeNull();
+  });
+
+  it('propagates a transport failure, which IS the retryable case', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('ECONNRESET');
+    }) as unknown as typeof fetch;
+    await expect(refreshGoogleAccessToken(CLIENT, 'rt', fetchImpl)).rejects.toThrow('ECONNRESET');
+  });
+});
+
+describe('grantedSheetsAccess', () => {
+  it('is true only when the spreadsheets scope actually came back', () => {
+    expect(grantedSheetsAccess(['https://www.googleapis.com/auth/spreadsheets', 'openid'])).toBe(true);
+    // Someone unticked it on the consent screen: Google answers 200 with less.
+    expect(grantedSheetsAccess(['openid', 'email'])).toBe(false);
+    expect(grantedSheetsAccess([])).toBe(false);
+  });
+});

@@ -14,6 +14,7 @@ import {
   Post,
   Put,
   Query,
+  Redirect,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -43,6 +44,16 @@ import {
   type FormDestination,
 } from '@quill/types';
 import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
+import {
+  exchangeGoogleCode,
+  googleAuthorizeUrl,
+  googleOAuthClient,
+  googleStateKey,
+  grantedSheetsAccess,
+  signGoogleState,
+  verifyGoogleState,
+  type GoogleOAuthClient,
+} from './google-oauth';
 import { isInputlessStep, type FormStep } from '@quill/engine';
 import { syncMirrorForm, type MirrorSyncResult } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
@@ -411,9 +422,24 @@ function parseProvider(raw: string): IntegrationProvider {
   if ((integrationProviders as readonly string[]).includes(raw)) return raw as IntegrationProvider;
   throw new BadRequestException({
     error: 'BAD_REQUEST',
-    message: 'unknown integration provider (expected hubspot or calendly)',
+    message: `unknown integration provider (expected one of ${integrationProviders.join(', ')})`,
   });
 }
+
+/**
+ * Providers whose credential is pasted, and which `POST :provider/connect`
+ * therefore serves.
+ *
+ * `google-sheets` is excluded on purpose. Its credential is a refresh token
+ * minted by the consent flow below, so a token "pasted" for it would either be
+ * something the operator cannot have or an access token that stops working
+ * within the hour. Letting it through that route would store a credential that
+ * looks connected on the card and fails on the first delivery.
+ */
+const PASTE_TOKEN_PROVIDERS: ReadonlySet<IntegrationProvider> = new Set([
+  'hubspot',
+  'calendly',
+]);
 
 /**
  * Account-level integration connect/status + the HubSpot property picker. Every
@@ -585,6 +611,12 @@ export class IntegrationsController {
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     const provider = parseProvider(providerParam);
+    if (!PASTE_TOKEN_PROVIDERS.has(provider)) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: `${provider} is connected through its own authorization flow, not a pasted token`,
+      });
+    }
 
     let token: string;
     try {
@@ -622,6 +654,106 @@ export class IntegrationsController {
     return status;
   }
 
+  /**
+   * Start the Google Sheets consent flow: returns the Google URL the browser
+   * should go to. An ordinary admin route, which is the point (see
+   * `google-oauth.ts`): this is where the principal is resolved, and the signed
+   * `state` it mints is what the unauthenticated callback trusts afterwards.
+   *
+   * Returns the URL instead of a 302 so the caller stays in control of the
+   * navigation: the connections panel reaches this through a server action, and
+   * a redirect answer there would be followed by `fetch`, not by the browser.
+   */
+  @Post('google-sheets/authorize')
+  async googleAuthorize(@Req() req: ReqLike): Promise<{ authUrl: string }> {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+
+    const client = googleOAuthClient(this.env);
+    if (!client) {
+      throw new BadRequestException({
+        error: 'INTEGRATION_UNAVAILABLE',
+        message: 'this deployment has no Google OAuth client configured',
+      });
+    }
+    // Same gate as the paste-token providers: without the encryption key there
+    // is nowhere safe to put the refresh token at the end of the round trip, so
+    // refuse before sending anyone to a consent screen.
+    const key = googleStateKey(this.env);
+    if (!hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY) || !key) {
+      throw new BadRequestException({
+        error: 'ENCRYPTION_UNAVAILABLE',
+        message: 'server encryption key not configured',
+      });
+    }
+
+    return { authUrl: googleAuthorizeUrl(client, signGoogleState(p.accountId, key)) };
+  }
+
+  /**
+   * Where Google sends the operator back. Unauthenticated by necessity and safe
+   * by signature: the `state` is the only thing trusted here, and it carries the
+   * account the flow was started for.
+   *
+   * Always ends in a redirect to the connections page, never in a JSON error: a
+   * person is sitting in a browser at this point. The outcome rides as a query
+   * flag the page turns into a toast, and every failure uses the same
+   * `error=google` value, because distinguishing "bad signature" from "expired"
+   * for an anonymous caller only helps someone probing the endpoint.
+   */
+  @Get('google-sheets/callback')
+  // The decorator supplies the default; every return below overrides both the
+  // URL and the status, which is Nest's contract for a dynamic redirect.
+  @Redirect('/', 302)
+  async googleCallback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Query('error') denied: string | undefined,
+  ): Promise<{ url: string; statusCode: number }> {
+    const done = (params: string) => ({
+      url: `${this.connectionsUrl()}?${params}`,
+      statusCode: 302,
+    });
+    // The operator pressed Cancel on the consent screen. Not an error worth a
+    // scary toast, and nothing was stored.
+    if (denied) return done('google=cancelled');
+
+    const client = googleOAuthClient(this.env);
+    const key = googleStateKey(this.env);
+    if (!client || !key || !code || !state) return done('error=google');
+
+    const claims = verifyGoogleState(state, key);
+    if (!claims) return done('error=google');
+
+    const tokens = await this.exchangeGoogle(client, code);
+    if (!tokens) return done('error=google');
+    // A consent screen lets scopes be unticked, and Google answers 200 with
+    // whatever was granted. Storing that would look connected and 403 on the
+    // first delivery, so it is refused with its own flag.
+    if (!grantedSheetsAccess(tokens.scopes)) return done('error=google_scope');
+
+    await upsertIntegration(
+      this.db,
+      claims.accountId,
+      'google-sheets',
+      tokens.refreshToken,
+      this.env.FORMS_ENCRYPTION_KEY!,
+      tokens.email ?? 'Google Sheets',
+    );
+    return done('google=connected');
+  }
+
+  /** The admin page a finished consent flow returns to. */
+  private connectionsUrl(): string {
+    const base = (this.env.PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '');
+    return `${base}/admin/integrations`;
+  }
+
+  /** Seam for the specs: the one network call the callback makes. */
+  private exchangeGoogle(client: GoogleOAuthClient, code: string) {
+    return exchangeGoogleCode(client, code, this.fetchImpl);
+  }
+
   /** Disconnect a provider for this account. Idempotent → 204. */
   @Delete(':provider')
   @HttpCode(204)
@@ -633,10 +765,25 @@ export class IntegrationsController {
     this.invalidatePickerCache(p.accountId, provider);
   }
 
-  /** Drop the one provider's picker cache for this account (see the services). */
+  /**
+   * Drop the one provider's picker cache for this account (see the services).
+   *
+   * A switch for the same reason `validateToken` is one: as an if/else with
+   * Calendly as the tail, connecting Google Sheets would have cleared the
+   * CALENDLY cache and left its own untouched. Providers with no picker cache
+   * fall through to nothing, which is correct rather than accidental.
+   */
   private invalidatePickerCache(accountId: string, provider: IntegrationProvider): void {
-    if (provider === 'hubspot') this.hubspot.invalidate(accountId);
-    else this.calendly.invalidate(accountId);
+    switch (provider) {
+      case 'hubspot':
+        this.hubspot.invalidate(accountId);
+        return;
+      case 'calendly':
+        this.calendly.invalidate(accountId);
+        return;
+      default:
+        return;
+    }
   }
 
   /** HubSpot contact-property picker (per-account token, 5-min cache). */
@@ -692,23 +839,36 @@ export class IntegrationsController {
     token: string,
   ): Promise<{ ok: true; label: string } | { ok: false }> {
     try {
-      if (provider === 'hubspot') {
-        const res = await this.fetchImpl(HUBSPOT_PROPERTIES_URL, {
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        });
-        return res.ok ? { ok: true, label: 'HubSpot' } : { ok: false };
+      // A switch, NOT an if/else with Calendly as the tail. This used to read
+      // "if hubspot, else Calendly", so every provider added after those two
+      // would have been validated against api.calendly.com and rejected with a
+      // message naming the wrong vendor.
+      switch (provider) {
+        case 'hubspot': {
+          const res = await this.fetchImpl(HUBSPOT_PROPERTIES_URL, {
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          });
+          return res.ok ? { ok: true, label: 'HubSpot' } : { ok: false };
+        }
+        case 'calendly': {
+          const res = await this.fetchImpl(CALENDLY_ME_URL, {
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          });
+          if (!res.ok) return { ok: false };
+          const cbody = (await res.json().catch(() => ({}))) as {
+            resource?: { email?: string; name?: string };
+          };
+          const label = cbody.resource?.email?.trim() || cbody.resource?.name?.trim() || 'Calendly';
+          return { ok: true, label };
+        }
+        default:
+          // Reached only if a provider is added to `PASTE_TOKEN_PROVIDERS`
+          // without a probe here. Fail closed: an unvalidated token is never
+          // stored.
+          return { ok: false };
       }
-      const res = await this.fetchImpl(CALENDLY_ME_URL, {
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      });
-      if (!res.ok) return { ok: false };
-      const cbody = (await res.json().catch(() => ({}))) as {
-        resource?: { email?: string; name?: string };
-      };
-      const label = cbody.resource?.email?.trim() || cbody.resource?.name?.trim() || 'Calendly';
-      return { ok: true, label };
     } catch {
-      // Couldn't reach the provider — fail closed (never store an unvalidated token).
+      // Couldn't reach the provider: fail closed (never store an unvalidated token).
       return { ok: false };
     }
   }
