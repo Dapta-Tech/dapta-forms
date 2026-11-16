@@ -121,7 +121,7 @@ export class DestinationEffects {
       // type that was just enqueued (two webhooks are legal — only the last one
       // would ever deliver).
       const kinds = new Set<OutboxKind>(
-        enabled.map(({ destination }) => destination.type as OutboxKind),
+        enabled.map(({ destination }): OutboxKind => destination.type),
       );
       for (const kind of kinds) {
         await deletePendingOutbox(this.db, {
@@ -140,7 +140,11 @@ export class DestinationEffects {
         : undefined;
 
       for (const { destination, index } of enabled) {
-        const kind = destination.type as OutboxKind;
+        // No cast, on purpose: a destination type that is not an outbox kind
+        // must fail to COMPILE. With `as OutboxKind` here, Google Sheets was
+        // enqueued under a kind the worker did not know, and every delivery
+        // was retried five times and marked failed.
+        const kind: OutboxKind = destination.type;
         // Per-destination identity: the config-array index disambiguates two
         // destinations of the same type, so each delivery carries its own
         // idempotency key (receivers de-dup per destination, not per type).

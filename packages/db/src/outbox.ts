@@ -47,6 +47,11 @@ export const OUTBOX_KINDS = [
   'webhook',
   'email',
   'hubspot',
+  // A destination's outbox kind IS its type (`destination-effects` enqueues
+  // `destination.type`), so every destination type must be listed here. It was
+  // missing for Google Sheets, behind a cast, and every spreadsheet delivery
+  // was rejected by the worker as an unknown kind.
+  'google-sheets',
   'booking_sync',
   'analytics',
   'dapta_sync',
