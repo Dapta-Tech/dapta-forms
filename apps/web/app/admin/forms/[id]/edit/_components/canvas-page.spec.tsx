@@ -169,3 +169,19 @@ describe('one-page canvas: a checkbox with no text', () => {
     expect(host!.querySelector('[data-testid="canvas-checkbox-text-empty"]')).toBeNull();
   });
 });
+
+describe('CanvasPage selection frame', () => {
+  // The frame is inset from the block's edges and rounded on its own, so it
+  // never runs into the page's rounded corners or sits on the page's border,
+  // which is how the selected question read as a dark seam along the edge.
+  it('draws the selected frame inset and rounded, not on the block edge', async () => {
+    await renderPage(config());
+    const selected = host!.querySelector('[data-testid="page-block-0"]')!.className;
+    expect(selected).toContain('before:inset-1.5');
+    expect(selected).toContain('before:rounded-[12px]');
+    expect(selected).toContain('before:shadow-[inset_0_0_0_1px_var(--primary-edge)]');
+    expect(selected).not.toMatch(/(^|\s)shadow-\[inset/);
+    const other = host!.querySelector('[data-testid="page-block-1"]')!.className;
+    expect(other).not.toContain('before:shadow-[inset');
+  });
+});
