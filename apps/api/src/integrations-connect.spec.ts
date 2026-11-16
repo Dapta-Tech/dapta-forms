@@ -637,6 +637,21 @@ describe('Google Sheets: creating a spreadsheet and opening the Picker', () => {
     expect(JSON.stringify(out)).not.toContain('client-secret');
   });
 
+  it('hands the Picker token to admins only: a plain member is refused 403 before anything is minted', async () => {
+    const calls: RecordedCall[] = [];
+    build(
+      makeEnv({ ...GOOGLE, GOOGLE_PICKER_API_KEY: 'browser-key' }),
+      recordingFetch(calls, { [TOKEN_URL]: minted }),
+    );
+    await connectGoogle();
+    calls.length = 0;
+    await inviteMember(db, await accountId(), { email: 'plain@acme.test', role: 'member' });
+    await expect(controller.googleSheetsPicker(asEmail('plain@acme.test'))).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(calls).toHaveLength(0);
+  });
+
   it('creates the spreadsheet with the token minted for this account', async () => {
     const calls: RecordedCall[] = [];
     build(
