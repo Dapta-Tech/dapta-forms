@@ -2200,6 +2200,9 @@ export interface FormsMessages {
       encryptionOffBody: string;
       loadError: string;
       perFormNote: string;
+      /** The deployment cannot connect this provider (operator configuration missing). */
+      unavailableTitle: string;
+      unavailableBody: string;
       /** The deployment already supplies this provider's token (env fallback). */
       serverProvided: string;
       serverProvidedTitle: string;
@@ -4614,6 +4617,9 @@ export const en: FormsMessages = {
         'The server needs a FORMS_ENCRYPTION_KEY to store credentials securely. Set it and restart the API to enable connections.',
       loadError: 'Could not load your connections.',
       perFormNote: 'Field mapping is configured per form, from each form’s integrations tab.',
+      unavailableTitle: 'Not available on this deployment',
+      unavailableBody:
+        '{provider} needs configuration only the operator of this deployment can add. It works where that is set up, such as production.',
       serverProvided: 'Provided by the server',
       serverProvidedTitle: 'Already working, using the server’s token',
       serverProvidedBody:
@@ -7350,6 +7356,9 @@ export const es: FormsMessages = {
         'El servidor necesita una FORMS_ENCRYPTION_KEY para guardar credenciales de forma segura. Configúrala y reinicia la API para habilitar las conexiones.',
       loadError: 'No se pudieron cargar tus conexiones.',
       perFormNote: 'La asignación de campos se configura por formulario, desde la pestaña de integraciones de cada uno.',
+      unavailableTitle: 'No disponible en este deployment',
+      unavailableBody:
+        '{provider} necesita una configuración que solo puede agregar quien opera este deployment. Funciona donde está configurado, como en producción.',
       serverProvided: 'La da el servidor',
       serverProvidedTitle: 'Ya funciona, con el token del servidor',
       serverProvidedBody:

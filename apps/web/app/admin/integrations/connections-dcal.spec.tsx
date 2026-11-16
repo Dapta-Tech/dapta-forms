@@ -87,6 +87,12 @@ describe('why a Salesforce connection failed', () => {
     );
   });
 
+  it('names how the call died when Salesforce did not answer', () => {
+    expect(salesforceProblem({ ok: false, reason: 'unreachable', status: 400, cause: 'ECONNRESET' }, m)).toBe(
+      `${m.salesforceErrors.unreachable} (ECONNRESET)`,
+    );
+  });
+
   it("names Salesforce's own refusal", () => {
     expect(salesforceProblem({ ok: false, reason: 'no_run_as', status: 400 }, m)).toBe(m.salesforceErrors.no_run_as);
   });

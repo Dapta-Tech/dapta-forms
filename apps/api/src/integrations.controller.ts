@@ -728,8 +728,13 @@ export class IntegrationsController {
   async connectSalesforce(@Req() req: ReqLike, @Body() body: unknown): Promise<IntegrationStatus> {
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
-    const refuse = (reason: SalesforceConnectError): never => {
-      throw new BadRequestException({ error: 'SALESFORCE_REJECTED', reason, message: `salesforce: ${reason}` });
+    const refuse = (reason: SalesforceConnectError, cause?: string): never => {
+      throw new BadRequestException({
+        error: 'SALESFORCE_REJECTED',
+        reason,
+        ...(cause ? { cause } : {}),
+        message: `salesforce: ${reason}`,
+      });
     };
     let input: z.infer<typeof salesforceConnectSchema>;
     try {
@@ -754,8 +759,12 @@ export class IntegrationsController {
     let minted: Awaited<ReturnType<typeof mintSalesforceToken>>;
     try {
       minted = await mintSalesforceToken(creds, this.fetchImpl);
-    } catch {
-      return refuse('unreachable');
+    } catch (err) {
+      // Which way the call died (DNS, a reset connection, a certificate, a
+      // timeout) is what tells an operator whether egress is blocked, so the
+      // code goes back with the refusal. Only the code: never a message, which
+      // can carry the URL and the body.
+      return refuse('unreachable', networkCause(err));
     }
     if (!minted.ok) return refuse(minted.reason);
     const orgName = await readOrgName(minted, this.fetchImpl);
@@ -1737,4 +1746,19 @@ function sampleAnswers(steps: { key: string; type: string }[]): Record<string, u
     }
   }
   return out;
+}
+
+/**
+ * The code a failed outbound call died with (`ENOTFOUND`, `ECONNRESET`,
+ * `CERT_HAS_EXPIRED`, `TimeoutError`...), or `undefined`. Node's `fetch` puts
+ * the socket error on `cause`. Anything that does not look like a code is
+ * dropped, so no message, URL or body can ride back to the browser.
+ */
+export function networkCause(err: unknown): string | undefined {
+  const e = err as { cause?: { code?: unknown; name?: unknown }; code?: unknown; name?: unknown } | null;
+  const candidates = [e?.cause?.code, e?.code, e?.cause?.name, e?.name];
+  for (const c of candidates) {
+    if (typeof c === 'string' && /^(?:[A-Z][A-Z0-9_]{1,39}|TimeoutError|AbortError)$/.test(c)) return c;
+  }
+  return undefined;
 }
