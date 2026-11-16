@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
-import type { IntegrationProvider, IntegrationStatus } from '@/lib/admin-api';
-import { Button } from '@/components/ui/button';
+import type { IntegrationProvider, IntegrationStatus, SalesforceConnectError } from '@/lib/admin-api';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
 import { IntegrationMark } from '@/components/ui/provider-logo';
+import { DcalLogo } from '@/components/ui/dcal-logo';
 import {
   connectIntegrationAction,
   connectSalesforceAction,
@@ -55,6 +56,7 @@ export function ConnectionsPanel({
   encryptionAvailable,
   serverProvided = [],
   unavailable = [],
+  dcal = null,
   loadError,
   oauthOutcome = null,
   messages: m,
@@ -69,6 +71,8 @@ export function ConnectionsPanel({
    * Their cards are left out, unless the account is already connected.
    */
   unavailable?: IntegrationProvider[];
+  /** dCal on this deployment; null leaves its card out. */
+  dcal?: { createEventUrl: string } | null;
   loadError?: boolean;
   /**
    * How a consent round trip ended, read off the query by the page. Null on an
@@ -145,7 +149,12 @@ export function ConnectionsPanel({
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {visibleProviders.map((meta) => (
+        {visibleProviders.map((meta) => [
+          // dCal sits right above Calendly: it is the scheduler we would
+          // rather people pick, so it comes first where the two are compared.
+          meta.id === 'calendly' && dcal ? (
+            <DcalCard key="dcal" createEventUrl={dcal.createEventUrl} m={m} />
+          ) : null,
           <ProviderCard
             key={meta.id}
             meta={meta}
@@ -155,8 +164,8 @@ export function ConnectionsPanel({
             onStatusChange={(s) => setStatuses((prev) => ({ ...prev, [meta.id]: s }))}
             m={m}
             locale={locale}
-          />
-        ))}
+          />,
+        ])}
       </div>
 
       <p className="text-sm text-muted-foreground">{m.perFormNote}</p>
@@ -527,15 +536,16 @@ function SalesforceConnectForm({
     }
     setProblem(null);
     start(async () => {
-      const res = await callAction(() => connectSalesforceAction(input));
+      // Thirty seconds, not the default fifteen: connecting waits on two calls
+      // to the org, each bounded server-side, and the button must not give up
+      // before the server has had the chance to say why.
+      const res = await callAction(() => connectSalesforceAction(input), { timeoutMs: 30_000 });
       if (res.ok) {
         setConsumerSecret('');
         onConnected(res.status);
-      } else {
-        // A transport failure (no answer from our own server) has no reason.
-        const reason = 'reason' in res ? res.reason : undefined;
-        setProblem(reason ? m.salesforceErrors[reason] : m.connectError);
+        return;
       }
+      setProblem(salesforceProblem(res, m));
     });
   }
 
@@ -597,4 +607,92 @@ function SalesforceConnectForm({
       </div>
     </div>
   );
+}
+
+/**
+ * dCal's card. Not a connection: the scheduler picker forwards the author's
+ * own Dapta session to dCal, so there is no credential to paste and nothing to
+ * disconnect. The card is here for presence, beside the provider it replaces,
+ * and its "Connect" opens the three steps it takes to use it instead.
+ */
+function DcalCard({ createEventUrl, m }: { createEventUrl: string; m: Msgs }) {
+  const [showSteps, setShowSteps] = useState(false);
+  return (
+    <section className="flex flex-col rounded-xl border border-border bg-card p-5" data-testid="dcal-card">
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"
+            aria-hidden
+          >
+            <DcalLogo width={30} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-semibold tracking-tight">{m.dcalName}</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">{m.dcalDesc}</p>
+          </div>
+        </div>
+        <span
+          data-testid="connection-status"
+          data-state="included"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-signal-edge/40 bg-signal/15 px-2.5 py-1 text-xs font-medium text-foreground"
+        >
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-signal-edge" />
+          {m.dcalIncluded}
+        </span>
+      </header>
+      <div className="mt-auto pt-4">
+        {showSteps ? (
+          <div className="flex flex-col gap-3" data-testid="dcal-steps">
+            <p className="text-sm font-medium text-foreground">{m.dcalHowTitle}</p>
+            <ol className="list-decimal space-y-1 pl-4 text-sm text-muted-foreground">
+              {m.dcalSteps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <div className="flex items-center gap-2">
+              {/* A real link, styled as the primary button: it opens dCal in a
+                  new tab, so the author keeps this page and the steps. */}
+              <a
+                href={createEventUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonVariants()}
+                data-testid="dcal-open"
+              >
+                <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
+                {m.dcalOpen}
+              </a>
+              <Button variant="ghost" onClick={() => setShowSteps(false)}>
+                {m.dcalHide}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button onClick={() => setShowSteps(true)} className="self-start">
+            <i aria-hidden className="pi pi-link" style={{ fontSize: 12 }} />
+            {m.connect}
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The sentence for a refused Salesforce connection. Every path names a cause:
+ * Salesforce's own refusal by reason, a role that may not connect, no answer
+ * in time, and otherwise the API's message beside the generic line, so nobody
+ * is left with "could not connect" and nothing to act on.
+ */
+export function salesforceProblem(
+  res:
+    | { ok: false; transport: true; message: string }
+    | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string },
+  m: Msgs,
+): string {
+  if ('transport' in res) return m.salesforceErrors.timeout;
+  if (res.reason) return m.salesforceErrors[res.reason];
+  if (res.status === 403) return m.salesforceErrors.forbidden;
+  return res.message ? `${m.connectError} (${res.message})` : m.connectError;
 }

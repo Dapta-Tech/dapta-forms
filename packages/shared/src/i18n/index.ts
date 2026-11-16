@@ -2124,6 +2124,18 @@ export interface FormsMessages {
       hubspotDesc: string;
       calendlyName: string;
       calendlyDesc: string;
+      /**
+       * dCal, Dapta's own scheduler. Not a connection: it uses the author's
+       * Dapta sign-in, so its card explains how to use it instead of asking
+       * for a credential.
+       */
+      dcalName: string;
+      dcalDesc: string;
+      dcalIncluded: string;
+      dcalHowTitle: string;
+      dcalSteps: string[];
+      dcalOpen: string;
+      dcalHide: string;
       gsheetsName: string;
       gsheetsDesc: string;
       /**
@@ -2152,6 +2164,10 @@ export interface FormsMessages {
         no_run_as: string;
         rejected: string;
         unreachable: string;
+        /** The button gave up waiting: Salesforce, or the way to it, is slow or blocked. */
+        timeout: string;
+        /** The member's role may not connect integrations. */
+        forbidden: string;
       };
       /** What the page says when the consent round trip comes back. */
       googleConnected: string;
@@ -4520,6 +4536,18 @@ export const en: FormsMessages = {
       hubspotDesc: 'Sync respondents to HubSpot contacts and map questions to contact properties.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Let respondents book meetings from your form outcomes.',
+      dcalName: 'dCal',
+      dcalDesc:
+        'Dapta’s scheduler. Respondents book a meeting inside your form, with what they already answered filled in.',
+      dcalIncluded: 'Included',
+      dcalHowTitle: 'Nothing to connect: dCal uses your Dapta sign-in.',
+      dcalSteps: [
+        'Create your event types in dCal.',
+        'In a form, add a Scheduler question. dCal is already selected.',
+        'Pick the event type, and choose which answers fill in the booking form.',
+      ],
+      dcalOpen: 'Open dCal',
+      dcalHide: 'Hide steps',
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
       gsheetsConnectNote:
@@ -4550,6 +4578,9 @@ export const en: FormsMessages = {
         rejected:
           'Salesforce refused the connection. Check that Client Credentials Flow is on and that your edition has API access.',
         unreachable: 'Salesforce did not answer. Try again in a moment.',
+        timeout:
+          'Salesforce took too long to answer. Try again; if it keeps happening, this server may not be allowed to reach Salesforce.',
+        forbidden: 'Only workspace admins and owners can connect integrations.',
       },
       googleConnected: 'Google Sheets is connected.',
       googleCancelled: 'Google Sheets was not connected.',
@@ -7241,6 +7272,18 @@ export const es: FormsMessages = {
       hubspotDesc: 'Sincroniza respuestas con contactos de HubSpot y asigna preguntas a propiedades de contacto.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Permite reservar reuniones desde los resultados de tu formulario.',
+      dcalName: 'dCal',
+      dcalDesc:
+        'El agendador de Dapta. Las personas agendan una reunión dentro de tu formulario, con lo que ya respondieron prellenado.',
+      dcalIncluded: 'Incluido',
+      dcalHowTitle: 'No hay nada que conectar: dCal usa tu cuenta de Dapta.',
+      dcalSteps: [
+        'Crea tus tipos de evento en dCal.',
+        'En un formulario, agrega una pregunta de tipo Scheduler. dCal ya viene seleccionado.',
+        'Elige el tipo de evento y qué respuestas llenan el formulario de reserva.',
+      ],
+      dcalOpen: 'Abrir dCal',
+      dcalHide: 'Ocultar pasos',
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
       gsheetsConnectNote:
@@ -7271,6 +7314,9 @@ export const es: FormsMessages = {
         rejected:
           'Salesforce rechazó la conexión. Revisa que Client Credentials Flow esté activado y que tu edición tenga acceso por API.',
         unreachable: 'Salesforce no respondió. Vuelve a intentar en un momento.',
+        timeout:
+          'Salesforce tardó demasiado en responder. Vuelve a intentar; si sigue pasando, puede que este servidor no tenga permitido conectarse a Salesforce.',
+        forbidden: 'Solo los admins y owners del workspace pueden conectar integraciones.',
       },
       googleConnected: 'Google Sheets quedó conectado.',
       googleCancelled: 'Google Sheets no se conectó.',

@@ -47,7 +47,10 @@ export async function connectSalesforceAction(input: {
   domain: string;
   consumerKey: string;
   consumerSecret: string;
-}): Promise<{ ok: true; status: IntegrationStatus } | { ok: false; reason?: SalesforceConnectError }> {
+}): Promise<
+  | { ok: true; status: IntegrationStatus }
+  | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string }
+> {
   try {
     const status = await adminApi.connectSalesforce(input);
     revalidatePath('/admin/integrations');
@@ -56,7 +59,15 @@ export async function connectSalesforceAction(input: {
     unstable_rethrow(e);
     if (e instanceof ApiError) {
       const reason = e.body?.reason;
-      return { ok: false, reason: typeof reason === 'string' ? (reason as SalesforceConnectError) : undefined };
+      // Without a reason (a refused role, a malformed body, a server error) the
+      // status and the API's message travel too, so the card can say what
+      // actually happened instead of "could not connect".
+      return {
+        ok: false,
+        reason: typeof reason === 'string' ? (reason as SalesforceConnectError) : undefined,
+        status: e.status,
+        message: e.message,
+      };
     }
     return { ok: false };
   }

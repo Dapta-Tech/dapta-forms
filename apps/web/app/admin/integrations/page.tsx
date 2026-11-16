@@ -76,6 +76,7 @@ export default async function ConnectionsPage({
         encryptionAvailable={data.encryptionAvailable}
         serverProvided={data.serverProvided ?? []}
         unavailable={data.unavailable ?? []}
+        dcal={data.dcal ?? null}
         loadError={loadError}
         oauthOutcome={oauthOutcome}
         messages={c}

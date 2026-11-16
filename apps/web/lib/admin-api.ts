@@ -613,6 +613,12 @@ export interface IntegrationsResponse {
    * offers only "create a new spreadsheet".
    */
   googlePicker?: boolean;
+  /**
+   * dCal on this deployment: where event types are created. Absent or null
+   * when the deployment has no dCal, and then the Connections page leaves its
+   * card out. Not a connection: dCal uses the author's own Dapta sign-in.
+   */
+  dcal?: { createEventUrl: string } | null;
 }
 
 /**
