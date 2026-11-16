@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Inject,
   Injectable,
@@ -14,6 +15,7 @@ import {
   Post,
   Put,
   Query,
+  Redirect,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -36,6 +38,7 @@ import {
 import {
   destinationFiresForPhase,
   formDestinationSchema,
+  MAX_SHEET_COLUMNS,
   hasExtraHubspotDestination,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
@@ -43,6 +46,24 @@ import {
   type FormDestination,
 } from '@quill/types';
 import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
+import {
+  createSpreadsheet,
+  listSheetTabs,
+  writeHeaderRow,
+  type SheetTabDto,
+} from './google-sheets-api';
+import { GoogleSheetsAccessTokens } from './google-sheets-token';
+import {
+  exchangeGoogleCode,
+  googleAuthorizeUrl,
+  googleOAuthClient,
+  googlePickerConfig,
+  googleStateKey,
+  grantedSheetsAccess,
+  signGoogleState,
+  verifyGoogleState,
+  type GoogleOAuthClient,
+} from './google-oauth';
 import { isInputlessStep, type FormStep } from '@quill/engine';
 import { syncMirrorForm, type MirrorSyncResult } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
@@ -406,14 +427,68 @@ function bearerOf(req: ReqLike): string | null {
 /** Connect-body contract: a non-empty pasted provider token. */
 const connectBodySchema = z.object({ token: z.string().min(1) });
 
+const headerRowBodySchema = z.object({
+  spreadsheetId: z.string().min(1).max(200),
+  sheetTitle: z.string().max(200).optional(),
+  headers: z.array(z.string().max(200)).min(1).max(MAX_SHEET_COLUMNS),
+});
+
+const createSpreadsheetBodySchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  sheetTitle: z.string().trim().min(1).max(100),
+  headers: z.array(z.string().max(200)).max(MAX_SHEET_COLUMNS).default([]),
+});
+
+/** A spreadsheet created for a form, or why it could not be. */
+export type GoogleSheetsCreateResponse =
+  | { ok: true; spreadsheetId: string; spreadsheetTitle: string; sheetTitle: string; gid: number }
+  | { ok: false; reason: 'not_connected' | 'forbidden' | 'unavailable' };
+
+/**
+ * What the browser needs to open Google's Picker.
+ *
+ * `accessToken` is the one credential in this API that is handed to a browser.
+ * The Picker cannot run without it, and what it can reach is bounded by the
+ * `drive.file` scope: the files this app created or was handed, for an hour.
+ */
+export type GoogleSheetsPickerResponse =
+  | { enabled: true; accessToken: string; apiKey: string; appId: string }
+  | { enabled: false; reason: 'not_connected' | 'unavailable' };
+
+/** The tab picker's answer: the spreadsheet's tabs, or why there are none to show. */
+export type GoogleSheetsTabsResponse =
+  | { enabled: true; spreadsheetTitle: string; tabs: SheetTabDto[] }
+  | { enabled: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/** What pressing "write the header row" did. */
+export type GoogleSheetsHeaderRowResponse =
+  | { ok: true; written: true }
+  | { ok: true; written: false; reason: 'not_empty' }
+  | { ok: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
 /** Narrow a path param to a known provider, or 400 (never echoes the raw input). */
 function parseProvider(raw: string): IntegrationProvider {
   if ((integrationProviders as readonly string[]).includes(raw)) return raw as IntegrationProvider;
   throw new BadRequestException({
     error: 'BAD_REQUEST',
-    message: 'unknown integration provider (expected hubspot or calendly)',
+    message: `unknown integration provider (expected one of ${integrationProviders.join(', ')})`,
   });
 }
+
+/**
+ * Providers whose credential is pasted, and which `POST :provider/connect`
+ * therefore serves.
+ *
+ * `google-sheets` is excluded on purpose. Its credential is a refresh token
+ * minted by the consent flow below, so a token "pasted" for it would either be
+ * something the operator cannot have or an access token that stops working
+ * within the hour. Letting it through that route would store a credential that
+ * looks connected on the card and fails on the first delivery.
+ */
+const PASTE_TOKEN_PROVIDERS: ReadonlySet<IntegrationProvider> = new Set([
+  'hubspot',
+  'calendly',
+]);
 
 /**
  * Account-level integration connect/status + the HubSpot property picker. Every
@@ -470,13 +545,24 @@ export class IntegrationsController {
     @Inject(CalendlyEventTypesService) private readonly calendly: CalendlyEventTypesService,
     @Inject(DB) private readonly db: Db,
     @Inject(ENV) private readonly env: ServerEnv,
-    // Only to say whether a form's partials are held on THIS deployment. Last,
-    // and optional: specs build this controller positionally.
+    // Only to say whether a form's partials are held on THIS deployment.
+    // Optional: specs build this controller positionally.
     @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
     // After `captcha` and optional for the same reason stated there: the specs
     // build this controller positionally, so a new required parameter in the
     // middle would silently shift every one of them.
     @Optional() @Inject(DcalService) private readonly dcal?: DcalService,
+    /**
+     * The account's Google access token, shared with the delivery path so a
+     * disconnect clears the one cache both of them read.
+     *
+     * LAST, and after `captcha`, for the same reason `captcha` is late: the
+     * specs construct this controller positionally, so a parameter inserted
+     * above would silently shift what each of them receives.
+     */
+    @Optional()
+    @Inject(GoogleSheetsAccessTokens)
+    private readonly googleTokens: GoogleSheetsAccessTokens = new GoogleSheetsAccessTokens(),
   ) {}
 
   /**
@@ -495,6 +581,8 @@ export class IntegrationsController {
     encryptionAvailable: boolean;
     providers: IntegrationStatus[];
     serverProvided: IntegrationProvider[];
+    unavailable: IntegrationProvider[];
+    googlePicker: boolean;
   }> {
     const p = await this.auth.resolveHost(req);
     const providers = await listIntegrationStatuses(this.db, p.accountId);
@@ -503,10 +591,21 @@ export class IntegrationsController {
     const serverProvided: IntegrationProvider[] = [];
     if (usable(this.env.HUBSPOT_PRIVATE_APP_TOKEN)) serverProvided.push('hubspot');
     if (usable(this.env.CALENDLY_API_TOKEN)) serverProvided.push('calendly');
+    // Providers this DEPLOYMENT cannot connect at all. Google Sheets needs an
+    // OAuth client the operator registers with Google, and without one the
+    // authorize route can only refuse, so the page must not offer the card.
+    // Asked through the same `googleOAuthClient` the authorize route asks, so
+    // the list and the button cannot disagree about it.
+    const unavailable: IntegrationProvider[] = [];
+    if (!googleOAuthClient(this.env)) unavailable.push('google-sheets');
     return {
       encryptionAvailable: hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY),
       providers,
       serverProvided,
+      unavailable,
+      // Whether "choose an existing spreadsheet" can be offered. Asked through
+      // the same function the picker route asks, for the same reason as above.
+      googlePicker: googlePickerConfig(this.env) !== null,
     };
   }
 
@@ -585,6 +684,12 @@ export class IntegrationsController {
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     const provider = parseProvider(providerParam);
+    if (!PASTE_TOKEN_PROVIDERS.has(provider)) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: `${provider} is connected through its own authorization flow, not a pasted token`,
+      });
+    }
 
     let token: string;
     try {
@@ -622,6 +727,238 @@ export class IntegrationsController {
     return status;
   }
 
+  /**
+   * Start the Google Sheets consent flow: returns the Google URL the browser
+   * should go to. An ordinary admin route, which is the point (see
+   * `google-oauth.ts`): this is where the principal is resolved, and the signed
+   * `state` it mints is what the unauthenticated callback trusts afterwards.
+   *
+   * Returns the URL instead of a 302 so the caller stays in control of the
+   * navigation: the connections panel reaches this through a server action, and
+   * a redirect answer there would be followed by `fetch`, not by the browser.
+   */
+  @Post('google-sheets/authorize')
+  async googleAuthorize(@Req() req: ReqLike): Promise<{ authUrl: string }> {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+
+    const client = googleOAuthClient(this.env);
+    if (!client) {
+      throw new BadRequestException({
+        error: 'INTEGRATION_UNAVAILABLE',
+        message: 'this deployment has no Google OAuth client configured',
+      });
+    }
+    // Same gate as the paste-token providers: without the encryption key there
+    // is nowhere safe to put the refresh token at the end of the round trip, so
+    // refuse before sending anyone to a consent screen.
+    const key = googleStateKey(this.env);
+    if (!hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY) || !key) {
+      throw new BadRequestException({
+        error: 'ENCRYPTION_UNAVAILABLE',
+        message: 'server encryption key not configured',
+      });
+    }
+
+    return { authUrl: googleAuthorizeUrl(client, signGoogleState(p.accountId, key)) };
+  }
+
+  /**
+   * Where Google sends the operator back. Unauthenticated by necessity and safe
+   * by signature: the `state` is the only thing trusted here, and it carries the
+   * account the flow was started for.
+   *
+   * Always ends in a redirect to the connections page, never in a JSON error: a
+   * person is sitting in a browser at this point. The outcome rides as a query
+   * flag the page turns into a toast, and every failure uses the same
+   * `error=google` value, because distinguishing "bad signature" from "expired"
+   * for an anonymous caller only helps someone probing the endpoint.
+   */
+  @Get('google-sheets/callback')
+  // The decorator supplies the default; every return below overrides both the
+  // URL and the status, which is Nest's contract for a dynamic redirect.
+  @Redirect('/', 302)
+  async googleCallback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Query('error') denied: string | undefined,
+  ): Promise<{ url: string; statusCode: number }> {
+    const done = (params: string) => ({
+      url: `${this.connectionsUrl()}?${params}`,
+      statusCode: 302,
+    });
+    // The operator pressed Cancel on the consent screen. Not an error worth a
+    // scary toast, and nothing was stored.
+    if (denied) return done('google=cancelled');
+
+    const client = googleOAuthClient(this.env);
+    const key = googleStateKey(this.env);
+    if (!client || !key || !code || !state) return done('error=google');
+
+    const claims = verifyGoogleState(state, key);
+    if (!claims) return done('error=google');
+
+    const tokens = await this.exchangeGoogle(client, code);
+    if (!tokens) return done('error=google');
+    // A consent screen lets scopes be unticked, and Google answers 200 with
+    // whatever was granted. Storing that would look connected and 403 on the
+    // first delivery, so it is refused with its own flag.
+    if (!grantedSheetsAccess(tokens.scopes)) return done('error=google_scope');
+
+    await upsertIntegration(
+      this.db,
+      claims.accountId,
+      'google-sheets',
+      tokens.refreshToken,
+      this.env.FORMS_ENCRYPTION_KEY!,
+      tokens.email ?? 'Google Sheets',
+    );
+    return done('google=connected');
+  }
+
+  /**
+   * The tabs of one spreadsheet, for the Connect tab's picker.
+   *
+   * Any authenticated host may read it: it drives their own mapping UI, and it
+   * discloses only what the account's own connected Google account can already
+   * open. Not cached, unlike the HubSpot and Calendly pickers: an author opens
+   * this once while choosing a sheet, and a cache would mostly serve a stale
+   * tab list to the one person who just renamed a tab.
+   */
+  @Get('google-sheets/tabs')
+  async googleSheetsTabs(
+    @Req() req: ReqLike,
+    @Query('spreadsheetId') spreadsheetId?: string,
+  ): Promise<GoogleSheetsTabsResponse> {
+    const p = await this.auth.resolveHost(req);
+    const id = spreadsheetId?.trim();
+    if (!id) throw new BadRequestException({ error: 'BAD_REQUEST', message: 'spreadsheetId is required' });
+
+    const accessToken = await this.googleTokens.resolve(this.db, p.accountId, this.env, this.fetchImpl);
+    if (!accessToken) return { enabled: false, reason: 'not_connected' };
+
+    const result = await listSheetTabs(accessToken, id, this.fetchImpl);
+    if (!result.ok) return { enabled: false, reason: result.reason };
+    return {
+      enabled: true,
+      spreadsheetTitle: result.spreadsheetTitle,
+      tabs: result.tabs,
+    };
+  }
+
+  /**
+   * Create a spreadsheet for a form in the connected Google account, header
+   * row included.
+   *
+   * The path that needs nothing but the consent already given, and the default
+   * one: under the `drive.file` scope the app reaches a spreadsheet only if it
+   * created it or the author chose it in Google's Picker.
+   *
+   * Any authenticated host, like the tab list: it writes into the Google
+   * account this workspace connected, the same thing every delivery from a form
+   * they can already edit does.
+   */
+  @Post('google-sheets/spreadsheets')
+  @HttpCode(200)
+  async googleSheetsCreate(
+    @Req() req: ReqLike,
+    @Body() body: unknown,
+  ): Promise<GoogleSheetsCreateResponse> {
+    const p = await this.auth.resolveHost(req);
+    let input: { title: string; sheetTitle: string; headers: string[] };
+    try {
+      input = createSpreadsheetBodySchema.parse(body);
+    } catch (err) {
+      if (err instanceof ZodError)
+        throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
+      throw err;
+    }
+
+    const accessToken = await this.googleTokens.resolve(this.db, p.accountId, this.env, this.fetchImpl);
+    if (!accessToken) return { ok: false, reason: 'not_connected' };
+
+    const result = await createSpreadsheet(accessToken, input, this.fetchImpl);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    return {
+      ok: true,
+      spreadsheetId: result.spreadsheetId,
+      spreadsheetTitle: result.spreadsheetTitle,
+      sheetTitle: result.sheetTitle,
+      gid: result.gid,
+    };
+  }
+
+  /**
+   * What the browser needs to open Google's Picker on this account's Drive.
+   *
+   * Choosing a file in the Picker is what grants this app access to it, so the
+   * Picker is the only way an EXISTING spreadsheet reaches a form. It runs in
+   * the browser, which is why this route hands out an access token: see
+   * `GoogleSheetsPickerResponse` for what that token can and cannot reach.
+   *
+   * Never cached by anything in between: the body is a credential.
+   */
+  @Get('google-sheets/picker')
+  @Header('Cache-Control', 'no-store')
+  async googleSheetsPicker(@Req() req: ReqLike): Promise<GoogleSheetsPickerResponse> {
+    const p = await this.auth.resolveHost(req);
+    const config = googlePickerConfig(this.env);
+    if (!config) return { enabled: false, reason: 'unavailable' };
+
+    const accessToken = await this.googleTokens.resolve(this.db, p.accountId, this.env, this.fetchImpl);
+    if (!accessToken) return { enabled: false, reason: 'not_connected' };
+    return { enabled: true, accessToken, apiKey: config.apiKey, appId: config.appId };
+  }
+
+  /**
+   * Write the header row of the chosen tab, once.
+   *
+   * An author-pressed button rather than part of a delivery: it READS before it
+   * writes, and a delivery that read the sheet first would double what every
+   * submission costs against a 60-a-minute quota. Refuses to overwrite a row 1
+   * that already holds anything, because a spreadsheet does not remember what
+   * used to be in a cell.
+   */
+  @Post('google-sheets/header-row')
+  async googleSheetsHeaderRow(
+    @Req() req: ReqLike,
+    @Body() body: unknown,
+  ): Promise<GoogleSheetsHeaderRowResponse> {
+    const p = await this.auth.resolveHost(req);
+    let input: { spreadsheetId: string; sheetTitle?: string; headers: string[] };
+    try {
+      input = headerRowBodySchema.parse(body);
+    } catch (err) {
+      if (err instanceof ZodError)
+        throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
+      throw err;
+    }
+
+    const accessToken = await this.googleTokens.resolve(this.db, p.accountId, this.env, this.fetchImpl);
+    if (!accessToken) return { ok: false, reason: 'not_connected' };
+
+    const result = await writeHeaderRow(
+      accessToken,
+      input.spreadsheetId,
+      input.sheetTitle,
+      input.headers,
+      this.fetchImpl,
+    );
+    if (!result.ok) return { ok: false, reason: result.reason };
+    return result.written ? { ok: true, written: true } : { ok: true, written: false, reason: 'not_empty' };
+  }
+
+  /** The admin page a finished consent flow returns to. */
+  private connectionsUrl(): string {
+    const base = (this.env.PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '');
+    return `${base}/admin/integrations`;
+  }
+
+  /** Seam for the specs: the one network call the callback makes. */
+  private exchangeGoogle(client: GoogleOAuthClient, code: string) {
+    return exchangeGoogleCode(client, code, this.fetchImpl);
+  }
+
   /** Disconnect a provider for this account. Idempotent → 204. */
   @Delete(':provider')
   @HttpCode(204)
@@ -633,10 +970,34 @@ export class IntegrationsController {
     this.invalidatePickerCache(p.accountId, provider);
   }
 
-  /** Drop the one provider's picker cache for this account (see the services). */
+  /**
+   * Drop the one provider's picker cache for this account (see the services).
+   *
+   * A switch for the same reason `validateToken` is one: as an if/else with
+   * Calendly as the tail, connecting Google Sheets would have cleared the
+   * CALENDLY cache and left its own untouched. Providers with no picker cache
+   * fall through to nothing, which is correct rather than accidental.
+   */
   private invalidatePickerCache(accountId: string, provider: IntegrationProvider): void {
-    if (provider === 'hubspot') this.hubspot.invalidate(accountId);
-    else this.calendly.invalidate(accountId);
+    switch (provider) {
+      case 'hubspot':
+        this.hubspot.invalidate(accountId);
+        return;
+      case 'google-sheets':
+        // NOT a picker cache but the ACCESS TOKEN cache, and the reason this
+        // case has to exist: disconnecting deletes the stored refresh token,
+        // but a token already minted from it stays valid for up to its cached
+        // life. Without this, a form kept writing into the author's spreadsheet
+        // for the best part of an hour after they revoked access, which reads
+        // as the disconnect button not working.
+        this.googleTokens.invalidate(accountId);
+        return;
+      case 'calendly':
+        this.calendly.invalidate(accountId);
+        return;
+      default:
+        return;
+    }
   }
 
   /** HubSpot contact-property picker (per-account token, 5-min cache). */
@@ -692,23 +1053,36 @@ export class IntegrationsController {
     token: string,
   ): Promise<{ ok: true; label: string } | { ok: false }> {
     try {
-      if (provider === 'hubspot') {
-        const res = await this.fetchImpl(HUBSPOT_PROPERTIES_URL, {
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        });
-        return res.ok ? { ok: true, label: 'HubSpot' } : { ok: false };
+      // A switch, NOT an if/else with Calendly as the tail. This used to read
+      // "if hubspot, else Calendly", so every provider added after those two
+      // would have been validated against api.calendly.com and rejected with a
+      // message naming the wrong vendor.
+      switch (provider) {
+        case 'hubspot': {
+          const res = await this.fetchImpl(HUBSPOT_PROPERTIES_URL, {
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          });
+          return res.ok ? { ok: true, label: 'HubSpot' } : { ok: false };
+        }
+        case 'calendly': {
+          const res = await this.fetchImpl(CALENDLY_ME_URL, {
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          });
+          if (!res.ok) return { ok: false };
+          const cbody = (await res.json().catch(() => ({}))) as {
+            resource?: { email?: string; name?: string };
+          };
+          const label = cbody.resource?.email?.trim() || cbody.resource?.name?.trim() || 'Calendly';
+          return { ok: true, label };
+        }
+        default:
+          // Reached only if a provider is added to `PASTE_TOKEN_PROVIDERS`
+          // without a probe here. Fail closed: an unvalidated token is never
+          // stored.
+          return { ok: false };
       }
-      const res = await this.fetchImpl(CALENDLY_ME_URL, {
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      });
-      if (!res.ok) return { ok: false };
-      const cbody = (await res.json().catch(() => ({}))) as {
-        resource?: { email?: string; name?: string };
-      };
-      const label = cbody.resource?.email?.trim() || cbody.resource?.name?.trim() || 'Calendly';
-      return { ok: true, label };
     } catch {
-      // Couldn't reach the provider — fail closed (never store an unvalidated token).
+      // Couldn't reach the provider: fail closed (never store an unvalidated token).
       return { ok: false };
     }
   }

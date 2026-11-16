@@ -26,6 +26,25 @@ export interface ConnectIntegrationsData {
    * never be read back — see `contactKeyReadiness`.
    */
   calendlyConnected: boolean;
+  /**
+   * Whether Google Sheets is connected for the account. The spreadsheet card
+   * is gated on it: without a connection there is no token to list a
+   * spreadsheet's tabs with, so the picker could only ever show an error.
+   */
+  googleSheetsConnected: boolean;
+  /**
+   * Whether this deployment can connect Google Sheets at all. False when its
+   * operator has registered no OAuth client, and then the spreadsheet card is
+   * left out rather than sending the author to a page with nothing to click.
+   */
+  googleSheetsAvailable: boolean;
+  /**
+   * Whether an existing spreadsheet can be chosen: Google's Picker needs a
+   * browser key the operator supplies. False, the card only creates new ones.
+   */
+  googlePickerAvailable: boolean;
+  /** The form's own name, which names the spreadsheet the card creates. */
+  formName: string;
 }
 
 export async function loadConnectIntegrationsAction(
@@ -58,16 +77,27 @@ export async function loadConnectIntegrationsAction(
   // when the property picker resolved via the server env fallback.
   let hubspotConnected = false;
   let calendlyConnected = false;
+  let googleSheetsConnected = false;
+  // True until the API says otherwise: a failed lookup must not make the card
+  // vanish from a deployment where it works.
+  let googleSheetsAvailable = true;
+  let googlePickerAvailable = false;
   try {
     const integrations = await adminApi.listIntegrations();
     hubspotConnected = integrations.providers.some((p) => p.provider === 'hubspot' && p.connected);
     calendlyConnected = integrations.providers.some(
       (p) => p.provider === 'calendly' && p.connected,
     );
+    googleSheetsConnected = integrations.providers.some(
+      (p) => p.provider === 'google-sheets' && p.connected,
+    );
+    googleSheetsAvailable = !(integrations.unavailable ?? []).includes('google-sheets');
+    googlePickerAvailable = integrations.googlePicker === true;
   } catch (e) {
     unstable_rethrow(e);
     hubspotConnected = false;
     calendlyConnected = false;
+    googleSheetsConnected = false;
   }
 
   return {
@@ -77,6 +107,10 @@ export async function loadConnectIntegrationsAction(
       hubspot,
       hubspotConnected,
       calendlyConnected,
+      googleSheetsConnected,
+      googleSheetsAvailable,
+      googlePickerAvailable,
+      formName: form.name,
     },
   };
 }

@@ -32,6 +32,7 @@ import { AdminService } from './admin.service';
 import { AuthService } from './auth.service';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
+import { GoogleSheetsAccessTokens } from './google-sheets-token';
 import { BookingEffects } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
 import { AnalyticsEffects } from './analytics-effects';
@@ -276,6 +277,12 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
       useFactory: (env: ServerEnv) => new DcalService(env),
       inject: [ENV],
     },
+    // The access token a Google Sheets delivery writes with, minted per account
+    // from its stored refresh token and cached. ONE instance for the whole app
+    // on purpose: the controller mints with it (to list a spreadsheet's tabs)
+    // and the delivery path mints with it, and a second cache would let a
+    // disconnect clear one of them while the other kept writing.
+    GoogleSheetsAccessTokens,
     // Drains the durable outbox (submission emails + destinations) with
     // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).
     OutboxWorker,

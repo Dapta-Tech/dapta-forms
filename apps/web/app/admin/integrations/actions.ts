@@ -36,6 +36,28 @@ export async function connectIntegrationAction(
   }
 }
 
+/**
+ * Start the Google Sheets consent flow and hand back the URL to send the
+ * browser to.
+ *
+ * The navigation stays with the client on purpose: the account this flow will
+ * connect rides in a signed state minted by this call, so the URL has to be
+ * followed exactly as returned. A `redirect()` from here would be followed by
+ * the server action's own fetch rather than by the browser.
+ */
+export async function startGoogleSheetsAuthAction(): Promise<
+  { ok: true; authUrl: string } | { ok: false; message?: string }
+> {
+  try {
+    const { authUrl } = await adminApi.authorizeGoogleSheets();
+    return { ok: true, authUrl };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
+  }
+}
+
 export async function disconnectIntegrationAction(
   provider: IntegrationProvider,
 ): Promise<{ ok: boolean; message?: string }> {

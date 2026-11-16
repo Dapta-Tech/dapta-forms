@@ -34,6 +34,16 @@ export {
   toHubSpotDateMs,
   HUBSPOT_API_BASE,
 } from './adapters/hubspot';
+export {
+  GoogleSheetsDestination,
+  GoogleSheetsHttpError,
+  type GoogleSheetsDestinationOptions,
+  appendRange,
+  buildRow,
+  cellText,
+  SHEETS_API_BASE,
+  DEFAULT_SHEETS_TIMEOUT_MS,
+} from './adapters/google-sheets';
 // The mirror form: what turns a submission into a "Form submission" activity on
 // the contact rather than a Note. The API creates the form (it owns the database
 // the guid is recorded in); the adapter only posts to it.

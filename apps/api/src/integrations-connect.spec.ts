@@ -23,6 +23,7 @@ import {
   getIntegration,
   decryptToken,
   inviteMember,
+  upsertIntegration,
   type Db,
 } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
@@ -256,6 +257,34 @@ describe('GET /v1/integrations (status)', () => {
     const out = await controller.list(asOwner());
     expect(out.encryptionAvailable).toBe(false);
     expect(out.providers).toEqual([]);
+  });
+
+  // The page leaves the Google Sheets card out on this answer, so it has to be
+  // the same answer the authorize route gives, in every one of these setups.
+  const GOOGLE_CLIENT = {
+    GOOGLE_OAUTH_CLIENT_ID: 'cid.apps.googleusercontent.com',
+    GOOGLE_OAUTH_CLIENT_SECRET: 'client-secret',
+    GOOGLE_OAUTH_REDIRECT_URI: 'https://api.example.com/v1/integrations/google-sheets/callback',
+  };
+
+  it('reports Google Sheets unavailable on a deployment with no OAuth client', async () => {
+    build(makeEnv(), noopFetch);
+    expect((await controller.list(asOwner())).unavailable).toEqual(['google-sheets']);
+    await expect(controller.googleAuthorize(asOwner())).rejects.toMatchObject({
+      response: { error: 'INTEGRATION_UNAVAILABLE' },
+    });
+  });
+
+  it('reports it unavailable when the client is only half configured', async () => {
+    build(makeEnv({ ...GOOGLE_CLIENT, GOOGLE_OAUTH_CLIENT_SECRET: undefined }), noopFetch);
+    expect((await controller.list(asOwner())).unavailable).toEqual(['google-sheets']);
+  });
+
+  it('reports nothing unavailable once the client is configured, and can start a consent', async () => {
+    build(makeEnv(GOOGLE_CLIENT), noopFetch);
+    expect((await controller.list(asOwner())).unavailable).toEqual([]);
+    const { authUrl } = await controller.googleAuthorize(asOwner());
+    expect(authUrl).toContain('client_id=cid.apps.googleusercontent.com');
   });
 });
 
@@ -549,5 +578,109 @@ describe('Calendly event-type picker token resolution', () => {
     await controller.disconnect(asOwner(), 'calendly');
     const res = await controller.calendlyEventTypes(asOwner());
     expect(res.enabled).toBe(false);
+  });
+});
+
+/**
+ * The two routes that put a spreadsheet behind a form under the `drive.file`
+ * scope: create one, or hand the browser what Google's Picker needs.
+ */
+describe('Google Sheets: creating a spreadsheet and opening the Picker', () => {
+  const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+  const CREATE_URL =
+    'https://sheets.googleapis.com/v4/spreadsheets?fields=spreadsheetId%2Cproperties.title%2Csheets.properties%28title%2CsheetId%29';
+  const GOOGLE = {
+    GOOGLE_OAUTH_CLIENT_ID: '123456789012-abc.apps.googleusercontent.com',
+    GOOGLE_OAUTH_CLIENT_SECRET: 'client-secret',
+    GOOGLE_OAUTH_REDIRECT_URI: 'https://api.example.com/v1/integrations/google-sheets/callback',
+  };
+  const minted = () => jsonResponse({ access_token: 'ya29.minted', expires_in: 3600 });
+  const connectGoogle = async () =>
+    upsertIntegration(db, await accountId(), 'google-sheets', '1//refresh-token', ENCRYPTION_KEY, 'ops@example.com');
+
+  it('says whether the Picker can be offered, in the same list the page reads', async () => {
+    build(makeEnv(GOOGLE), noopFetch);
+    expect((await controller.list(asOwner())).googlePicker).toBe(false);
+    build(makeEnv({ ...GOOGLE, GOOGLE_PICKER_API_KEY: 'browser-key' }), noopFetch);
+    expect((await controller.list(asOwner())).googlePicker).toBe(true);
+  });
+
+  it('hands out no token on a deployment with no browser key', async () => {
+    const calls: RecordedCall[] = [];
+    build(makeEnv(GOOGLE), recordingFetch(calls, { [TOKEN_URL]: minted }));
+    await connectGoogle();
+    expect(await controller.googleSheetsPicker(asOwner())).toEqual({ enabled: false, reason: 'unavailable' });
+    // Refused before minting: a token nobody can use is not worth a call.
+    expect(calls).toHaveLength(0);
+  });
+
+  it('hands out no token to an account that has not connected Google', async () => {
+    build(makeEnv({ ...GOOGLE, GOOGLE_PICKER_API_KEY: 'browser-key' }), noopFetch);
+    expect(await controller.googleSheetsPicker(asOwner())).toEqual({ enabled: false, reason: 'not_connected' });
+  });
+
+  it('gives a connected account the token, the key and the project the client belongs to', async () => {
+    build(
+      makeEnv({ ...GOOGLE, GOOGLE_PICKER_API_KEY: 'browser-key' }),
+      recordingFetch([], { [TOKEN_URL]: minted }),
+    );
+    await connectGoogle();
+    const out = await controller.googleSheetsPicker(asOwner());
+    expect(out).toEqual({
+      enabled: true,
+      accessToken: 'ya29.minted',
+      apiKey: 'browser-key',
+      appId: '123456789012',
+    });
+    // The refresh token and the client secret never leave the server.
+    expect(JSON.stringify(out)).not.toContain('1//refresh-token');
+    expect(JSON.stringify(out)).not.toContain('client-secret');
+  });
+
+  it('creates the spreadsheet with the token minted for this account', async () => {
+    const calls: RecordedCall[] = [];
+    build(
+      makeEnv(GOOGLE),
+      recordingFetch(calls, {
+        [TOKEN_URL]: minted,
+        [CREATE_URL]: () =>
+          jsonResponse({
+            spreadsheetId: 'new-id',
+            properties: { title: 'Lead form (responses)' },
+            sheets: [{ properties: { title: 'Responses', sheetId: 0 } }],
+          }),
+      }),
+    );
+    await connectGoogle();
+    const out = await controller.googleSheetsCreate(asOwner(), {
+      title: 'Lead form (responses)',
+      sheetTitle: 'Responses',
+      headers: ['Email'],
+    });
+    expect(out).toEqual({
+      ok: true,
+      spreadsheetId: 'new-id',
+      spreadsheetTitle: 'Lead form (responses)',
+      sheetTitle: 'Responses',
+      gid: 0,
+    });
+    const create = calls.find((c) => c.url === CREATE_URL)!;
+    expect(create.headers.authorization).toBe('Bearer ya29.minted');
+  });
+
+  it('creates nothing for an account that has not connected Google', async () => {
+    const calls: RecordedCall[] = [];
+    build(makeEnv(GOOGLE), recordingFetch(calls));
+    expect(
+      await controller.googleSheetsCreate(asOwner(), { title: 'x', sheetTitle: 'Responses', headers: [] }),
+    ).toEqual({ ok: false, reason: 'not_connected' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a create with no title before calling anything', async () => {
+    build(makeEnv(GOOGLE), noopFetch);
+    await expect(
+      controller.googleSheetsCreate(asOwner(), { title: '   ', sheetTitle: 'Responses' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

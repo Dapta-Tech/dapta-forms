@@ -497,8 +497,15 @@ export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; properties: HubSpotProperty[] };
 
-/** Account-level integration providers (paste-token connections). */
-export type IntegrationProvider = 'hubspot' | 'calendly';
+/**
+ * Account-level integration providers.
+ *
+ * Two of them are paste-token connections. `google-sheets` is not: it is
+ * connected by walking Google's consent screen, so the panel starts it through
+ * `authorizeGoogleSheets` and `connectIntegration` refuses it outright (the API
+ * answers 400 rather than storing a credential that would die within the hour).
+ */
+export type IntegrationProvider = 'hubspot' | 'calendly' | 'google-sheets';
 
 /**
  * One account-level connection's token-free status (GET /v1/integrations). The
@@ -512,6 +519,41 @@ export interface IntegrationStatus {
   connectedAt: number;
 }
 
+/** One tab of a spreadsheet. `gid` is the `#gid=` in its URL. */
+export interface SheetTab {
+  title: string;
+  gid: number;
+}
+
+/**
+ * The tab picker's answer. `enabled: false` carries WHY, because the four
+ * reasons send an author to four different places: connect Google, check the
+ * link, ask whoever owns the spreadsheet for access, or try again.
+ */
+export type GoogleSheetsTabsResponse =
+  | { enabled: true; spreadsheetTitle: string; tabs: SheetTab[] }
+  | { enabled: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/** A spreadsheet created for a form in the connected Google account. */
+export type GoogleSheetsCreateResponse =
+  | { ok: true; spreadsheetId: string; spreadsheetTitle: string; sheetTitle: string; gid: number }
+  | { ok: false; reason: 'not_connected' | 'forbidden' | 'unavailable' };
+
+/**
+ * What Google's Picker needs to open. The access token here is the one Google
+ * credential that reaches a browser, because the Picker cannot run without it;
+ * it reaches only the files this app created or was handed, and lasts an hour.
+ */
+export type GoogleSheetsPickerResponse =
+  | { enabled: true; accessToken: string; apiKey: string; appId: string }
+  | { enabled: false; reason: 'not_connected' | 'unavailable' };
+
+/** What writing the header row did. `written: false` means row 1 was in use. */
+export type GoogleSheetsHeaderRowResponse =
+  | { ok: true; written: true }
+  | { ok: true; written: false; reason: 'not_empty' }
+  | { ok: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
 /** GET /v1/integrations — this account's connections + server encryption availability. */
 export interface IntegrationsResponse {
   encryptionAvailable: boolean;
@@ -523,6 +565,19 @@ export interface IntegrationsResponse {
    * integration that is actively syncing.
    */
   serverProvided?: IntegrationProvider[];
+  /**
+   * Providers this DEPLOYMENT cannot connect at all, because configuration only
+   * its operator can supply is absent (Google Sheets needs an OAuth client
+   * registered with Google). The pages leave their cards out: a card whose
+   * button can only fail is worse than no card.
+   */
+  unavailable?: IntegrationProvider[];
+  /**
+   * Whether an EXISTING spreadsheet can be chosen (Google's Picker needs a
+   * browser key the operator supplies). False or absent, the spreadsheet card
+   * offers only "create a new spreadsheet".
+   */
+  googlePicker?: boolean;
 }
 
 /**
@@ -932,6 +987,29 @@ export const adminApi = {
   /** Validate + encrypt-store a pasted provider token; returns the token-free status. */
   connectIntegration: (provider: IntegrationProvider, token: string) =>
     req<IntegrationStatus>('POST', `/v1/integrations/${provider}/connect`, { token }),
+  /**
+   * Start the Google Sheets consent flow: returns the Google URL to send the
+   * browser to. The account this flow will connect is carried in a signed state
+   * minted by this authenticated call, so the URL must be followed as-is and
+   * never rebuilt by the caller.
+   */
+  authorizeGoogleSheets: () =>
+    req<{ authUrl: string }>('POST', '/v1/integrations/google-sheets/authorize'),
+  /** The tabs of one spreadsheet, for the mapping editor's picker. */
+  googleSheetsTabs: (spreadsheetId: string) =>
+    req<GoogleSheetsTabsResponse>(
+      'GET',
+      `/v1/integrations/google-sheets/tabs?spreadsheetId=${encodeURIComponent(spreadsheetId)}`,
+    ),
+  /** Create a spreadsheet for a form, header row included, in one call. */
+  googleSheetsCreate: (body: { title: string; sheetTitle: string; headers: string[] }) =>
+    req<GoogleSheetsCreateResponse>('POST', '/v1/integrations/google-sheets/spreadsheets', body),
+  /** What the browser needs to open Google's Picker (carries an access token). */
+  googleSheetsPicker: () =>
+    req<GoogleSheetsPickerResponse>('GET', '/v1/integrations/google-sheets/picker'),
+  /** Write the header row of the chosen tab, once. Never overwrites a used row 1. */
+  googleSheetsHeaderRow: (body: { spreadsheetId: string; sheetTitle?: string; headers: string[] }) =>
+    req<GoogleSheetsHeaderRowResponse>('POST', '/v1/integrations/google-sheets/header-row', body),
   /** Disconnect a provider for this account (idempotent → 204). */
   disconnectIntegration: (provider: IntegrationProvider) =>
     req<void>('DELETE', `/v1/integrations/${provider}`),

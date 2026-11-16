@@ -5,8 +5,13 @@ import { unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import {
   adminApi,
+  ApiError,
   type DeliveryKind,
   type FormDelivery,
+  type GoogleSheetsCreateResponse,
+  type GoogleSheetsHeaderRowResponse,
+  type GoogleSheetsPickerResponse,
+  type GoogleSheetsTabsResponse,
   type WebhookPingResult,
 } from '@/lib/admin-api';
 import type { FormDestination } from '@quill/types';
@@ -95,5 +100,73 @@ export async function loadDeliveryHistoryAction(
   } catch (e) {
     unstable_rethrow(e);
     return [];
+  }
+}
+
+/**
+ * The tabs of one spreadsheet, for the Google Sheets card's picker.
+ *
+ * The outcome rides in the payload rather than as a thrown error: the card
+ * shows a different sentence for each reason (connect Google, check the link,
+ * ask for access), and a rejected promise would flatten all of them into one.
+ */
+export async function googleSheetsTabsAction(
+  spreadsheetId: string,
+): Promise<{ ok: true; data: GoogleSheetsTabsResponse } | { ok: false; message?: string }> {
+  try {
+    return { ok: true, data: await adminApi.googleSheetsTabs(spreadsheetId) };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
+  }
+}
+
+/** Create a spreadsheet for this form in the connected Google account. */
+export async function googleSheetsCreateAction(body: {
+  title: string;
+  sheetTitle: string;
+  headers: string[];
+}): Promise<{ ok: true; data: GoogleSheetsCreateResponse } | { ok: false; message?: string }> {
+  try {
+    return { ok: true, data: await adminApi.googleSheetsCreate(body) };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
+  }
+}
+
+/**
+ * What Google's Picker needs to open in this browser.
+ *
+ * The answer carries a short-lived Google access token on purpose: the Picker
+ * runs client-side and cannot be given one any other way. It is fetched at the
+ * click that opens the Picker and held only for that one call, never in state.
+ */
+export async function googleSheetsPickerAction(): Promise<
+  { ok: true; data: GoogleSheetsPickerResponse } | { ok: false; message?: string }
+> {
+  try {
+    return { ok: true, data: await adminApi.googleSheetsPicker() };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
+  }
+}
+
+/** Write the header row of the chosen tab, once. Never overwrites a used row 1. */
+export async function googleSheetsHeaderRowAction(body: {
+  spreadsheetId: string;
+  sheetTitle?: string;
+  headers: string[];
+}): Promise<{ ok: true; data: GoogleSheetsHeaderRowResponse } | { ok: false; message?: string }> {
+  try {
+    return { ok: true, data: await adminApi.googleSheetsHeaderRow(body) };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
   }
 }

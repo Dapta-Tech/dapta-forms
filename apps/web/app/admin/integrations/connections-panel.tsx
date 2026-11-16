@@ -1,17 +1,28 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
 import type { IntegrationProvider, IntegrationStatus } from '@/lib/admin-api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
-import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
-import { connectIntegrationAction, disconnectIntegrationAction } from './actions';
+import { IntegrationMark } from '@/components/ui/provider-logo';
+import {
+  connectIntegrationAction,
+  disconnectIntegrationAction,
+  startGoogleSheetsAuthAction,
+} from './actions';
 import { callAction } from '@/lib/call-action';
 
 type Msgs = FormsMessages['admin']['connections'];
+
+/**
+ * How a provider's consent round trip ended, as the API's callback reports it
+ * in the query it redirects back with.
+ */
+export type OauthOutcome = 'connected' | 'cancelled' | 'error' | 'scope';
 
 /** Replace `{key}` tokens in a catalog string (locale copy owns the wording). */
 const fill = (template: string, vars: Record<string, string>): string =>
@@ -21,6 +32,14 @@ interface ProviderMeta {
   id: IntegrationProvider;
   name: string;
   desc: string;
+  /**
+   * How this provider is connected. `paste` asks for a token; `oauth` sends the
+   * browser to the provider's own consent screen and comes back through the
+   * API's callback, so there is no token field and nothing to validate here.
+   */
+  how: 'paste' | 'oauth';
+  /** Shown above the Connect button on an `oauth` card, so the round trip is no surprise. */
+  note?: string;
 }
 
 /**
@@ -34,7 +53,9 @@ export function ConnectionsPanel({
   initialProviders,
   encryptionAvailable,
   serverProvided = [],
+  unavailable = [],
   loadError,
+  oauthOutcome = null,
   messages: m,
   locale,
 }: {
@@ -42,23 +63,73 @@ export function ConnectionsPanel({
   encryptionAvailable: boolean;
   /** Providers the deployment already supplies a token for. */
   serverProvided?: IntegrationProvider[];
+  /**
+   * Providers this deployment cannot connect (see `IntegrationsResponse`).
+   * Their cards are left out, unless the account is already connected.
+   */
+  unavailable?: IntegrationProvider[];
   loadError?: boolean;
+  /**
+   * How a consent round trip ended, read off the query by the page. Null on an
+   * ordinary visit.
+   */
+  oauthOutcome?: OauthOutcome | null;
   messages: Msgs;
   locale: Locale;
 }) {
   const providers: ProviderMeta[] = [
-    { id: 'hubspot', name: m.hubspotName, desc: m.hubspotDesc },
-    { id: 'calendly', name: m.calendlyName, desc: m.calendlyDesc },
+    { id: 'hubspot', name: m.hubspotName, desc: m.hubspotDesc, how: 'paste' },
+    { id: 'calendly', name: m.calendlyName, desc: m.calendlyDesc, how: 'paste' },
+    {
+      id: 'google-sheets',
+      name: m.gsheetsName,
+      desc: m.gsheetsDesc,
+      how: 'oauth',
+      note: m.gsheetsConnectNote,
+    },
   ];
 
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus | null>>(() => {
     const map: Record<string, IntegrationStatus | null> = {
       hubspot: null,
       calendly: null,
+      'google-sheets': null,
     };
     for (const s of initialProviders) if (s.connected) map[s.provider] = s;
     return map;
   });
+
+  // A provider the deployment cannot connect gets no card: its button could
+  // only fail. The exception is an account that is ALREADY connected (the
+  // operator took the configuration away afterwards): that card stays, because
+  // it is the only place the connection can be seen and removed.
+  const visibleProviders = providers.filter(
+    (meta) => !unavailable.includes(meta.id) || statuses[meta.id] != null,
+  );
+
+  /**
+   * Say how the consent round trip went, once, and take the flag out of the URL.
+   *
+   * The flag has to go: left in place, a reload or a shared link would announce
+   * a connection that is not happening now, and the back button would walk the
+   * visitor through old outcomes. `router.replace` rewrites the address without
+   * a navigation, so nothing refetches.
+   *
+   * The ref guards against React running the effect twice in development, which
+   * would otherwise show every toast in duplicate.
+   */
+  const router = useRouter();
+  const { success: toastSuccess, error: toastError } = useToast();
+  const announced = useRef(false);
+  useEffect(() => {
+    if (!oauthOutcome || announced.current) return;
+    announced.current = true;
+    if (oauthOutcome === 'connected') toastSuccess(m.googleConnected);
+    else if (oauthOutcome === 'cancelled') toastError(m.googleCancelled);
+    else if (oauthOutcome === 'scope') toastError(m.googleScopeError);
+    else toastError(m.googleError);
+    router.replace('/admin/integrations');
+  }, [oauthOutcome, router, toastSuccess, toastError, m]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -69,7 +140,7 @@ export function ConnectionsPanel({
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {providers.map((meta) => (
+        {visibleProviders.map((meta) => (
           <ProviderCard
             key={meta.id}
             meta={meta}
@@ -81,9 +152,6 @@ export function ConnectionsPanel({
             locale={locale}
           />
         ))}
-        {/* Announced, not connectable yet — rendered OUTSIDE the providers map
-            so it shows even when the status fetch fails or the list changes. */}
-        <GoogleSheetsCard m={m} />
       </div>
 
       <p className="text-sm text-muted-foreground">{m.perFormNote}</p>
@@ -114,6 +182,23 @@ function ProviderCard({
   const [showConnect, setShowConnect] = useState(false);
   const [token, setToken] = useState('');
   const connected = !!status;
+
+  /**
+   * Hand the browser to the provider's consent screen.
+   *
+   * `window.location.assign` rather than the router: the destination is another
+   * origin, so there is nothing for Next to prefetch or soft-navigate, and the
+   * way back in is the API's callback redirecting to this page with an outcome
+   * flag. Nothing is stored on this side, so a visitor who abandons the consent
+   * screen leaves no half-made connection behind.
+   */
+  function connectWithOauth() {
+    start(async () => {
+      const res = await callAction(() => startGoogleSheetsAuthAction());
+      if (res.ok) window.location.assign(res.authUrl);
+      else error(res.message || m.connectError);
+    });
+  }
 
   function connect() {
     const trimmed = token.trim();
@@ -164,7 +249,7 @@ function ProviderCard({
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted"
             aria-hidden
           >
-            <ProviderLogo provider={meta.id} size={20} />
+            <IntegrationMark provider={meta.id} size={20} />
           </span>
           <div className="min-w-0">
             <h2 className="font-semibold tracking-tight">{meta.name}</h2>
@@ -197,6 +282,17 @@ function ProviderCard({
             locale={locale}
             note={meta.id === 'calendly' ? m.calendlyScopeNote : null}
           />
+        ) : meta.how === 'oauth' ? (
+          // No token field and no second step: the consent screen IS the form.
+          <div className="flex flex-col gap-3">
+            {meta.note ? (
+              <p className="text-xs text-muted-foreground">{meta.note}</p>
+            ) : null}
+            <Button onClick={connectWithOauth} disabled={pending} className="self-start">
+              <IntegrationMark provider={meta.id} size={14} />
+              {pending ? m.connecting : m.connectWithGoogle}
+            </Button>
+          </div>
         ) : showConnect ? (
           // Connecting stays available while the server supplies a token — an
           // account can override the shared one with its own.
@@ -223,39 +319,6 @@ function ProviderCard({
         )}
       </div>
       {dialog}
-    </section>
-  );
-}
-
-/**
- * Google Sheets — announced, not shipped. Inert by design: no connect flow, no
- * focus target, and it is not in `providers`, so no status is ever fetched or
- * stored for it. Drop this card once the real adapter lands.
- */
-function GoogleSheetsCard({ m }: { m: Msgs }) {
-  return (
-    <section
-      data-testid="integration-gsheets"
-      aria-disabled="true"
-      className="flex cursor-default flex-col rounded-lg border border-border bg-card p-5 opacity-60"
-    >
-      <header className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted"
-            aria-hidden
-          >
-            <GoogleSheetsLogo size={20} />
-          </span>
-          <div className="min-w-0">
-            <h2 className="font-semibold tracking-tight">{m.gsheetsName}</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">{m.gsheetsDesc}</p>
-          </div>
-        </div>
-        <span className="shrink-0 rounded-sm border border-border bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
-          {m.comingSoon}
-        </span>
-      </header>
     </section>
   );
 }
@@ -342,7 +405,14 @@ function ConnectedView({
             <dd className="font-medium text-foreground">{fill(m.connectedAs, { label: status.label })}</dd>
           ) : null}
           <dd className="text-xs text-muted-foreground">
-            {status.last4 ? `${fill(m.endingIn, { last4: status.last4 })} · ` : ''}
+            {/* "Ending in" is how somebody recognises the token THEY pasted.
+                A Google connection has no such token: what is stored is a
+                refresh token Google issued, whose last characters mean nothing
+                to anyone, and the account's email above already says which
+                connection this is. */}
+            {status.last4 && status.provider !== 'google-sheets'
+              ? `${fill(m.endingIn, { last4: status.last4 })} · `
+              : ''}
             {fill(m.connectedOn, { date })}
           </dd>
         </dl>

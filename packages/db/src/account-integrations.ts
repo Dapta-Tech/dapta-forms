@@ -14,7 +14,15 @@ import type { Db } from './client';
 import { parseJsonColumn, jsonParam } from './forms';
 import { encryptToken, decryptToken, tokenLast4 } from './crypto';
 
-export const integrationProviders = ['hubspot', 'calendly'] as const;
+/**
+ * `google-sheets` is the one provider whose stored token is not pasted by the
+ * operator: it is the OAuth REFRESH TOKEN the Google consent flow handed back,
+ * and the client id and secret that redeem it stay in the deployment's env
+ * rather than in this table. So the storage contract is unchanged (one opaque
+ * secret string per account, encrypted), and `tokenLast4` still shows the tail
+ * of a real credential.
+ */
+export const integrationProviders = ['hubspot', 'calendly', 'google-sheets'] as const;
 export type IntegrationProvider = (typeof integrationProviders)[number];
 
 export interface IntegrationMeta {

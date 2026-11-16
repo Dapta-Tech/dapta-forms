@@ -2,6 +2,10 @@ import type { DestinationType, SubmissionDestination } from './destination.port'
 import { LogOnlyDestination } from './adapters/log-only';
 import { WebhookDestination, type WebhookDestinationOptions } from './adapters/webhook';
 import { HubspotDestination, type HubspotDestinationOptions } from './adapters/hubspot';
+import {
+  GoogleSheetsDestination,
+  type GoogleSheetsDestinationOptions,
+} from './adapters/google-sheets';
 
 /**
  * A fully-resolved destination spec: the form-config settings for the chosen
@@ -13,6 +17,7 @@ export interface DestinationSpec {
   type: DestinationType;
   webhook?: WebhookDestinationOptions;
   hubspot?: HubspotDestinationOptions;
+  googleSheets?: GoogleSheetsDestinationOptions;
 }
 
 /**
@@ -33,6 +38,25 @@ export function createDestination(
     case 'hubspot':
       if (spec.hubspot?.token) return new HubspotDestination(spec.hubspot, fetchImpl);
       return new LogOnlyDestination('hubspot destination missing token (HUBSPOT_PRIVATE_APP_TOKEN)');
+    case 'google-sheets': {
+      const sheets = spec.googleSheets;
+      // Three ways to be unconfigured, each with its own sentence, because they
+      // are three different things for the author to go and fix: nobody has
+      // connected Google (or the grant died and could not be renewed), nobody
+      // has chosen a spreadsheet, or nobody has said what the row holds. A row
+      // of nothing is not a delivery, so the last one degrades too rather than
+      // appending blank lines to somebody's sheet forever.
+      if (!sheets?.accessToken) {
+        return new LogOnlyDestination('google sheets destination has no usable access token');
+      }
+      if (!sheets.spreadsheetId) {
+        return new LogOnlyDestination('google sheets destination missing a spreadsheet');
+      }
+      if (!sheets.columns?.length) {
+        return new LogOnlyDestination('google sheets destination has no columns configured');
+      }
+      return new GoogleSheetsDestination(sheets, fetchImpl);
+    }
     default:
       return new LogOnlyDestination(`unknown destination type: ${String(spec.type)}`);
   }

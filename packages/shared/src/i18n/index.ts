@@ -2017,10 +2017,63 @@ export interface FormsMessages {
       /** `{n}` = delivery attempts, shown only past the first. */
       historyAttempts: string;
       historyNoReason: string;
-      // Google Sheets — announced, not shipped; the card is inert
+      // Google Sheets: the per-form spreadsheet card.
       gsheetsTitle: string;
       gsheetsDesc: string;
       comingSoon: string;
+      gsheets: {
+        title: string;
+        desc: string;
+        /** Shown in place of the whole card when the account has no Google connection. */
+        notConnected: string;
+        sheetLabel: string;
+        /** Shown before any spreadsheet is chosen: the two ways to get one. */
+        sheetHelp: string;
+        createSheet: string;
+        chooseSheet: string;
+        sheetCreated: string;
+        createFailed: string;
+        pickerFailed: string;
+        /** The new spreadsheet's name. `{form}` is the form's own name. */
+        newSheetTitle: string;
+        /** The tab a created spreadsheet is written to. */
+        defaultTab: string;
+        tabLabel: string;
+        /** The empty option: write to whichever tab is first. */
+        tabFirst: string;
+        openSheet: string;
+        sheetNotFound: string;
+        sheetForbidden: string;
+        tabsUnavailable: string;
+        columnsLabel: string;
+        columnsHelp: string;
+        noColumns: string;
+        addColumn: string;
+        removeColumn: string;
+        moveUp: string;
+        moveDown: string;
+        headerFor: string;
+        sourceFor: string;
+        keyFor: string;
+        pickOne: string;
+        fillFromForm: string;
+        writeHeaders: string;
+        headersWritten: string;
+        /** Row 1 already held something, so nothing was overwritten. */
+        headersNotEmpty: string;
+        headersFailed: string;
+        /** Default headings for the columns that are not questions. */
+        colSubmittedAt: string;
+        colScore: string;
+        colOutcome: string;
+        colFormName: string;
+        colSubmissionId: string;
+        /** One label per `sheetColumnSource`. */
+        sources: Record<
+          'answer' | 'utm' | 'score' | 'outcome' | 'submitted_at' | 'form_name' | 'submission_id',
+          string
+        >;
+      };
     };
     /** Account-level provider connections (paste-token) surfaced on /admin/integrations. */
     connections: {
@@ -2030,9 +2083,19 @@ export interface FormsMessages {
       hubspotDesc: string;
       calendlyName: string;
       calendlyDesc: string;
-      /** Google Sheets — coming-soon card only, not a connectable provider yet. */
       gsheetsName: string;
       gsheetsDesc: string;
+      /**
+       * Google Sheets connects by walking Google's consent screen, so its card
+       * says what is about to happen instead of asking for a token.
+       */
+      gsheetsConnectNote: string;
+      connectWithGoogle: string;
+      /** What the page says when the consent round trip comes back. */
+      googleConnected: string;
+      googleCancelled: string;
+      googleError: string;
+      googleScopeError: string;
       comingSoon: string;
       connected: string;
       notConnected: string;
@@ -4295,17 +4358,78 @@ export const en: FormsMessages = {
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
       comingSoon: 'Coming soon',
+      gsheets: {
+        title: 'Google Sheets',
+        desc: 'Append each response to a spreadsheet as a new row.',
+        notConnected: 'Connect Google Sheets on the Connections page to use it here.',
+        sheetLabel: 'Spreadsheet',
+        sheetHelp:
+          'Create a new spreadsheet for this form, or choose one you already have in Google Drive.',
+        createSheet: 'Create a new spreadsheet',
+        chooseSheet: 'Choose from Google Drive',
+        sheetCreated: 'The spreadsheet was created in your Google Drive.',
+        createFailed: 'The spreadsheet could not be created. Try again.',
+        pickerFailed: 'Google Drive could not be opened. Try again.',
+        newSheetTitle: '{form} (responses)',
+        defaultTab: 'Responses',
+        tabLabel: 'Tab',
+        tabFirst: 'The first tab',
+        openSheet: 'Open the spreadsheet',
+        sheetNotFound:
+          'dForms can no longer open this spreadsheet. Choose it again from Google Drive, or create a new one.',
+        sheetForbidden:
+          'Google no longer lets dForms write here. Reconnect Google Sheets on the Connections page.',
+        tabsUnavailable: 'The tabs could not be read. Try again.',
+        columnsLabel: 'Columns',
+        columnsHelp: 'One column per cell of the row, left to right.',
+        noColumns: 'No columns yet. Nothing is sent until you add one.',
+        addColumn: 'Add a column',
+        removeColumn: 'Remove this column',
+        moveUp: 'Move this column left',
+        moveDown: 'Move this column right',
+        headerFor: 'Column heading',
+        sourceFor: 'What fills this column',
+        keyFor: 'Which one',
+        pickOne: 'Pick one',
+        fillFromForm: 'Use the form’s questions',
+        writeHeaders: 'Write the header row',
+        headersWritten: 'The header row was written.',
+        headersNotEmpty: 'The first row already has content, so it was left alone.',
+        headersFailed: 'The header row could not be written.',
+        colSubmittedAt: 'Submitted',
+        colScore: 'Score',
+        colOutcome: 'Outcome',
+        colFormName: 'Form',
+        colSubmissionId: 'Response ID',
+        sources: {
+          answer: 'An answer',
+          utm: 'A campaign tag',
+          score: 'Score',
+          outcome: 'Outcome',
+          submitted_at: 'Submitted at',
+          form_name: 'Form name',
+          submission_id: 'Response ID',
+        },
+      },
     },
     connections: {
       title: 'Connections',
       subtitle:
-        'Connect your account to HubSpot and Calendly once. Then map fields for each form from its integrations tab.',
+        'Connect each service to your account once. Then map fields for each form from its integrations tab.',
       hubspotName: 'HubSpot',
       hubspotDesc: 'Sync respondents to HubSpot contacts and map questions to contact properties.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Let respondents book meetings from your form outcomes.',
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
+      gsheetsConnectNote:
+        'Google will ask you to sign in. dForms can only reach the spreadsheets it creates for you and the ones you choose, never the rest of your Drive.',
+      connectWithGoogle: 'Continue with Google',
+      googleConnected: 'Google Sheets is connected.',
+      googleCancelled: 'Google Sheets was not connected.',
+      googleError: 'Google could not connect your account. Try again.',
+      googleScopeError:
+        'dForms needs the permission Google listed to create and fill your spreadsheet. Try again and leave it ticked.',
       comingSoon: 'Coming soon',
       connected: 'Connected',
       notConnected: 'Not connected',
@@ -6891,17 +7015,78 @@ export const es: FormsMessages = {
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
       comingSoon: 'Muy pronto',
+      gsheets: {
+        title: 'Google Sheets',
+        desc: 'Añade cada respuesta a una hoja de cálculo como una fila nueva.',
+        notConnected: 'Conecta Google Sheets en la página de Conexiones para usarlo aquí.',
+        sheetLabel: 'Hoja de cálculo',
+        sheetHelp:
+          'Crea una hoja nueva para este formulario o elige una que ya tengas en Google Drive.',
+        createSheet: 'Crear una hoja nueva',
+        chooseSheet: 'Elegir de Google Drive',
+        sheetCreated: 'La hoja se creó en tu Google Drive.',
+        createFailed: 'No se pudo crear la hoja. Inténtalo de nuevo.',
+        pickerFailed: 'No se pudo abrir Google Drive. Inténtalo de nuevo.',
+        newSheetTitle: '{form} (respuestas)',
+        defaultTab: 'Respuestas',
+        tabLabel: 'Pestaña',
+        tabFirst: 'La primera pestaña',
+        openSheet: 'Abrir la hoja',
+        sheetNotFound:
+          'dForms ya no puede abrir esta hoja. Elígela otra vez desde Google Drive o crea una nueva.',
+        sheetForbidden:
+          'Google ya no deja que dForms escriba aquí. Vuelve a conectar Google Sheets en la página de Conexiones.',
+        tabsUnavailable: 'No se pudieron leer las pestañas. Inténtalo de nuevo.',
+        columnsLabel: 'Columnas',
+        columnsHelp: 'Una columna por celda de la fila, de izquierda a derecha.',
+        noColumns: 'Todavía no hay columnas. No se envía nada hasta que agregues una.',
+        addColumn: 'Agregar una columna',
+        removeColumn: 'Quitar esta columna',
+        moveUp: 'Mover esta columna a la izquierda',
+        moveDown: 'Mover esta columna a la derecha',
+        headerFor: 'Encabezado de la columna',
+        sourceFor: 'Qué llena esta columna',
+        keyFor: 'Cuál',
+        pickOne: 'Elige una',
+        fillFromForm: 'Usar las preguntas del formulario',
+        writeHeaders: 'Escribir la fila de encabezados',
+        headersWritten: 'Se escribió la fila de encabezados.',
+        headersNotEmpty: 'La primera fila ya tiene contenido, así que no se tocó.',
+        headersFailed: 'No se pudo escribir la fila de encabezados.',
+        colSubmittedAt: 'Enviada',
+        colScore: 'Puntaje',
+        colOutcome: 'Resultado',
+        colFormName: 'Formulario',
+        colSubmissionId: 'ID de respuesta',
+        sources: {
+          answer: 'Una respuesta',
+          utm: 'Una etiqueta de campaña',
+          score: 'Puntaje',
+          outcome: 'Resultado',
+          submitted_at: 'Fecha de envío',
+          form_name: 'Nombre del formulario',
+          submission_id: 'ID de respuesta',
+        },
+      },
     },
     connections: {
       title: 'Conexiones',
       subtitle:
-        'Conecta tu cuenta a HubSpot y Calendly una vez. Luego asigna los campos de cada formulario desde su pestaña de integraciones.',
+        'Conecta cada servicio a tu cuenta una sola vez. Luego asigna los campos de cada formulario desde su pestaña de integraciones.',
       hubspotName: 'HubSpot',
       hubspotDesc: 'Sincroniza respuestas con contactos de HubSpot y asigna preguntas a propiedades de contacto.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Permite reservar reuniones desde los resultados de tu formulario.',
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
+      gsheetsConnectNote:
+        'Google te va a pedir que entres. dForms solo alcanza las hojas que crea para ti y las que tú eliges, nunca el resto de tu Drive.',
+      connectWithGoogle: 'Continuar con Google',
+      googleConnected: 'Google Sheets quedó conectado.',
+      googleCancelled: 'Google Sheets no se conectó.',
+      googleError: 'Google no pudo conectar tu cuenta. Inténtalo de nuevo.',
+      googleScopeError:
+        'dForms necesita el permiso que Google mostró para crear y llenar tu hoja. Inténtalo otra vez y déjalo marcado.',
       comingSoon: 'Muy pronto',
       connected: 'Conectado',
       notConnected: 'Sin conectar',

@@ -115,6 +115,43 @@ export const serverEnvSchema = z.object({
   // from whatever the callback carried). Never sent to the browser.
   CALENDLY_API_TOKEN: z.string().optional(),
 
+  // Google Sheets destination (OAuth, per account). The OAuth CLIENT is the
+  // deployment's, not the end user's: every account that connects goes through
+  // this one client and stores only its own refresh token, so the client secret
+  // lives here and never in the database.
+  //
+  // The hosted deployment reuses the Dapta platform's existing Google client,
+  // which is already approved for the sensitive `spreadsheets` scope, so this
+  // feature needs no verification round. A fork points these at its own client.
+  //
+  // All three unset = the Google Sheets card stays off: `connect` reports the
+  // feature unavailable instead of starting a flow that could not finish.
+  // `GOOGLE_OAUTH_REDIRECT_URI` must match an authorized redirect URI on the
+  // client EXACTLY (Google compares the string, not the host), and must point at
+  // this API's own callback route, not at the web app. Server-only, all three.
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z
+    .string()
+    .refine((v) => v === '' || /^https?:\/\//.test(v), {
+      message: 'GOOGLE_OAUTH_REDIRECT_URI must be an http(s) URL.',
+    })
+    .optional(),
+  // Google Picker, how an EXISTING spreadsheet is chosen (the OAuth scope only
+  // reaches files the app created or the user picked). A browser API key from
+  // the same Cloud project as the OAuth client, restricted by HTTP referrer on
+  // Google's side: it is sent to the browser by design, so the restriction is
+  // what protects it, not secrecy. Unset = no Picker, and the spreadsheet card
+  // offers only "create a new spreadsheet". `GOOGLE_PICKER_APP_ID` is the Cloud
+  // project NUMBER; unset, it is read off the client id, which starts with it.
+  GOOGLE_PICKER_API_KEY: z.string().optional(),
+  GOOGLE_PICKER_APP_ID: z
+    .string()
+    .refine((v) => v === '' || /^\d+$/.test(v), {
+      message: 'GOOGLE_PICKER_APP_ID must be the numeric Cloud project number.',
+    })
+    .optional(),
+
   // Premium features. Forms is ALWAYS free: `locked` gates premium on the
   // customer's PAID Dapta AI subscription; `open` unlocks everything, so a bare
   // OSS fork gets every feature with no upstream wired. OPTIONAL, and what
