@@ -313,7 +313,7 @@ export function SchedulerPanel({
         <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
           {s.schedulerSection}
         </p>
-        <p className="text-xs text-muted-foreground">{s.schedulerHint}</p>
+        <p className="text-xs text-muted-foreground">{s.schedulerDcalHint}</p>
         {providerField}
         <SchedulerDcalPicker scheduler={scheduler} onChange={onChange} s={s} />
         {/* Deliberately no "show event details" switch here: dCal's embed has

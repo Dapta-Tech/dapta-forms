@@ -227,7 +227,7 @@ export function SchedulerDcalPicker({
 
       {connectedAs ? (
         <p className="text-xs text-muted-foreground">
-          {s.schedulerScopedTo.replace('{email}', connectedAs)}
+          {s.schedulerDcalScopedTo.replace('{email}', connectedAs)}
         </p>
       ) : null}
     </div>

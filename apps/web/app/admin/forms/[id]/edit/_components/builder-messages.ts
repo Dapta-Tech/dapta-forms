@@ -353,6 +353,17 @@ export interface BuilderMessages {
      * own session lists their event types, so there is no "connect" state
      * here, only "you have none yet".
      */
+    /**
+     * The section hint under dCal. `schedulerHint` names Calendly, so reusing
+     * it here told an author picking dCal to pick a Calendly event.
+     */
+    schedulerDcalHint: string;
+    /**
+     * Whose list it is, dCal's rule. `schedulerScopedTo` states Calendly's
+     * ("owns or hosts", and team events only when that user is a host), which
+     * is not how dCal scopes it: the author's own events, plus their teams'.
+     */
+    schedulerDcalScopedTo: string;
     schedulerProvider: string;
     schedulerProviderCalendly: string;
     schedulerProviderDcal: string;
@@ -894,6 +905,8 @@ const en: BuilderMessages = {
     schedulerAfter: 'After booking',
     schedulerAfterHint: 'What happens once the respondent picks a time.',
     schedulerAfterContinue: 'Continue to the next question',
+    schedulerDcalHint: 'Pick a dCal event type. When someone books, it counts as their answer.',
+    schedulerDcalScopedTo: 'Showing {email}\u2019s own event types, and their teams\u2019.',
     schedulerProvider: 'Scheduler',
     schedulerProviderCalendly: 'Calendly',
     schedulerProviderDcal: 'dCal',
@@ -1384,6 +1397,8 @@ const es: BuilderMessages = {
     schedulerAfter: 'Al agendar',
     schedulerAfterHint: 'Qué pasa cuando la persona elige un horario.',
     schedulerAfterContinue: 'Continuar a la siguiente pregunta',
+    schedulerDcalHint: 'Elige un tipo de evento de dCal. Cuando alguien agenda, cuenta como su respuesta.',
+    schedulerDcalScopedTo: 'Mostrando los eventos de {email} y los de sus equipos.',
     schedulerProvider: 'Agendador',
     schedulerProviderCalendly: 'Calendly',
     schedulerProviderDcal: 'dCal',
