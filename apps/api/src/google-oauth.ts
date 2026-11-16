@@ -167,11 +167,13 @@ export function signGoogleState(accountId: string, key: Buffer, now: number = Da
  * telling a caller WHICH of those it was is free help for forging the next one.
  */
 export function verifyGoogleState(
-  state: string,
+  state: unknown,
   key: Buffer,
   now: number = Date.now(),
 ): GoogleStateClaims | null {
-  if (!state || state.length > GOOGLE_STATE_MAX_LENGTH) return null;
+  // A query string can repeat a parameter, which reaches here as an array.
+  // Anything but a string is refused before `.length` or `.split` touch it.
+  if (typeof state !== 'string' || !state || state.length > GOOGLE_STATE_MAX_LENGTH) return null;
   const parts = state.split('.');
   if (parts.length !== 3) return null;
   const [version, payload, signature] = parts as [string, string, string];

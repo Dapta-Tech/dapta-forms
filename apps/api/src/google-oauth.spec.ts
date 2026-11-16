@@ -83,6 +83,13 @@ describe('the state round trip', () => {
 });
 
 describe('a state this deployment did not sign is refused', () => {
+  it('refuses a repeated state parameter, which a query string turns into an array', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    expect(verifyGoogleState([state, state], KEY_A, NOW)).toBeNull();
+    expect(verifyGoogleState([state], KEY_A, NOW)).toBeNull();
+    expect(verifyGoogleState(undefined, KEY_A, NOW)).toBeNull();
+  });
+
   it('refuses a signature from another key', () => {
     const state = signGoogleState(ACCOUNT, KEY_B, NOW);
     expect(verifyGoogleState(state, KEY_A, NOW)).toBeNull();
