@@ -221,6 +221,7 @@ function IntegrationsSection({
           hubspot={state.data.hubspot}
           hubspotConnected={state.data.hubspotConnected}
           googleSheetsConnected={state.data.googleSheetsConnected}
+          googleSheetsAvailable={state.data.googleSheetsAvailable}
           questions={questions}
           readiness={readiness}
           partialsHeld={partialsHeld}

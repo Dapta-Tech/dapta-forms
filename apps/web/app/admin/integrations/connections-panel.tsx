@@ -53,6 +53,7 @@ export function ConnectionsPanel({
   initialProviders,
   encryptionAvailable,
   serverProvided = [],
+  unavailable = [],
   loadError,
   oauthOutcome = null,
   messages: m,
@@ -62,6 +63,11 @@ export function ConnectionsPanel({
   encryptionAvailable: boolean;
   /** Providers the deployment already supplies a token for. */
   serverProvided?: IntegrationProvider[];
+  /**
+   * Providers this deployment cannot connect (see `IntegrationsResponse`).
+   * Their cards are left out, unless the account is already connected.
+   */
+  unavailable?: IntegrationProvider[];
   loadError?: boolean;
   /**
    * How a consent round trip ended, read off the query by the page. Null on an
@@ -92,6 +98,14 @@ export function ConnectionsPanel({
     for (const s of initialProviders) if (s.connected) map[s.provider] = s;
     return map;
   });
+
+  // A provider the deployment cannot connect gets no card: its button could
+  // only fail. The exception is an account that is ALREADY connected (the
+  // operator took the configuration away afterwards): that card stays, because
+  // it is the only place the connection can be seen and removed.
+  const visibleProviders = providers.filter(
+    (meta) => !unavailable.includes(meta.id) || statuses[meta.id] != null,
+  );
 
   /**
    * Say how the consent round trip went, once, and take the flag out of the URL.
@@ -126,7 +140,7 @@ export function ConnectionsPanel({
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {providers.map((meta) => (
+        {visibleProviders.map((meta) => (
           <ProviderCard
             key={meta.id}
             meta={meta}

@@ -551,6 +551,13 @@ export interface IntegrationsResponse {
    * integration that is actively syncing.
    */
   serverProvided?: IntegrationProvider[];
+  /**
+   * Providers this DEPLOYMENT cannot connect at all, because configuration only
+   * its operator can supply is absent (Google Sheets needs an OAuth client
+   * registered with Google). The pages leave their cards out: a card whose
+   * button can only fail is worse than no card.
+   */
+  unavailable?: IntegrationProvider[];
 }
 
 /**

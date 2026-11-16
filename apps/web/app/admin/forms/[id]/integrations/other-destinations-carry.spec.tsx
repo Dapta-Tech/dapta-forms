@@ -23,6 +23,7 @@ import {
   carriedOthers,
   carriedWebhooks,
   initialGoogleSheets,
+  showsGoogleSheetsCard,
 } from './integrations-editor';
 
 const hook = (url: string): FormDestination =>
@@ -125,5 +126,30 @@ describe('a stored spreadsheet destination round-trips through the card', () => 
     const state = { ...initialGoogleSheets([sheets()]), sheetTitle: '' };
     const built = builtGoogleSheets(state) as { settings: Record<string, unknown> };
     expect(built.settings).toEqual({ spreadsheetId: 'sheet-1' });
+  });
+});
+
+describe('the spreadsheet card on a deployment that cannot connect Google', () => {
+  it('is left out of a form with no spreadsheet destination', () => {
+    expect(showsGoogleSheetsCard(false, [hook('https://a.test'), hubspot()])).toBe(false);
+    expect(showsGoogleSheetsCard(false, [])).toBe(false);
+  });
+
+  it('stays on a form that already stores one, so it can be switched off', () => {
+    expect(showsGoogleSheetsCard(false, [hubspot(), sheets()])).toBe(true);
+  });
+
+  it('is shown wherever Google can be connected, stored destination or not', () => {
+    expect(showsGoogleSheetsCard(true, [])).toBe(true);
+    expect(showsGoogleSheetsCard(true, [sheets()])).toBe(true);
+  });
+
+  it('does not decide what a save stores: a hidden card still writes its destination back', () => {
+    const stored = [sheets()];
+    expect(showsGoogleSheetsCard(false, [])).toBe(false);
+    expect(builtGoogleSheets(initialGoogleSheets(stored))).toMatchObject({
+      type: 'google-sheets',
+      settings: { spreadsheetId: 'sheet-1' },
+    });
   });
 });

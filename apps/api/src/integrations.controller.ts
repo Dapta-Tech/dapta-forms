@@ -552,6 +552,7 @@ export class IntegrationsController {
     encryptionAvailable: boolean;
     providers: IntegrationStatus[];
     serverProvided: IntegrationProvider[];
+    unavailable: IntegrationProvider[];
   }> {
     const p = await this.auth.resolveHost(req);
     const providers = await listIntegrationStatuses(this.db, p.accountId);
@@ -560,10 +561,18 @@ export class IntegrationsController {
     const serverProvided: IntegrationProvider[] = [];
     if (usable(this.env.HUBSPOT_PRIVATE_APP_TOKEN)) serverProvided.push('hubspot');
     if (usable(this.env.CALENDLY_API_TOKEN)) serverProvided.push('calendly');
+    // Providers this DEPLOYMENT cannot connect at all. Google Sheets needs an
+    // OAuth client the operator registers with Google, and without one the
+    // authorize route can only refuse, so the page must not offer the card.
+    // Asked through the same `googleOAuthClient` the authorize route asks, so
+    // the list and the button cannot disagree about it.
+    const unavailable: IntegrationProvider[] = [];
+    if (!googleOAuthClient(this.env)) unavailable.push('google-sheets');
     return {
       encryptionAvailable: hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY),
       providers,
       serverProvided,
+      unavailable,
     };
   }
 

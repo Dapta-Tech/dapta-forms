@@ -21,7 +21,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getMessages } from '@quill/shared';
-import type { IntegrationStatus } from '@/lib/admin-api';
+import type { IntegrationProvider, IntegrationStatus } from '@/lib/admin-api';
 
 const actions = vi.hoisted(() => ({
   startGoogleSheetsAuthAction: vi.fn(),
@@ -63,7 +63,11 @@ afterEach(() => {
 });
 
 async function mount(
-  opts: { providers?: IntegrationStatus[]; outcome?: OauthOutcome | null } = {},
+  opts: {
+    providers?: IntegrationStatus[];
+    outcome?: OauthOutcome | null;
+    unavailable?: IntegrationProvider[];
+  } = {},
 ) {
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -74,6 +78,7 @@ async function mount(
         initialProviders={opts.providers ?? []}
         encryptionAvailable
         serverProvided={[]}
+        unavailable={opts.unavailable ?? []}
         oauthOutcome={opts.outcome ?? null}
         messages={m}
         locale="en"
@@ -146,6 +151,40 @@ describe('the Google Sheets card', () => {
     expect(gsheets.textContent).toContain('ops@example.com');
     expect(buttonLabelled(gsheets, m.connectWithGoogle)).toBeUndefined();
     expect(buttonLabelled(gsheets, m.disconnect)).toBeDefined();
+  });
+});
+
+describe('a deployment with no Google OAuth client', () => {
+  const gsheetsMark = (el: HTMLElement) => el.querySelector('[data-provider-logo="gsheets"]');
+
+  it('leaves the card out, and keeps the other two', async () => {
+    const el = await mount({ unavailable: ['google-sheets'] });
+    expect(gsheetsMark(el)).toBeNull();
+    expect(el.textContent).not.toContain(m.connectWithGoogle);
+    expect(el.textContent).toContain(m.hubspotName);
+    expect(el.textContent).toContain(m.calendlyName);
+  });
+
+  it('keeps the card of an account that is already connected, so it can be removed', async () => {
+    const el = await mount({
+      unavailable: ['google-sheets'],
+      providers: [
+        {
+          provider: 'google-sheets',
+          connected: true,
+          label: 'ops@example.com',
+          last4: 'abcd',
+          connectedAt: Date.UTC(2026, 10, 16),
+        },
+      ],
+    });
+    expect(gsheetsMark(el)).not.toBeNull();
+    expect(buttonLabelled(card(el), m.disconnect)).toBeDefined();
+  });
+
+  it('shows the card when the deployment has one', async () => {
+    const el = await mount({ unavailable: [] });
+    expect(gsheetsMark(el)).not.toBeNull();
   });
 });
 

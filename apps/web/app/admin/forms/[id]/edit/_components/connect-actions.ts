@@ -32,6 +32,12 @@ export interface ConnectIntegrationsData {
    * spreadsheet's tabs with, so the picker could only ever show an error.
    */
   googleSheetsConnected: boolean;
+  /**
+   * Whether this deployment can connect Google Sheets at all. False when its
+   * operator has registered no OAuth client, and then the spreadsheet card is
+   * left out rather than sending the author to a page with nothing to click.
+   */
+  googleSheetsAvailable: boolean;
 }
 
 export async function loadConnectIntegrationsAction(
@@ -65,6 +71,9 @@ export async function loadConnectIntegrationsAction(
   let hubspotConnected = false;
   let calendlyConnected = false;
   let googleSheetsConnected = false;
+  // True until the API says otherwise: a failed lookup must not make the card
+  // vanish from a deployment where it works.
+  let googleSheetsAvailable = true;
   try {
     const integrations = await adminApi.listIntegrations();
     hubspotConnected = integrations.providers.some((p) => p.provider === 'hubspot' && p.connected);
@@ -74,6 +83,7 @@ export async function loadConnectIntegrationsAction(
     googleSheetsConnected = integrations.providers.some(
       (p) => p.provider === 'google-sheets' && p.connected,
     );
+    googleSheetsAvailable = !(integrations.unavailable ?? []).includes('google-sheets');
   } catch (e) {
     unstable_rethrow(e);
     hubspotConnected = false;
@@ -89,6 +99,7 @@ export async function loadConnectIntegrationsAction(
       hubspotConnected,
       calendlyConnected,
       googleSheetsConnected,
+      googleSheetsAvailable,
     },
   };
 }

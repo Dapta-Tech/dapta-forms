@@ -255,6 +255,24 @@ export function initialGoogleSheets(destinations: FormDestination[]): GoogleShee
 }
 
 /**
+ * Whether the spreadsheet card is shown at all.
+ *
+ * A deployment with no Google OAuth client cannot connect Google Sheets, and a
+ * card there could only send the author to a page with nothing to click. The
+ * exception is a form that already stores a spreadsheet destination: its card
+ * stays, because a destination nobody can see is one nobody can switch off.
+ *
+ * Hiding the card never drops the destination. The state behind it is built
+ * from the form and written back on save either way.
+ */
+export function showsGoogleSheetsCard(
+  available: boolean,
+  destinations: FormDestination[],
+): boolean {
+  return available || destinations.some((d) => d.type === 'google-sheets');
+}
+
+/**
  * The destination to store, or null when there is nothing worth storing.
  *
  * Null covers the two ways this card can be incomplete: no spreadsheet, or no
@@ -389,6 +407,7 @@ export function IntegrationsEditor({
   hubspot: hubspotProps,
   hubspotConnected,
   googleSheetsConnected = false,
+  googleSheetsAvailable = true,
   questions,
   readiness = NOT_READY,
   partialsHeld = false,
@@ -402,6 +421,12 @@ export function IntegrationsEditor({
   hubspotConnected: boolean;
   /** Account-level Google connection: without it the spreadsheet card cannot list tabs. */
   googleSheetsConnected?: boolean;
+  /**
+   * Whether this deployment can connect Google Sheets at all. When it cannot,
+   * the spreadsheet card is left out, unless this form already stores a
+   * spreadsheet destination: that one stays visible so it can be switched off.
+   */
+  googleSheetsAvailable?: boolean;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
   /**
@@ -752,13 +777,15 @@ export function IntegrationsEditor({
         />
       </LocaleContext.Provider>
 
-      <GoogleSheetsCard
-        state={sheets}
-        setState={editSheets}
-        questions={questions}
-        connected={googleSheetsConnected}
-        m={m}
-      />
+      {showsGoogleSheetsCard(googleSheetsAvailable, initialDestinations) ? (
+        <GoogleSheetsCard
+          state={sheets}
+          setState={editSheets}
+          questions={questions}
+          connected={googleSheetsConnected}
+          m={m}
+        />
+      ) : null}
 
       {/* The Save button is gone (V5-A4) — everything here autosaves, so what
           belongs in this bar is the state of that save, not an action. */}

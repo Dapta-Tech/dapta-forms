@@ -257,6 +257,34 @@ describe('GET /v1/integrations (status)', () => {
     expect(out.encryptionAvailable).toBe(false);
     expect(out.providers).toEqual([]);
   });
+
+  // The page leaves the Google Sheets card out on this answer, so it has to be
+  // the same answer the authorize route gives, in every one of these setups.
+  const GOOGLE_CLIENT = {
+    GOOGLE_OAUTH_CLIENT_ID: 'cid.apps.googleusercontent.com',
+    GOOGLE_OAUTH_CLIENT_SECRET: 'client-secret',
+    GOOGLE_OAUTH_REDIRECT_URI: 'https://api.example.com/v1/integrations/google-sheets/callback',
+  };
+
+  it('reports Google Sheets unavailable on a deployment with no OAuth client', async () => {
+    build(makeEnv(), noopFetch);
+    expect((await controller.list(asOwner())).unavailable).toEqual(['google-sheets']);
+    await expect(controller.googleAuthorize(asOwner())).rejects.toMatchObject({
+      response: { error: 'INTEGRATION_UNAVAILABLE' },
+    });
+  });
+
+  it('reports it unavailable when the client is only half configured', async () => {
+    build(makeEnv({ ...GOOGLE_CLIENT, GOOGLE_OAUTH_CLIENT_SECRET: undefined }), noopFetch);
+    expect((await controller.list(asOwner())).unavailable).toEqual(['google-sheets']);
+  });
+
+  it('reports nothing unavailable once the client is configured, and can start a consent', async () => {
+    build(makeEnv(GOOGLE_CLIENT), noopFetch);
+    expect((await controller.list(asOwner())).unavailable).toEqual([]);
+    const { authUrl } = await controller.googleAuthorize(asOwner());
+    expect(authUrl).toContain('client_id=cid.apps.googleusercontent.com');
+  });
 });
 
 describe('DELETE /v1/integrations/:provider', () => {
