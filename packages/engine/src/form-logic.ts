@@ -330,7 +330,7 @@ export interface OutcomeOverrideRule {
 
 /** Scheduling handoff for an outcome (additive; mirrors the config schema). */
 export interface OutcomeBooking {
-  provider: 'hubspot_meetings' | 'calendly';
+  provider: 'hubspot_meetings' | 'calendly' | 'dcal';
   url: string;
   prefill?: boolean;
 }
@@ -517,8 +517,12 @@ export interface FormBranding {
 
 /** A `scheduler` step's embedded booking config (Calendly in v1). */
 export interface FormScheduler {
-  /** Scheduling provider. v1 ships Calendly; the embed also supports HubSpot Meetings. */
-  provider?: 'calendly' | 'hubspot_meetings';
+  /**
+   * Scheduling provider. v1 shipped Calendly; the embed also supports HubSpot
+   * Meetings and dCal. Mirrors `formSchedulerSchema.provider` in @quill/types:
+   * the two unions must move together.
+   */
+  provider?: 'calendly' | 'hubspot_meetings' | 'dcal';
   /** The picked Calendly event type's stable URI (builder reference). */
   eventTypeUri?: string | null;
   /** Its display name, stored so the builder can label it without a lookup. */
