@@ -16,6 +16,7 @@ import { cn } from '@/lib/cn';
 import { fill } from '@/lib/onboarding';
 import { Field } from './fields';
 import { isLinkConfigured, parseCalendlyLink } from './scheduler-link';
+import { SchedulerDcalPicker } from './scheduler-dcal';
 import type { BuilderMessages } from './builder-messages';
 
 type FormScheduler = NonNullable<FormStep['scheduler']>;
@@ -224,6 +225,107 @@ export function SchedulerPanel({
     ...(selected?.customQuestions ?? []).map((q) => ({ id: q.id, label: q.label })),
   ];
 
+  /**
+   * Which scheduler this step books through. Absent means Calendly, which is
+   * what every step authored before dCal existed means, so nothing a stored
+   * config says changes here.
+   */
+  const provider = scheduler.provider === 'dcal' ? 'dcal' : 'calendly';
+
+  /**
+   * Switching provider drops the picked event and its mapping. It has to: the
+   * url, the event id and the prefill keys are all the OLD provider's, and
+   * keeping any of them would leave a step pointing a dCal render at a
+   * Calendly page, or prefilling a named field from a positional id.
+   */
+  const switchProvider = (next: 'calendly' | 'dcal') => {
+    if (next === provider) return;
+    setLinkMode(false);
+    setLinkText('');
+    setLinkInvalid(false);
+    onChange({
+      ...scheduler,
+      provider: next,
+      eventTypeUri: null,
+      eventTypeName: null,
+      url: null,
+      prefillMap: {},
+    });
+  };
+
+  /**
+   * Where the form goes once they book. A scheduler's answer is a timestamp,
+   * so there is no option value to branch on: this writes a catch-all rule
+   * ("any booking") that either ends the form or jumps.
+   *
+   * Extracted rather than inlined because BOTH providers' panels end with it,
+   * and a second copy is a second thing to forget: the one that got edited
+   * would quietly be the only one that worked.
+   */
+  const afterBookingField = (
+    <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+      <p className="text-xs font-medium text-foreground">{s.schedulerAfter}</p>
+      <p className="text-xs text-muted-foreground">{s.schedulerAfterHint}</p>
+      <div data-testid="scheduler-after">
+        <Select
+          ariaLabel={s.schedulerAfter}
+          value={afterValue}
+          options={[
+            { value: '', label: s.schedulerAfterContinue },
+            { value: AFTER_SUBMIT, label: s.schedulerAfterSubmit },
+            ...laterSteps.map((st) => ({ value: st.key, label: st.label })),
+          ]}
+          onChange={(v) => {
+            // Through the shared builder, not a whole-array replacement: this
+            // picker owns the catch-all ONLY, and a scheduler can carry value
+            // rules too (a jump authored in Branching). Replacing the array
+            // here used to drop them.
+            const valueRules = (goto ?? []).filter((r) => !r.values.includes('*'));
+            onGotoChange(buildGoto(valueRules, !v ? GOTO_NEXT : v === AFTER_SUBMIT ? GOTO_END : v));
+          }}
+        />
+      </div>
+      {catchAll?.target != null && landingOf ? <JumpLandingNote landing={landingOf(catchAll.target)} m={bm} /> : null}
+    </div>
+  );
+
+  const providerField = (
+    <Field label={s.schedulerProvider}>
+      <Select
+        data-testid="scheduler-provider"
+        value={provider}
+        onChange={(v) => switchProvider(v === 'dcal' ? 'dcal' : 'calendly')}
+        options={[
+          { value: 'calendly', label: s.schedulerProviderCalendly },
+          { value: 'dcal', label: s.schedulerProviderDcal },
+        ]}
+      />
+    </Field>
+  );
+
+  if (provider === 'dcal') {
+    return (
+      <section className="flex flex-col gap-3 border-t border-border pt-4" data-testid="scheduler-panel">
+        {/* No mark here yet, deliberately: dCal's own logo is a raster asset
+            in its repo, and `ProviderLogo` draws a single inline path. A
+            hand-approximated stand-in would be shipping a brand mark nobody
+            approved, so the label stands alone until the real path lands. */}
+        <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
+          {s.schedulerSection}
+        </p>
+        <p className="text-xs text-muted-foreground">{s.schedulerHint}</p>
+        {providerField}
+        <SchedulerDcalPicker scheduler={scheduler} onChange={onChange} s={s} />
+        {/* Deliberately no "show event details" switch here: dCal's embed has
+            no such parameter, and an option that changes nothing is worse than
+            an absent one. The renderer ignores it for dCal for the same
+            reason, so an old config cannot produce the broken combination
+            either. */}
+        {afterBookingField}
+      </section>
+    );
+  }
+
   return (
     <section className="flex flex-col gap-3 border-t border-border pt-4" data-testid="scheduler-panel">
       {/* The mark, not a generic calendar glyph: this section books through
@@ -234,6 +336,7 @@ export function SchedulerPanel({
         {s.schedulerSection}
       </p>
       <p className="text-xs text-muted-foreground">{s.schedulerHint}</p>
+      {providerField}
 
       {state.status === 'loading' ? (
         // A saved link is shown at once — it never depended on the list. The
@@ -344,33 +447,7 @@ export function SchedulerPanel({
         />
       </div>
 
-      {/* Where the form goes once they book. A scheduler's answer is a
-          timestamp, so there is no option value to branch on — this writes a
-          catch-all rule ("any booking") that either ends the form or jumps. */}
-      <div className="flex flex-col gap-1.5 border-t border-border pt-3">
-        <p className="text-xs font-medium text-foreground">{s.schedulerAfter}</p>
-        <p className="text-xs text-muted-foreground">{s.schedulerAfterHint}</p>
-        <div data-testid="scheduler-after">
-          <Select
-            ariaLabel={s.schedulerAfter}
-            value={afterValue}
-            options={[
-              { value: '', label: s.schedulerAfterContinue },
-              { value: AFTER_SUBMIT, label: s.schedulerAfterSubmit },
-              ...laterSteps.map((st) => ({ value: st.key, label: st.label })),
-            ]}
-            onChange={(v) => {
-              // Through the shared builder, not a whole-array replacement:
-              // this picker owns the catch-all ONLY, and a scheduler can carry
-              // value rules too (a jump authored in Branching). Replacing the
-              // array here used to drop them.
-              const valueRules = (goto ?? []).filter((r) => !r.values.includes('*'));
-              onGotoChange(buildGoto(valueRules, !v ? GOTO_NEXT : v === AFTER_SUBMIT ? GOTO_END : v));
-            }}
-          />
-        </div>
-        {catchAll?.target != null && landingOf ? <JumpLandingNote landing={landingOf(catchAll.target)} m={bm} /> : null}
-      </div>
+      {afterBookingField}
 
       {/* Autofill: which earlier answer feeds each field THIS event type's
           booking page asks for. The two built-ins are always there; everything

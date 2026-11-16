@@ -13,6 +13,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -46,6 +47,8 @@ import { isInputlessStep, type FormStep } from '@quill/engine';
 import { syncMirrorForm, type MirrorSyncResult } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
+import { header } from './auth.provider';
+import { DcalService, type DcalEventTypesResponse } from './dcal.service';
 import { assertAdmin } from './permissions';
 import { parse } from './validation';
 import { keyDestinationsBodyIssues } from './strict-config';
@@ -382,6 +385,18 @@ export class CalendlyEventTypesService {
   }
 }
 
+/**
+ * The caller's own bearer, for the one integration that forwards it rather than
+ * holding a credential of its own (dCal). Absent on the `local` auth provider
+ * of a bare fork, which mints no token, and absent for an API-key caller: both
+ * mean "no session to forward", which the service reports as unavailable.
+ */
+function bearerOf(req: ReqLike): string | null {
+  const raw = header(req, 'authorization')?.trim() ?? '';
+  const match = /^Bearer\s+(.+)$/i.exec(raw);
+  return match?.[1]?.trim() || null;
+}
+
 /** Connect-body contract: a non-empty pasted provider token. */
 const connectBodySchema = z.object({ token: z.string().min(1) });
 
@@ -452,6 +467,10 @@ export class IntegrationsController {
     // Only to say whether a form's partials are held on THIS deployment. Last,
     // and optional: specs build this controller positionally.
     @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
+    // After `captcha` and optional for the same reason stated there: the specs
+    // build this controller positionally, so a new required parameter in the
+    // middle would silently shift every one of them.
+    @Optional() @Inject(DcalService) private readonly dcal?: DcalService,
   ) {}
 
   /**
@@ -627,6 +646,29 @@ export class IntegrationsController {
   async calendlyEventTypes(@Req() req: ReqLike): Promise<CalendlyEventTypesResponse> {
     const p = await this.auth.resolveHost(req);
     return this.calendly.listEventTypes(p.accountId);
+  }
+
+  /**
+   * dCal event-type picker for the scheduler step, read with the AUTHOR'S own
+   * session: their bearer is forwarded to dCal, which scopes the answer to it.
+   * No stored credential is involved, so there is nothing to connect first.
+   *
+   * `workspaceId` picks one of the author's other workspaces (the picker's
+   * switcher); `refresh=1` drops the cached list, which is what the empty
+   * state's refresh asks for after the author created an event in dCal.
+   */
+  @Get('dcal/event-types')
+  async dcalEventTypes(
+    @Req() req: ReqLike,
+    @Query('workspaceId') workspaceId?: string,
+    @Query('refresh') refresh?: string,
+  ): Promise<DcalEventTypesResponse> {
+    const p = await this.auth.resolveHost(req);
+    if (!this.dcal) return { enabled: false, reason: 'This deployment has no dCal configured.' };
+    return this.dcal.listEventTypes(p.accountId, p.memberId, bearerOf(req), {
+      ...(workspaceId?.trim() ? { workspaceId: workspaceId.trim() } : {}),
+      refresh: refresh === '1' || refresh === 'true',
+    });
   }
 
   /**

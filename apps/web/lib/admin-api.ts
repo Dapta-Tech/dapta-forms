@@ -597,6 +597,57 @@ export type CalendlyEventTypesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; connectedAs: string | null; eventTypes: CalendlyEventType[] };
 
+/**
+ * One question a dCal event type's booking form asks, beyond the name, email
+ * and notes its form always asks. `name` is the field's own name, which is
+ * also its prefill parameter (`answer_<name>`): a NAME, where Calendly's ids
+ * are positional.
+ */
+export interface DcalBookingField {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+}
+
+/** A dCal event type the scheduler step can embed. */
+export interface DcalEventType {
+  /** dCal's own event-type id (what the step stores as `eventTypeUri`). */
+  id: string;
+  name: string;
+  /** The public booking page, already assembled by the API. */
+  schedulingUrl: string;
+  active: boolean;
+  durationMinutes: number;
+  /** Null for the author's own events; the team's name for a team event. */
+  teamName: string | null;
+  bookingFields: DcalBookingField[];
+}
+
+/** A workspace the author can act in, for the picker's switcher. */
+export interface DcalWorkspace {
+  id: string;
+  name: string;
+  current: boolean;
+}
+
+/**
+ * The dCal picker's response. Unlike the other two, "unavailable" here never
+ * means "connect something": there is no credential to connect, so it means
+ * this deployment has no dCal, or there is no session to forward to it.
+ */
+export type DcalEventTypesResponse =
+  | { enabled: false; reason: string }
+  | {
+      enabled: true;
+      cached: boolean;
+      connectedAs: string | null;
+      workspaces: DcalWorkspace[];
+      eventTypes: DcalEventType[];
+      /** dCal's event-type editor, for an author who has none yet. */
+      createEventUrl: string | null;
+    };
+
 export type { FormDestination };
 
 // --- Notifications (submission emails) ---------------------------------------

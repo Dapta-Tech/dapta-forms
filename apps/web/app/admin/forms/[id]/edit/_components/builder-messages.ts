@@ -348,6 +348,28 @@ export interface BuilderMessages {
     schedulerMapName: string;
     schedulerMapEmail: string;
     schedulerMapAuto: string;
+    /**
+     * dCal, the third provider. It needs no connected credential: the author's
+     * own session lists their event types, so there is no "connect" state
+     * here, only "you have none yet".
+     */
+    schedulerProvider: string;
+    schedulerProviderCalendly: string;
+    schedulerProviderDcal: string;
+    schedulerDcalWorkspace: string;
+    /** No event type in THIS workspace. The two ways out follow. */
+    schedulerDcalEmpty: string;
+    /** Only shown when the author actually has another workspace to switch to. */
+    schedulerDcalEmptySwitch: string;
+    /** Opens dCal's event-type editor in a new tab. */
+    schedulerDcalCreate: string;
+    /** Re-reads the list, for when they come back from creating one. */
+    schedulerDcalRefresh: string;
+    schedulerDcalRefreshing: string;
+    /** dCal is not configured for this deployment, or there is no session to forward. */
+    schedulerDcalUnavailable: string;
+    /** A team event, so the author can tell it from their own: `{team}` is its name. */
+    schedulerDcalTeam: string;
     /** V6 — where the form goes once the respondent books. */
     schedulerAfter: string;
     schedulerAfterHint: string;
@@ -872,6 +894,17 @@ const en: BuilderMessages = {
     schedulerAfter: 'After booking',
     schedulerAfterHint: 'What happens once the respondent picks a time.',
     schedulerAfterContinue: 'Continue to the next question',
+    schedulerProvider: 'Scheduler',
+    schedulerProviderCalendly: 'Calendly',
+    schedulerProviderDcal: 'dCal',
+    schedulerDcalWorkspace: 'Workspace',
+    schedulerDcalEmpty: 'This workspace has no event type yet.',
+    schedulerDcalEmptySwitch: 'Pick another workspace above, or:',
+    schedulerDcalCreate: 'Create one in dCal',
+    schedulerDcalRefresh: 'I created it, load the list',
+    schedulerDcalRefreshing: 'Loading the list again…',
+    schedulerDcalUnavailable: 'dCal is not available on this deployment.',
+    schedulerDcalTeam: 'Team: {team}',
     schedulerAfterSubmit: 'Submit the form and show the ending',
     scoring: 'Scoring',
     scoringHint:
@@ -1351,6 +1384,17 @@ const es: BuilderMessages = {
     schedulerAfter: 'Al agendar',
     schedulerAfterHint: 'Qué pasa cuando la persona elige un horario.',
     schedulerAfterContinue: 'Continuar a la siguiente pregunta',
+    schedulerProvider: 'Agendador',
+    schedulerProviderCalendly: 'Calendly',
+    schedulerProviderDcal: 'dCal',
+    schedulerDcalWorkspace: 'Espacio de trabajo',
+    schedulerDcalEmpty: 'Este espacio de trabajo todavía no tiene ningún evento.',
+    schedulerDcalEmptySwitch: 'Elige otro espacio de trabajo arriba, o bien:',
+    schedulerDcalCreate: 'Crear uno en dCal',
+    schedulerDcalRefresh: 'Ya lo creé, cargar la lista',
+    schedulerDcalRefreshing: 'Cargando la lista de nuevo…',
+    schedulerDcalUnavailable: 'dCal no está disponible en esta instalación.',
+    schedulerDcalTeam: 'Equipo: {team}',
     schedulerAfterSubmit: 'Enviar el formulario y mostrar el final',
     scoring: 'Puntaje',
     scoringHint:

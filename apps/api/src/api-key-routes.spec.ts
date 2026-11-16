@@ -78,6 +78,12 @@ const DENIED = new Set([
   // Connecting or disconnecting an integration.
   'POST /v1/integrations/:provider/connect',
   'DELETE /v1/integrations/:provider',
+  // The dCal picker, which is the one integration read a key cannot do. It
+  // holds no stored credential: it forwards the CALLER'S session to dCal, and
+  // a key is not a session, so for a key it could only ever answer
+  // "unavailable". Its two siblings above are allowed because they read a
+  // token the account connected once, which a key can use.
+  'GET /v1/integrations/dcal/event-types',
 ]);
 
 /** Allowlisted ahead of the route landing in its own change (revert, #60). */
