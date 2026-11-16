@@ -19,7 +19,7 @@ import { SchedulerEmbedPreview } from './scheduler-embed-preview';
 import { getBuilderMessages } from './builder-messages';
 
 const m = getBuilderMessages('en');
-const DCAL_URL = 'https://cal.dapta.ai/dapta/ana/intro-call';
+const DCAL_URL = 'https://cal.example.test/dapta/ana/intro-call';
 
 let root: Root | null = null;
 let container: HTMLElement | null = null;
@@ -60,7 +60,7 @@ describe('the canvas card before an event type is picked', () => {
   it('sells dCal instead of only saying nothing is configured', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ enabled: true, createEventUrl: 'https://cal.dapta.ai/admin/event-types' }),
+      json: async () => ({ enabled: true, createEventUrl: 'https://cal.example.test/admin/event-types' }),
     });
     const el = await mount({ provider: 'dcal', prefill: true });
     const card = el.querySelector('[data-testid="canvas-scheduler-dcal-setup"]')!;
@@ -74,11 +74,11 @@ describe('the canvas card before an event type is picked', () => {
   it('links out to dCal to create one, in a new tab', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ enabled: true, createEventUrl: 'https://cal.dapta.ai/admin/event-types' }),
+      json: async () => ({ enabled: true, createEventUrl: 'https://cal.example.test/admin/event-types' }),
     });
     const el = await mount({ provider: 'dcal', prefill: true });
     const link = el.querySelector<HTMLAnchorElement>('[data-testid="canvas-scheduler-dcal-create"]')!;
-    expect(link.getAttribute('href')).toBe('https://cal.dapta.ai/admin/event-types');
+    expect(link.getAttribute('href')).toBe('https://cal.example.test/admin/event-types');
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
   });
