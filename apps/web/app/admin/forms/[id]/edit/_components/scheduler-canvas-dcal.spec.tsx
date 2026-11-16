@@ -15,6 +15,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { FormStep } from '@quill/engine';
+// The Calendly branch loads Calendly's widget script, and happy-dom tries to
+// FETCH it: a unit test must not reach the network, and the unhandled failure
+// exits vitest non-zero even while every assertion passes. The back-compat
+// cases here only assert which branch rendered, so the loader is stubbed.
+vi.mock('@/lib/booking-embed', () => ({ loadCalendlyScript: () => new Promise(() => {}) }));
+
 import { SchedulerEmbedPreview } from './scheduler-embed-preview';
 import { getBuilderMessages } from './builder-messages';
 
