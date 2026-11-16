@@ -207,6 +207,26 @@ describe('who the respondent already is', () => {
     expect(writes(org.requests)[0]?.body).toMatchObject({ Email: 'sam@acme.io' });
   });
 
+  it('accepts a subdomain address and refuses a pathological one quickly', async () => {
+    const org = fakeOrg({});
+    await new SalesforceDestination(options(), org.fetchImpl).deliver(
+      ctx({ data: { email: 'sam@mail.acme.io' } }),
+    );
+    expect(writes(org.requests)[0]?.body).toMatchObject({ Email: 'sam@mail.acme.io' });
+
+    // The shape CodeQL flagged: '!@!.', thousands of '!.', then a character that
+    // makes the match fail. The old pattern took ~650 ms on 40k characters and grew
+    // quadratically; this one is linear and over the length cap anyway.
+    const quiet = fakeOrg({});
+    const started = Date.now();
+    const out = await new SalesforceDestination(options(), quiet.fetchImpl).deliver(
+      ctx({ data: { email: `!@!.${'!.'.repeat(50_000)}@` } }),
+    );
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(out).toEqual({ delivered: false, driver: 'salesforce', detail: 'no email in submission' });
+    expect(quiet.fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('escapes the email inside SOQL, so a quote cannot change the query', async () => {
     const org = fakeOrg({});
     await new SalesforceDestination(options(), org.fetchImpl).deliver(
