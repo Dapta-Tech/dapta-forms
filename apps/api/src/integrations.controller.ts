@@ -882,10 +882,14 @@ export class IntegrationsController {
   // URL and the status, which is Nest's contract for a dynamic redirect.
   @Redirect('/', 302)
   async googleCallback(
-    @Query('code') code: string | undefined,
-    @Query('state') state: string | undefined,
-    @Query('error') denied: string | undefined,
+    @Query('code') rawCode: unknown,
+    @Query('state') rawState: unknown,
+    @Query('error') denied: unknown,
   ): Promise<{ url: string; statusCode: number }> {
+    // `?code=a&code=b` arrives as an array. Only a single string is a usable
+    // value; anything else is treated as missing and ends in `error=google`.
+    const code = typeof rawCode === 'string' ? rawCode : undefined;
+    const state = typeof rawState === 'string' ? rawState : undefined;
     const done = (params: string) => ({
       url: `${this.connectionsUrl()}?${params}`,
       statusCode: 302,
