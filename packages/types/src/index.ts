@@ -195,9 +195,19 @@ export const formRevealSchema = z.object({
  * exactly like any other step. All fields optional/additive (back-compat).
  */
 export const formSchedulerSchema = z.object({
-  /** Scheduling provider. v1 ships Calendly; the embed also supports HubSpot Meetings. */
-  provider: z.enum(['calendly', 'hubspot_meetings']).optional(),
-  /** The picked Calendly event type's stable URI (used by the builder's picker). */
+  /**
+   * Scheduling provider. v1 shipped Calendly; the embed also supports HubSpot
+   * Meetings and dCal (Dapta's own scheduler).
+   */
+  // Spelled out rather than `z.enum(bookingProvider)`: that const is declared
+  // further down this file, and a forward reference here is evaluated at import
+  // time, before it exists. The two lists must move together.
+  provider: z.enum(['calendly', 'hubspot_meetings', 'dcal']).optional(),
+  /**
+   * The picked event type's stable id, used by the builder's picker: Calendly's
+   * URI, or dCal's own event-type id. Not a URL on purpose, because neither
+   * provider's id is one.
+   */
   eventTypeUri: z.string().max(500).nullable().optional(),
   /** Its display name, stored so the builder can label it without a lookup. */
   eventTypeName: z.string().max(200).nullable().optional(),
@@ -500,8 +510,15 @@ export type BrandKit = z.infer<typeof brandKitSchema>;
 
 // --- Outcome extensions (booking + answer-forced overrides) ------------------
 
-/** Scheduling providers an outcome can hand off to after the form completes. */
-export const bookingProvider = ['hubspot_meetings', 'calendly'] as const;
+/**
+ * Scheduling providers an outcome can hand off to after the form completes.
+ *
+ * `dcal` is Dapta's own scheduler (dforms' sibling product). It needs no
+ * connected credential at all, unlike the other two: it projects the SAME
+ * identity service this app does, so the author's own session is what lists
+ * their event types, and the booking page it embeds is a plain URL.
+ */
+export const bookingProvider = ['hubspot_meetings', 'calendly', 'dcal'] as const;
 export type BookingProvider = (typeof bookingProvider)[number];
 
 /**
@@ -1549,9 +1566,9 @@ export type FormEventInput = z.infer<typeof formEventSchema>;
 
 /**
  * The public booking callback: the renderer reports a meeting booked through an
- * outcome's scheduling embed (HubSpot Meetings / Calendly) so it can be tied to
- * the session's submission. Persisted as a `booking_event` row; delivery to
- * destinations is a later, outbox-driven concern.
+ * outcome's scheduling embed (HubSpot Meetings / Calendly / dCal) so it can be
+ * tied to the session's submission. Persisted as a `booking_event` row; delivery
+ * to destinations is a later, outbox-driven concern.
  */
 export const bookingCallbackSchema = z.object({
   /** Per-session id (sessionStorage) tying the booking to its submission. */
@@ -1561,6 +1578,18 @@ export const bookingCallbackSchema = z.object({
   eventUri: z.string().url().max(2048).optional(),
   /** Provider URI of the invitee record. */
   inviteeUri: z.string().url().max(2048).optional(),
+  /**
+   * The booking's own identifier, for a provider that names it rather than
+   * addressing it: dCal reports a `uid`, which is what its API reads a booking
+   * back by and what its reschedule and cancel links are built from.
+   *
+   * Kept APART from `eventUri` instead of widening that field, because
+   * `eventUri` is validated as a URL and every reader of it (the HubSpot
+   * booking sync fetches it) treats it as one. A uid in that field would be
+   * either rejected by the schema or fetched as an address, and both are worse
+   * than a second optional field.
+   */
+  bookingUid: z.string().min(1).max(200).optional(),
   /** Scheduled start as an ISO 8601 datetime. */
   startTime: z.string().datetime({ offset: true }).optional(),
 });

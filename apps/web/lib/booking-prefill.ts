@@ -108,6 +108,15 @@ export function resolveSchedulerPrefill(
   answers: Record<string, unknown>,
   map: Record<string, string | null | undefined> | undefined,
   steps?: FormStep[],
+  /**
+   * Which provider's ids `map` is keyed by. It decides what counts as a custom
+   * question, and getting it wrong is silent: dCal event types may have a
+   * booking field literally NAMED `phone`, which under Calendly's rules would
+   * be read as the legacy built-in and routed to its `a1` slot instead of to
+   * the field of that name. Defaults to Calendly, which is what every config
+   * written before dCal existed means.
+   */
+  provider: 'calendly' | 'hubspot_meetings' | 'dcal' = 'calendly',
 ): SchedulerPrefill {
   // "Automatic" first — resolved by question type — then the explicit mappings
   // on top, so a field the author mapped always wins over the inferred one.
@@ -117,6 +126,12 @@ export function resolveSchedulerPrefill(
   const customAnswers: Record<string, string> = {};
   const read = (key: string | null | undefined): string =>
     key ? String(answers[key] ?? '').trim() : '';
+  // dCal's booking form asks `name`, `email` and `notes` by itself and treats
+  // every other field name as one of the event type's own questions
+  // (RESERVED_FIELD_NAMES there). Calendly's built-ins are name/email, with
+  // `phone` kept as the legacy alias of its first custom slot.
+  const isCustom = (field: string): boolean =>
+    provider === 'dcal' ? !['name', 'email', 'notes'].includes(field) : /^a\d+$/.test(field);
 
   for (const [field, stepKey] of Object.entries(map)) {
     const value = read(stepKey);
@@ -127,9 +142,11 @@ export function resolveSchedulerPrefill(
       out.lastname = rest.join(' ');
     } else if (field === 'email') {
       out.email = value;
-    } else if (field === 'phone') {
+    } else if (field === 'notes' && provider === 'dcal') {
+      out.notes = value;
+    } else if (field === 'phone' && provider !== 'dcal') {
       out.phone = value; // legacy mapping → the a1 slot via the builders below
-    } else if (/^a\d+$/.test(field)) {
+    } else if (isCustom(field)) {
       customAnswers[field] = value;
     }
   }
@@ -191,6 +208,48 @@ export function buildCalendlyEmbedUrl(
   return url.toString();
 }
 
+/**
+ * dCal inline-embed URL.
+ *
+ * `embed=1` is what puts its booking page in embed chrome and starts its
+ * `postMessage` channel; there is no script to load and no `embed_domain` to
+ * declare, because the iframe is declarative and the events go to any framing
+ * page (dCal's public routes carry `frame-ancestors *`).
+ *
+ * The form's own answers fill `name`, `email` and `notes`; each of the event
+ * type's own questions is prefilled under `answer_<fieldName>`, the parameter
+ * dCal reads it by. `utm_content` carries the form sessionId exactly as it does
+ * for Calendly, and dCal keeps the five `utm_*` on the booking it creates, so
+ * the booking can be tied back to the submission from either side.
+ */
+export function buildDcalEmbedUrl(
+  baseUrl: string,
+  answers: Record<string, unknown>,
+  options?: {
+    prefill?: boolean;
+    sessionId?: string;
+    /** fieldName -> value, from `resolveSchedulerPrefill` under `provider: 'dcal'`. */
+    customAnswers?: Record<string, string>;
+  },
+): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set('embed', '1');
+  if (options?.prefill !== false) {
+    const { name, email } = extractBookingContactFields(answers);
+    setParam(url, 'name', name);
+    setParam(url, 'email', email);
+    setParam(url, 'notes', String(answers.notes ?? '').trim());
+    for (const [field, value] of Object.entries(options?.customAnswers ?? {})) {
+      // The field name is the author's, from the event type dCal reported, so
+      // it is encoded rather than trusted as a parameter name.
+      setParam(url, `answer_${field}`, value);
+    }
+  }
+  const sessionId = options?.sessionId?.trim() ?? '';
+  if (sessionId) url.searchParams.set('utm_content', sessionId);
+  return url.toString();
+}
+
 /** `Calendly.initInlineWidget` prefill object — complements the URL params. */
 export interface CalendlyWidgetPrefill {
   name?: string;
@@ -246,9 +305,15 @@ export function buildBookingEmbedUrl(
   answers: Record<string, unknown>,
   sessionId: string,
   embedDomain?: string,
+  /** dCal only: its event type's own questions, keyed by field name. */
+  customAnswers?: Record<string, string>,
 ): string {
   const prefill = booking.prefill !== false;
-  return booking.provider === 'hubspot_meetings'
-    ? buildHubSpotMeetingsUrl(booking.url, answers, { prefill })
-    : buildCalendlyEmbedUrl(booking.url, answers, { prefill, sessionId, embedDomain });
+  if (booking.provider === 'hubspot_meetings') {
+    return buildHubSpotMeetingsUrl(booking.url, answers, { prefill });
+  }
+  if (booking.provider === 'dcal') {
+    return buildDcalEmbedUrl(booking.url, answers, { prefill, sessionId, customAnswers });
+  }
+  return buildCalendlyEmbedUrl(booking.url, answers, { prefill, sessionId, embedDomain });
 }

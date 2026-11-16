@@ -5,6 +5,7 @@ import {
   buildBookingEmbedUrl,
   buildCalendlyEmbedUrl,
   buildCalendlyWidgetPrefill,
+  buildDcalEmbedUrl,
   buildHubSpotMeetingsUrl,
   calendlyPrefillMessagePayload,
   extractBookingContactFields,
@@ -355,5 +356,118 @@ describe('calendlyPrefillMessagePayload', () => {
   it('is null when there is nothing to prefill', () => {
     expect(calendlyPrefillMessagePayload(undefined)).toBeNull();
     expect(calendlyPrefillMessagePayload({})).toBeNull();
+  });
+});
+
+// --- dCal ------------------------------------------------------------------
+// Where dCal differs from Calendly, and why each difference has a test: its
+// booking fields have real NAMES rather than positional ids, so the map is
+// read by name; `notes` is one of the three fields its form asks by itself;
+// and `phone` is NOT a built-in there, so an event type with a field named
+// `phone` must be prefilled as that field and not routed to Calendly's legacy
+// `a1` slot. Getting the last one wrong is silent: the booking just arrives
+// with an empty phone.
+
+const DCAL_URL = 'https://cal.example.test/acme/ana/intro-call';
+
+describe('resolveSchedulerPrefill: dcal', () => {
+  const answers = { ...ANSWERS, company_1: 'Example Co', notes_1: 'Sent from the form' };
+
+  it('reads the map by field name, phone included', () => {
+    const { answers: out, customAnswers } = resolveSchedulerPrefill(
+      answers,
+      { email: 'email', phone: 'phone', company: 'company_1' },
+      undefined,
+      'dcal',
+    );
+    expect(customAnswers).toEqual({ phone: '+57 300 123 4567', company: 'Example Co' });
+    // `phone` stayed a named field: it must NOT have been treated as a built-in.
+    expect(out.email).toBe('ada@example.com');
+  });
+
+  it('treats name, email and notes as the fields dCal asks by itself', () => {
+    const { answers: out, customAnswers } = resolveSchedulerPrefill(
+      answers,
+      { notes: 'notes_1' },
+      undefined,
+      'dcal',
+    );
+    expect(out.notes).toBe('Sent from the form');
+    expect(customAnswers).toEqual({});
+  });
+
+  it('still routes phone to the legacy slot for Calendly, the default', () => {
+    const { customAnswers } = resolveSchedulerPrefill(answers, { phone: 'phone' }, undefined);
+    expect(customAnswers).toEqual({});
+  });
+});
+
+describe('buildDcalEmbedUrl', () => {
+  const url = (...args: Parameters<typeof buildDcalEmbedUrl>) =>
+    new URL(buildDcalEmbedUrl(...args)).searchParams;
+
+  it('turns on embed mode and fills the three fields dCal asks by itself', () => {
+    const q = url(DCAL_URL, { ...ANSWERS, notes: 'Sent from the form' });
+    expect(q.get('embed')).toBe('1');
+    expect(q.get('name')).toBe('Ada Lovelace');
+    expect(q.get('email')).toBe('ada@example.com');
+    expect(q.get('notes')).toBe('Sent from the form');
+  });
+
+  it('sends each of the event type’s own questions under its field name', () => {
+    const q = url(DCAL_URL, ANSWERS, { customAnswers: { company: 'Example Co', phone: '+57 300' } });
+    expect(q.get('answer_company')).toBe('Example Co');
+    expect(q.get('answer_phone')).toBe('+57 300');
+  });
+
+  it('carries the sessionId as utm_content, which dCal keeps on the booking', () => {
+    expect(url(DCAL_URL, ANSWERS, { sessionId: 'sess_42' }).get('utm_content')).toBe('sess_42');
+  });
+
+  it('keeps embed mode but sends no values when prefill is off', () => {
+    const q = url(DCAL_URL, ANSWERS, { prefill: false, customAnswers: { company: 'Example Co' } });
+    expect(q.get('embed')).toBe('1');
+    expect(q.get('name')).toBeNull();
+    expect(q.get('email')).toBeNull();
+    expect(q.get('answer_company')).toBeNull();
+  });
+
+  it('leaves out a field with no answer rather than sending it blank', () => {
+    const q = url(DCAL_URL, { email: 'ada@example.com' }, { customAnswers: { company: '' } });
+    expect(q.get('email')).toBe('ada@example.com');
+    expect(q.get('name')).toBeNull();
+    expect(q.get('notes')).toBeNull();
+    expect(q.get('answer_company')).toBeNull();
+  });
+
+  it('never double-appends onto a URL that already carries a query', () => {
+    const built = buildDcalEmbedUrl(`${DCAL_URL}?embed=1&lang=es`, ANSWERS);
+    expect(built.match(/embed=/g)).toHaveLength(1);
+    expect(new URL(built).searchParams.get('lang')).toBe('es');
+  });
+
+  it('encodes a field name, which is the author’s text and not ours', () => {
+    const built = buildDcalEmbedUrl(DCAL_URL, ANSWERS, { customAnswers: { 'a b&c': 'x' } });
+    expect(built).not.toContain('a b&c');
+    expect(new URL(built).searchParams.get('answer_a b&c')).toBe('x');
+  });
+});
+
+describe('buildBookingEmbedUrl: dcal', () => {
+  it('builds the dCal URL and passes the named answers through', () => {
+    const q = new URL(
+      buildBookingEmbedUrl(
+        { provider: 'dcal', url: DCAL_URL, prefill: true },
+        ANSWERS,
+        'sess_1',
+        'forms.example.test',
+        { company: 'Example Co' },
+      ),
+    ).searchParams;
+    expect(q.get('embed')).toBe('1');
+    expect(q.get('answer_company')).toBe('Example Co');
+    expect(q.get('utm_content')).toBe('sess_1');
+    // Calendly's parameter has no meaning here and must not be sent.
+    expect(q.get('embed_domain')).toBeNull();
   });
 });

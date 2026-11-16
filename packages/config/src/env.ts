@@ -342,6 +342,22 @@ export const serverEnvSchema = z.object({
   DAPTA_SYNC_FLOW_URL: z.string().url().optional(),
   DAPTA_SYNC_FLOW_KEY: z.string().optional(),
 
+  // dCal, the scheduler a `scheduler` step can embed instead of Calendly.
+  //
+  // There is deliberately NO token here, and that is the whole point of this
+  // integration: dCal projects the same identity service this app does, so the
+  // author's own session is the credential. The API forwards their bearer to
+  // dCal's host API to list the workspaces and event types they can already
+  // reach; nothing is stored, nothing is encrypted, and a member can never see
+  // another member's events because dCal scopes the answer to the token.
+  //
+  // Both are absent in a bare fork, which simply reports dCal unavailable and
+  // offers Calendly (same graceful degradation as every other integration).
+  // They are two hosts because dCal is two apps: `API` serves `/v1`, `APP` is
+  // where a booking page and the event-type editor live.
+  DCAL_API_BASE_URL: z.string().url().optional(),
+  DCAL_APP_URL: z.string().url().optional(),
+
   // Object storage for the `file` question type. Uploads NEVER pass through
   // this process: the browser PUTs straight to the bucket with a short-lived
   // presigned URL the API mints, and the API verifies the object on submit.
