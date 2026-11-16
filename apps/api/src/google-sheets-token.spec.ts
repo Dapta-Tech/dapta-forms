@@ -15,7 +15,15 @@
  * which exists because this adapter treats a 401 as permanent.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, migrate, seed, getAccountByCode, upsertIntegration, type Db } from '@quill/db';
+import {
+  createDb,
+  deleteIntegration,
+  getAccountByCode,
+  migrate,
+  seed,
+  upsertIntegration,
+  type Db,
+} from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 import {
   GoogleSheetsAccessTokens,
@@ -172,6 +180,27 @@ describe('the cache', () => {
     const other = token({ access_token: 'other', expires_in: 3600 });
     await expect(tokens.resolve(db, 'another-account', ENV, other, 1)).resolves.toBe('');
     expect((other as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(0);
+  });
+
+  it('mints again after a reconnect, even on a pod that was never told', async () => {
+    await connect('first-grant');
+    const tokens = new GoogleSheetsAccessTokens();
+    await tokens.resolve(db, accountId, ENV, token({ access_token: 'old-account', expires_in: 3600 }), 0);
+    // The consent callback ran on ANOTHER replica: the refresh token in the
+    // database changed, and nobody called invalidate on this instance.
+    await connect('second-grant');
+    const fresh = token({ access_token: 'new-account', expires_in: 3600 });
+    await expect(tokens.resolve(db, accountId, ENV, fresh, 1)).resolves.toBe('new-account');
+  });
+
+  it('is empty after a disconnect, even with a live token in its cache', async () => {
+    await connect();
+    const tokens = new GoogleSheetsAccessTokens();
+    await tokens.resolve(db, accountId, ENV, token({ access_token: 'a', expires_in: 3600 }), 0);
+    await deleteIntegration(db, accountId, 'google-sheets');
+    const never = token({ access_token: 'b', expires_in: 3600 });
+    await expect(tokens.resolve(db, accountId, ENV, never, 1)).resolves.toBe('');
+    expect((never as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(0);
   });
 
   it('forgets an account on demand', async () => {

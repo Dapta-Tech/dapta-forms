@@ -929,6 +929,9 @@ export class IntegrationsController {
       this.env.FORMS_ENCRYPTION_KEY!,
       tokens.email ?? 'Google Sheets',
     );
+    // This pod drops its token at once; the others miss on their own because
+    // the cache entry is tied to the refresh token that minted it.
+    this.googleTokens.invalidate(claims.accountId);
     return done('google=connected');
   }
 
@@ -1018,6 +1021,11 @@ export class IntegrationsController {
   @Header('Cache-Control', 'no-store')
   async googleSheetsPicker(@Req() req: ReqLike): Promise<GoogleSheetsPickerResponse> {
     const p = await this.auth.resolveHost(req);
+    // Admins only, like connect and disconnect. The other Google routes do one
+    // bounded thing on the server; this one hands the browser a bearer token
+    // that reaches every spreadsheet the account's `drive.file` grant covers.
+    // A member can still create a new spreadsheet for their form.
+    assertAdmin(p);
     const config = googlePickerConfig(this.env);
     if (!config) return { enabled: false, reason: 'unavailable' };
 

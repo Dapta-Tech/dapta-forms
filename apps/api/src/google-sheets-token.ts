@@ -19,6 +19,7 @@
  *   - Nothing ANSWERED (a dead socket, a timeout). That throws, so the delivery
  *     fails and the outbox's backoff gets its turn.
  */
+import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { resolveProviderToken, type Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
@@ -46,7 +47,14 @@ export const GOOGLE_TOKEN_MAX_CACHE_MS = 50 * 60_000;
  */
 @Injectable()
 export class GoogleSheetsAccessTokens {
-  private readonly cache = new Map<string, { token: string; expires: number }>();
+  /**
+   * Keyed by account, and each entry remembers WHICH grant minted it (a hash of
+   * the refresh token). A reconnect stores a new refresh token, so every replica
+   * misses on its next resolve without being told: an in-memory `invalidate`
+   * only reaches the pod that served the callback, and the other pods would
+   * otherwise keep writing to the previous Google account for up to 50 minutes.
+   */
+  private readonly cache = new Map<string, { token: string; expires: number; grant: string }>();
 
   /**
    * A live access token for the account, or `''` when there is none to be had.
@@ -64,14 +72,13 @@ export class GoogleSheetsAccessTokens {
     fetchImpl: typeof fetch = fetch,
     now: number = Date.now(),
   ): Promise<string> {
-    const hit = this.cache.get(accountId);
-    if (hit && hit.expires > now) return hit.token;
-
     const client = googleOAuthClient(env);
     if (!client) return '';
 
     // No env fallback, unlike HubSpot: a refresh token belongs to one account's
     // own Google grant, so there is no deployment-wide one to fall back to.
+    // Read on every call, cache hit or not: one indexed row is cheap, and it is
+    // what lets a disconnect or a reconnect on another pod take effect here.
     const refreshToken = await resolveProviderToken(
       db,
       accountId,
@@ -79,7 +86,14 @@ export class GoogleSheetsAccessTokens {
       env?.FORMS_ENCRYPTION_KEY,
       undefined,
     );
-    if (!refreshToken) return '';
+    if (!refreshToken) {
+      this.cache.delete(accountId);
+      return '';
+    }
+    const grant = createHash('sha256').update(refreshToken).digest('base64url');
+
+    const hit = this.cache.get(accountId);
+    if (hit && hit.grant === grant && hit.expires > now) return hit.token;
 
     // Throws on a transport failure, which is what we want: the outbox retries.
     const minted = await refreshGoogleAccessToken(client, refreshToken, fetchImpl);
@@ -94,6 +108,7 @@ export class GoogleSheetsAccessTokens {
     this.cache.set(accountId, {
       token: minted.accessToken,
       expires: now + Math.min(lifetimeMs, GOOGLE_TOKEN_MAX_CACHE_MS),
+      grant,
     });
     return minted.accessToken;
   }
