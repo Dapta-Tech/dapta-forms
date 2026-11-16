@@ -2135,7 +2135,7 @@ export interface FormsMessages {
       dcalHowTitle: string;
       dcalSteps: string[];
       dcalOpen: string;
-      dcalHide: string;
+      dcalClose: string;
       gsheetsName: string;
       gsheetsDesc: string;
       /**
@@ -4550,7 +4550,7 @@ export const en: FormsMessages = {
         'Pick the event type, and choose which answers fill in the booking form.',
       ],
       dcalOpen: 'Open dCal',
-      dcalHide: 'Hide steps',
+      dcalClose: 'Close',
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
       gsheetsConnectNote:
@@ -7289,7 +7289,7 @@ export const es: FormsMessages = {
         'Elige el tipo de evento y qué respuestas llenan el formulario de reserva.',
       ],
       dcalOpen: 'Abrir dCal',
-      dcalHide: 'Ocultar pasos',
+      dcalClose: 'Cerrar',
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
       gsheetsConnectNote:

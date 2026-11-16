@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useId, useRef, useState, useTransition } from 'react';
+import { createPortal } from 'react-dom';
+import { FOCUSABLE_SELECTOR } from '@/lib/focusable';
 import { useRouter } from 'next/navigation';
 import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
 import type { IntegrationProvider, IntegrationStatus, SalesforceConnectError } from '@/lib/admin-api';
@@ -659,54 +661,137 @@ function DcalCard({ createEventUrl, m }: { createEventUrl: string | null; m: Msg
         </span>
       </header>
       <div className="mt-auto pt-4">
-        {showSteps ? (
-          <div className="flex flex-col gap-3" data-testid="dcal-steps">
-            <p className="text-sm font-medium text-foreground">{m.dcalHowTitle}</p>
-            <ol className="list-decimal space-y-1 pl-4 text-sm text-muted-foreground">
-              {m.dcalSteps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-            {createEventUrl ? null : (
-              <div
-                data-testid="provider-unavailable"
-                className="rounded-md border border-dashed border-border bg-muted/40 p-3"
-              >
-                <p className="text-sm font-medium text-foreground">{m.unavailableTitle}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {fill(m.unavailableBody, { provider: m.dcalName })}
-                </p>
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              {/* A real link, styled as the primary button: it opens dCal in a
-                  new tab, so the author keeps this page and the steps. Only
-                  where the deployment has dCal; elsewhere it could only 404. */}
-              {createEventUrl ? (
-                <a
-                  href={createEventUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={buttonVariants()}
-                  data-testid="dcal-open"
-                >
-                  <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
-                  {m.dcalOpen}
-                </a>
-              ) : null}
-              <Button variant="ghost" onClick={() => setShowSteps(false)}>
-                {m.dcalHide}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <Button onClick={() => setShowSteps(true)} className="self-start">
-            <i aria-hidden className="pi pi-link" style={{ fontSize: 12 }} />
-            {m.connect}
-          </Button>
-        )}
+        <Button onClick={() => setShowSteps(true)} className="self-start">
+          <i aria-hidden className="pi pi-link" style={{ fontSize: 12 }} />
+          {m.connect}
+        </Button>
       </div>
+      {/* In a dialog, not inside the card: every card in a grid row is as tall
+          as the tallest, so steps opened in place stretched the neighbouring
+          card and left a hole in the middle of it. */}
+      {showSteps ? (
+        <DcalStepsDialog createEventUrl={createEventUrl} onClose={() => setShowSteps(false)} m={m} />
+      ) : null}
     </section>
+  );
+}
+
+/**
+ * dCal's three steps, as a modal. Same contract as the app's confirm dialog
+ * (focus trap, Escape and the backdrop close, focus returns to the button),
+ * rendered through a portal so no ancestor's stacking context can clip it.
+ */
+function DcalStepsDialog({
+  createEventUrl,
+  onClose,
+  m,
+}: {
+  createEventUrl: string | null;
+  onClose: () => void;
+  m: Msgs;
+}) {
+  const titleId = useId();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    restoreRef.current = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const items = cardRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (!items || items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const inside = cardRef.current?.contains(document.activeElement) ?? false;
+      if (e.shiftKey && (!inside || document.activeElement === first)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (!inside || document.activeElement === last)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      restoreRef.current?.focus?.();
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-hidden
+        tabIndex={-1}
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      />
+      <div
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-testid="dcal-steps"
+        className="relative w-full max-w-md rounded-xl border border-border bg-card p-6 text-card-foreground shadow-lg"
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"
+            aria-hidden
+          >
+            <DcalLogo width={30} />
+          </span>
+          <h2 id={titleId} className="text-base font-semibold tracking-tight">
+            {m.dcalHowTitle}
+          </h2>
+        </div>
+        <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
+          {m.dcalSteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        {createEventUrl ? null : (
+          <div
+            data-testid="provider-unavailable"
+            className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-3"
+          >
+            <p className="text-sm font-medium text-foreground">{m.unavailableTitle}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {fill(m.unavailableBody, { provider: m.dcalName })}
+            </p>
+          </div>
+        )}
+        <div className="mt-6 flex items-center justify-end gap-2">
+          <Button ref={closeRef} variant="ghost" onClick={onClose}>
+            {m.dcalClose}
+          </Button>
+          {/* A real link, styled as the primary button: it opens dCal in a
+              new tab, so the author keeps this page. Only where the
+              deployment has dCal; elsewhere it could only 404. */}
+          {createEventUrl ? (
+            <a
+              href={createEventUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants()}
+              data-testid="dcal-open"
+            >
+              <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
+              {m.dcalOpen}
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

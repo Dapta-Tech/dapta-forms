@@ -862,8 +862,18 @@ export function CanvasPage({
         onMouseDownCapture={() => onSelect(i)}
         onFocusCapture={() => onSelect(i)}
         className={cn(
-          'scroll-my-16 px-6 transition-colors sm:px-8',
+          'relative isolate scroll-my-16 px-6 sm:px-8',
           compact ? 'py-3' : 'py-6',
+          // The selection frame is a pseudo-element INSET from the block's
+          // edges, with its own rounded corners. Drawn on the block itself it
+          // was a square line inside the page's rounded corners: at the top
+          // corners the line was cut against the curve, and down the sides it
+          // sat on the page's own border, so the selected question read as a
+          // dark seam along the edge. Inset, it never touches the page border
+          // or the dividers between questions. Behind the content (`-z-10`
+          // inside the block's own stacking context), so it never covers an
+          // input.
+          'before:pointer-events-none before:absolute before:inset-1.5 before:-z-10 before:rounded-[12px] before:transition-colors',
           // The accent EDGE at full alpha, not `ring-primary/40`: this is the
           // canvas's ONLY answer to "which question is the settings panel
           // describing", and the raw accent at 40% alpha flattened to well
@@ -871,7 +881,9 @@ export function CanvasPage({
           // like the ones you weren't. Full alpha on the edge token so the
           // mark clears 1.4.11 in both themes; the `bg-primary/5` wash keeps
           // the soft fill it always had.
-          i === selected ? 'bg-primary/5 shadow-[inset_0_0_0_1px_var(--primary-edge)]' : 'hover:bg-muted/40',
+          i === selected
+            ? 'before:bg-primary/5 before:shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+            : 'hover:before:bg-muted/40',
         )}
       >
         {step.type === 'reveal' ? (

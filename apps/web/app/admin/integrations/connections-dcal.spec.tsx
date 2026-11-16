@@ -68,23 +68,45 @@ describe('the dCal card', () => {
     const card = el.querySelector('[data-testid="dcal-card"]')!;
     const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.connect))!;
     await act(async () => connect.click());
-    expect(card.querySelector('[data-testid="dcal-steps"]')).not.toBeNull();
-    expect(card.querySelector('[data-testid="provider-unavailable"]')?.textContent).toContain(m.unavailableTitle);
-    expect(card.querySelector('[data-testid="dcal-open"]')).toBeNull();
+    const dialog = document.querySelector('[data-testid="dcal-steps"]')!;
+    expect(dialog).not.toBeNull();
+    expect(dialog.querySelector('[data-testid="provider-unavailable"]')?.textContent).toContain(m.unavailableTitle);
+    expect(dialog.querySelector('[data-testid="dcal-open"]')).toBeNull();
   });
 
-  it('opens the steps and a link to dCal instead of asking for a credential', async () => {
+  it('opens the steps and a link to dCal in a dialog, outside the card, instead of a credential form', async () => {
     const el = await mount({ createEventUrl: URL_ });
     const card = el.querySelector('[data-testid="dcal-card"]')!;
     expect(card.querySelector('input')).toBeNull();
     const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.connect))!;
     await act(async () => connect.click());
-    const steps = card.querySelector('[data-testid="dcal-steps"]')!;
+    // Outside the card: steps opened in place stretched the neighbouring card
+    // in the same grid row.
+    expect(card.querySelector('[data-testid="dcal-steps"]')).toBeNull();
+    const steps = document.querySelector('[data-testid="dcal-steps"]')!;
+    expect(steps.getAttribute('role')).toBe('dialog');
+    expect(steps.getAttribute('aria-modal')).toBe('true');
     for (const step of m.dcalSteps) expect(steps.textContent).toContain(step);
-    const link = card.querySelector<HTMLAnchorElement>('[data-testid="dcal-open"]')!;
+    const link = steps.querySelector<HTMLAnchorElement>('[data-testid="dcal-open"]')!;
     expect(link.getAttribute('href')).toBe(URL_);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
+  });
+});
+
+describe('closing the dCal steps', () => {
+  it('closes on Escape and gives focus back to the button that opened it', async () => {
+    const el = await mount({ createEventUrl: URL_ });
+    const card = el.querySelector('[data-testid="dcal-card"]')!;
+    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.connect))!;
+    connect.focus();
+    await act(async () => connect.click());
+    expect(document.querySelector('[data-testid="dcal-steps"]')).not.toBeNull();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(document.querySelector('[data-testid="dcal-steps"]')).toBeNull();
+    expect(document.activeElement).toBe(connect);
   });
 });
 
