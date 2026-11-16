@@ -149,6 +149,9 @@ describe('the Google Sheets card', () => {
     });
     const gsheets = card(el);
     expect(gsheets.textContent).toContain('ops@example.com');
+    // No "ending in abcd": those are the tail of a token Google issued, which
+    // nobody typed and nobody could recognise.
+    expect(gsheets.textContent).not.toContain('abcd');
     expect(buttonLabelled(gsheets, m.connectWithGoogle)).toBeUndefined();
     expect(buttonLabelled(gsheets, m.disconnect)).toBeDefined();
   });

@@ -38,6 +38,13 @@ export interface ConnectIntegrationsData {
    * left out rather than sending the author to a page with nothing to click.
    */
   googleSheetsAvailable: boolean;
+  /**
+   * Whether an existing spreadsheet can be chosen: Google's Picker needs a
+   * browser key the operator supplies. False, the card only creates new ones.
+   */
+  googlePickerAvailable: boolean;
+  /** The form's own name, which names the spreadsheet the card creates. */
+  formName: string;
 }
 
 export async function loadConnectIntegrationsAction(
@@ -74,6 +81,7 @@ export async function loadConnectIntegrationsAction(
   // True until the API says otherwise: a failed lookup must not make the card
   // vanish from a deployment where it works.
   let googleSheetsAvailable = true;
+  let googlePickerAvailable = false;
   try {
     const integrations = await adminApi.listIntegrations();
     hubspotConnected = integrations.providers.some((p) => p.provider === 'hubspot' && p.connected);
@@ -84,6 +92,7 @@ export async function loadConnectIntegrationsAction(
       (p) => p.provider === 'google-sheets' && p.connected,
     );
     googleSheetsAvailable = !(integrations.unavailable ?? []).includes('google-sheets');
+    googlePickerAvailable = integrations.googlePicker === true;
   } catch (e) {
     unstable_rethrow(e);
     hubspotConnected = false;
@@ -100,6 +109,8 @@ export async function loadConnectIntegrationsAction(
       calendlyConnected,
       googleSheetsConnected,
       googleSheetsAvailable,
+      googlePickerAvailable,
+      formName: form.name,
     },
   };
 }

@@ -37,20 +37,27 @@ export const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/aut
 export const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 /**
- * What the destination needs and nothing more: write access to the spreadsheets
- * the operator points it at. `openid email` rides along only so the connected
- * card can say WHICH Google account is attached, which is the difference between
- * a connection someone can audit and an opaque green dot.
+ * The one Drive scope Google classes as NON-sensitive: access to the files this
+ * app created, and to the ones the user hands it through Google's own Picker.
  *
- * Deliberately NOT `drive.file` or any Drive scope. The v1 flow takes a pasted
- * spreadsheet URL, so Drive is never read, and asking for a scope the product
- * does not use is the fastest way to have a consent screen refused.
+ * Deliberately NOT `spreadsheets`. That scope reaches every spreadsheet the
+ * account can open, which is why Google classes it sensitive: a client asking
+ * for it shows "Google hasn't verified this app" and is capped at a hundred
+ * users until a review that takes weeks. `drive.file` needs no review, and the
+ * Sheets API accepts it for the two things the destination does (create a
+ * spreadsheet, append a row), so the narrower scope costs nothing but the
+ * ability to open a spreadsheet by an id somebody pasted.
+ *
+ * That last point shapes the product: a spreadsheet reaches a form by being
+ * created here or chosen in the Picker, never by a pasted link. A pasted id
+ * would answer 404 from Google, indistinguishable from a deleted file.
+ *
+ * `openid email` rides along only so the connected card can say WHICH Google
+ * account is attached, which is the difference between a connection someone can
+ * audit and an opaque green dot.
  */
-export const GOOGLE_SHEETS_SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets',
-  'openid',
-  'email',
-] as const;
+export const GOOGLE_DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+export const GOOGLE_SHEETS_SCOPES = [GOOGLE_DRIVE_FILE_SCOPE, 'openid', 'email'] as const;
 
 /** The state format label, first segment of every state string. */
 export const GOOGLE_STATE_VERSION = 'v1';
@@ -74,6 +81,10 @@ type GoogleOAuthEnv = Partial<
     | 'GOOGLE_OAUTH_REDIRECT_URI'
     | 'FORMS_ENCRYPTION_KEY'
   >
+>;
+
+type GooglePickerEnv = Partial<
+  Pick<ServerEnv, 'GOOGLE_OAUTH_CLIENT_ID' | 'GOOGLE_PICKER_API_KEY' | 'GOOGLE_PICKER_APP_ID'>
 >;
 
 /** The deployment's Google OAuth client, as the two routes need it. */
@@ -353,5 +364,35 @@ export async function refreshGoogleAccessToken(
  * operator was never told about.
  */
 export function grantedSheetsAccess(scopes: string[]): boolean {
-  return scopes.includes('https://www.googleapis.com/auth/spreadsheets');
+  return scopes.includes(GOOGLE_DRIVE_FILE_SCOPE);
+}
+
+/**
+ * What the browser needs to open Google's Picker, or null when this deployment
+ * cannot offer one.
+ *
+ * The Picker is how an EXISTING spreadsheet reaches a form under `drive.file`:
+ * choosing a file in it is what grants this app access to that file. It runs in
+ * the browser and takes a browser API key (public by nature, restricted by
+ * referrer on Google's side) and the Cloud project number as its app id.
+ *
+ * The app id has to be the project that owns the OAuth client, or picking a
+ * file grants nothing. That is why it is read off the client id by default: a
+ * Google client id is `<project number>-<hash>.apps.googleusercontent.com`, so
+ * the two cannot drift. `GOOGLE_PICKER_APP_ID` overrides it for a client id
+ * that does not follow the shape.
+ *
+ * Without the key there is no Picker and the card offers only "create a new
+ * spreadsheet", which needs nothing but the consent already given.
+ */
+export function googlePickerConfig(
+  env: GooglePickerEnv | undefined,
+): { apiKey: string; appId: string } | null {
+  const apiKey = env?.GOOGLE_PICKER_API_KEY?.trim();
+  if (!apiKey) return null;
+  const explicit = env?.GOOGLE_PICKER_APP_ID?.trim();
+  const fromClient = /^(\d+)-/.exec(env?.GOOGLE_OAUTH_CLIENT_ID?.trim() ?? '')?.[1];
+  const appId = explicit || fromClient;
+  if (!appId) return null;
+  return { apiKey, appId };
 }

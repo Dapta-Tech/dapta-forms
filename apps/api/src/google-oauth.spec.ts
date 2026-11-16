@@ -12,6 +12,7 @@ import {
   exchangeGoogleCode,
   googleAuthorizeUrl,
   googleOAuthClient,
+  googlePickerConfig,
   googleStateKey,
   grantedSheetsAccess,
   refreshGoogleAccessToken,
@@ -185,11 +186,17 @@ describe('googleAuthorizeUrl', () => {
     expect(url.searchParams.get('client_id')).toBe(CLIENT.clientId);
   });
 
-  it('asks for the spreadsheets scope and no Drive scope', () => {
+  // The scope is the difference between a consent screen anyone can accept and
+  // "Google hasn't verified this app" with a hundred-user cap. `drive.file` is
+  // the non-sensitive one; `spreadsheets` and full `drive` both need a review.
+  it('asks for drive.file and for no scope Google classes as sensitive', () => {
     const url = new URL(googleAuthorizeUrl(CLIENT, 's'));
     const scopes = url.searchParams.get('scope')!.split(' ');
-    expect(scopes).toContain('https://www.googleapis.com/auth/spreadsheets');
-    expect(scopes.some((s) => s.includes('/auth/drive'))).toBe(false);
+    expect(scopes.sort()).toEqual(
+      ['email', 'https://www.googleapis.com/auth/drive.file', 'openid'].sort(),
+    );
+    expect(scopes).not.toContain('https://www.googleapis.com/auth/spreadsheets');
+    expect(scopes).not.toContain('https://www.googleapis.com/auth/drive');
   });
 
   it('never puts the client secret in the URL the browser follows', () => {
@@ -203,14 +210,14 @@ describe('exchangeGoogleCode', () => {
       access_token: 'at',
       refresh_token: 'rt',
       expires_in: 3599,
-      scope: 'https://www.googleapis.com/auth/spreadsheets openid email',
+      scope: 'https://www.googleapis.com/auth/drive.file openid email',
       id_token: idToken({ email: 'ops@example.com' }),
     });
     await expect(exchangeGoogleCode(CLIENT, 'the-code', fetchImpl)).resolves.toEqual({
       refreshToken: 'rt',
       accessToken: 'at',
       expiresInSec: 3599,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets', 'openid', 'email'],
+      scopes: ['https://www.googleapis.com/auth/drive.file', 'openid', 'email'],
       email: 'ops@example.com',
     });
   });
@@ -275,10 +282,48 @@ describe('refreshGoogleAccessToken', () => {
 });
 
 describe('grantedSheetsAccess', () => {
-  it('is true only when the spreadsheets scope actually came back', () => {
-    expect(grantedSheetsAccess(['https://www.googleapis.com/auth/spreadsheets', 'openid'])).toBe(true);
+  it('is true only when the drive.file scope actually came back', () => {
+    expect(grantedSheetsAccess(['https://www.googleapis.com/auth/drive.file', 'openid'])).toBe(true);
     // Someone unticked it on the consent screen: Google answers 200 with less.
     expect(grantedSheetsAccess(['openid', 'email'])).toBe(false);
     expect(grantedSheetsAccess([])).toBe(false);
+  });
+
+  it('does not take the scope this app no longer asks for as a grant', () => {
+    expect(grantedSheetsAccess(['https://www.googleapis.com/auth/spreadsheets'])).toBe(false);
+  });
+});
+
+describe('googlePickerConfig', () => {
+  const CLIENT_ID = '123456789012-abcdef.apps.googleusercontent.com';
+
+  it('is null without a browser key, which is what leaves the Picker out', () => {
+    expect(googlePickerConfig({ GOOGLE_OAUTH_CLIENT_ID: CLIENT_ID })).toBeNull();
+    expect(googlePickerConfig({ GOOGLE_OAUTH_CLIENT_ID: CLIENT_ID, GOOGLE_PICKER_API_KEY: '  ' })).toBeNull();
+    expect(googlePickerConfig(undefined)).toBeNull();
+  });
+
+  // The app id must be the project that owns the OAuth client, or picking a
+  // file grants this app nothing. Reading it off the client id keeps them one.
+  it('reads the app id off the client id, so the two cannot drift', () => {
+    expect(
+      googlePickerConfig({ GOOGLE_OAUTH_CLIENT_ID: CLIENT_ID, GOOGLE_PICKER_API_KEY: 'browser-key' }),
+    ).toEqual({ apiKey: 'browser-key', appId: '123456789012' });
+  });
+
+  it('lets an explicit app id win', () => {
+    expect(
+      googlePickerConfig({
+        GOOGLE_OAUTH_CLIENT_ID: CLIENT_ID,
+        GOOGLE_PICKER_API_KEY: 'browser-key',
+        GOOGLE_PICKER_APP_ID: '999',
+      }),
+    ).toEqual({ apiKey: 'browser-key', appId: '999' });
+  });
+
+  it('is null when no app id can be had, rather than opening a Picker that grants nothing', () => {
+    expect(
+      googlePickerConfig({ GOOGLE_OAUTH_CLIENT_ID: 'not-a-google-id', GOOGLE_PICKER_API_KEY: 'k' }),
+    ).toBeNull();
   });
 });

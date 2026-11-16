@@ -77,9 +77,8 @@ describe('a stored spreadsheet destination round-trips through the card', () => 
     expect(builtGoogleSheets(initialGoogleSheets([off]))).toEqual(off);
   });
 
-  it('shows the stored spreadsheet as a link rather than a bare id', () => {
+  it('reads the stored spreadsheet and its tab back into the card', () => {
     const state = initialGoogleSheets([sheets('abc123')]);
-    expect(state.urlInput).toContain('docs.google.com/spreadsheets/d/abc123');
     expect(state.spreadsheetId).toBe('abc123');
     expect(state.sheetTitle).toBe('Responses');
   });
@@ -88,7 +87,6 @@ describe('a stored spreadsheet destination round-trips through the card', () => 
     const state = initialGoogleSheets([hubspot()]);
     expect(state).toEqual({
       enabled: false,
-      urlInput: '',
       spreadsheetId: '',
       sheetTitle: '',
       columns: [],

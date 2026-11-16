@@ -2026,10 +2026,18 @@ export interface FormsMessages {
         desc: string;
         /** Shown in place of the whole card when the account has no Google connection. */
         notConnected: string;
-        urlLabel: string;
-        urlPlaceholder: string;
-        urlHelp: string;
-        urlInvalid: string;
+        sheetLabel: string;
+        /** Shown before any spreadsheet is chosen: the two ways to get one. */
+        sheetHelp: string;
+        createSheet: string;
+        chooseSheet: string;
+        sheetCreated: string;
+        createFailed: string;
+        pickerFailed: string;
+        /** The new spreadsheet's name. `{form}` is the form's own name. */
+        newSheetTitle: string;
+        /** The tab a created spreadsheet is written to. */
+        defaultTab: string;
         tabLabel: string;
         /** The empty option: write to whichever tab is first. */
         tabFirst: string;
@@ -4354,15 +4362,23 @@ export const en: FormsMessages = {
         title: 'Google Sheets',
         desc: 'Append each response to a spreadsheet as a new row.',
         notConnected: 'Connect Google Sheets on the Connections page to use it here.',
-        urlLabel: 'Spreadsheet',
-        urlPlaceholder: 'Paste the spreadsheet link',
-        urlHelp: 'Open the spreadsheet in Google and paste the address from your browser.',
-        urlInvalid: 'That is not a Google Sheets link.',
+        sheetLabel: 'Spreadsheet',
+        sheetHelp:
+          'Create a new spreadsheet for this form, or choose one you already have in Google Drive.',
+        createSheet: 'Create a new spreadsheet',
+        chooseSheet: 'Choose from Google Drive',
+        sheetCreated: 'The spreadsheet was created in your Google Drive.',
+        createFailed: 'The spreadsheet could not be created. Try again.',
+        pickerFailed: 'Google Drive could not be opened. Try again.',
+        newSheetTitle: '{form} (responses)',
+        defaultTab: 'Responses',
         tabLabel: 'Tab',
         tabFirst: 'The first tab',
         openSheet: 'Open the spreadsheet',
-        sheetNotFound: 'No spreadsheet found at that link.',
-        sheetForbidden: 'The connected Google account cannot open that spreadsheet.',
+        sheetNotFound:
+          'dForms can no longer open this spreadsheet. Choose it again from Google Drive, or create a new one.',
+        sheetForbidden:
+          'Google no longer lets dForms write here. Reconnect Google Sheets on the Connections page.',
         tabsUnavailable: 'The tabs could not be read. Try again.',
         columnsLabel: 'Columns',
         columnsHelp: 'One column per cell of the row, left to right.',
@@ -4407,13 +4423,13 @@ export const en: FormsMessages = {
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
       gsheetsConnectNote:
-        'Google will ask you to sign in and allow dForms to write to your spreadsheets. You pick which spreadsheet later, per form.',
+        'Google will ask you to sign in. dForms can only reach the spreadsheets it creates for you and the ones you choose, never the rest of your Drive.',
       connectWithGoogle: 'Continue with Google',
       googleConnected: 'Google Sheets is connected.',
       googleCancelled: 'Google Sheets was not connected.',
       googleError: 'Google could not connect your account. Try again.',
       googleScopeError:
-        'dForms needs permission to write to your spreadsheets. Try again and leave that permission ticked.',
+        'dForms needs the permission Google listed to create and fill your spreadsheet. Try again and leave it ticked.',
       comingSoon: 'Coming soon',
       connected: 'Connected',
       notConnected: 'Not connected',
@@ -7003,15 +7019,23 @@ export const es: FormsMessages = {
         title: 'Google Sheets',
         desc: 'Añade cada respuesta a una hoja de cálculo como una fila nueva.',
         notConnected: 'Conecta Google Sheets en la página de Conexiones para usarlo aquí.',
-        urlLabel: 'Hoja de cálculo',
-        urlPlaceholder: 'Pega el enlace de la hoja',
-        urlHelp: 'Abre la hoja en Google y pega la dirección de tu navegador.',
-        urlInvalid: 'Ese no es un enlace de Google Sheets.',
+        sheetLabel: 'Hoja de cálculo',
+        sheetHelp:
+          'Crea una hoja nueva para este formulario o elige una que ya tengas en Google Drive.',
+        createSheet: 'Crear una hoja nueva',
+        chooseSheet: 'Elegir de Google Drive',
+        sheetCreated: 'La hoja se creó en tu Google Drive.',
+        createFailed: 'No se pudo crear la hoja. Inténtalo de nuevo.',
+        pickerFailed: 'No se pudo abrir Google Drive. Inténtalo de nuevo.',
+        newSheetTitle: '{form} (respuestas)',
+        defaultTab: 'Respuestas',
         tabLabel: 'Pestaña',
         tabFirst: 'La primera pestaña',
         openSheet: 'Abrir la hoja',
-        sheetNotFound: 'No hay ninguna hoja en ese enlace.',
-        sheetForbidden: 'La cuenta de Google conectada no puede abrir esa hoja.',
+        sheetNotFound:
+          'dForms ya no puede abrir esta hoja. Elígela otra vez desde Google Drive o crea una nueva.',
+        sheetForbidden:
+          'Google ya no deja que dForms escriba aquí. Vuelve a conectar Google Sheets en la página de Conexiones.',
         tabsUnavailable: 'No se pudieron leer las pestañas. Inténtalo de nuevo.',
         columnsLabel: 'Columnas',
         columnsHelp: 'Una columna por celda de la fila, de izquierda a derecha.',
@@ -7056,13 +7080,13 @@ export const es: FormsMessages = {
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
       gsheetsConnectNote:
-        'Google te va a pedir que entres y le des permiso a dForms para escribir en tus hojas de cálculo. La hoja la eliges después, en cada formulario.',
+        'Google te va a pedir que entres. dForms solo alcanza las hojas que crea para ti y las que tú eliges, nunca el resto de tu Drive.',
       connectWithGoogle: 'Continuar con Google',
       googleConnected: 'Google Sheets quedó conectado.',
       googleCancelled: 'Google Sheets no se conectó.',
       googleError: 'Google no pudo conectar tu cuenta. Inténtalo de nuevo.',
       googleScopeError:
-        'dForms necesita permiso para escribir en tus hojas de cálculo. Inténtalo otra vez y deja ese permiso marcado.',
+        'dForms necesita el permiso que Google mostró para crear y llenar tu hoja. Inténtalo otra vez y déjalo marcado.',
       comingSoon: 'Muy pronto',
       connected: 'Conectado',
       notConnected: 'Sin conectar',

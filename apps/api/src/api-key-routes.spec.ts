@@ -114,6 +114,17 @@ const DENIED = new Set([
   // key-configurable through `PUT /v1/forms/:id/destinations`.
   'GET /v1/integrations/google-sheets/tabs',
   'POST /v1/integrations/google-sheets/header-row',
+  // Creating a spreadsheet for a form: denied for the same reversible reason as
+  // the two above. It is the one of these an agent would miss most, because
+  // under the `drive.file` scope a spreadsheet reaches a form only by being
+  // created here or chosen in the Picker, so a key cannot point a form at a
+  // spreadsheet the app was never handed. Opening it is the same contract
+  // decision.
+  'POST /v1/integrations/google-sheets/spreadsheets',
+  // The Picker's configuration. This one is denied on its merits, not pending a
+  // decision: its answer carries a Google access token for a browser to open a
+  // file chooser with, and a key has no browser and no chooser.
+  'GET /v1/integrations/google-sheets/picker',
 ]);
 
 /** Allowlisted ahead of the route landing in its own change (revert, #60). */

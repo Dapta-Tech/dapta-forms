@@ -33,7 +33,6 @@ import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
 import { storedColumns } from './sheet-columns';
-import { sheetUrlFor } from './sheet-url';
 import { DeliveryHistory } from './delivery-history';
 import { Card } from './integrations-card';
 import {
@@ -239,16 +238,11 @@ export function carriedOthers(destinations: FormDestination[]): FormDestination[
 export function initialGoogleSheets(destinations: FormDestination[]): GoogleSheetsState {
   const stored = destinations.find((d) => d.type === 'google-sheets');
   if (!stored || stored.type !== 'google-sheets') {
-    return { enabled: false, urlInput: '', spreadsheetId: '', sheetTitle: '', columns: [] };
+    return { enabled: false, spreadsheetId: '', sheetTitle: '', columns: [] };
   }
-  const spreadsheetId = stored.settings?.spreadsheetId ?? '';
   return {
     enabled: stored.enabled !== false,
-    // Shown as the full address rather than the bare id: it is what the author
-    // pasted, it is clickable, and an id on its own in a field labelled with a
-    // URL reads like the field failed to save.
-    urlInput: spreadsheetId ? sheetUrlFor(spreadsheetId) : '',
-    spreadsheetId,
+    spreadsheetId: stored.settings?.spreadsheetId ?? '',
     sheetTitle: stored.settings?.sheetTitle ?? '',
     columns: stored.columns ?? [],
   };
@@ -408,6 +402,8 @@ export function IntegrationsEditor({
   hubspotConnected,
   googleSheetsConnected = false,
   googleSheetsAvailable = true,
+  googlePickerAvailable = false,
+  formName = '',
   questions,
   readiness = NOT_READY,
   partialsHeld = false,
@@ -427,6 +423,10 @@ export function IntegrationsEditor({
    * spreadsheet destination: that one stays visible so it can be switched off.
    */
   googleSheetsAvailable?: boolean;
+  /** Whether an existing spreadsheet can be chosen in Google's Picker. */
+  googlePickerAvailable?: boolean;
+  /** Names the spreadsheet the card creates for this form. */
+  formName?: string;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
   /**
@@ -783,6 +783,9 @@ export function IntegrationsEditor({
           setState={editSheets}
           questions={questions}
           connected={googleSheetsConnected}
+          pickerAvailable={googlePickerAvailable}
+          formName={formName}
+          locale={locale}
           m={m}
         />
       ) : null}

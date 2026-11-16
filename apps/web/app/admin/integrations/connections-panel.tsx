@@ -405,7 +405,14 @@ function ConnectedView({
             <dd className="font-medium text-foreground">{fill(m.connectedAs, { label: status.label })}</dd>
           ) : null}
           <dd className="text-xs text-muted-foreground">
-            {status.last4 ? `${fill(m.endingIn, { last4: status.last4 })} · ` : ''}
+            {/* "Ending in" is how somebody recognises the token THEY pasted.
+                A Google connection has no such token: what is stored is a
+                refresh token Google issued, whose last characters mean nothing
+                to anyone, and the account's email above already says which
+                connection this is. */}
+            {status.last4 && status.provider !== 'google-sheets'
+              ? `${fill(m.endingIn, { last4: status.last4 })} · `
+              : ''}
             {fill(m.connectedOn, { date })}
           </dd>
         </dl>

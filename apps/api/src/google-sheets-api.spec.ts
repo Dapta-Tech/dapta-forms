@@ -10,7 +10,12 @@
  * what used to be in a cell.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { columnLetter, listSheetTabs, writeHeaderRow } from './google-sheets-api';
+import {
+  columnLetter,
+  createSpreadsheet,
+  listSheetTabs,
+  writeHeaderRow,
+} from './google-sheets-api';
 
 /** A queue of answers, consumed in order (the header row makes two calls). */
 function responses(...queued: Array<{ status: number; body?: unknown }>) {
@@ -175,5 +180,80 @@ describe('writeHeaderRow', () => {
       reason: 'not_empty',
     });
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('createSpreadsheet', () => {
+  const CREATED = {
+    spreadsheetId: 'new-sheet-id',
+    properties: { title: 'Lead form (responses)' },
+    sheets: [{ properties: { title: 'Responses', sheetId: 0 } }],
+  };
+  const input = { title: 'Lead form (responses)', sheetTitle: 'Responses', headers: ['Submitted', 'Email'] };
+
+  it('returns the new spreadsheet with the tab it will be written to', async () => {
+    const { fetchImpl } = responses({ status: 200, body: CREATED });
+    expect(await createSpreadsheet('tok', input, fetchImpl)).toEqual({
+      ok: true,
+      spreadsheetId: 'new-sheet-id',
+      spreadsheetTitle: 'Lead form (responses)',
+      sheetTitle: 'Responses',
+      gid: 0,
+    });
+  });
+
+  // One call is the safety property: a create followed by a separate header
+  // write can fail in between and leave a blank file in somebody's Drive.
+  it('names the tab and writes row 1 in the one create call', async () => {
+    const { fetchImpl, calls } = responses({ status: 200, body: CREATED });
+    await createSpreadsheet('tok', input, fetchImpl);
+    expect(calls).toHaveLength(1);
+    const [url, init] = calls[0]!;
+    expect(init?.method).toBe('POST');
+    expect(new URL(url).pathname).toBe('/v4/spreadsheets');
+    const body = JSON.parse(String(init?.body));
+    expect(body.properties.title).toBe('Lead form (responses)');
+    expect(body.sheets[0].properties.title).toBe('Responses');
+    expect(body.sheets[0].data[0].rowData[0].values).toEqual([
+      { userEnteredValue: { stringValue: 'Submitted' } },
+      { userEnteredValue: { stringValue: 'Email' } },
+    ]);
+  });
+
+  it('writes a heading that begins with = as text, never as a formula', async () => {
+    const { fetchImpl, calls } = responses({ status: 200, body: CREATED });
+    await createSpreadsheet('tok', { ...input, headers: ['=IMPORTXML("x")'] }, fetchImpl);
+    const cell = JSON.parse(String(calls[0]![1]?.body)).sheets[0].data[0].rowData[0].values[0];
+    expect(cell).toEqual({ userEnteredValue: { stringValue: '=IMPORTXML("x")' } });
+    expect(cell.userEnteredValue.formulaValue).toBeUndefined();
+  });
+
+  it('creates an empty tab when there are no headings yet', async () => {
+    const { fetchImpl, calls } = responses({ status: 200, body: CREATED });
+    await createSpreadsheet('tok', { ...input, headers: [] }, fetchImpl);
+    expect(JSON.parse(String(calls[0]![1]?.body)).sheets[0].data).toBeUndefined();
+  });
+
+  it('says the grant is gone on 401 and 403, and unavailable on the rest', async () => {
+    for (const status of [401, 403]) {
+      const { fetchImpl } = responses({ status });
+      expect(await createSpreadsheet('tok', input, fetchImpl)).toEqual({ ok: false, reason: 'forbidden' });
+    }
+    for (const status of [429, 500]) {
+      const { fetchImpl } = responses({ status });
+      expect(await createSpreadsheet('tok', input, fetchImpl)).toEqual({ ok: false, reason: 'unavailable' });
+    }
+  });
+
+  it('does not report success for an answer with no id in it', async () => {
+    const { fetchImpl } = responses({ status: 200, body: { properties: { title: 'x' } } });
+    expect(await createSpreadsheet('tok', input, fetchImpl)).toEqual({ ok: false, reason: 'unavailable' });
+  });
+
+  it('is unavailable rather than throwing when nothing answers', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('socket hang up');
+    }) as unknown as typeof fetch;
+    expect(await createSpreadsheet('tok', input, fetchImpl)).toEqual({ ok: false, reason: 'unavailable' });
   });
 });

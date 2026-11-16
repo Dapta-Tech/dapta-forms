@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Inject,
   Injectable,
@@ -45,12 +46,18 @@ import {
   type FormDestination,
 } from '@quill/types';
 import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
-import { listSheetTabs, writeHeaderRow, type SheetTabDto } from './google-sheets-api';
+import {
+  createSpreadsheet,
+  listSheetTabs,
+  writeHeaderRow,
+  type SheetTabDto,
+} from './google-sheets-api';
 import { GoogleSheetsAccessTokens } from './google-sheets-token';
 import {
   exchangeGoogleCode,
   googleAuthorizeUrl,
   googleOAuthClient,
+  googlePickerConfig,
   googleStateKey,
   grantedSheetsAccess,
   signGoogleState,
@@ -426,6 +433,28 @@ const headerRowBodySchema = z.object({
   headers: z.array(z.string().max(200)).min(1).max(MAX_SHEET_COLUMNS),
 });
 
+const createSpreadsheetBodySchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  sheetTitle: z.string().trim().min(1).max(100),
+  headers: z.array(z.string().max(200)).max(MAX_SHEET_COLUMNS).default([]),
+});
+
+/** A spreadsheet created for a form, or why it could not be. */
+export type GoogleSheetsCreateResponse =
+  | { ok: true; spreadsheetId: string; spreadsheetTitle: string; sheetTitle: string; gid: number }
+  | { ok: false; reason: 'not_connected' | 'forbidden' | 'unavailable' };
+
+/**
+ * What the browser needs to open Google's Picker.
+ *
+ * `accessToken` is the one credential in this API that is handed to a browser.
+ * The Picker cannot run without it, and what it can reach is bounded by the
+ * `drive.file` scope: the files this app created or was handed, for an hour.
+ */
+export type GoogleSheetsPickerResponse =
+  | { enabled: true; accessToken: string; apiKey: string; appId: string }
+  | { enabled: false; reason: 'not_connected' | 'unavailable' };
+
 /** The tab picker's answer: the spreadsheet's tabs, or why there are none to show. */
 export type GoogleSheetsTabsResponse =
   | { enabled: true; spreadsheetTitle: string; tabs: SheetTabDto[] }
@@ -553,6 +582,7 @@ export class IntegrationsController {
     providers: IntegrationStatus[];
     serverProvided: IntegrationProvider[];
     unavailable: IntegrationProvider[];
+    googlePicker: boolean;
   }> {
     const p = await this.auth.resolveHost(req);
     const providers = await listIntegrationStatuses(this.db, p.accountId);
@@ -573,6 +603,9 @@ export class IntegrationsController {
       providers,
       serverProvided,
       unavailable,
+      // Whether "choose an existing spreadsheet" can be offered. Asked through
+      // the same function the picker route asks, for the same reason as above.
+      googlePicker: googlePickerConfig(this.env) !== null,
     };
   }
 
@@ -811,6 +844,70 @@ export class IntegrationsController {
       spreadsheetTitle: result.spreadsheetTitle,
       tabs: result.tabs,
     };
+  }
+
+  /**
+   * Create a spreadsheet for a form in the connected Google account, header
+   * row included.
+   *
+   * The path that needs nothing but the consent already given, and the default
+   * one: under the `drive.file` scope the app reaches a spreadsheet only if it
+   * created it or the author chose it in Google's Picker.
+   *
+   * Any authenticated host, like the tab list: it writes into the Google
+   * account this workspace connected, the same thing every delivery from a form
+   * they can already edit does.
+   */
+  @Post('google-sheets/spreadsheets')
+  @HttpCode(200)
+  async googleSheetsCreate(
+    @Req() req: ReqLike,
+    @Body() body: unknown,
+  ): Promise<GoogleSheetsCreateResponse> {
+    const p = await this.auth.resolveHost(req);
+    let input: { title: string; sheetTitle: string; headers: string[] };
+    try {
+      input = createSpreadsheetBodySchema.parse(body);
+    } catch (err) {
+      if (err instanceof ZodError)
+        throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
+      throw err;
+    }
+
+    const accessToken = await this.googleTokens.resolve(this.db, p.accountId, this.env, this.fetchImpl);
+    if (!accessToken) return { ok: false, reason: 'not_connected' };
+
+    const result = await createSpreadsheet(accessToken, input, this.fetchImpl);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    return {
+      ok: true,
+      spreadsheetId: result.spreadsheetId,
+      spreadsheetTitle: result.spreadsheetTitle,
+      sheetTitle: result.sheetTitle,
+      gid: result.gid,
+    };
+  }
+
+  /**
+   * What the browser needs to open Google's Picker on this account's Drive.
+   *
+   * Choosing a file in the Picker is what grants this app access to it, so the
+   * Picker is the only way an EXISTING spreadsheet reaches a form. It runs in
+   * the browser, which is why this route hands out an access token: see
+   * `GoogleSheetsPickerResponse` for what that token can and cannot reach.
+   *
+   * Never cached by anything in between: the body is a credential.
+   */
+  @Get('google-sheets/picker')
+  @Header('Cache-Control', 'no-store')
+  async googleSheetsPicker(@Req() req: ReqLike): Promise<GoogleSheetsPickerResponse> {
+    const p = await this.auth.resolveHost(req);
+    const config = googlePickerConfig(this.env);
+    if (!config) return { enabled: false, reason: 'unavailable' };
+
+    const accessToken = await this.googleTokens.resolve(this.db, p.accountId, this.env, this.fetchImpl);
+    if (!accessToken) return { enabled: false, reason: 'not_connected' };
+    return { enabled: true, accessToken, apiKey: config.apiKey, appId: config.appId };
   }
 
   /**

@@ -10,17 +10,21 @@ import { callAction } from '@/lib/call-action';
 import type { SheetTab } from '@/lib/admin-api';
 import type { QuestionMeta } from './auto-map';
 import { Card } from './integrations-card';
-import { googleSheetsHeaderRowAction, googleSheetsTabsAction } from './actions';
+import {
+  googleSheetsCreateAction,
+  googleSheetsHeaderRowAction,
+  googleSheetsPickerAction,
+  googleSheetsTabsAction,
+} from './actions';
+import { pickSpreadsheet } from './google-picker';
 import { defaultColumns, isCompleteColumn, moveColumn } from './sheet-columns';
-import { parseSheetUrl, sheetUrlFor } from './sheet-url';
+import { sheetUrlFor } from './sheet-url';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
 /** The card's whole editable state. Lifted to the editor, which autosaves it. */
 export interface GoogleSheetsState {
   enabled: boolean;
-  /** What the author typed. Kept verbatim so a bad paste stays on screen to fix. */
-  urlInput: string;
   spreadsheetId: string;
   sheetTitle: string;
   columns: SheetColumn[];
@@ -32,28 +36,40 @@ const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_c
 /**
  * The spreadsheet card on a form's Connect tab.
  *
- * Three steps in the order an author takes them: point at a spreadsheet, choose
- * the tab, say what the row holds. The tab list is fetched rather than typed,
- * because a tab name is matched exactly at delivery time and a typo there fails
- * silently on every submission.
+ * A spreadsheet gets here one of two ways, and only these two: the author has
+ * dForms create one, or chooses an existing one in Google's own Picker. There
+ * is no field to paste a link into, and that is not an omission. The app asks
+ * Google for the `drive.file` scope, which reaches the files it created and the
+ * files it was handed and nothing else, so a pasted link to any other
+ * spreadsheet would be refused by Google as if the file did not exist.
  *
- * The column plan is the part with an opinion. It starts from the form's own
- * questions in the form's own order, because that is the sheet almost everyone
- * wants and building it by hand for a twenty-question form is a chore nobody
- * should have to do to try the feature.
+ * Creating is the first button because it is the whole job in one click: the
+ * spreadsheet, a named tab and the header row, with the columns taken from the
+ * form's own questions if the author has not arranged any yet.
+ *
+ * The tab list is fetched rather than typed, because a tab name is matched
+ * exactly at delivery time and a typo there fails silently on every submission.
  */
 export function GoogleSheetsCard({
   state,
   setState,
   questions,
   connected,
+  pickerAvailable = false,
+  formName = '',
+  locale,
   m,
 }: {
   state: GoogleSheetsState;
   setState: (next: GoogleSheetsState) => void;
   questions: QuestionMeta[];
-  /** Account-level Google connection. Without it there is nothing to list tabs with. */
+  /** Account-level Google connection. Without it there is nothing to create or list with. */
   connected: boolean;
+  /** Whether this deployment can open Google's Picker (it needs a browser key). */
+  pickerAvailable?: boolean;
+  /** Names the spreadsheet a click on "create" makes. */
+  formName?: string;
+  locale?: string;
   m: Msgs;
 }) {
   const { success, error } = useToast();
@@ -61,15 +77,21 @@ export function GoogleSheetsCard({
   const [tabs, setTabs] = useState<SheetTab[] | null>(null);
   const [tabsError, setTabsError] = useState<string | null>(null);
   const [loadingTabs, setLoadingTabs] = useState(false);
+  /**
+   * The spreadsheet's name, for the link back to it.
+   *
+   * Local, NOT part of the lifted state: the stored destination holds only the
+   * id, so the name is something this card learns (from a create, a pick, or
+   * the tab list) and shows. Lifting it would make the editor autosave a form
+   * whose config had not changed, every time a name arrived.
+   */
+  const [sheetName, setSheetName] = useState('');
 
   const patch = (next: Partial<GoogleSheetsState>) => setState({ ...state, ...next });
 
   /**
-   * Fetch the tabs whenever the spreadsheet changes.
-   *
-   * Keyed on the id rather than on what was typed, so the list is not refetched
-   * once per keystroke while somebody pastes a URL. `latest` guards the race: a
-   * slow answer for the previous spreadsheet must not land on top of the
+   * Fetch the tabs whenever the spreadsheet changes. `latest` guards the race:
+   * a slow answer for the previous spreadsheet must not land on top of the
    * current one's.
    */
   const latest = useRef(0);
@@ -103,43 +125,77 @@ export function GoogleSheetsCard({
         return;
       }
       setTabs(res.data.tabs);
+      if (res.data.spreadsheetTitle) setSheetName(res.data.spreadsheetTitle);
     })();
   }, [connected, state.spreadsheetId, m]);
 
-  /** Take what was pasted and keep the id out of it, plus the tab it pointed at. */
-  function onUrl(value: string) {
-    const parsed = parseSheetUrl(value);
-    if (!parsed) {
-      patch({ urlInput: value, spreadsheetId: '' });
-      return;
-    }
-    // A pasted link naming a tab preselects it once the list arrives: the
-    // author copied the URL while looking at the tab they meant.
-    const pendingGid = parsed.gid;
-    patch({ urlInput: value, spreadsheetId: parsed.spreadsheetId });
-    if (pendingGid != null) preselect.current = pendingGid;
-  }
+  const defaults = () =>
+    defaultColumns(questions, {
+      submittedAt: m.gsheets.colSubmittedAt,
+      score: m.gsheets.colScore,
+      outcome: m.gsheets.colOutcome,
+      formName: m.gsheets.colFormName,
+      submissionId: m.gsheets.colSubmissionId,
+    });
 
   /**
-   * Preselect the tab a pasted link pointed at, once its list arrives.
+   * Create the spreadsheet, tab and header row in one go.
    *
-   * The effect must run on the TAB LIST only. It reads the current state
-   * through a ref rather than depending on it, because depending on the state
-   * it also writes would re-run it on every keystroke in the card, and the
-   * alternative (silencing the dependency rule) is not available here: this
-   * repo's eslint does not register that rule, so the disable comment is itself
-   * an error.
+   * With no columns arranged yet, the form's own questions become the columns
+   * first, so the sheet that opens already has its headings. An author who did
+   * arrange columns keeps exactly those.
    */
-  const preselect = useRef<number | null>(null);
-  const live = useRef({ state, setState });
-  live.current = { state, setState };
-  useEffect(() => {
-    const gid = preselect.current;
-    if (gid == null || !tabs) return;
-    preselect.current = null;
-    const match = tabs.find((t) => t.gid === gid);
-    if (match) live.current.setState({ ...live.current.state, sheetTitle: match.title });
-  }, [tabs]);
+  function createSheet() {
+    const columns = state.columns.some(isCompleteColumn) ? state.columns : defaults();
+    const headers = columns.filter(isCompleteColumn).map((c) => c.header.trim());
+    const title = m.gsheets.newSheetTitle.replace('{form}', formName.trim() || m.gsheets.title);
+    start(async () => {
+      const res = await callAction(() =>
+        googleSheetsCreateAction({ title, sheetTitle: m.gsheets.defaultTab, headers }),
+      );
+      if (!res.ok) {
+        error(m.gsheets.createFailed);
+        return;
+      }
+      if (!res.data.ok) {
+        error(res.data.reason === 'unavailable' ? m.gsheets.createFailed : m.gsheets.sheetForbidden);
+        return;
+      }
+      setSheetName(res.data.spreadsheetTitle);
+      patch({ spreadsheetId: res.data.spreadsheetId, sheetTitle: res.data.sheetTitle, columns });
+      success(m.gsheets.sheetCreated);
+    });
+  }
+
+  /** Choose an existing spreadsheet in Google's Picker. */
+  function chooseSheet() {
+    start(async () => {
+      const res = await callAction(() => googleSheetsPickerAction());
+      if (!res.ok || !res.data.enabled) {
+        error(m.gsheets.pickerFailed);
+        return;
+      }
+      let picked: Awaited<ReturnType<typeof pickSpreadsheet>>;
+      try {
+        picked = await pickSpreadsheet({
+          accessToken: res.data.accessToken,
+          apiKey: res.data.apiKey,
+          appId: res.data.appId,
+          locale,
+        });
+      } catch {
+        error(m.gsheets.pickerFailed);
+        return;
+      }
+      // Closed without choosing: nothing changes, and nothing is announced.
+      if (!picked) return;
+      setSheetName(picked.name);
+      // The tab is cleared, not kept: it named a tab of the PREVIOUS
+      // spreadsheet, and a stale name would be matched against this one's tabs
+      // at delivery time and miss.
+      patch({ spreadsheetId: picked.id, sheetTitle: '' });
+    });
+  }
 
   function writeHeaders() {
     const headers = state.columns.filter(isCompleteColumn).map((c) => c.header.trim());
@@ -184,20 +240,37 @@ export function GoogleSheetsCard({
         </p>
       ) : (
         <>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">{m.gsheets.urlLabel}</span>
-            <Input
-              value={state.urlInput}
-              onChange={(e) => onUrl(e.target.value)}
-              placeholder={m.gsheets.urlPlaceholder}
-              aria-invalid={!!state.urlInput.trim() && !state.spreadsheetId}
-            />
-            {state.urlInput.trim() && !state.spreadsheetId ? (
-              <span className="text-xs text-destructive">{m.gsheets.urlInvalid}</span>
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium">{m.gsheets.sheetLabel}</span>
+            {state.spreadsheetId ? (
+              <a
+                className="inline-flex w-fit items-center gap-1.5 text-sm font-medium underline underline-offset-2"
+                data-testid="gsheets-current"
+                href={sheetUrlFor(state.spreadsheetId)}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                {sheetName || m.gsheets.openSheet}
+                <i aria-hidden className="pi pi-external-link" style={{ fontSize: 11 }} />
+              </a>
             ) : (
-              <span className="text-xs text-muted-foreground">{m.gsheets.urlHelp}</span>
+              <p className="text-sm text-muted-foreground">{m.gsheets.sheetHelp}</p>
             )}
-          </label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={state.spreadsheetId ? 'secondary' : 'default'}
+                onClick={createSheet}
+                disabled={pending}
+              >
+                {m.gsheets.createSheet}
+              </Button>
+              {pickerAvailable ? (
+                <Button variant="secondary" onClick={chooseSheet} disabled={pending}>
+                  {m.gsheets.chooseSheet}
+                </Button>
+              ) : null}
+            </div>
+          </div>
 
           {state.spreadsheetId ? (
             <label className="flex flex-col gap-1.5">
@@ -215,18 +288,7 @@ export function GoogleSheetsCard({
                   </option>
                 ))}
               </select>
-              {tabsError ? (
-                <span className="text-xs text-destructive">{tabsError}</span>
-              ) : (
-                <a
-                  className="text-xs text-muted-foreground underline"
-                  href={sheetUrlFor(state.spreadsheetId)}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  {m.gsheets.openSheet}
-                </a>
-              )}
+              {tabsError ? <span className="text-xs text-destructive">{tabsError}</span> : null}
             </label>
           ) : null}
 
@@ -236,17 +298,7 @@ export function GoogleSheetsCard({
               <div className="flex gap-2">
                 <Button
                   variant="secondary"
-                  onClick={() =>
-                    setColumns(
-                      defaultColumns(questions, {
-                        submittedAt: m.gsheets.colSubmittedAt,
-                        score: m.gsheets.colScore,
-                        outcome: m.gsheets.colOutcome,
-                        formName: m.gsheets.colFormName,
-                        submissionId: m.gsheets.colSubmissionId,
-                      }),
-                    )
-                  }
+                  onClick={() => setColumns(defaults())}
                 >
                   {m.gsheets.fillFromForm}
                 </Button>

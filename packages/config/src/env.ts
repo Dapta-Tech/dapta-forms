@@ -137,6 +137,20 @@ export const serverEnvSchema = z.object({
       message: 'GOOGLE_OAUTH_REDIRECT_URI must be an http(s) URL.',
     })
     .optional(),
+  // Google Picker, how an EXISTING spreadsheet is chosen (the OAuth scope only
+  // reaches files the app created or the user picked). A browser API key from
+  // the same Cloud project as the OAuth client, restricted by HTTP referrer on
+  // Google's side: it is sent to the browser by design, so the restriction is
+  // what protects it, not secrecy. Unset = no Picker, and the spreadsheet card
+  // offers only "create a new spreadsheet". `GOOGLE_PICKER_APP_ID` is the Cloud
+  // project NUMBER; unset, it is read off the client id, which starts with it.
+  GOOGLE_PICKER_API_KEY: z.string().optional(),
+  GOOGLE_PICKER_APP_ID: z
+    .string()
+    .refine((v) => v === '' || /^\d+$/.test(v), {
+      message: 'GOOGLE_PICKER_APP_ID must be the numeric Cloud project number.',
+    })
+    .optional(),
 
   // Premium features. Forms is ALWAYS free: `locked` gates premium on the
   // customer's PAID Dapta AI subscription; `open` unlocks everything, so a bare

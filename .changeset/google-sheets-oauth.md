@@ -10,4 +10,6 @@ Google Sheets connects through Google's own consent flow, the first provider who
 
 All three variables unset leaves the integration off, exactly as a missing token does for the other providers.
 
+The consent asks for the `drive.file` scope only, the one Google classes as non-sensitive, so a self-hosted deployment's consent screen needs no Google verification. `GOOGLE_PICKER_API_KEY` is optional and turns on choosing an existing spreadsheet; without it a form can still have one created for it. `GOOGLE_PICKER_APP_ID` is read off the client id when unset.
+
 The connections page gains the Google Sheets card that starts that flow, so the copy catalog gains its strings in English and Spanish. The page subtitle no longer names the two providers it used to list, which went stale the moment a third one joined them.

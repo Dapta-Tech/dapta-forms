@@ -534,6 +534,20 @@ export type GoogleSheetsTabsResponse =
   | { enabled: true; spreadsheetTitle: string; tabs: SheetTab[] }
   | { enabled: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
 
+/** A spreadsheet created for a form in the connected Google account. */
+export type GoogleSheetsCreateResponse =
+  | { ok: true; spreadsheetId: string; spreadsheetTitle: string; sheetTitle: string; gid: number }
+  | { ok: false; reason: 'not_connected' | 'forbidden' | 'unavailable' };
+
+/**
+ * What Google's Picker needs to open. The access token here is the one Google
+ * credential that reaches a browser, because the Picker cannot run without it;
+ * it reaches only the files this app created or was handed, and lasts an hour.
+ */
+export type GoogleSheetsPickerResponse =
+  | { enabled: true; accessToken: string; apiKey: string; appId: string }
+  | { enabled: false; reason: 'not_connected' | 'unavailable' };
+
 /** What writing the header row did. `written: false` means row 1 was in use. */
 export type GoogleSheetsHeaderRowResponse =
   | { ok: true; written: true }
@@ -558,6 +572,12 @@ export interface IntegrationsResponse {
    * button can only fail is worse than no card.
    */
   unavailable?: IntegrationProvider[];
+  /**
+   * Whether an EXISTING spreadsheet can be chosen (Google's Picker needs a
+   * browser key the operator supplies). False or absent, the spreadsheet card
+   * offers only "create a new spreadsheet".
+   */
+  googlePicker?: boolean;
 }
 
 /**
@@ -981,6 +1001,12 @@ export const adminApi = {
       'GET',
       `/v1/integrations/google-sheets/tabs?spreadsheetId=${encodeURIComponent(spreadsheetId)}`,
     ),
+  /** Create a spreadsheet for a form, header row included, in one call. */
+  googleSheetsCreate: (body: { title: string; sheetTitle: string; headers: string[] }) =>
+    req<GoogleSheetsCreateResponse>('POST', '/v1/integrations/google-sheets/spreadsheets', body),
+  /** What the browser needs to open Google's Picker (carries an access token). */
+  googleSheetsPicker: () =>
+    req<GoogleSheetsPickerResponse>('GET', '/v1/integrations/google-sheets/picker'),
   /** Write the header row of the chosen tab, once. Never overwrites a used row 1. */
   googleSheetsHeaderRow: (body: { spreadsheetId: string; sheetTitle?: string; headers: string[] }) =>
     req<GoogleSheetsHeaderRowResponse>('POST', '/v1/integrations/google-sheets/header-row', body),

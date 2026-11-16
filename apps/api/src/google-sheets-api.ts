@@ -1,5 +1,5 @@
 /**
- * The two Google Sheets calls the ADMIN makes, as opposed to the one a delivery
+ * The Google Sheets calls the ADMIN makes, as opposed to the one a delivery
  * makes.
  *
  * They live here, away from the adapter, because they are a different kind of
@@ -8,7 +8,7 @@
  * author is sitting in front of the Connect tab choosing a spreadsheet: they
  * can read, they can take a second, and they happen once.
  *
- * Both take an access token rather than minting one, so they are testable
+ * All take an access token rather than minting one, so they are testable
  * without a database and cannot accidentally become a second token cache.
  */
 import { SHEETS_API_BASE } from '@quill/destinations';
@@ -40,10 +40,11 @@ interface SpreadsheetMeta {
 /**
  * Map Google's status onto something the author can act on.
  *
- * 404 and 403 are deliberately kept apart: "no such spreadsheet" and "that one
- * exists but this Google account cannot open it" send an author to two
- * completely different places, and collapsing them into "it did not work" is
- * how a support thread starts.
+ * 404 and 403 are deliberately kept apart, because they send an author to two
+ * different places. Under the `drive.file` scope a 404 is what Google answers
+ * for any spreadsheet this app was never handed, whether or not it exists: the
+ * fix is to choose it again in the Picker. A 403 means the grant itself is
+ * gone, and the fix is to reconnect Google.
  */
 function reasonFor(status: number): 'not_found' | 'forbidden' | 'unavailable' {
   if (status === 404) return 'not_found';
@@ -87,6 +88,76 @@ export async function listSheetTabs(
   const spreadsheetTitle =
     typeof body?.properties?.title === 'string' ? body.properties.title : '';
   return { ok: true, spreadsheetTitle, tabs };
+}
+
+/** A spreadsheet this app just created, or why it could not. */
+export type CreateSpreadsheetResult =
+  | { ok: true; spreadsheetId: string; spreadsheetTitle: string; sheetTitle: string; gid: number }
+  | { ok: false; reason: 'forbidden' | 'unavailable' };
+
+/**
+ * Create a spreadsheet in the connected Google account, with its header row
+ * already in place.
+ *
+ * This is the path that needs nothing beyond the consent already given: a file
+ * this app creates is, by definition, a file its `drive.file` scope reaches.
+ *
+ * ONE call. The tab is named and row 1 is written in the create request itself
+ * rather than in a follow-up write, so a failure between two calls cannot leave
+ * an untitled, headerless spreadsheet behind in somebody's Drive.
+ *
+ * The tab gets an explicit name because Google's default follows the account's
+ * language ("Sheet1", "Hoja 1"), and the delivery addresses the tab by name.
+ * Headers go in as `stringValue`, the create-time twin of `RAW`: a heading that
+ * begins with `=` is a heading, not a formula.
+ */
+export async function createSpreadsheet(
+  accessToken: string,
+  input: { title: string; sheetTitle: string; headers: string[] },
+  fetchImpl: typeof fetch = fetch,
+): Promise<CreateSpreadsheetResult> {
+  const sheet: Record<string, unknown> = { properties: { title: input.sheetTitle } };
+  if (input.headers.length > 0) {
+    sheet.data = [
+      {
+        startRow: 0,
+        startColumn: 0,
+        rowData: [
+          { values: input.headers.map((h) => ({ userEnteredValue: { stringValue: h } })) },
+        ],
+      },
+    ];
+  }
+  const url = new URL(SHEETS_API_BASE);
+  url.searchParams.set('fields', 'spreadsheetId,properties.title,sheets.properties(title,sheetId)');
+  let res: Response;
+  try {
+    res = await fetchImpl(url.toString(), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ properties: { title: input.title }, sheets: [sheet] }),
+      signal: AbortSignal.timeout(SHEETS_ADMIN_TIMEOUT_MS),
+    });
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+  if (!res.ok) {
+    return { ok: false, reason: res.status === 401 || res.status === 403 ? 'forbidden' : 'unavailable' };
+  }
+  const body = (await res.json().catch(() => null)) as
+    | (SpreadsheetMeta & { spreadsheetId?: unknown })
+    | null;
+  const spreadsheetId = body?.spreadsheetId;
+  if (typeof spreadsheetId !== 'string' || !spreadsheetId) return { ok: false, reason: 'unavailable' };
+  const first = body?.sheets?.[0]?.properties;
+  return {
+    ok: true,
+    spreadsheetId,
+    spreadsheetTitle:
+      typeof body?.properties?.title === 'string' ? body.properties.title : input.title,
+    sheetTitle: typeof first?.title === 'string' && first.title ? first.title : input.sheetTitle,
+    gid: typeof first?.sheetId === 'number' ? first.sheetId : 0,
+  };
 }
 
 /** What writing the header row did, or why it did nothing. */
