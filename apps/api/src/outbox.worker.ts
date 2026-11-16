@@ -57,6 +57,7 @@ const DESTINATION_KIND_LIST: Record<FormDestination['type'], true> = {
   webhook: true,
   hubspot: true,
   'google-sheets': true,
+  salesforce: true,
 };
 const DESTINATION_KINDS: ReadonlySet<string> = new Set(Object.keys(DESTINATION_KIND_LIST));
 

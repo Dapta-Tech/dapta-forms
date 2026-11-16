@@ -827,6 +827,7 @@ export function IntegrationsEditor({
         connected={salesforceConnected}
         initialFields={salesforceFields}
         extraStored={initialDestinations.filter((d) => d.type === 'salesforce').length > 1}
+        formId={id}
         locale={locale}
         m={m}
       />

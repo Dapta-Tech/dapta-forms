@@ -20,7 +20,10 @@
  * Retries are idempotent by construction rather than by a key: every attempt
  * looks the respondent up again before creating. A POST that landed but whose
  * answer was lost (a timeout, a dead socket) is found on the next attempt and
- * PATCHed, instead of minted twice.
+ * PATCHed, instead of minted twice. What this cannot prevent is two DIFFERENT
+ * submissions from one email arriving at the same instant on two workers: both
+ * look, both find nothing, both create. Without an External ID on Email that
+ * race is inherent, and an org's own duplicate rules are what closes it.
  *
  * The credential is a short-lived ACCESS token plus the org's instance URL,
  * both injected by the API layer, which holds the Client Credentials and
@@ -213,13 +216,41 @@ function errorDetail(body: unknown): { code: string | null; text: string | null 
   }
 }
 
+/**
+ * Error codes Salesforce answers with a 4xx that a retry CAN fix: the org's
+ * API limit, lock contention from a trigger or flow touching the same record,
+ * a query that timed out. Treated like a 5xx, so the outbox backs off and tries
+ * again instead of dropping the respondent.
+ */
+const TRANSIENT_CODES = new Set([
+  'REQUEST_LIMIT_EXCEEDED',
+  'UNABLE_TO_LOCK_ROW',
+  'QUERY_TIMEOUT',
+  'SERVER_UNAVAILABLE',
+]);
+
+/**
+ * Codes that mean the record a lookup found is gone or changed shape before
+ * the write: deleted, merged away, or converted. A retry runs the lookup again
+ * and lands on whatever the respondent is now, so these are retried too.
+ */
+const RECORD_MOVED_CODES = new Set(['ENTITY_IS_DELETED', 'CANNOT_UPDATE_CONVERTED_LEAD', 'NOT_FOUND']);
+
+/**
+ * A Contact lookup the Run As user is not allowed to make. Lead-only
+ * integration users are a reasonable setup, so this means "no Contact to
+ * match", not "every delivery fails".
+ */
+const NO_CONTACT_ACCESS_CODES = new Set(['INVALID_TYPE', 'INSUFFICIENT_ACCESS', 'INSUFFICIENT_ACCESS_OR_READONLY']);
+
 /** A failed answer Salesforce will give the same way however often it is asked. */
 function isPermanent(status: number, code: string | null): boolean {
-  if (status === 403 && code === 'REQUEST_LIMIT_EXCEEDED') return false;
+  if (code && TRANSIENT_CODES.has(code)) return false;
   return status === 400 || status === 403 || status === 404;
 }
 
-type Outcome = { ok: true; status: number; body: unknown } | DestinationResult;
+type Failure = DestinationResult & { code: string | null };
+type Outcome = { ok: true; status: number; body: unknown } | Failure;
 
 export class SalesforceDestination implements SubmissionDestination {
   readonly type = 'salesforce' as const;
@@ -302,7 +333,13 @@ export class SalesforceDestination implements SubmissionDestination {
     return out;
   }
 
-  private async call(method: string, path: string, body?: string): Promise<Outcome> {
+  private async call(
+    method: string,
+    path: string,
+    body?: string,
+    /** Codes to throw on (retry) even though their status reads as permanent. */
+    retryCodes?: ReadonlySet<string>,
+  ): Promise<Outcome> {
     const url = `${this.options.instanceUrl.replace(/\/+$/, '')}/services/data/${SALESFORCE_API_VERSION}${path}`;
     let res: Response;
     try {
@@ -329,8 +366,10 @@ export class SalesforceDestination implements SubmissionDestination {
       this.options.onUnauthorized?.();
       throw new SalesforceHttpError('salesforce delivery failed: HTTP 401', 401, text, body);
     }
-    if (isPermanent(res.status, code)) {
+    const retryable = code !== null && retryCodes?.has(code) === true;
+    if (!retryable && isPermanent(res.status, code)) {
       return {
+        code,
         delivered: false,
         driver: 'salesforce',
         detail: `HTTP ${res.status}${text ? `: ${text}` : ''}`,
@@ -342,10 +381,19 @@ export class SalesforceDestination implements SubmissionDestination {
     throw new SalesforceHttpError(`salesforce delivery failed: HTTP ${res.status}`, res.status, text, body);
   }
 
-  /** The first record a SOQL query returns, by Id, or null. */
-  private async findId(soql: string): Promise<{ id: string | null } | DestinationResult> {
+  /**
+   * The first record a SOQL query returns, by Id, or null. `tolerate` lists
+   * refusal codes that mean "nothing to find here" rather than a failure.
+   */
+  private async findId(
+    soql: string,
+    tolerate?: ReadonlySet<string>,
+  ): Promise<{ id: string | null } | DestinationResult> {
     const out = await this.call('GET', `/query?q=${encodeURIComponent(soql)}`);
-    if (!('ok' in out)) return out;
+    if (!('ok' in out)) {
+      if (out.code && tolerate?.has(out.code)) return { id: null };
+      return strip(out);
+    }
     const records = (out.body as { records?: Array<{ Id?: unknown }> } | null)?.records ?? [];
     const id = records[0]?.Id;
     return { id: typeof id === 'string' && id ? id : null };
@@ -368,6 +416,7 @@ export class SalesforceDestination implements SubmissionDestination {
 
     const contact = await this.findId(
       `SELECT Id FROM Contact WHERE Email = ${soqlString(email)} ORDER BY LastModifiedDate DESC LIMIT 1`,
+      NO_CONTACT_ACCESS_CODES,
     );
     if (!('id' in contact)) return contact;
     if (contact.id) return this.update('Contact', contact.id, this.forContact(fields));
@@ -386,7 +435,7 @@ export class SalesforceDestination implements SubmissionDestination {
     if (!hasValue(create, 'Company')) create.Company = companyFromEmail(email) ?? SALESFORCE_NOT_PROVIDED;
     const body = JSON.stringify(create);
     const out = await this.call('POST', '/sobjects/Lead', body);
-    if (!('ok' in out)) return out;
+    if (!('ok' in out)) return strip(out);
     const id = (out.body as { id?: unknown } | null)?.id;
     return {
       delivered: true,
@@ -404,8 +453,15 @@ export class SalesforceDestination implements SubmissionDestination {
     fields: Record<string, unknown>,
   ): Promise<DestinationResult> {
     const body = JSON.stringify(fields);
-    const out = await this.call('PATCH', `/sobjects/${object}/${encodeURIComponent(id)}`, body);
-    if (!('ok' in out)) return out;
+    // A record that vanished or was converted between the lookup and this
+    // write is retried: the next attempt looks the respondent up again.
+    const out = await this.call(
+      'PATCH',
+      `/sobjects/${object}/${encodeURIComponent(id)}`,
+      body,
+      RECORD_MOVED_CODES,
+    );
+    if (!('ok' in out)) return strip(out);
     return {
       delivered: true,
       driver: 'salesforce',
@@ -415,6 +471,12 @@ export class SalesforceDestination implements SubmissionDestination {
       responseBody: id,
     };
   }
+}
+
+/** A failure as the port reports it, without the classification code. */
+function strip(failure: Failure): DestinationResult {
+  const { code: _code, ...result } = failure;
+  return result;
 }
 
 function hasValue(fields: Record<string, unknown>, name: string): boolean {

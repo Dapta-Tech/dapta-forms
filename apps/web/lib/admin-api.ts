@@ -462,7 +462,15 @@ export interface HubSpotProperty {
 
 /** The property-picker response: disabled (no server token) or the property list. */
 /** What was being delivered. Mirrors `OutboxKind` in @quill/db. */
-export type DeliveryKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync' | 'analytics' | 'dapta_sync';
+export type DeliveryKind =
+  | 'webhook'
+  | 'email'
+  | 'hubspot'
+  | 'google-sheets'
+  | 'salesforce'
+  | 'booking_sync'
+  | 'analytics'
+  | 'dapta_sync';
 
 /**
  * How a delivery ended. `pending` covers both "not attempted yet" and "waiting

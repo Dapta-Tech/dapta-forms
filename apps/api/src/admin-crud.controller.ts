@@ -74,8 +74,10 @@ import {
   publishFormInputSchema,
   formSlugInputSchema,
   hasExtraHubspotDestination,
+  hasExtraSalesforceDestination,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
+  ONE_SALESFORCE_DESTINATION_MESSAGE,
   memberInviteSchema,
   memberPatchSchema,
   notificationSettingPatchSchema,
@@ -606,6 +608,14 @@ export class AdminCrudController {
       throw new BadRequestException({
         error: 'BAD_REQUEST',
         message: ONE_HUBSPOT_DESTINATION_MESSAGE,
+      });
+    }
+    // Same rule for Salesforce: two destinations draining in parallel would
+    // both look the email up, both find nothing, and both create a Lead.
+    if (hasExtraSalesforceDestination((input.config as { destinations?: unknown } | undefined)?.destinations)) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: ONE_SALESFORCE_DESTINATION_MESSAGE,
       });
     }
     // New forms are born on-brand: snapshot the workspace brand kit into the

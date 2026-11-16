@@ -705,12 +705,6 @@ export class IntegrationsController {
   }
 
   /**
-   * Connect (or re-connect) a provider by pasting its token. The token is
-   * VALIDATED against the provider (HubSpot → list contact properties; Calendly
-   * → GET /users/me) before it is encrypted + stored, and a display label is
-   * derived from the response. Returns the token-free status.
-   */
-  /**
    * Connect a Salesforce org with Client Credentials: the org's My Domain plus
    * an External Client App's consumer key and secret.
    *
@@ -767,6 +761,12 @@ export class IntegrationsController {
     return status;
   }
 
+  /**
+   * Connect (or re-connect) a provider by pasting its token. The token is
+   * VALIDATED against the provider (HubSpot → list contact properties; Calendly
+   * → GET /users/me) before it is encrypted + stored, and a display label is
+   * derived from the response. Returns the token-free status.
+   */
   @Post(':provider/connect')
   async connect(
     @Req() req: ReqLike,

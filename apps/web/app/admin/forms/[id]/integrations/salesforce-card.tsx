@@ -11,6 +11,8 @@ import type { SalesforceField, SalesforceFieldsResponse } from '@/lib/admin-api'
 import type { QuestionMeta } from './auto-map';
 import { Card } from './integrations-card';
 import { salesforceFieldsAction } from './actions';
+import { DeliveryHistory } from './delivery-history';
+import type { Locale } from '@quill/shared';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
@@ -122,6 +124,8 @@ export function builtSalesforce(state: SalesforceState): FormDestination | null 
 export function salesforceWarnings(
   state: SalesforceState,
   contact: string[],
+  /** The form has a question keyed `email`, which a delivery falls back to. */
+  hasEmailQuestion = false,
 ): { emailMissing: boolean; fallbacks: string[]; contactSkips: string[] } {
   const mapped = new Set<string>();
   for (const row of state.mappings) if (row.key.trim() && row.field.trim()) mapped.add(row.field.trim());
@@ -131,9 +135,9 @@ export function salesforceWarnings(
   if (state.dateField.trim()) mapped.add(state.dateField.trim());
   const has = (name: string) => [...mapped].some((f) => f.toLowerCase() === name.toLowerCase());
 
-  const emailMissing = !state.mappings.some(
-    (r) => r.key.trim() && r.field.trim().toLowerCase() === 'email',
-  );
+  const emailMissing =
+    !hasEmailQuestion &&
+    !state.mappings.some((r) => r.key.trim() && r.field.trim().toLowerCase() === 'email');
   // LastName and Company are filled by the delivery itself; any OTHER field the
   // org requires on create has no fallback, and is the one worth naming.
   const fallbacks = ['LastName', 'Company'].filter((f) => !has(f));
@@ -151,6 +155,7 @@ export function SalesforceCard({
   connected,
   initialFields,
   extraStored = false,
+  formId,
   locale,
   m,
 }: {
@@ -163,6 +168,8 @@ export function SalesforceCard({
   initialFields: SalesforceFieldsResponse;
   /** A stored config carries a second Salesforce destination this card drops. */
   extraStored?: boolean;
+  /** For the delivery history. Absent in isolated specs, which then skip it. */
+  formId?: string;
   locale?: string;
   m: Msgs;
 }) {
@@ -197,8 +204,15 @@ export function SalesforceCard({
     return options;
   };
   const optional = (options: { value: string; label: string }[]) => [{ value: '', label: sm.none }, ...options];
-  const questionOptions = questions.map((q) => ({ value: q.key, label: q.label }));
-  const warnings = useMemo(() => salesforceWarnings(state, contact), [state, contact]);
+  // A file answer is an object (name, url, size), which no Salesforce text
+  // field can hold sensibly, so file questions are not offered.
+  const questionOptions = questions
+    .filter((q) => q.type !== 'file')
+    .map((q) => ({ value: q.key, label: q.label }));
+  const warnings = useMemo(
+    () => salesforceWarnings(state, contact, questions.some((q) => q.key === 'email')),
+    [state, contact, questions],
+  );
   const dateType = lead.find((f) => f.name === state.dateField)?.type;
 
   return (
@@ -425,6 +439,19 @@ export function SalesforceCard({
           </section>
         </div>
       )}
+      {/* The org's own refusals (a validation rule, a required field) are only
+          ever reported here: without it an author would never learn that a
+          mapping is being rejected. */}
+      {formId ? (
+        <DeliveryHistory
+          formId={formId}
+          kinds={['salesforce']}
+          title={m.historySalesforceTitle}
+          locale={(locale === 'es' ? 'es' : 'en') as Locale}
+          m={m}
+          testId="salesforce-history"
+        />
+      ) : null}
     </Card>
   );
 }

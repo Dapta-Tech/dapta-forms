@@ -29,7 +29,10 @@ import {
 
 const m = getMessages('en').admin.integrations;
 const QUESTIONS: QuestionMeta[] = [
-  { key: 'email', label: 'Work email', type: 'email' },
+  // Not keyed `email` on purpose: a question with that key is a fallback the
+  // delivery uses, which would silence the Email alert these specs check.
+  { key: 'work_email', label: 'Work email', type: 'email' },
+  { key: 'cv', label: 'Resume', type: 'file' },
   { key: 'last', label: 'Last name', type: 'short_text' },
   { key: 'seats', label: 'Seats', type: 'number' },
 ];
@@ -80,7 +83,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function mount(state: SalesforceState, opts: { connected?: boolean; fields?: SalesforceFieldsResponse } = {}) {
+async function mount(
+  state: SalesforceState,
+  opts: { connected?: boolean; fields?: SalesforceFieldsResponse; questions?: QuestionMeta[] } = {},
+) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -89,7 +95,7 @@ async function mount(state: SalesforceState, opts: { connected?: boolean; fields
       <SalesforceCard
         state={state}
         setState={() => {}}
-        questions={QUESTIONS}
+        questions={opts.questions ?? QUESTIONS}
         connected={opts.connected ?? true}
         initialFields={opts.fields ?? FIELDS}
         locale="en"
@@ -145,6 +151,10 @@ describe('what the card warns about', () => {
     ).toBe(false);
   });
 
+  it('does not flag Email when the form has a question keyed `email`, which a delivery falls back to', () => {
+    expect(salesforceWarnings(base(), [], true).emailMissing).toBe(false);
+  });
+
   it('names the required Lead fields a new Lead will get placeholders for', () => {
     const w = salesforceWarnings(base({ mappings: [{ key: 'last', field: 'LastName' }] }), []);
     expect(w.fallbacks).toEqual(['Company']);
@@ -182,6 +192,11 @@ describe('the card', () => {
     );
     expect(el.querySelector('[data-testid="salesforce-fallbacks"]')?.textContent).toContain('LastName');
     expect(el.querySelector('[data-testid="salesforce-contact-skips"]')?.textContent).toContain('Seats__c');
+  });
+
+  it('drops the Email alert when the form has a question keyed `email`', async () => {
+    const el = await mount(base(), { questions: [...QUESTIONS, { key: 'email', label: 'Email', type: 'email' }] });
+    expect(el.querySelector('[data-testid="salesforce-email-missing"]')).toBeNull();
   });
 
   it('says why the fields could not be read', async () => {

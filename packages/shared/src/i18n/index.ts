@@ -1987,6 +1987,7 @@ export interface FormsMessages {
       /** Per-card headings; the shared panel takes them as props. */
       historyWebhookTitle: string;
       historyHubspotTitle: string;
+      historySalesforceTitle: string;
       historyEmailTitle: string;
       historyHelp: string;
       /** How a test delivery differs from a real one, since both are listed. */
@@ -4394,6 +4395,7 @@ export const en: FormsMessages = {
         'Spam protection is on: contacts are created or updated when a respondent completes the form, not from partial answers.',
       historyWebhookTitle: 'Webhook history',
       historyHubspotTitle: 'HubSpot history',
+      historySalesforceTitle: 'Salesforce history',
       historyEmailTitle: 'Email history',
       historyHelp: 'The last deliveries this form made, newest first. Open one to see what was sent.',
       historyPingNote:
@@ -7113,6 +7115,7 @@ export const es: FormsMessages = {
         'La protección contra spam está activa: los contactos se crean o actualizan cuando alguien completa el formulario, no con respuestas parciales.',
       historyWebhookTitle: 'Historial del webhook',
       historyHubspotTitle: 'Historial de HubSpot',
+      historySalesforceTitle: 'Historial de Salesforce',
       historyEmailTitle: 'Historial de correos',
       historyHelp:
         'Las últimas entregas que hizo este formulario, de la más reciente a la más antigua. Abrí una para ver qué se envió.',

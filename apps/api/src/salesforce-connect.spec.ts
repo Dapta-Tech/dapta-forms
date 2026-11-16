@@ -285,6 +285,20 @@ describe('GET /v1/integrations/salesforce/fields', () => {
   });
 });
 
+describe('a Run As user limited to Leads', () => {
+  it('still lists the Lead fields when the Contact describe is refused', async () => {
+    const org = fakeOrg();
+    const limited = (async (input: string | URL, init?: RequestInit) =>
+      String(input).endsWith('/sobjects/Contact/describe')
+        ? new Response(JSON.stringify([{ errorCode: 'NOT_FOUND', message: 'no access' }]), { status: 404 })
+        : org.fetchImpl(input, init)) as unknown as typeof fetch;
+    build(limited);
+    await controller.connectSalesforce(asOwner(), connectBody());
+    const out = await controller.salesforceFieldList(asOwner());
+    expect(out).toMatchObject({ enabled: true, contact: [] });
+  });
+});
+
 describe('delivering a submission', () => {
   const ctx = (accountId: string): DestinationContext => ({
     idempotencyKey: 'submission:s1:complete:salesforce:0',

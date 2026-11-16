@@ -154,7 +154,11 @@ export class SalesforceFieldsService {
       describe(access, 'Lead', this.fetchImpl),
       describe(access, 'Contact', this.fetchImpl),
     ]);
-    if (lead === 'rejected' || contact === 'rejected') return 'rejected';
+    // Lead is what every mapping targets, so a refused Lead describe is a
+    // refused list. Contact is only consulted to skip fields on a match, and a
+    // Run As user limited to Leads is a reasonable setup: treat it as "no
+    // Contact fields", which the delivery reads the same way.
+    if (lead === 'rejected') return 'rejected';
     const leadDtos = lead.map(toDto).filter((f): f is SalesforceFieldDto => f !== null);
     leadDtos.sort((a, b) => a.label.localeCompare(b.label));
     const types = (fields: DescribeField[]) => {
@@ -164,7 +168,11 @@ export class SalesforceFieldsService {
       }
       return out;
     };
-    const described: Described = { lead: leadDtos, leadTypes: types(lead), contactTypes: types(contact) };
+    const described: Described = {
+      lead: leadDtos,
+      leadTypes: types(lead),
+      contactTypes: contact === 'rejected' ? {} : types(contact),
+    };
     this.cache.set(accountId, { ...described, expires: now + FIELDS_CACHE_MS });
     return { ...described, cached: false };
   }

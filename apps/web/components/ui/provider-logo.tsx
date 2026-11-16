@@ -5,9 +5,9 @@
  * network and no CDN reachable, and the CSP on the public pages blocks external
  * hosts outright. An inline path always renders.
  *
- * These are the OFFICIAL marks — HubSpot's sprocket, Calendly's ring and
- * Salesforce's cloud (from Simple Icons, which takes it from Salesforce's own
- * brand guidelines) — and
+ * These are the OFFICIAL marks (HubSpot's sprocket, Calendly's ring and
+ * Salesforce's cloud, the last from Simple Icons, which takes it from
+ * Salesforce's own brand guidelines), and
  * they replace a pair of geometric approximations drawn by hand. A logo that is
  * nearly right reads as a knock-off, which is a poor thing to sit beside a
  * prompt for someone's CRM credentials. The marks are the trademarks of

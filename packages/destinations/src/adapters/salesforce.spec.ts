@@ -402,3 +402,50 @@ describe('the factory', () => {
     expect(headers.authorization).toBe('Bearer sf-token');
   });
 });
+
+describe('refusals a retry can fix, and refusals that only mean "not here"', () => {
+  it('retries lock contention, which Salesforce answers with a 400', async () => {
+    const org = fakeOrg({
+      fail: (req) =>
+        req.method === 'POST'
+          ? { status: 400, body: [{ errorCode: 'UNABLE_TO_LOCK_ROW', message: 'unable to obtain exclusive access' }] }
+          : null,
+    });
+    await expect(new SalesforceDestination(options(), org.fetchImpl).deliver(ctx())).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  it('a Run As user who cannot see Contact still gets the Lead written', async () => {
+    const org = fakeOrg({
+      fail: (req) =>
+        req.soql?.includes('FROM Contact')
+          ? { status: 400, body: [{ errorCode: 'INVALID_TYPE', message: "sObject type 'Contact' is not supported." }] }
+          : null,
+    });
+    const out = await new SalesforceDestination(options(), org.fetchImpl).deliver(ctx());
+    expect(out).toMatchObject({ delivered: true, detail: 'created Lead 00Q1' });
+  });
+
+  it('retries when the matched record was deleted or converted before the write', async () => {
+    const org = fakeOrg({
+      leads: { 'sam@acme.io': '00QL1' },
+      fail: (req) =>
+        req.method === 'PATCH'
+          ? { status: 400, body: [{ errorCode: 'CANNOT_UPDATE_CONVERTED_LEAD', message: 'converted' }] }
+          : null,
+    });
+    await expect(new SalesforceDestination(options(), org.fetchImpl).deliver(ctx())).rejects.toBeInstanceOf(
+      SalesforceHttpError,
+    );
+  });
+
+  it('never leaks its classification code into the delivery result', async () => {
+    const org = fakeOrg({
+      fail: (req) =>
+        req.method === 'POST' ? { status: 400, body: [{ errorCode: 'REQUIRED_FIELD_MISSING', message: 'x' }] } : null,
+    });
+    const out = await new SalesforceDestination(options(), org.fetchImpl).deliver(ctx());
+    expect(out).not.toHaveProperty('code');
+  });
+});
