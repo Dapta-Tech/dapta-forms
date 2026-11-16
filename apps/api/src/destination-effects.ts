@@ -22,6 +22,7 @@ import {
 } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
 import { fileLinksFor } from './file-link';
+import { GoogleSheetsAccessTokens } from './google-sheets-token';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import { HubspotPropertiesService } from './integrations.controller';
 import { destinationUsesHutk, withoutHutk } from './submission-visit';
@@ -74,6 +75,8 @@ export class DestinationEffects {
   resolveDns?: DnsResolver;
   /** accountId -> the portal its HubSpot token belongs to (mirror submit URL). */
   private readonly portals = new HubspotPortalResolver();
+  /** accountId -> a live Google access token, minted from its refresh token. */
+  private readonly googleTokens = new GoogleSheetsAccessTokens();
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -229,8 +232,35 @@ export class DestinationEffects {
     }
   }
 
-  /** Resolve a stored destination config into a delivery spec (inject secrets). */
+  /**
+   * Resolve a stored destination config into a delivery spec (inject secrets).
+   *
+   * A switch rather than the if/else-with-a-tail this used to be: HubSpot was
+   * the tail, so a destination type added later would have been handed HubSpot's
+   * token and HubSpot's mappings and would have delivered somebody's submission
+   * to the wrong place entirely.
+   */
   private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
+    if (destination.type === 'google-sheets') {
+      // Minted from the account's refresh token at DELIVERY time, cached per
+      // account. Empty when the account is not connected or Google refused to
+      // renew, which the factory turns into a log-only no-op.
+      const accessToken = await this.googleTokens.resolve(
+        this.db,
+        accountId,
+        this.env,
+        this.fetchImpl,
+      );
+      return {
+        type: 'google-sheets',
+        googleSheets: {
+          accessToken,
+          spreadsheetId: destination.settings?.spreadsheetId ?? '',
+          sheetTitle: destination.settings?.sheetTitle ?? undefined,
+          columns: destination.columns ?? [],
+        },
+      };
+    }
     if (destination.type === 'webhook') {
       return {
         type: 'webhook',

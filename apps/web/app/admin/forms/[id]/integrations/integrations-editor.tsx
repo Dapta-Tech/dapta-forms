@@ -203,6 +203,33 @@ export function carriedWebhooks(destinations: FormDestination[]): FormDestinatio
   return destinations.filter((d) => d.type === 'webhook').slice(1);
 }
 
+/**
+ * Every destination this screen does not edit at all.
+ *
+ * `buildDestinations` assembles the array it saves from scratch, out of the two
+ * things this tab shows: the webhook and the HubSpot mapping. That was complete
+ * while those were the only kinds there were. It stopped being complete the
+ * moment a Google Sheets destination could exist, and the consequence is not a
+ * missing control but DATA LOSS: opening this tab and pressing save on an
+ * unrelated field would delete a spreadsheet sync configured through the API,
+ * silently, with the form still reporting a healthy save.
+ *
+ * So anything that is neither a webhook nor a HubSpot destination rides along
+ * untouched. Written as "not the two kinds this screen knows" rather than as a
+ * list of kinds to carry, so the next destination type is carried by default
+ * instead of being quietly dropped until somebody notices.
+ *
+ * They go at the END of the saved array. `enqueueSubmissionDeliveries` builds a
+ * delivery's idempotency key from its index, so a destination that changes
+ * position can have one in-flight retry re-keyed and delivered twice. Appending
+ * keeps the webhooks contiguous and in their stored order, which is what the
+ * key scheme is most sensitive to, and costs at most that one duplicate on a
+ * destination nobody is editing.
+ */
+export function carriedOthers(destinations: FormDestination[]): FormDestination[] {
+  return destinations.filter((d) => d.type !== 'webhook' && d.type !== 'hubspot');
+}
+
 function initialWebhook(destinations: FormDestination[]): WebhookState {
   const w = destinations.find((d) => d.type === 'webhook');
   if (w && w.type === 'webhook') {
@@ -519,6 +546,9 @@ export function IntegrationsEditor({
         bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
       });
     }
+    // Last: every destination kind this screen does not edit (see
+    // `carriedOthers`). Without this, saving here deletes them.
+    out.push(...carriedOthers(savedDestinations.current));
     return { destinations: out, webhookError };
   }
 

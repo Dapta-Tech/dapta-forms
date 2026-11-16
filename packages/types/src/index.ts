@@ -615,7 +615,7 @@ export const formOutcomeSchema = z.object({
 // --- Submission destinations (pluggable CRM / webhook sync) ------------------
 
 /** The configurable destination kinds a form may deliver submissions to. */
-export const destinationType = ['webhook', 'hubspot'] as const;
+export const destinationType = ['webhook', 'hubspot', 'google-sheets'] as const;
 export type DestinationType = (typeof destinationType)[number];
 
 /** A property map: form stepKey / utmKey -> external property name. */
@@ -822,9 +822,84 @@ export const hubspotDestinationSchema = z.object({
 });
 export type HubspotDestination = z.infer<typeof hubspotDestinationSchema>;
 
+/**
+ * What fills ONE cell of a spreadsheet row.
+ *
+ * `answer` names a step by its key; `utm` names one of the five campaign keys;
+ * the rest take no key. Unlike a CRM mapping, which is a record keyed by the
+ * question, this is a LIST: a spreadsheet's columns are ordered, and the order
+ * is the author's to choose rather than whatever a record happens to iterate in.
+ */
+export const sheetColumnSource = [
+  'answer',
+  'utm',
+  'score',
+  'outcome',
+  'submitted_at',
+  'form_name',
+  'submission_id',
+] as const;
+export type SheetColumnSource = (typeof sheetColumnSource)[number];
+
+export const sheetColumnSchema = z.object({
+  /**
+   * The text in the header row. Stored rather than derived, because the author
+   * can rename a column without the question changing, and because a sheet that
+   * already has data must keep the heading its existing rows were written under.
+   */
+  header: z.string().min(1).max(200),
+  source: z.enum(sheetColumnSource),
+  /** The step key (`answer`) or the campaign key (`utm`). Unused by the rest. */
+  key: z.string().min(1).max(64).optional(),
+});
+export type SheetColumn = z.infer<typeof sheetColumnSchema>;
+
+/**
+ * At most this many columns in one row. Well under a sheet's own limit; it
+ * exists so a crafted config cannot make one delivery build an enormous row.
+ */
+export const MAX_SHEET_COLUMNS = 200;
+
+/**
+ * Append every submission to a Google Sheet as a new row.
+ *
+ * The credential is NOT here. Like the HubSpot token, it is held per account in
+ * `account_integration` (the OAuth refresh token the consent flow returned) and
+ * exchanged for a short-lived access token by the API at delivery time. Nothing
+ * about Google's client lives in a form's config.
+ */
+export const googleSheetsDestinationSchema = z.object({
+  type: z.literal('google-sheets'),
+  enabled: z.boolean().default(false),
+  settings: z
+    .object({
+      /**
+       * The spreadsheet's own id, as it appears in its URL. Stored rather than
+       * the URL: the URL carries a fragment and query of its own that change as
+       * the author clicks around their own document.
+       */
+      spreadsheetId: z.string().min(1).max(200).nullable().optional(),
+      /** The tab written to, by its visible name. Absent writes to the first tab. */
+      sheetTitle: z.string().max(200).nullable().optional(),
+    })
+    .default({}),
+  /**
+   * The row, left to right. Empty means the destination is not configured yet:
+   * the delivery degrades to a no-op rather than inventing a column order.
+   *
+   * Deliberately NOT derived from a submission's own answers at delivery time.
+   * Two respondents answer different optional questions, so a row built from
+   * whatever one of them happened to fill in would put the same question in a
+   * different column on every line, and nothing downstream could read the sheet.
+   */
+  columns: z.array(sheetColumnSchema).max(MAX_SHEET_COLUMNS).default([]),
+});
+export type GoogleSheetsDestination = z.infer<typeof googleSheetsDestinationSchema>;
+
 export const formDestinationSchema = z.discriminatedUnion('type', [
   webhookDestinationSchema,
   hubspotDestinationSchema,
+  googleSheetsDestinationSchema,
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
 
