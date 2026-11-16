@@ -155,7 +155,17 @@ export function soqlString(value: string): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * Looks like an email: a local part, `@`, then dot-separated labels. The labels
+ * exclude the dot, so there is exactly one way to split the domain and the test
+ * is linear. The looser `[^\s@]+\.[^\s@]+` could split at any dot, which is
+ * quadratic on an answer full of dots (CodeQL js/polynomial-redos), and the
+ * answer is whatever the respondent typed. 254 is the longest address SMTP allows.
+ */
+const EMAIL_RE = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+const EMAIL_MAX_LENGTH = 254;
+const looksLikeEmail = (value: string): boolean =>
+  value.length <= EMAIL_MAX_LENGTH && EMAIL_RE.test(value);
 const NUMERIC_TYPES = new Set(['double', 'currency', 'percent', 'int', 'long']);
 
 /** Case-insensitive lookup of a field's type: Salesforce API names are case-insensitive. */
@@ -265,10 +275,10 @@ export class SalesforceDestination implements SubmissionDestination {
     for (const [stepKey, target] of Object.entries(this.options.fieldMappings ?? {})) {
       if (!propertiesFor(target).some((f) => f.toLowerCase() === 'email')) continue;
       const raw = ctx.data?.[stepKey];
-      if (typeof raw === 'string' && EMAIL_RE.test(raw.trim())) return raw.trim();
+      if (typeof raw === 'string' && looksLikeEmail(raw.trim())) return raw.trim();
     }
     const fallback = ctx.data?.email;
-    if (typeof fallback === 'string' && EMAIL_RE.test(fallback.trim())) return fallback.trim();
+    if (typeof fallback === 'string' && looksLikeEmail(fallback.trim())) return fallback.trim();
     return null;
   }
 
