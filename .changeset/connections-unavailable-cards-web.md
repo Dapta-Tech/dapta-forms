@@ -7,3 +7,7 @@ client, for one) keeps its card on the Connections page, with a note saying it
 is not available here and no button, instead of disappearing. A Salesforce
 connection that got no answer names how the call died (`ECONNRESET`,
 `ENOTFOUND`, a timeout).
+
+The dCal card is always on the Connections page, right above Calendly. On a
+deployment without dCal its steps still show, with the same note and without
+the link to dCal.

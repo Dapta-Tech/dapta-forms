@@ -152,8 +152,11 @@ export function ConnectionsPanel({
         {visibleProviders.map((meta) => [
           // dCal sits right above Calendly: it is the scheduler we would
           // rather people pick, so it comes first where the two are compared.
-          meta.id === 'calendly' && dcal ? (
-            <DcalCard key="dcal" createEventUrl={dcal.createEventUrl} m={m} />
+          // Always shown, configured or not: the card is presence for the
+          // scheduler we would rather people pick. Only its link depends on
+          // the deployment having dCal.
+          meta.id === 'calendly' ? (
+            <DcalCard key="dcal" createEventUrl={dcal?.createEventUrl ?? null} m={m} />
           ) : null,
           <ProviderCard
             key={meta.id}
@@ -629,7 +632,7 @@ function SalesforceConnectForm({
  * disconnect. The card is here for presence, beside the provider it replaces,
  * and its "Connect" opens the three steps it takes to use it instead.
  */
-function DcalCard({ createEventUrl, m }: { createEventUrl: string; m: Msgs }) {
+function DcalCard({ createEventUrl, m }: { createEventUrl: string | null; m: Msgs }) {
   const [showSteps, setShowSteps] = useState(false);
   return (
     <section className="flex flex-col rounded-xl border border-border bg-card p-5" data-testid="dcal-card">
@@ -664,19 +667,33 @@ function DcalCard({ createEventUrl, m }: { createEventUrl: string; m: Msgs }) {
                 <li key={step}>{step}</li>
               ))}
             </ol>
+            {createEventUrl ? null : (
+              <div
+                data-testid="provider-unavailable"
+                className="rounded-md border border-dashed border-border bg-muted/40 p-3"
+              >
+                <p className="text-sm font-medium text-foreground">{m.unavailableTitle}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {fill(m.unavailableBody, { provider: m.dcalName })}
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               {/* A real link, styled as the primary button: it opens dCal in a
-                  new tab, so the author keeps this page and the steps. */}
-              <a
-                href={createEventUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={buttonVariants()}
-                data-testid="dcal-open"
-              >
-                <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
-                {m.dcalOpen}
-              </a>
+                  new tab, so the author keeps this page and the steps. Only
+                  where the deployment has dCal; elsewhere it could only 404. */}
+              {createEventUrl ? (
+                <a
+                  href={createEventUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonVariants()}
+                  data-testid="dcal-open"
+                >
+                  <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
+                  {m.dcalOpen}
+                </a>
+              ) : null}
               <Button variant="ghost" onClick={() => setShowSteps(false)}>
                 {m.dcalHide}
               </Button>
