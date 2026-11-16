@@ -160,10 +160,13 @@ describe('the Google Sheets card', () => {
 describe('a deployment with no Google OAuth client', () => {
   const gsheetsMark = (el: HTMLElement) => el.querySelector('[data-provider-logo="gsheets"]');
 
-  it('leaves the card out, and keeps the other two', async () => {
+  it('keeps the card, says it is not available here, and offers no button', async () => {
     const el = await mount({ unavailable: ['google-sheets'] });
-    expect(gsheetsMark(el)).toBeNull();
+    expect(gsheetsMark(el)).not.toBeNull();
     expect(el.textContent).not.toContain(m.connectWithGoogle);
+    expect(card(el).querySelector('[data-testid="provider-unavailable"]')?.textContent).toContain(
+      m.unavailableTitle,
+    );
     expect(el.textContent).toContain(m.hubspotName);
     expect(el.textContent).toContain(m.calendlyName);
   });

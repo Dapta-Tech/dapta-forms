@@ -49,7 +49,7 @@ export async function connectSalesforceAction(input: {
   consumerSecret: string;
 }): Promise<
   | { ok: true; status: IntegrationStatus }
-  | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string }
+  | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string; cause?: string }
 > {
   try {
     const status = await adminApi.connectSalesforce(input);
@@ -67,6 +67,7 @@ export async function connectSalesforceAction(input: {
         reason: typeof reason === 'string' ? (reason as SalesforceConnectError) : undefined,
         status: e.status,
         message: e.message,
+        cause: typeof e.body?.cause === 'string' ? e.body.cause : undefined,
       };
     }
     return { ok: false };

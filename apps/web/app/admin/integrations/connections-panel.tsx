@@ -108,13 +108,13 @@ export function ConnectionsPanel({
     return map;
   });
 
-  // A provider the deployment cannot connect gets no card: its button could
-  // only fail. The exception is an account that is ALREADY connected (the
-  // operator took the configuration away afterwards): that card stays, because
-  // it is the only place the connection can be seen and removed.
-  const visibleProviders = providers.filter(
-    (meta) => !unavailable.includes(meta.id) || statuses[meta.id] != null,
-  );
+  // Every provider gets a card, including one this deployment cannot connect:
+  // the page is also where people learn what dForms can talk to. A card for an
+  // unavailable provider carries no button (it could only fail) and says why
+  // instead. An account that is ALREADY connected keeps its normal card, the
+  // only place that connection can be seen and removed.
+  const visibleProviders = providers;
+  const isUnavailable = (id: IntegrationProvider) => unavailable.includes(id) && statuses[id] == null;
 
   /**
    * Say how the consent round trip went, once, and take the flag out of the URL.
@@ -152,8 +152,11 @@ export function ConnectionsPanel({
         {visibleProviders.map((meta) => [
           // dCal sits right above Calendly: it is the scheduler we would
           // rather people pick, so it comes first where the two are compared.
-          meta.id === 'calendly' && dcal ? (
-            <DcalCard key="dcal" createEventUrl={dcal.createEventUrl} m={m} />
+          // Always shown, configured or not: the card is presence for the
+          // scheduler we would rather people pick. Only its link depends on
+          // the deployment having dCal.
+          meta.id === 'calendly' ? (
+            <DcalCard key="dcal" createEventUrl={dcal?.createEventUrl ?? null} m={m} />
           ) : null,
           <ProviderCard
             key={meta.id}
@@ -161,6 +164,7 @@ export function ConnectionsPanel({
             status={statuses[meta.id] ?? null}
             encryptionAvailable={encryptionAvailable}
             serverProvided={serverProvided.includes(meta.id)}
+            unavailable={isUnavailable(meta.id)}
             onStatusChange={(s) => setStatuses((prev) => ({ ...prev, [meta.id]: s }))}
             m={m}
             locale={locale}
@@ -178,6 +182,7 @@ function ProviderCard({
   status,
   encryptionAvailable,
   serverProvided = false,
+  unavailable = false,
   onStatusChange,
   m,
   locale,
@@ -186,6 +191,8 @@ function ProviderCard({
   status: IntegrationStatus | null;
   encryptionAvailable: boolean;
   serverProvided?: boolean;
+  /** This deployment cannot connect the provider: say so, offer no button. */
+  unavailable?: boolean;
   onStatusChange: (s: IntegrationStatus | null) => void;
   m: Msgs;
   locale: Locale;
@@ -277,7 +284,17 @@ function ProviderCard({
           button followed its description, and HubSpot's two-line copy pushed its
           Connect button a line lower than Calendly's — the two never lined up. */}
       <div className="mt-auto pt-4">
-        {!encryptionAvailable ? (
+        {unavailable ? (
+          <div
+            data-testid="provider-unavailable"
+            className="rounded-md border border-dashed border-border bg-muted/40 p-3"
+          >
+            <p className="text-sm font-medium text-foreground">{m.unavailableTitle}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {fill(m.unavailableBody, { provider: meta.name })}
+            </p>
+          </div>
+        ) : !encryptionAvailable ? (
           // Still say the integration works when the server supplies the token:
           // "connecting is unavailable" on its own reads as "nothing works here".
           <div className="flex flex-col gap-3">
@@ -615,7 +632,7 @@ function SalesforceConnectForm({
  * disconnect. The card is here for presence, beside the provider it replaces,
  * and its "Connect" opens the three steps it takes to use it instead.
  */
-function DcalCard({ createEventUrl, m }: { createEventUrl: string; m: Msgs }) {
+function DcalCard({ createEventUrl, m }: { createEventUrl: string | null; m: Msgs }) {
   const [showSteps, setShowSteps] = useState(false);
   return (
     <section className="flex flex-col rounded-xl border border-border bg-card p-5" data-testid="dcal-card">
@@ -650,19 +667,33 @@ function DcalCard({ createEventUrl, m }: { createEventUrl: string; m: Msgs }) {
                 <li key={step}>{step}</li>
               ))}
             </ol>
+            {createEventUrl ? null : (
+              <div
+                data-testid="provider-unavailable"
+                className="rounded-md border border-dashed border-border bg-muted/40 p-3"
+              >
+                <p className="text-sm font-medium text-foreground">{m.unavailableTitle}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {fill(m.unavailableBody, { provider: m.dcalName })}
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               {/* A real link, styled as the primary button: it opens dCal in a
-                  new tab, so the author keeps this page and the steps. */}
-              <a
-                href={createEventUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={buttonVariants()}
-                data-testid="dcal-open"
-              >
-                <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
-                {m.dcalOpen}
-              </a>
+                  new tab, so the author keeps this page and the steps. Only
+                  where the deployment has dCal; elsewhere it could only 404. */}
+              {createEventUrl ? (
+                <a
+                  href={createEventUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonVariants()}
+                  data-testid="dcal-open"
+                >
+                  <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
+                  {m.dcalOpen}
+                </a>
+              ) : null}
               <Button variant="ghost" onClick={() => setShowSteps(false)}>
                 {m.dcalHide}
               </Button>
@@ -688,10 +719,13 @@ function DcalCard({ createEventUrl, m }: { createEventUrl: string; m: Msgs }) {
 export function salesforceProblem(
   res:
     | { ok: false; transport: true; message: string }
-    | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string },
+    | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string; cause?: string },
   m: Msgs,
 ): string {
   if ('transport' in res) return m.salesforceErrors.timeout;
+  // "Did not answer" carries how the call died, which is what tells an
+  // operator whether this server is blocked from Salesforce.
+  if (res.reason === 'unreachable' && res.cause) return `${m.salesforceErrors.unreachable} (${res.cause})`;
   if (res.reason) return m.salesforceErrors[res.reason];
   if (res.status === 403) return m.salesforceErrors.forbidden;
   return res.message ? `${m.connectError} (${res.message})` : m.connectError;

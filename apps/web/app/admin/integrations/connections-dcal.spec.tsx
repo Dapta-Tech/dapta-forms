@@ -61,8 +61,16 @@ describe('the dCal card', () => {
     expect(names.indexOf(m.dcalName)).toBe(names.indexOf(m.calendlyName) - 1);
   });
 
-  it('is left out on a deployment without dCal', async () => {
-    expect(cardNames(await mount(null))).not.toContain(m.dcalName);
+  it('still shows on a deployment without dCal, with the steps, a note and no link', async () => {
+    const el = await mount(null);
+    const names = cardNames(el);
+    expect(names.indexOf(m.dcalName)).toBe(names.indexOf(m.calendlyName) - 1);
+    const card = el.querySelector('[data-testid="dcal-card"]')!;
+    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.connect))!;
+    await act(async () => connect.click());
+    expect(card.querySelector('[data-testid="dcal-steps"]')).not.toBeNull();
+    expect(card.querySelector('[data-testid="provider-unavailable"]')?.textContent).toContain(m.unavailableTitle);
+    expect(card.querySelector('[data-testid="dcal-open"]')).toBeNull();
   });
 
   it('opens the steps and a link to dCal instead of asking for a credential', async () => {
@@ -84,6 +92,12 @@ describe('why a Salesforce connection failed', () => {
   it('says the button gave up waiting when nothing came back', () => {
     expect(salesforceProblem({ ok: false, transport: true, message: 'timed out after 30000ms' }, m)).toBe(
       m.salesforceErrors.timeout,
+    );
+  });
+
+  it('names how the call died when Salesforce did not answer', () => {
+    expect(salesforceProblem({ ok: false, reason: 'unreachable', status: 400, cause: 'ECONNRESET' }, m)).toBe(
+      `${m.salesforceErrors.unreachable} (ECONNRESET)`,
     );
   });
 
