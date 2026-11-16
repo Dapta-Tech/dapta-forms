@@ -291,15 +291,20 @@ export function SchedulerPanel({
 
   const providerField = (
     <Field label={s.schedulerProvider}>
-      <Select
-        data-testid="scheduler-provider"
-        value={provider}
-        onChange={(v) => switchProvider(v === 'dcal' ? 'dcal' : 'calendly')}
-        options={[
-          { value: 'calendly', label: s.schedulerProviderCalendly },
-          { value: 'dcal', label: s.schedulerProviderDcal },
-        ]}
-      />
+      {/* The testid goes on a wrapper: `Select` styles its trigger from
+          `className` and forwards nothing else, so a testid passed as a prop
+          never reaches the DOM. Same as the two in the dCal picker. */}
+      <div data-testid="scheduler-provider">
+        <Select
+          ariaLabel={s.schedulerProvider}
+          value={provider}
+          onChange={(v) => switchProvider(v === 'dcal' ? 'dcal' : 'calendly')}
+          options={[
+            { value: 'calendly', label: s.schedulerProviderCalendly },
+            { value: 'dcal', label: s.schedulerProviderDcal },
+          ]}
+        />
+      </div>
     </Field>
   );
 
