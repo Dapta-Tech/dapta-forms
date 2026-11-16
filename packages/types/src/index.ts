@@ -615,7 +615,7 @@ export const formOutcomeSchema = z.object({
 // --- Submission destinations (pluggable CRM / webhook sync) ------------------
 
 /** The configurable destination kinds a form may deliver submissions to. */
-export const destinationType = ['webhook', 'hubspot', 'google-sheets'] as const;
+export const destinationType = ['webhook', 'hubspot', 'google-sheets', 'salesforce'] as const;
 export type DestinationType = (typeof destinationType)[number];
 
 /** A property map: form stepKey / utmKey -> external property name. */
@@ -719,6 +719,12 @@ export function destinationFiresForPhase(
   // decided here rather than left to a default, because the schema's absent
   // `events` means BOTH and that default is wrong for exactly this kind.
   if (destination.type === 'google-sheets') return phase === 'complete';
+  // Salesforce is complete-only in its first version for a reason of its own:
+  // a partial carries whatever the respondent typed so far, and the CREATE
+  // path has to invent a last name and a company for a Lead that lacks them.
+  // A partial would mint a placeholder record for every visitor who typed an
+  // email and left, in somebody's CRM, where sales would call them.
+  if (destination.type === 'salesforce') return phase === 'complete';
   const events = destination.events;
   if (!events || events.length === 0) return true;
   return events.includes(phase);
@@ -905,10 +911,46 @@ export const googleSheetsDestinationSchema = z.object({
 });
 export type GoogleSheetsDestination = z.infer<typeof googleSheetsDestinationSchema>;
 
+/**
+ * Salesforce destination: find the respondent by email and write them to the
+ * connected org, without creating a duplicate.
+ *
+ * The connection (My Domain plus an External Client App's consumer key and
+ * secret, Client Credentials Flow) lives in `account_integration`, encrypted,
+ * and is exchanged for an access token by the API at delivery time. Nothing
+ * about the org's credentials lives in a form's config.
+ *
+ * Every mapping names a field of the LEAD object by its API name (`Company`,
+ * `LeadSource`, `Industry__c`). When the email already belongs to a Contact the
+ * delivery updates that Contact instead, writing only the mapped fields that
+ * also exist on Contact, so one Lead-only field cannot fail the whole update.
+ */
+export const salesforceDestinationSchema = z.object({
+  type: z.literal('salesforce'),
+  enabled: z.boolean().default(false),
+  /** stepKey -> one Lead field or several (one SHOULD be `Email`). */
+  fieldMappings: fieldMapSchema.default({}),
+  /** utm_source/medium/campaign/term/content -> Lead field. */
+  utmMappings: propertyMapSchema.default({}),
+  /** Lead field to receive the score. */
+  scoreField: z.string().max(200).nullable().optional(),
+  /** Lead date or datetime field to receive the submitted date. */
+  dateField: z.string().max(200).nullable().optional(),
+  /**
+   * The IANA zone that names the CALENDAR DAY when `dateField` is a `date`
+   * field. Blank/absent = UTC. A `datetime` field receives the exact instant.
+   */
+  dayTimezone: z.string().max(64).optional(),
+  /** Fixed values stamped on every record written (e.g. `LeadSource`). */
+  staticFields: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+});
+export type SalesforceDestination = z.infer<typeof salesforceDestinationSchema>;
+
 export const formDestinationSchema = z.discriminatedUnion('type', [
   webhookDestinationSchema,
   hubspotDestinationSchema,
   googleSheetsDestinationSchema,
+  salesforceDestinationSchema,
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
 
@@ -969,6 +1011,24 @@ export function hasExtraHubspotDestination(destinations: unknown, stored?: unkno
   // One is always fine. Past that, only an INCREASE is refused — and an absent
   // or unreadable `stored` counts as zero, so a create refuses anything over one.
   return next > 1 && next > hubspotCount(stored);
+}
+
+/** Rejection message for a second Salesforce destination. */
+export const ONE_SALESFORCE_DESTINATION_MESSAGE =
+  'Only one Salesforce destination per form. Map several fields from the same question instead.';
+
+/**
+ * True when a proposed destination list would ADD a Salesforce entry beyond the
+ * first. The same rule as {@link hasExtraHubspotDestination}, for the same
+ * reason: two destinations writing the same record from one submission race
+ * each other, and the editor only ever shows the first. Only an increase is
+ * refused, so a whole-array write that adds nothing never 400s.
+ */
+export function hasExtraSalesforceDestination(destinations: unknown, stored?: unknown): boolean {
+  const count = (list: unknown): number =>
+    Array.isArray(list) ? list.filter((d) => isRecord(d) && d.type === 'salesforce').length : 0;
+  const next = count(destinations);
+  return next > 1 && next > count(stored);
 }
 
 /**

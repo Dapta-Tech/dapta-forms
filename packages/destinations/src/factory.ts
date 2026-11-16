@@ -6,6 +6,7 @@ import {
   GoogleSheetsDestination,
   type GoogleSheetsDestinationOptions,
 } from './adapters/google-sheets';
+import { SalesforceDestination, type SalesforceDestinationOptions } from './adapters/salesforce';
 
 /**
  * A fully-resolved destination spec: the form-config settings for the chosen
@@ -18,6 +19,7 @@ export interface DestinationSpec {
   webhook?: WebhookDestinationOptions;
   hubspot?: HubspotDestinationOptions;
   googleSheets?: GoogleSheetsDestinationOptions;
+  salesforce?: SalesforceDestinationOptions;
 }
 
 /**
@@ -56,6 +58,15 @@ export function createDestination(
         return new LogOnlyDestination('google sheets destination has no columns configured');
       }
       return new GoogleSheetsDestination(sheets, fetchImpl);
+    }
+    case 'salesforce': {
+      const sf = spec.salesforce;
+      // Not connected, or the org refused to mint a token (the app was revoked,
+      // the secret rotated): a no-op the delivery history names, not a retry.
+      if (!sf?.accessToken || !sf.instanceUrl) {
+        return new LogOnlyDestination('salesforce destination has no usable connection (reconnect Salesforce)');
+      }
+      return new SalesforceDestination(sf, fetchImpl);
     }
     default:
       return new LogOnlyDestination(`unknown destination type: ${String(spec.type)}`);

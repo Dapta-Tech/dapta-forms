@@ -23,6 +23,8 @@ import {
 import type { ServerEnv } from '@quill/config/env';
 import { fileLinksFor } from './file-link';
 import { GoogleSheetsAccessTokens } from './google-sheets-token';
+import { SalesforceAccessTokens } from './salesforce-auth';
+import { SalesforceFieldsService } from './salesforce-fields';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import { HubspotPropertiesService } from './integrations.controller';
 import { destinationUsesHutk, withoutHutk } from './submission-visit';
@@ -94,6 +96,14 @@ export class DestinationEffects {
     @Optional()
     @Inject(GoogleSheetsAccessTokens)
     private readonly googleTokens: GoogleSheetsAccessTokens = new GoogleSheetsAccessTokens(),
+    /** Shared with the controller for the same reason as `googleTokens`. */
+    @Optional()
+    @Inject(SalesforceAccessTokens)
+    private readonly salesforceTokens: SalesforceAccessTokens = new SalesforceAccessTokens(),
+    /** Field types per account (a number goes as a number, a date as a day). */
+    @Optional()
+    @Inject(SalesforceFieldsService)
+    private readonly salesforceFields?: SalesforceFieldsService,
   ) {}
 
   /**
@@ -252,6 +262,36 @@ export class DestinationEffects {
    * to the wrong place entirely.
    */
   private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
+    if (destination.type === 'salesforce') {
+      // Minted from the account's Client Credentials at DELIVERY time, cached
+      // per account. Null when not connected or the org refused, which the
+      // factory turns into a log-only no-op; a Salesforce that did not answer
+      // throws here and the outbox retries.
+      const access = await this.salesforceTokens.resolve(this.db, accountId, this.env, this.fetchImpl);
+      // Field types decide how a value is sent (`25` vs `"25"`, a day vs an
+      // instant) and which mappings reach a Contact. Unknown is tolerated (the
+      // adapter falls back to strings), but a describe that did not ANSWER
+      // throws, so a delivery waits instead of sending numbers as text.
+      const types = access ? await this.salesforceFields?.fieldTypes(accountId) : null;
+      return {
+        type: 'salesforce',
+        salesforce: {
+          accessToken: access?.accessToken ?? '',
+          instanceUrl: access?.instanceUrl ?? '',
+          fieldMappings: destination.fieldMappings ?? {},
+          utmMappings: destination.utmMappings ?? {},
+          scoreField: destination.scoreField ?? undefined,
+          dateField: destination.dateField ?? undefined,
+          dayTimezone: destination.dayTimezone,
+          staticFields: destination.staticFields,
+          leadFields: types?.lead,
+          contactFields: types?.contact,
+          // A 401 means the cached token outlived the org's session: drop it,
+          // so the retry the adapter's throw schedules mints a fresh one.
+          onUnauthorized: () => this.salesforceTokens.invalidate(accountId),
+        },
+      };
+    }
     if (destination.type === 'google-sheets') {
       // Minted from the account's refresh token at DELIVERY time, cached per
       // account. Empty when the account is not connected or Google refused to
