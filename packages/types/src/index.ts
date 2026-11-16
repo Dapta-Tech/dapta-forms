@@ -710,6 +710,15 @@ export function destinationFiresForPhase(
   destination: { type: string; events?: DestinationEvent[] | undefined },
   phase: DestinationEvent,
 ): boolean {
+  // A spreadsheet is APPEND-ONLY, which makes a partial a different thing here
+  // than it is anywhere else. A webhook receiving a partial and then the
+  // complete can reconcile them on its own key; a CRM upserts onto the same
+  // contact. A sheet cannot: it would hold one row from halfway through the
+  // form and a second, fuller row underneath, with nothing in either saying
+  // they are the same person. So this destination is complete-only, and it is
+  // decided here rather than left to a default, because the schema's absent
+  // `events` means BOTH and that default is wrong for exactly this kind.
+  if (destination.type === 'google-sheets') return phase === 'complete';
   const events = destination.events;
   if (!events || events.length === 0) return true;
   return events.includes(phase);

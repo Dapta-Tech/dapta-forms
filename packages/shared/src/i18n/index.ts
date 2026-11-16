@@ -2017,10 +2017,55 @@ export interface FormsMessages {
       /** `{n}` = delivery attempts, shown only past the first. */
       historyAttempts: string;
       historyNoReason: string;
-      // Google Sheets — announced, not shipped; the card is inert
+      // Google Sheets: the per-form spreadsheet card.
       gsheetsTitle: string;
       gsheetsDesc: string;
       comingSoon: string;
+      gsheets: {
+        title: string;
+        desc: string;
+        /** Shown in place of the whole card when the account has no Google connection. */
+        notConnected: string;
+        urlLabel: string;
+        urlPlaceholder: string;
+        urlHelp: string;
+        urlInvalid: string;
+        tabLabel: string;
+        /** The empty option: write to whichever tab is first. */
+        tabFirst: string;
+        openSheet: string;
+        sheetNotFound: string;
+        sheetForbidden: string;
+        tabsUnavailable: string;
+        columnsLabel: string;
+        columnsHelp: string;
+        noColumns: string;
+        addColumn: string;
+        removeColumn: string;
+        moveUp: string;
+        moveDown: string;
+        headerFor: string;
+        sourceFor: string;
+        keyFor: string;
+        pickOne: string;
+        fillFromForm: string;
+        writeHeaders: string;
+        headersWritten: string;
+        /** Row 1 already held something, so nothing was overwritten. */
+        headersNotEmpty: string;
+        headersFailed: string;
+        /** Default headings for the columns that are not questions. */
+        colSubmittedAt: string;
+        colScore: string;
+        colOutcome: string;
+        colFormName: string;
+        colSubmissionId: string;
+        /** One label per `sheetColumnSource`. */
+        sources: Record<
+          'answer' | 'utm' | 'score' | 'outcome' | 'submitted_at' | 'form_name' | 'submission_id',
+          string
+        >;
+      };
     };
     /** Account-level provider connections (paste-token) surfaced on /admin/integrations. */
     connections: {
@@ -4305,6 +4350,51 @@ export const en: FormsMessages = {
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
       comingSoon: 'Coming soon',
+      gsheets: {
+        title: 'Google Sheets',
+        desc: 'Append each response to a spreadsheet as a new row.',
+        notConnected: 'Connect Google Sheets on the Connections page to use it here.',
+        urlLabel: 'Spreadsheet',
+        urlPlaceholder: 'Paste the spreadsheet link',
+        urlHelp: 'Open the spreadsheet in Google and paste the address from your browser.',
+        urlInvalid: 'That is not a Google Sheets link.',
+        tabLabel: 'Tab',
+        tabFirst: 'The first tab',
+        openSheet: 'Open the spreadsheet',
+        sheetNotFound: 'No spreadsheet found at that link.',
+        sheetForbidden: 'The connected Google account cannot open that spreadsheet.',
+        tabsUnavailable: 'The tabs could not be read. Try again.',
+        columnsLabel: 'Columns',
+        columnsHelp: 'One column per cell of the row, left to right.',
+        noColumns: 'No columns yet. Nothing is sent until you add one.',
+        addColumn: 'Add a column',
+        removeColumn: 'Remove this column',
+        moveUp: 'Move this column left',
+        moveDown: 'Move this column right',
+        headerFor: 'Column heading',
+        sourceFor: 'What fills this column',
+        keyFor: 'Which one',
+        pickOne: 'Pick one',
+        fillFromForm: 'Use the form’s questions',
+        writeHeaders: 'Write the header row',
+        headersWritten: 'The header row was written.',
+        headersNotEmpty: 'The first row already has content, so it was left alone.',
+        headersFailed: 'The header row could not be written.',
+        colSubmittedAt: 'Submitted',
+        colScore: 'Score',
+        colOutcome: 'Outcome',
+        colFormName: 'Form',
+        colSubmissionId: 'Response ID',
+        sources: {
+          answer: 'An answer',
+          utm: 'A campaign tag',
+          score: 'Score',
+          outcome: 'Outcome',
+          submitted_at: 'Submitted at',
+          form_name: 'Form name',
+          submission_id: 'Response ID',
+        },
+      },
     },
     connections: {
       title: 'Connections',
@@ -6909,6 +6999,51 @@ export const es: FormsMessages = {
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
       comingSoon: 'Muy pronto',
+      gsheets: {
+        title: 'Google Sheets',
+        desc: 'Añade cada respuesta a una hoja de cálculo como una fila nueva.',
+        notConnected: 'Conecta Google Sheets en la página de Conexiones para usarlo aquí.',
+        urlLabel: 'Hoja de cálculo',
+        urlPlaceholder: 'Pega el enlace de la hoja',
+        urlHelp: 'Abre la hoja en Google y pega la dirección de tu navegador.',
+        urlInvalid: 'Ese no es un enlace de Google Sheets.',
+        tabLabel: 'Pestaña',
+        tabFirst: 'La primera pestaña',
+        openSheet: 'Abrir la hoja',
+        sheetNotFound: 'No hay ninguna hoja en ese enlace.',
+        sheetForbidden: 'La cuenta de Google conectada no puede abrir esa hoja.',
+        tabsUnavailable: 'No se pudieron leer las pestañas. Inténtalo de nuevo.',
+        columnsLabel: 'Columnas',
+        columnsHelp: 'Una columna por celda de la fila, de izquierda a derecha.',
+        noColumns: 'Todavía no hay columnas. No se envía nada hasta que agregues una.',
+        addColumn: 'Agregar una columna',
+        removeColumn: 'Quitar esta columna',
+        moveUp: 'Mover esta columna a la izquierda',
+        moveDown: 'Mover esta columna a la derecha',
+        headerFor: 'Encabezado de la columna',
+        sourceFor: 'Qué llena esta columna',
+        keyFor: 'Cuál',
+        pickOne: 'Elige una',
+        fillFromForm: 'Usar las preguntas del formulario',
+        writeHeaders: 'Escribir la fila de encabezados',
+        headersWritten: 'Se escribió la fila de encabezados.',
+        headersNotEmpty: 'La primera fila ya tiene contenido, así que no se tocó.',
+        headersFailed: 'No se pudo escribir la fila de encabezados.',
+        colSubmittedAt: 'Enviada',
+        colScore: 'Puntaje',
+        colOutcome: 'Resultado',
+        colFormName: 'Formulario',
+        colSubmissionId: 'ID de respuesta',
+        sources: {
+          answer: 'Una respuesta',
+          utm: 'Una etiqueta de campaña',
+          score: 'Puntaje',
+          outcome: 'Resultado',
+          submitted_at: 'Fecha de envío',
+          form_name: 'Nombre del formulario',
+          submission_id: 'ID de respuesta',
+        },
+      },
     },
     connections: {
       title: 'Conexiones',

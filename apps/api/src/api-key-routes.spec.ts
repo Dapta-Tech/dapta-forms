@@ -97,6 +97,23 @@ const DENIED = new Set([
   // breaks with no error anyone would connect to the cause.
   'POST /v1/integrations/google-sheets/authorize',
   'GET /v1/integrations/google-sheets/callback',
+  // The two helpers the Connect tab's Google Sheets card calls: the tab picker
+  // and the one-time header row.
+  //
+  // Denied for now as a DELIBERATE, reversible choice, not because a key could
+  // do harm with them. In this repo a key-allowed route is a route of the
+  // PUBLIC API contract: it has to appear in `API_REFERENCE` with prose in both
+  // locales, and its documented response has to match what the route really
+  // answers. Putting two Google-specific routes into that contract is a product
+  // decision about the public API, separate from shipping the editor, and it is
+  // far easier to add a route to the contract later than to take one out.
+  //
+  // What a key loses meanwhile: an agent configuring a Google Sheets
+  // destination has to be told the tab's name rather than discovering it, and
+  // writes its own header row. Everything else about the destination is already
+  // key-configurable through `PUT /v1/forms/:id/destinations`.
+  'GET /v1/integrations/google-sheets/tabs',
+  'POST /v1/integrations/google-sheets/header-row',
 ]);
 
 /** Allowlisted ahead of the route landing in its own change (revert, #60). */

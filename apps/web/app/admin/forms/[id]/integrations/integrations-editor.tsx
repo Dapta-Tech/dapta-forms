@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
+import { ProviderLogo } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { browserTimezones, isKnownTimezone } from '@/lib/timezones';
@@ -31,6 +31,9 @@ import type {
 } from '@/lib/admin-api';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
+import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
+import { storedColumns } from './sheet-columns';
+import { sheetUrlFor } from './sheet-url';
 import { DeliveryHistory } from './delivery-history';
 import { Card } from './integrations-card';
 import {
@@ -227,7 +230,50 @@ export function carriedWebhooks(destinations: FormDestination[]): FormDestinatio
  * destination nobody is editing.
  */
 export function carriedOthers(destinations: FormDestination[]): FormDestination[] {
-  return destinations.filter((d) => d.type !== 'webhook' && d.type !== 'hubspot');
+  return destinations.filter(
+    (d) => d.type !== 'webhook' && d.type !== 'hubspot' && d.type !== 'google-sheets',
+  );
+}
+
+/** The card's state, read out of the stored destination (or its empty start). */
+export function initialGoogleSheets(destinations: FormDestination[]): GoogleSheetsState {
+  const stored = destinations.find((d) => d.type === 'google-sheets');
+  if (!stored || stored.type !== 'google-sheets') {
+    return { enabled: false, urlInput: '', spreadsheetId: '', sheetTitle: '', columns: [] };
+  }
+  const spreadsheetId = stored.settings?.spreadsheetId ?? '';
+  return {
+    enabled: stored.enabled !== false,
+    // Shown as the full address rather than the bare id: it is what the author
+    // pasted, it is clickable, and an id on its own in a field labelled with a
+    // URL reads like the field failed to save.
+    urlInput: spreadsheetId ? sheetUrlFor(spreadsheetId) : '',
+    spreadsheetId,
+    sheetTitle: stored.settings?.sheetTitle ?? '',
+    columns: stored.columns ?? [],
+  };
+}
+
+/**
+ * The destination to store, or null when there is nothing worth storing.
+ *
+ * Null covers the two ways this card can be incomplete: no spreadsheet, or no
+ * column that says anything. Storing either would put a destination in the
+ * config that the factory degrades to a no-op on every submission, which the
+ * author would only discover by looking at a delivery history full of them.
+ */
+export function builtGoogleSheets(state: GoogleSheetsState): FormDestination | null {
+  const columns = storedColumns(state.columns);
+  if (!state.spreadsheetId || columns.length === 0) return null;
+  return {
+    type: 'google-sheets',
+    enabled: state.enabled,
+    settings: {
+      spreadsheetId: state.spreadsheetId,
+      ...(state.sheetTitle.trim() ? { sheetTitle: state.sheetTitle.trim() } : {}),
+    },
+    columns,
+  };
 }
 
 function initialWebhook(destinations: FormDestination[]): WebhookState {
@@ -342,6 +388,7 @@ export function IntegrationsEditor({
   initialDestinations,
   hubspot: hubspotProps,
   hubspotConnected,
+  googleSheetsConnected = false,
   questions,
   readiness = NOT_READY,
   partialsHeld = false,
@@ -353,6 +400,8 @@ export function IntegrationsEditor({
   hubspot: HubSpotPropertiesResponse;
   /** Account-level HubSpot connection status (gates the mapping UI). */
   hubspotConnected: boolean;
+  /** Account-level Google connection: without it the spreadsheet card cannot list tabs. */
+  googleSheetsConnected?: boolean;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
   /**
@@ -374,6 +423,9 @@ export function IntegrationsEditor({
   errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
+  const [sheets, setSheets] = useState<GoogleSheetsState>(() =>
+    initialGoogleSheets(initialDestinations),
+  );
   const [formActivityError, setFormActivityError] = useState<string | null>(null);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   // The destinations as the server last accepted them. Seeded from the freshly
@@ -546,6 +598,10 @@ export function IntegrationsEditor({
         bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
       });
     }
+    // The spreadsheet destination, when the card says enough to store one.
+    const sheetsDestination = builtGoogleSheets(sheets);
+    if (sheetsDestination) out.push(sheetsDestination);
+
     // Last: every destination kind this screen does not edit (see
     // `carriedOthers`). Without this, saving here deletes them.
     out.push(...carriedOthers(savedDestinations.current));
@@ -651,6 +707,13 @@ export function IntegrationsEditor({
     },
     [markDirty],
   );
+  const editSheets = useCallback(
+    (next: GoogleSheetsState) => {
+      setSheets(next);
+      markDirty();
+    },
+    [markDirty],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -689,26 +752,13 @@ export function IntegrationsEditor({
         />
       </LocaleContext.Provider>
 
-      {/* Google Sheets — announced, not shipped. Inert by design: no toggle,
-          nothing focusable, and it never writes a destination to the config. */}
-      <section
-        data-testid="integration-gsheets"
-        aria-disabled="true"
-        className="cursor-default rounded-lg border border-border bg-card p-5 opacity-60"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <GoogleSheetsLogo size={20} />
-              <h2 className="text-lg font-semibold">{m.gsheetsTitle}</h2>
-              <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
-                {m.comingSoon}
-              </span>
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">{m.gsheetsDesc}</p>
-          </div>
-        </div>
-      </section>
+      <GoogleSheetsCard
+        state={sheets}
+        setState={editSheets}
+        questions={questions}
+        connected={googleSheetsConnected}
+        m={m}
+      />
 
       {/* The Save button is gone (V5-A4) — everything here autosaves, so what
           belongs in this bar is the state of that save, not an action. */}

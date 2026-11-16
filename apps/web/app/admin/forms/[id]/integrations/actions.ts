@@ -5,8 +5,11 @@ import { unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import {
   adminApi,
+  ApiError,
   type DeliveryKind,
   type FormDelivery,
+  type GoogleSheetsHeaderRowResponse,
+  type GoogleSheetsTabsResponse,
   type WebhookPingResult,
 } from '@/lib/admin-api';
 import type { FormDestination } from '@quill/types';
@@ -95,5 +98,39 @@ export async function loadDeliveryHistoryAction(
   } catch (e) {
     unstable_rethrow(e);
     return [];
+  }
+}
+
+/**
+ * The tabs of one spreadsheet, for the Google Sheets card's picker.
+ *
+ * The outcome rides in the payload rather than as a thrown error: the card
+ * shows a different sentence for each reason (connect Google, check the link,
+ * ask for access), and a rejected promise would flatten all of them into one.
+ */
+export async function googleSheetsTabsAction(
+  spreadsheetId: string,
+): Promise<{ ok: true; data: GoogleSheetsTabsResponse } | { ok: false; message?: string }> {
+  try {
+    return { ok: true, data: await adminApi.googleSheetsTabs(spreadsheetId) };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
+  }
+}
+
+/** Write the header row of the chosen tab, once. Never overwrites a used row 1. */
+export async function googleSheetsHeaderRowAction(body: {
+  spreadsheetId: string;
+  sheetTitle?: string;
+  headers: string[];
+}): Promise<{ ok: true; data: GoogleSheetsHeaderRowResponse } | { ok: false; message?: string }> {
+  try {
+    return { ok: true, data: await adminApi.googleSheetsHeaderRow(body) };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
   }
 }

@@ -1,21 +1,29 @@
 /**
- * Destinations the Connect tab does not edit at all.
+ * What survives a save from the Connect tab.
  *
- * The sibling of `webhook-carry.spec.tsx`, and the same class of bug one level
- * up. That one was about a SECOND webhook; this is about a whole destination
- * KIND the screen has no card for.
+ * The tab assembles the whole `destinations` array from the cards it renders,
+ * and autosave rewrites that array on any edit. So every destination has to
+ * leave by one of exactly two doors, and a kind that leaves by neither is
+ * DELETED: silently, with nothing on screen to hint at it, and a save reporting
+ * success.
  *
- * The save path assembles the `destinations` array from scratch out of the two
- * things this tab renders, and autosave rewrites the whole array on any edit.
- * So the moment a Google Sheets destination could exist, opening this tab and
- * touching an unrelated field would delete it: no warning, nothing on screen to
- * hint at it, and a save that reports success. `carriedOthers` is the rule that
- * stops it, written as "not the two kinds this screen knows" so the destination
- * kind after this one is carried by default rather than quietly dropped.
+ *   edited   the screen has a card for it, so it is rebuilt from that card.
+ *            Webhook, HubSpot, and now Google Sheets.
+ *   carried  the screen has no card, so the stored value rides along untouched.
+ *
+ * Google Sheets moved from the second door to the first when the mapping editor
+ * landed, which is why these specs assert both halves: `carriedOthers` must no
+ * longer carry it (or a save would store it twice, once rebuilt and once
+ * carried), and the editing path must round-trip it.
  */
 import { describe, expect, it } from 'vitest';
 import type { FormDestination } from '@quill/types';
-import { carriedOthers, carriedWebhooks } from './integrations-editor';
+import {
+  builtGoogleSheets,
+  carriedOthers,
+  carriedWebhooks,
+  initialGoogleSheets,
+} from './integrations-editor';
 
 const hook = (url: string): FormDestination =>
   ({ type: 'webhook', enabled: true, settings: { url } }) as unknown as FormDestination;
@@ -32,34 +40,90 @@ const sheets = (spreadsheetId = 'sheet-1'): FormDestination =>
   }) as unknown as FormDestination;
 
 describe('carriedOthers', () => {
-  it('carries a Google Sheets destination the screen cannot show', () => {
-    expect(carriedOthers([hook('https://a.test/h'), sheets(), hubspot()])).toEqual([sheets()]);
-  });
-
-  it('carries every one of them, in their stored order', () => {
-    const a = sheets('sheet-a');
-    const b = sheets('sheet-b');
-    expect(carriedOthers([a, hubspot(), b])).toEqual([a, b]);
-  });
-
-  it('carries nothing when the form only holds the two kinds this screen edits', () => {
-    expect(carriedOthers([hook('https://a.test/h'), hook('https://b.test/h'), hubspot()])).toEqual([]);
-    expect(carriedOthers([])).toEqual([]);
-  });
-
-  it('never double-counts a webhook, which has its own carry rule', () => {
-    // The two rules partition the array: anything carried here must NOT also be
-    // carried by `carriedWebhooks`, or a save would store it twice.
-    const destinations = [hook('https://a.test/h'), hook('https://b.test/h'), sheets(), hubspot()];
-    const others = carriedOthers(destinations);
-    const webhooks = carriedWebhooks(destinations);
-    expect(others.some((d) => webhooks.includes(d))).toBe(false);
-    expect(others).toEqual([sheets()]);
-    expect(webhooks).toEqual([hook('https://b.test/h')]);
+  it('does NOT carry Google Sheets, which the screen now edits', () => {
+    // Carrying it as well as rebuilding it would store the destination twice,
+    // and every submission would be appended to the spreadsheet twice with it.
+    expect(carriedOthers([hook('https://a.test/h'), sheets(), hubspot()])).toEqual([]);
   });
 
   it('carries a kind nobody has written yet, which is the point of the rule', () => {
     const future = { type: 'something-new', enabled: true } as unknown as FormDestination;
     expect(carriedOthers([hubspot(), future])).toEqual([future]);
+  });
+
+  it('carries nothing when every destination has a card', () => {
+    expect(carriedOthers([hook('https://a.test/h'), hubspot(), sheets()])).toEqual([]);
+    expect(carriedOthers([])).toEqual([]);
+  });
+
+  it('never double-counts a webhook, which has its own carry rule', () => {
+    const destinations = [hook('https://a.test/h'), hook('https://b.test/h'), hubspot()];
+    const others = carriedOthers(destinations);
+    const webhooks = carriedWebhooks(destinations);
+    expect(others.some((d) => webhooks.includes(d))).toBe(false);
+  });
+});
+
+describe('a stored spreadsheet destination round-trips through the card', () => {
+  it('comes back out of a save unchanged', () => {
+    // The real guarantee: open the tab, touch something unrelated, and the
+    // spreadsheet sync is still exactly what it was.
+    expect(builtGoogleSheets(initialGoogleSheets([sheets()]))).toEqual(sheets());
+  });
+
+  it('keeps a destination that was switched off', () => {
+    const off = { ...(sheets() as Record<string, unknown>), enabled: false } as FormDestination;
+    expect(builtGoogleSheets(initialGoogleSheets([off]))).toEqual(off);
+  });
+
+  it('shows the stored spreadsheet as a link rather than a bare id', () => {
+    const state = initialGoogleSheets([sheets('abc123')]);
+    expect(state.urlInput).toContain('docs.google.com/spreadsheets/d/abc123');
+    expect(state.spreadsheetId).toBe('abc123');
+    expect(state.sheetTitle).toBe('Responses');
+  });
+
+  it('starts empty, and stores nothing, for a form with no spreadsheet', () => {
+    const state = initialGoogleSheets([hubspot()]);
+    expect(state).toEqual({
+      enabled: false,
+      urlInput: '',
+      spreadsheetId: '',
+      sheetTitle: '',
+      columns: [],
+    });
+    expect(builtGoogleSheets(state)).toBeNull();
+  });
+
+  it('stores nothing while the card is incomplete', () => {
+    // Either half missing means every delivery would degrade to a no-op, which
+    // the author would only discover in a history full of them.
+    const noSheet = { ...initialGoogleSheets([sheets()]), spreadsheetId: '' };
+    expect(builtGoogleSheets(noSheet)).toBeNull();
+    const noColumns = { ...initialGoogleSheets([sheets()]), columns: [] };
+    expect(builtGoogleSheets(noColumns)).toBeNull();
+  });
+
+  it('drops a half-typed column instead of refusing the save', () => {
+    // The tab autosaves, so a half-typed row exists on the way to every
+    // complete one. Refusing would mean an author cannot add a column without
+    // the screen complaining at them mid-keystroke.
+    const state = {
+      ...initialGoogleSheets([sheets()]),
+      columns: [
+        { header: 'Email', source: 'answer' as const, key: 'email' },
+        { header: '', source: 'answer' as const, key: 'company' },
+        { header: 'No question picked', source: 'answer' as const },
+      ],
+    };
+    expect(builtGoogleSheets(state)).toMatchObject({
+      columns: [{ header: 'Email', source: 'answer', key: 'email' }],
+    });
+  });
+
+  it('leaves the tab out when none was chosen, so the first tab is used', () => {
+    const state = { ...initialGoogleSheets([sheets()]), sheetTitle: '' };
+    const built = builtGoogleSheets(state) as { settings: Record<string, unknown> };
+    expect(built.settings).toEqual({ spreadsheetId: 'sheet-1' });
   });
 });

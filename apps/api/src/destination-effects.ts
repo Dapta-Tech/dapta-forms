@@ -75,8 +75,6 @@ export class DestinationEffects {
   resolveDns?: DnsResolver;
   /** accountId -> the portal its HubSpot token belongs to (mirror submit URL). */
   private readonly portals = new HubspotPortalResolver();
-  /** accountId -> a live Google access token, minted from its refresh token. */
-  private readonly googleTokens = new GoogleSheetsAccessTokens();
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -87,6 +85,15 @@ export class DestinationEffects {
     @Optional()
     @Inject(HubspotPropertiesService)
     private readonly hubspotProperties?: HubspotPropertiesService,
+    /**
+     * accountId -> a live Google access token, minted from its refresh token.
+     * Shared with the controller so a disconnect clears the one cache both
+     * sides read; optional because the specs build this class positionally,
+     * and a Google Sheets destination with no token degrades to log-only.
+     */
+    @Optional()
+    @Inject(GoogleSheetsAccessTokens)
+    private readonly googleTokens: GoogleSheetsAccessTokens = new GoogleSheetsAccessTokens(),
   ) {}
 
   /**

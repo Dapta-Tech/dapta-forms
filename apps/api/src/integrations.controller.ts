@@ -37,6 +37,7 @@ import {
 import {
   destinationFiresForPhase,
   formDestinationSchema,
+  MAX_SHEET_COLUMNS,
   hasExtraHubspotDestination,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
@@ -44,6 +45,8 @@ import {
   type FormDestination,
 } from '@quill/types';
 import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
+import { listSheetTabs, writeHeaderRow, type SheetTabDto } from './google-sheets-api';
+import { GoogleSheetsAccessTokens } from './google-sheets-token';
 import {
   exchangeGoogleCode,
   googleAuthorizeUrl,
@@ -417,6 +420,23 @@ function bearerOf(req: ReqLike): string | null {
 /** Connect-body contract: a non-empty pasted provider token. */
 const connectBodySchema = z.object({ token: z.string().min(1) });
 
+const headerRowBodySchema = z.object({
+  spreadsheetId: z.string().min(1).max(200),
+  sheetTitle: z.string().max(200).optional(),
+  headers: z.array(z.string().max(200)).min(1).max(MAX_SHEET_COLUMNS),
+});
+
+/** The tab picker's answer: the spreadsheet's tabs, or why there are none to show. */
+export type GoogleSheetsTabsResponse =
+  | { enabled: true; spreadsheetTitle: string; tabs: SheetTabDto[] }
+  | { enabled: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/** What pressing "write the header row" did. */
+export type GoogleSheetsHeaderRowResponse =
+  | { ok: true; written: true }
+  | { ok: true; written: false; reason: 'not_empty' }
+  | { ok: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
 /** Narrow a path param to a known provider, or 400 (never echoes the raw input). */
 function parseProvider(raw: string): IntegrationProvider {
   if ((integrationProviders as readonly string[]).includes(raw)) return raw as IntegrationProvider;
@@ -496,13 +516,24 @@ export class IntegrationsController {
     @Inject(CalendlyEventTypesService) private readonly calendly: CalendlyEventTypesService,
     @Inject(DB) private readonly db: Db,
     @Inject(ENV) private readonly env: ServerEnv,
-    // Only to say whether a form's partials are held on THIS deployment. Last,
-    // and optional: specs build this controller positionally.
+    // Only to say whether a form's partials are held on THIS deployment.
+    // Optional: specs build this controller positionally.
     @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
     // After `captcha` and optional for the same reason stated there: the specs
     // build this controller positionally, so a new required parameter in the
     // middle would silently shift every one of them.
     @Optional() @Inject(DcalService) private readonly dcal?: DcalService,
+    /**
+     * The account's Google access token, shared with the delivery path so a
+     * disconnect clears the one cache both of them read.
+     *
+     * LAST, and after `captcha`, for the same reason `captcha` is late: the
+     * specs construct this controller positionally, so a parameter inserted
+     * above would silently shift what each of them receives.
+     */
+    @Optional()
+    @Inject(GoogleSheetsAccessTokens)
+    private readonly googleTokens: GoogleSheetsAccessTokens = new GoogleSheetsAccessTokens(),
   ) {}
 
   /**
@@ -743,6 +774,74 @@ export class IntegrationsController {
     return done('google=connected');
   }
 
+  /**
+   * The tabs of one spreadsheet, for the Connect tab's picker.
+   *
+   * Any authenticated host may read it: it drives their own mapping UI, and it
+   * discloses only what the account's own connected Google account can already
+   * open. Not cached, unlike the HubSpot and Calendly pickers: an author opens
+   * this once while choosing a sheet, and a cache would mostly serve a stale
+   * tab list to the one person who just renamed a tab.
+   */
+  @Get('google-sheets/tabs')
+  async googleSheetsTabs(
+    @Req() req: ReqLike,
+    @Query('spreadsheetId') spreadsheetId?: string,
+  ): Promise<GoogleSheetsTabsResponse> {
+    const p = await this.auth.resolveHost(req);
+    const id = spreadsheetId?.trim();
+    if (!id) throw new BadRequestException({ error: 'BAD_REQUEST', message: 'spreadsheetId is required' });
+
+    const accessToken = await this.googleTokens.resolve(this.db, p.accountId, this.env, this.fetchImpl);
+    if (!accessToken) return { enabled: false, reason: 'not_connected' };
+
+    const result = await listSheetTabs(accessToken, id, this.fetchImpl);
+    if (!result.ok) return { enabled: false, reason: result.reason };
+    return {
+      enabled: true,
+      spreadsheetTitle: result.spreadsheetTitle,
+      tabs: result.tabs,
+    };
+  }
+
+  /**
+   * Write the header row of the chosen tab, once.
+   *
+   * An author-pressed button rather than part of a delivery: it READS before it
+   * writes, and a delivery that read the sheet first would double what every
+   * submission costs against a 60-a-minute quota. Refuses to overwrite a row 1
+   * that already holds anything, because a spreadsheet does not remember what
+   * used to be in a cell.
+   */
+  @Post('google-sheets/header-row')
+  async googleSheetsHeaderRow(
+    @Req() req: ReqLike,
+    @Body() body: unknown,
+  ): Promise<GoogleSheetsHeaderRowResponse> {
+    const p = await this.auth.resolveHost(req);
+    let input: { spreadsheetId: string; sheetTitle?: string; headers: string[] };
+    try {
+      input = headerRowBodySchema.parse(body);
+    } catch (err) {
+      if (err instanceof ZodError)
+        throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
+      throw err;
+    }
+
+    const accessToken = await this.googleTokens.resolve(this.db, p.accountId, this.env, this.fetchImpl);
+    if (!accessToken) return { ok: false, reason: 'not_connected' };
+
+    const result = await writeHeaderRow(
+      accessToken,
+      input.spreadsheetId,
+      input.sheetTitle,
+      input.headers,
+      this.fetchImpl,
+    );
+    if (!result.ok) return { ok: false, reason: result.reason };
+    return result.written ? { ok: true, written: true } : { ok: true, written: false, reason: 'not_empty' };
+  }
+
   /** The admin page a finished consent flow returns to. */
   private connectionsUrl(): string {
     const base = (this.env.PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '');
@@ -777,6 +876,15 @@ export class IntegrationsController {
     switch (provider) {
       case 'hubspot':
         this.hubspot.invalidate(accountId);
+        return;
+      case 'google-sheets':
+        // NOT a picker cache but the ACCESS TOKEN cache, and the reason this
+        // case has to exist: disconnecting deletes the stored refresh token,
+        // but a token already minted from it stays valid for up to its cached
+        // life. Without this, a form kept writing into the author's spreadsheet
+        // for the best part of an hour after they revoked access, which reads
+        // as the disconnect button not working.
+        this.googleTokens.invalidate(accountId);
         return;
       case 'calendly':
         this.calendly.invalidate(accountId);

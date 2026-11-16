@@ -220,6 +220,7 @@ function IntegrationsSection({
           initialDestinations={state.data.destinations}
           hubspot={state.data.hubspot}
           hubspotConnected={state.data.hubspotConnected}
+          googleSheetsConnected={state.data.googleSheetsConnected}
           questions={questions}
           readiness={readiness}
           partialsHeld={partialsHeld}

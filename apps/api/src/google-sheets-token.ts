@@ -19,6 +19,7 @@
  *   - Nothing ANSWERED (a dead socket, a timeout). That throws, so the delivery
  *     fails and the outbox's backoff gets its turn.
  */
+import { Injectable } from '@nestjs/common';
 import { resolveProviderToken, type Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 import { googleOAuthClient, refreshGoogleAccessToken } from './google-oauth';
@@ -37,6 +38,13 @@ export const GOOGLE_TOKEN_RENEW_MARGIN_MS = 120_000;
 /** Never trust a long expiry: re-mint at least this often regardless. */
 export const GOOGLE_TOKEN_MAX_CACHE_MS = 50 * 60_000;
 
+/**
+ * ONE instance app-wide (registered in `AppModule`). The controller mints with
+ * it to list a spreadsheet's tabs and the delivery path mints with it to write
+ * a row; two caches would let a disconnect clear one while the other kept
+ * writing with a token Google is still perfectly willing to honour.
+ */
+@Injectable()
 export class GoogleSheetsAccessTokens {
   private readonly cache = new Map<string, { token: string; expires: number }>();
 

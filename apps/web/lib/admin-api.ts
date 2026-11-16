@@ -519,6 +519,27 @@ export interface IntegrationStatus {
   connectedAt: number;
 }
 
+/** One tab of a spreadsheet. `gid` is the `#gid=` in its URL. */
+export interface SheetTab {
+  title: string;
+  gid: number;
+}
+
+/**
+ * The tab picker's answer. `enabled: false` carries WHY, because the four
+ * reasons send an author to four different places: connect Google, check the
+ * link, ask whoever owns the spreadsheet for access, or try again.
+ */
+export type GoogleSheetsTabsResponse =
+  | { enabled: true; spreadsheetTitle: string; tabs: SheetTab[] }
+  | { enabled: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/** What writing the header row did. `written: false` means row 1 was in use. */
+export type GoogleSheetsHeaderRowResponse =
+  | { ok: true; written: true }
+  | { ok: true; written: false; reason: 'not_empty' }
+  | { ok: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
 /** GET /v1/integrations — this account's connections + server encryption availability. */
 export interface IntegrationsResponse {
   encryptionAvailable: boolean;
@@ -947,6 +968,15 @@ export const adminApi = {
    */
   authorizeGoogleSheets: () =>
     req<{ authUrl: string }>('POST', '/v1/integrations/google-sheets/authorize'),
+  /** The tabs of one spreadsheet, for the mapping editor's picker. */
+  googleSheetsTabs: (spreadsheetId: string) =>
+    req<GoogleSheetsTabsResponse>(
+      'GET',
+      `/v1/integrations/google-sheets/tabs?spreadsheetId=${encodeURIComponent(spreadsheetId)}`,
+    ),
+  /** Write the header row of the chosen tab, once. Never overwrites a used row 1. */
+  googleSheetsHeaderRow: (body: { spreadsheetId: string; sheetTitle?: string; headers: string[] }) =>
+    req<GoogleSheetsHeaderRowResponse>('POST', '/v1/integrations/google-sheets/header-row', body),
   /** Disconnect a provider for this account (idempotent → 204). */
   disconnectIntegration: (provider: IntegrationProvider) =>
     req<void>('DELETE', `/v1/integrations/${provider}`),
