@@ -921,7 +921,18 @@ export function emailSourceFor(config: FormConfig): EmailSource {
   // answer from `?email=` and that answer reaches the submission.
   const question = config.steps.find((s) => s.type === 'email');
   if (question) return { kind: 'question', key: question.key };
-  const scheduler = config.steps.find((s) => s.type === 'scheduler');
+  // Only a scheduler whose invitee can actually be READ BACK counts. Calendly
+  // is fetched for it after the booking (`booking-sync`); dCal is not, and its
+  // booked message carries no name or address on purpose, because it is posted
+  // to any framing page. So a dCal scheduler supplies no address, and saying it
+  // did would tell an author their contact key was covered while every lead
+  // quietly failed to sync with "no respondent email resolvable".
+  //
+  // Absent means Calendly, as everywhere else: a scheduler authored before dCal
+  // existed is read exactly as it was.
+  const scheduler = config.steps.find(
+    (s) => s.type === 'scheduler' && s.scheduler?.provider !== 'dcal',
+  );
   if (scheduler) return { kind: 'scheduler', key: scheduler.key };
   return null;
 }

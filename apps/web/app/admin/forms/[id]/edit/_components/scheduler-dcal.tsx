@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormStep } from '@quill/engine';
 import type { DcalEventType, DcalEventTypesResponse, DcalWorkspace } from '@/lib/admin-api';
 import { Select } from '@/components/ui/select';
@@ -80,13 +80,17 @@ export function SchedulerDcalPicker({
   /** Null = the author's home workspace, whichever dCal resolves that to. */
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  /** Which read is the newest, so a slow one cannot land on top of it. */
+  const requestRef = useRef(0);
 
   const load = useCallback(
     async (id: string | null, refresh: boolean) => {
+      const token = ++requestRef.current;
       if (refresh) setRefreshing(true);
       else setState({ status: 'loading' });
       try {
         const res = await fetchDcalEventTypes(id, refresh);
+        if (requestRef.current !== token) return; // a newer read already landed
         setState(
           res.enabled
             ? {
@@ -99,9 +103,9 @@ export function SchedulerDcalPicker({
             : { status: 'unavailable', reason: res.reason },
         );
       } catch {
-        setState({ status: 'error' });
+        if (requestRef.current === token) setState({ status: 'error' });
       } finally {
-        setRefreshing(false);
+        if (requestRef.current === token) setRefreshing(false);
       }
     },
     [],
@@ -181,7 +185,10 @@ export function SchedulerDcalPicker({
           <div data-testid="scheduler-dcal-workspace">
             <Select
               ariaLabel={s.schedulerDcalWorkspace}
-              value={workspaces.find((w) => w.current)?.id ?? workspaceId ?? ''}
+              // The author's own pick wins. `current` is only the starting
+            // point: dCal may report the home workspace as current whatever
+            // was asked for, which showed one name over another's events.
+            value={workspaceId ?? workspaces.find((w) => w.current)?.id ?? ''}
               onChange={(v) => setWorkspaceId(v || null)}
               options={workspaces.map((w) => ({ value: w.id, label: w.name }))}
             />

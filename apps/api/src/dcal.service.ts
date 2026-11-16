@@ -85,13 +85,17 @@ export type DcalEventTypesResponse =
        * differs per environment. The API already knows it; the panel opens it
        * in a new tab and offers a refresh for when they come back.
        */
-       createEventUrl: string | null;
+      createEventUrl: string | null;
     };
 
 /** How long a list is reused. Same five minutes as the HubSpot and Calendly pickers. */
 const CACHE_TTL_MS = 5 * 60 * 1000;
 /** A hung dCal must not hold the builder's request open. */
 const TIMEOUT_MS = 10_000;
+/** At most this many teams are asked for their event types in one read. */
+const MAX_TEAMS = 20;
+/** At most this many cached lists are kept, since part of the key is caller-supplied. */
+const MAX_CACHE_ENTRIES = 200;
 
 interface DcalMe {
   accountShortCode?: string;
@@ -136,9 +140,16 @@ export class DcalService {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  /** Whether this deployment can talk to a dCal at all. */
+  /**
+   * Whether this deployment can talk to a dCal at all.
+   *
+   * BOTH hosts or neither: with only the API host, every `schedulingUrl` this
+   * service builds is relative, the picker still reports itself enabled, and
+   * the author's save then 400s on `formSchedulerSchema.url`, which requires an
+   * absolute http(s) address. Half-configured must read as not configured.
+   */
   configured(): boolean {
-    return !!this.env.DCAL_API_BASE_URL?.trim();
+    return !!this.env.DCAL_API_BASE_URL?.trim() && !!this.env.DCAL_APP_URL?.trim();
   }
 
   /**
@@ -200,7 +211,10 @@ export class DcalService {
   ): Promise<DcalEventTypesResponse> {
     const now = options.now ?? Date.now();
     if (!this.configured()) {
-      return { enabled: false, reason: 'This deployment has no dCal configured (DCAL_API_BASE_URL).' };
+      return {
+        enabled: false,
+        reason: 'This deployment has no dCal configured (DCAL_API_BASE_URL and DCAL_APP_URL).',
+      };
     }
     if (!bearer) {
       // The `local` auth provider of a bare fork mints no bearer, so there is
@@ -230,15 +244,23 @@ export class DcalService {
     ]);
 
     const appUrl = this.env.DCAL_APP_URL?.trim().replace(/\/+$/, '') ?? '';
-    const personalUrl = (slug: string) => `${appUrl}/${code}/${handle}/${slug}`;
+    const enc = encodeURIComponent;
+    const personalUrl = (slug: string) => `${appUrl}/${enc(code)}/${enc(handle)}/${enc(slug)}`;
     const out: DcalEventTypeDto[] = [];
     for (const e of mine ?? []) {
       // Only the author's OWN events here; a team's come from the loop below,
       // under the team's URL, and this endpoint returns both on some versions.
       if (!e.slug || !e.id || e.teamId) continue;
+      // Hidden in dCal means hidden here: the Calendly picker asks its provider
+      // for active event types only, and an author should not be able to embed
+      // an event they have taken off their own booking page.
+      if (e.hidden === true) continue;
       out.push(this.toDto(e, personalUrl(e.slug), null));
     }
-    for (const team of teams ?? []) {
+    // Bounded on purpose. One sequential call per team, each with its own
+    // timeout, can outlive the browser's 15s abort and leave the request
+    // hanging; an account with many teams is the case that does it.
+    for (const team of (teams ?? []).slice(0, MAX_TEAMS)) {
       if (!team.id || !team.slug) continue;
       const events = await this.call<DcalEventType[]>(
         bearer,
@@ -246,8 +268,10 @@ export class DcalService {
         options.workspaceId,
       );
       for (const e of events ?? []) {
-        if (!e.slug || !e.id) continue;
-        out.push(this.toDto(e, `${appUrl}/${code}/team/${team.slug}/${e.slug}`, team.name?.trim() || null));
+        if (!e.slug || !e.id || e.hidden === true) continue;
+        out.push(
+          this.toDto(e, `${appUrl}/${enc(code)}/team/${enc(team.slug)}/${enc(e.slug)}`, team.name?.trim() || null),
+        );
       }
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
@@ -270,7 +294,17 @@ export class DcalService {
     // Only a usable answer is cached. Caching an empty list behind a failed
     // fan-out would make the refresh button useless for five minutes, which is
     // the one case the author is most likely to press it in.
-    if (appUrl) this.cache.set(key, { expires: now + CACHE_TTL_MS, body });
+    if (appUrl) {
+      // The third segment of the key is caller-supplied (`workspaceId`), so
+      // this map needs a ceiling: without one, a member can mint an entry per
+      // distinct value they send. Oldest out first; a dropped entry only costs
+      // a re-read.
+      if (this.cache.size >= MAX_CACHE_ENTRIES) {
+        const oldest = this.cache.keys().next();
+        if (!oldest.done) this.cache.delete(oldest.value);
+      }
+      this.cache.set(key, { expires: now + CACHE_TTL_MS, body });
+    }
     return body;
   }
 

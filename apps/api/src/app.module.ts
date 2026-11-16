@@ -270,7 +270,7 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     },
     // dCal's event-type picker. No DB: this one holds no credential at all and
     // forwards the author's own session (see DcalService). Factory for the same
-    // reason as its two siblings — `fetch` must not be DI-reflected.
+    // reason as its two siblings: `fetch` must not be DI-reflected.
     {
       provide: DcalService,
       useFactory: (env: ServerEnv) => new DcalService(env),

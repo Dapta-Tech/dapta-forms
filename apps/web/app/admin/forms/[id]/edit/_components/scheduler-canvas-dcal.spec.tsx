@@ -21,11 +21,18 @@ import type { FormStep } from '@quill/engine';
 // cases here only assert which branch rendered, so the loader is stubbed.
 vi.mock('@/lib/booking-embed', () => ({ loadCalendlyScript: () => new Promise(() => {}) }));
 
-import { SchedulerEmbedPreview } from './scheduler-embed-preview';
+import { SchedulerEmbedPreview, dcalPreviewUrl } from './scheduler-embed-preview';
 import { getBuilderMessages } from './builder-messages';
 
 const m = getBuilderMessages('en');
-const DCAL_URL = 'https://cal.example.test/dapta/ana/intro-call';
+// A host that needs no DNS and refuses at once. happy-dom LOADS an iframe's
+// `src` and neither `stubGlobal` nor its own `disableIframePageLoading` option
+// reaches that loader, so the only way a render test stops doing real DNS is
+// to not give it a name to resolve. What the URL actually contains is asserted
+// on `dcalPreviewUrl` below, where no frame is involved at all.
+const DCAL_URL = 'http://localhost:9/dapta/ana/intro-call';
+
+
 
 let root: Root | null = null;
 let container: HTMLElement | null = null;
@@ -125,5 +132,21 @@ describe('a scheduler authored before dCal existed', () => {
     const el = await mount({ prefill: true });
     expect(el.textContent).toContain(m.canvas.schedulerUnset);
     expect(el.querySelector('[data-testid="canvas-scheduler-dcal-setup"]')).toBeNull();
+  });
+});
+
+describe('dcalPreviewUrl', () => {
+  it('turns on embed mode', () => {
+    expect(new URL(dcalPreviewUrl('https://cal.example.test/a/b/c')).searchParams.get('embed')).toBe('1');
+  });
+
+  it('keeps what the booking URL already carried, and never double-appends', () => {
+    const built = dcalPreviewUrl('https://cal.example.test/a/b/c?embed=1&lang=es');
+    expect(built.match(/embed=/g)).toHaveLength(1);
+    expect(new URL(built).searchParams.get('lang')).toBe('es');
+  });
+
+  it('hands back an unparseable value untouched rather than throwing', () => {
+    expect(dcalPreviewUrl('not a url')).toBe('not a url');
   });
 });

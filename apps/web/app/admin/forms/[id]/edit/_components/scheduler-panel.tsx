@@ -99,7 +99,12 @@ export function SchedulerPanel({
   // Event types are account-level, so fetch once when the panel mounts, and
   // again on an explicit retry.
   const [attempt, setAttempt] = useState(0);
+  const isDcal = scheduler.provider === 'dcal';
   useEffect(() => {
+    // dCal has its own picker and its own endpoint. Without this the now
+    // DEFAULT provider still cost a Calendly round trip (and a Calendly API
+    // call upstream on a cache miss) for a list nothing renders.
+    if (isDcal) return;
     let cancelled = false;
     setState({ status: 'loading' });
     fetchEventTypes()
@@ -117,7 +122,7 @@ export function SchedulerPanel({
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, isDcal]);
 
   const options =
     state.status === 'ready'
@@ -311,10 +316,11 @@ export function SchedulerPanel({
   if (provider === 'dcal') {
     return (
       <section className="flex flex-col gap-3 border-t border-border pt-4" data-testid="scheduler-panel">
-        {/* No mark here yet, deliberately: dCal's own logo is a raster asset
-            in its repo, and `ProviderLogo` draws a single inline path. A
-            hand-approximated stand-in would be shipping a brand mark nobody
-            approved, so the label stands alone until the real path lands. */}
+        {/* The mark rides the canvas card, which is where an author meets
+            dCal first and where it has room to read as a brand rather than as
+            a 13px glyph. `ProviderLogo` cannot draw it: that component is one
+            filled path on a 24x24 grid and this is a wordmark with its own
+            ratio (see `DcalLogo`). */}
         <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
           {s.schedulerSection}
         </p>

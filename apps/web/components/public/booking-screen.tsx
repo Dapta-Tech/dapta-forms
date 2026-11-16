@@ -107,7 +107,7 @@ export function BookingScreen({
   /**
    * The one origin a dCal "booked" message may come from: the booking page this
    * screen actually framed. dCal is self-hostable, so there is no origin to
-   * hardcode, and dCal posts with `targetOrigin: '*'` — without this check any
+   * hardcode, and dCal posts with `targetOrigin: '*'`, so without this check any
    * framed page could claim a booking for the session.
    */
   const dcalOrigin = useMemo(() => dcalMessageOrigin(booking.url), [booking.url]);

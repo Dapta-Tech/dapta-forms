@@ -48,6 +48,7 @@ import { syncMirrorForm, type MirrorSyncResult } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { header } from './auth.provider';
+import { apiKeyFromRequest } from './api-keys';
 import { DcalService, type DcalEventTypesResponse } from './dcal.service';
 import { assertAdmin } from './permissions';
 import { parse } from './validation';
@@ -392,6 +393,11 @@ export class CalendlyEventTypesService {
  * mean "no session to forward", which the service reports as unavailable.
  */
 function bearerOf(req: ReqLike): string | null {
+  // A dForms API key arrives in this same header, and must never be forwarded
+  // to another service: it is a credential for THIS app. `ApiKeyRouteGuard`
+  // already refuses the one route that calls this, but a guard somebody later
+  // relaxes should not be the only thing standing in the way.
+  if (apiKeyFromRequest(req) !== null) return null;
   const raw = header(req, 'authorization')?.trim() ?? '';
   const match = /^Bearer\s+(.+)$/i.exec(raw);
   return match?.[1]?.trim() || null;
@@ -658,6 +664,10 @@ export class IntegrationsController {
    * state's refresh asks for after the author created an event in dCal.
    */
   @Get('dcal/event-types')
+  // Outbound calls on every miss, and `refresh=1` is a deliberate cache bypass,
+  // so the route can be looped. Guarded for the reason `pingWebhook` is: it
+  // must not be turnable into a scanner by repetition.
+  @UseGuards(RateLimitGuard)
   async dcalEventTypes(
     @Req() req: ReqLike,
     @Query('workspaceId') workspaceId?: string,

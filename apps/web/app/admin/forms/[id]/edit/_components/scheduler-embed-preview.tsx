@@ -9,8 +9,9 @@ import type { BuilderMessages } from './builder-messages';
 
 type EmbedState = 'loading' | 'ready' | 'failed';
 
-/** `embed=1` is what puts dCal's booking page in embed chrome. */
-function dcalPreviewUrl(raw: string): string {
+/** `embed=1` is what puts dCal's booking page in embed chrome. Exported so it
+ *  can be asserted without rendering a frame that would then be fetched. */
+export function dcalPreviewUrl(raw: string): string {
   try {
     const u = new URL(raw);
     u.searchParams.set('embed', '1');
@@ -29,11 +30,13 @@ function dcalPreviewUrl(raw: string): string {
  * trigger keeps one. A panel that is not on screen simply does nothing, which
  * is the honest outcome rather than a thrown error.
  */
+function schedulerEventPicker(): HTMLButtonElement | null {
+  if (typeof document === 'undefined') return null;
+  return document.querySelector<HTMLButtonElement>('[data-testid="scheduler-dcal-event-type"] button');
+}
+
 function openSchedulerEventPicker(): void {
-  if (typeof document === 'undefined') return;
-  const trigger = document.querySelector<HTMLButtonElement>(
-    '[data-testid="scheduler-dcal-event-type"] button',
-  );
+  const trigger = schedulerEventPicker();
   if (!trigger) return;
   trigger.scrollIntoView({ block: 'center', behavior: 'smooth' });
   trigger.click();
@@ -80,6 +83,22 @@ export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderM
   // dCal existed carries no provider and must keep rendering as it did.
   const provider = scheduler?.provider === 'dcal' ? 'dcal' : 'calendly';
   const createEventUrl = useDcalCreateEventUrl(provider === 'dcal' && !rawUrl);
+  /**
+   * Whether there is a picker to open at all. An author with no event type in
+   * this workspace sees the panel's own empty state instead of a picker, which
+   * is precisely when this card is on screen, so without this the primary
+   * button would be a button that does nothing and says nothing.
+   */
+  const [canPick, setCanPick] = useState(false);
+  useEffect(() => {
+    if (provider !== 'dcal' || rawUrl) return;
+    // The panel renders its picker from its own fetch, so look again once it
+    // has had a turn rather than only on this mount.
+    const check = () => setCanPick(!!schedulerEventPicker());
+    check();
+    const timer = window.setInterval(check, 500);
+    return () => window.clearInterval(timer);
+  }, [provider, rawUrl]);
   const hideDetails = scheduler?.hideEventDetails === true;
   const name = scheduler?.eventTypeName?.trim();
 
@@ -90,6 +109,9 @@ export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderM
   // details toggle) changes, so typing the question never reloads the widget.
   const [embedUrl, setEmbedUrl] = useState('');
   useEffect(() => {
+    // An early return further down stops the RENDER, never the effects: without
+    // this a dCal step still had Calendly's parameters stapled onto its URL.
+    if (provider !== 'calendly') return setEmbedUrl('');
     if (!rawUrl) return setEmbedUrl('');
     try {
       const u = new URL(rawUrl);
@@ -101,9 +123,12 @@ export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderM
     } catch {
       setEmbedUrl('');
     }
-  }, [rawUrl, hideDetails]);
+  }, [provider, rawUrl, hideDetails]);
 
   useEffect(() => {
+    // Same reason: this one injects `assets.calendly.com` into the builder
+    // page, which a dCal step has no business doing.
+    if (provider !== 'calendly') return;
     if (!embedUrl) return;
     let cancelled = false;
     setState('loading');
@@ -125,7 +150,7 @@ export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderM
     return () => {
       cancelled = true;
     };
-  }, [embedUrl]);
+  }, [provider, embedUrl]);
 
   /**
    * dCal, already pointed at an event: a plain iframe, the way dCal's own
@@ -146,7 +171,7 @@ export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderM
         <iframe
           data-testid="canvas-scheduler-dcal"
           src={dcalPreviewUrl(rawUrl)}
-          title={name ?? 'dCal'}
+          title={name ?? m.settings.schedulerProviderDcal}
           loading="lazy"
           className="block w-full"
           style={{ height: 560, border: 0 }}
@@ -190,6 +215,7 @@ export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderM
             <Button
               type="button"
               size="sm"
+              disabled={!canPick}
               data-testid="canvas-scheduler-dcal-pick"
               // The picker itself lives in the settings panel, where every
               // other question type is configured. This opens it rather than
