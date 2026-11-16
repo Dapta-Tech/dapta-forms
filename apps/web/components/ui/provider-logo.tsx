@@ -73,11 +73,11 @@ export function ProviderLogo({
 }
 
 /**
- * Google Sheets, deliberately OUTSIDE `LogoProvider`: it is not a connectable
- * provider yet — only the inert "coming soon" cards render it — and the mark
- * is several stacked shapes (sheet, fold, grid), so it cannot ride the
- * one-path-per-provider Record above. Always decoration beside the product's
- * own name, hence unconditionally aria-hidden.
+ * Google Sheets, deliberately OUTSIDE `LogoProvider`: the mark is several
+ * stacked shapes (sheet, fold, grid), so it cannot ride the one-path-per-provider
+ * Record above. Always decoration beside the product's own name, hence
+ * unconditionally aria-hidden. Render it through `IntegrationMark` rather than
+ * reaching for it directly.
  */
 export function GoogleSheetsLogo({ size = 18, className }: { size?: number; className?: string }) {
   return (
@@ -99,4 +99,29 @@ export function GoogleSheetsLogo({ size = 18, className }: { size?: number; clas
       <path d="M12 11v8M7.5 13.667h9M7.5 16.333h9" stroke="#0F9D58" strokeWidth="1" />
     </svg>
   );
+}
+
+/**
+ * The mark for any account-level integration provider, whichever shape it is.
+ *
+ * It exists so callers stop having to know that two providers are one path on a
+ * 24x24 grid and a third is four stacked shapes. Before this, the connections
+ * panel rendered Google Sheets from its own hardcoded card; adding it to the
+ * provider grid would otherwise have meant a ternary at every call site, and the
+ * next multi-shape mark would mean another one.
+ *
+ * `provider` is the API's own `IntegrationProvider` string, so a provider added
+ * to that union without a mark here is a type error rather than a blank square.
+ */
+export function IntegrationMark({
+  provider,
+  size = 18,
+  className,
+}: {
+  provider: LogoProvider | 'google-sheets';
+  size?: number;
+  className?: string;
+}) {
+  if (provider === 'google-sheets') return <GoogleSheetsLogo size={size} className={className} />;
+  return <ProviderLogo provider={provider} size={size} className={className} />;
 }

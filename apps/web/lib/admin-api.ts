@@ -497,8 +497,15 @@ export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; properties: HubSpotProperty[] };
 
-/** Account-level integration providers (paste-token connections). */
-export type IntegrationProvider = 'hubspot' | 'calendly';
+/**
+ * Account-level integration providers.
+ *
+ * Two of them are paste-token connections. `google-sheets` is not: it is
+ * connected by walking Google's consent screen, so the panel starts it through
+ * `authorizeGoogleSheets` and `connectIntegration` refuses it outright (the API
+ * answers 400 rather than storing a credential that would die within the hour).
+ */
+export type IntegrationProvider = 'hubspot' | 'calendly' | 'google-sheets';
 
 /**
  * One account-level connection's token-free status (GET /v1/integrations). The
@@ -932,6 +939,14 @@ export const adminApi = {
   /** Validate + encrypt-store a pasted provider token; returns the token-free status. */
   connectIntegration: (provider: IntegrationProvider, token: string) =>
     req<IntegrationStatus>('POST', `/v1/integrations/${provider}/connect`, { token }),
+  /**
+   * Start the Google Sheets consent flow: returns the Google URL to send the
+   * browser to. The account this flow will connect is carried in a signed state
+   * minted by this authenticated call, so the URL must be followed as-is and
+   * never rebuilt by the caller.
+   */
+  authorizeGoogleSheets: () =>
+    req<{ authUrl: string }>('POST', '/v1/integrations/google-sheets/authorize'),
   /** Disconnect a provider for this account (idempotent → 204). */
   disconnectIntegration: (provider: IntegrationProvider) =>
     req<void>('DELETE', `/v1/integrations/${provider}`),

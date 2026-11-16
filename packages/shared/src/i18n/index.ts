@@ -2030,9 +2030,19 @@ export interface FormsMessages {
       hubspotDesc: string;
       calendlyName: string;
       calendlyDesc: string;
-      /** Google Sheets — coming-soon card only, not a connectable provider yet. */
       gsheetsName: string;
       gsheetsDesc: string;
+      /**
+       * Google Sheets connects by walking Google's consent screen, so its card
+       * says what is about to happen instead of asking for a token.
+       */
+      gsheetsConnectNote: string;
+      connectWithGoogle: string;
+      /** What the page says when the consent round trip comes back. */
+      googleConnected: string;
+      googleCancelled: string;
+      googleError: string;
+      googleScopeError: string;
       comingSoon: string;
       connected: string;
       notConnected: string;
@@ -4299,13 +4309,21 @@ export const en: FormsMessages = {
     connections: {
       title: 'Connections',
       subtitle:
-        'Connect your account to HubSpot and Calendly once. Then map fields for each form from its integrations tab.',
+        'Connect each service to your account once. Then map fields for each form from its integrations tab.',
       hubspotName: 'HubSpot',
       hubspotDesc: 'Sync respondents to HubSpot contacts and map questions to contact properties.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Let respondents book meetings from your form outcomes.',
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
+      gsheetsConnectNote:
+        'Google will ask you to sign in and allow dForms to write to your spreadsheets. You pick which spreadsheet later, per form.',
+      connectWithGoogle: 'Continue with Google',
+      googleConnected: 'Google Sheets is connected.',
+      googleCancelled: 'Google Sheets was not connected.',
+      googleError: 'Google could not connect your account. Try again.',
+      googleScopeError:
+        'dForms needs permission to write to your spreadsheets. Try again and leave that permission ticked.',
       comingSoon: 'Coming soon',
       connected: 'Connected',
       notConnected: 'Not connected',
@@ -6895,13 +6913,21 @@ export const es: FormsMessages = {
     connections: {
       title: 'Conexiones',
       subtitle:
-        'Conecta tu cuenta a HubSpot y Calendly una vez. Luego asigna los campos de cada formulario desde su pestaña de integraciones.',
+        'Conecta cada servicio a tu cuenta una sola vez. Luego asigna los campos de cada formulario desde su pestaña de integraciones.',
       hubspotName: 'HubSpot',
       hubspotDesc: 'Sincroniza respuestas con contactos de HubSpot y asigna preguntas a propiedades de contacto.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Permite reservar reuniones desde los resultados de tu formulario.',
       gsheetsName: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
+      gsheetsConnectNote:
+        'Google te va a pedir que entres y le des permiso a dForms para escribir en tus hojas de cálculo. La hoja la eliges después, en cada formulario.',
+      connectWithGoogle: 'Continuar con Google',
+      googleConnected: 'Google Sheets quedó conectado.',
+      googleCancelled: 'Google Sheets no se conectó.',
+      googleError: 'Google no pudo conectar tu cuenta. Inténtalo de nuevo.',
+      googleScopeError:
+        'dForms necesita permiso para escribir en tus hojas de cálculo. Inténtalo otra vez y deja ese permiso marcado.',
       comingSoon: 'Muy pronto',
       connected: 'Conectado',
       notConnected: 'Sin conectar',

@@ -3,10 +3,27 @@ import { getMessages } from '@quill/shared';
 import { adminApi, type AccountWebhook, type IntegrationsResponse } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { PageHeader } from '@/components/ui/page-header';
-import { ConnectionsPanel } from './connections-panel';
+import { ConnectionsPanel, type OauthOutcome } from './connections-panel';
 import { WebhooksSection } from './webhooks-section';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * How a consent round trip ended, from the query the API's callback redirected
+ * back with. Read here rather than in the client island so the panel needs no
+ * `useSearchParams` and no Suspense boundary around it.
+ *
+ * Anything unrecognized is null, not an error: this page is linkable, so the
+ * query is visitor-supplied input and a stray parameter must not raise a toast.
+ */
+function oauthOutcomeOf(query: Record<string, string | string[] | undefined>): OauthOutcome | null {
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  if (first(query.google) === 'connected') return 'connected';
+  if (first(query.google) === 'cancelled') return 'cancelled';
+  if (first(query.error) === 'google_scope') return 'scope';
+  if (first(query.error) === 'google') return 'error';
+  return null;
+}
 
 /**
  * Account-level Connections (Typeform's "General" tab): connect HubSpot and
@@ -20,7 +37,12 @@ export const dynamic = 'force-dynamic';
  * regardless — the dashboard's own shortcut to it has always been labelled
  * "Integrations & webhooks", a promise the page did not keep until now.
  */
-export default async function ConnectionsPage() {
+export default async function ConnectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const oauthOutcome = oauthOutcomeOf(await searchParams);
   const locale = await getLocale();
   const c = getMessages(locale).admin.connections;
   const timeZone = (await adminApi.me()).timezone ?? 'UTC';
@@ -54,6 +76,7 @@ export default async function ConnectionsPage() {
         encryptionAvailable={data.encryptionAvailable}
         serverProvided={data.serverProvided ?? []}
         loadError={loadError}
+        oauthOutcome={oauthOutcome}
         messages={c}
         locale={locale}
       />
