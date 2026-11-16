@@ -7,6 +7,7 @@ import {
   ApiError,
   type IntegrationProvider,
   type IntegrationStatus,
+  type SalesforceConnectError,
 } from '@/lib/admin-api';
 
 /**
@@ -32,6 +33,31 @@ export async function connectIntegrationAction(
   } catch (e) {
     unstable_rethrow(e);
     if (e instanceof ApiError) return { ok: false, code: e.code, message: e.message };
+    return { ok: false };
+  }
+}
+
+/**
+ * Connect Salesforce with the three Client Credentials values. The secret
+ * travels client → server action → API like a pasted token, and only the
+ * token-free status comes back. A refusal carries the API's reason, so the card
+ * can say which of the three things the admin has to fix.
+ */
+export async function connectSalesforceAction(input: {
+  domain: string;
+  consumerKey: string;
+  consumerSecret: string;
+}): Promise<{ ok: true; status: IntegrationStatus } | { ok: false; reason?: SalesforceConnectError }> {
+  try {
+    const status = await adminApi.connectSalesforce(input);
+    revalidatePath('/admin/integrations');
+    return { ok: true, status };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) {
+      const reason = e.body?.reason;
+      return { ok: false, reason: typeof reason === 'string' ? (reason as SalesforceConnectError) : undefined };
+    }
     return { ok: false };
   }
 }

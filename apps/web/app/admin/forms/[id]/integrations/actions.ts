@@ -12,6 +12,7 @@ import {
   type GoogleSheetsHeaderRowResponse,
   type GoogleSheetsPickerResponse,
   type GoogleSheetsTabsResponse,
+  type SalesforceFieldsResponse,
   type WebhookPingResult,
 } from '@/lib/admin-api';
 import type { FormDestination } from '@quill/types';
@@ -167,6 +168,21 @@ export async function googleSheetsHeaderRowAction(body: {
   } catch (e) {
     unstable_rethrow(e);
     if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
+  }
+}
+
+/**
+ * Re-read the connected Salesforce org's fields, skipping the five-minute
+ * cache: what an author needs right after adding a custom field in Salesforce.
+ */
+export async function salesforceFieldsAction(
+  refresh: boolean,
+): Promise<{ ok: true; fields: SalesforceFieldsResponse } | { ok: false }> {
+  try {
+    return { ok: true, fields: await adminApi.salesforceFields(refresh) };
+  } catch (e) {
+    unstable_rethrow(e);
     return { ok: false };
   }
 }

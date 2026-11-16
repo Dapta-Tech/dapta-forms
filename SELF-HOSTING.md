@@ -511,6 +511,20 @@ through the same outbox with retry + backoff).
   destination and its property picker report a clear disabled state, so a
   webhook-only deployment needs nothing here.
 
+### Salesforce (optional)
+
+A form can send each completed response to a Salesforce org. There is nothing
+to set on the server beyond `FORMS_ENCRYPTION_KEY`, which already stores every
+connection: each workspace connects its own org from the Connections page with
+three values from an External Client App (the org's My Domain, the consumer key
+and the consumer secret) using the Client Credentials Flow. They are stored
+encrypted and proved against Salesforce before they are saved.
+
+The API calls the org's own My Domain (`*.my.salesforce.com`) and nothing else,
+so an egress allowlist needs that host per connected org. A delivery looks the
+respondent up by email first and updates an existing Contact or Lead before it
+creates a new Lead.
+
 ### dCal as a scheduler (optional)
 
 A scheduler question can embed a [dCal](https://github.com/Dapta-Tech/dapta-calendars-slate)

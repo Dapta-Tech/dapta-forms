@@ -32,6 +32,13 @@ import type {
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
+import {
+  builtSalesforce,
+  initialSalesforce,
+  SalesforceCard,
+  type SalesforceState,
+} from './salesforce-card';
+import type { SalesforceFieldsResponse } from '@/lib/admin-api';
 import { storedColumns } from './sheet-columns';
 import { DeliveryHistory } from './delivery-history';
 import { Card } from './integrations-card';
@@ -230,7 +237,11 @@ export function carriedWebhooks(destinations: FormDestination[]): FormDestinatio
  */
 export function carriedOthers(destinations: FormDestination[]): FormDestination[] {
   return destinations.filter(
-    (d) => d.type !== 'webhook' && d.type !== 'hubspot' && d.type !== 'google-sheets',
+    (d) =>
+      d.type !== 'webhook' &&
+      d.type !== 'hubspot' &&
+      d.type !== 'google-sheets' &&
+      d.type !== 'salesforce',
   );
 }
 
@@ -403,6 +414,8 @@ export function IntegrationsEditor({
   googleSheetsConnected = false,
   googleSheetsAvailable = true,
   googlePickerAvailable = false,
+  salesforceConnected = false,
+  salesforceFields = { enabled: false, reason: 'not_connected' },
   formName = '',
   questions,
   readiness = NOT_READY,
@@ -425,6 +438,10 @@ export function IntegrationsEditor({
   googleSheetsAvailable?: boolean;
   /** Whether an existing spreadsheet can be chosen in Google's Picker. */
   googlePickerAvailable?: boolean;
+  /** Account-level Salesforce connection. */
+  salesforceConnected?: boolean;
+  /** The connected org's fields as the tab loaded them. */
+  salesforceFields?: SalesforceFieldsResponse;
   /** Names the spreadsheet the card creates for this form. */
   formName?: string;
   /** The form's mappable questions (from its steps). */
@@ -451,6 +468,7 @@ export function IntegrationsEditor({
   const [sheets, setSheets] = useState<GoogleSheetsState>(() =>
     initialGoogleSheets(initialDestinations),
   );
+  const [sf, setSf] = useState<SalesforceState>(() => initialSalesforce(initialDestinations));
   const [formActivityError, setFormActivityError] = useState<string | null>(null);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   // The destinations as the server last accepted them. Seeded from the freshly
@@ -627,6 +645,11 @@ export function IntegrationsEditor({
     const sheetsDestination = builtGoogleSheets(sheets);
     if (sheetsDestination) out.push(sheetsDestination);
 
+    // Salesforce: the first stored one, as this card edits it. A stored second
+    // is dropped on save (the card says so), the same rule as HubSpot's.
+    const salesforceDestination = builtSalesforce(sf);
+    if (salesforceDestination) out.push(salesforceDestination);
+
     // Last: every destination kind this screen does not edit (see
     // `carriedOthers`). Without this, saving here deletes them.
     out.push(...carriedOthers(savedDestinations.current));
@@ -739,6 +762,13 @@ export function IntegrationsEditor({
     },
     [markDirty],
   );
+  const editSalesforce = useCallback(
+    (next: SalesforceState) => {
+      setSf(next);
+      markDirty();
+    },
+    [markDirty],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -789,6 +819,17 @@ export function IntegrationsEditor({
           m={m}
         />
       ) : null}
+
+      <SalesforceCard
+        state={sf}
+        setState={editSalesforce}
+        questions={questions}
+        connected={salesforceConnected}
+        initialFields={salesforceFields}
+        extraStored={initialDestinations.filter((d) => d.type === 'salesforce').length > 1}
+        locale={locale}
+        m={m}
+      />
 
       {/* The Save button is gone (V5-A4) — everything here autosaves, so what
           belongs in this bar is the state of that save, not an action. */}

@@ -1,7 +1,12 @@
 'use server';
 
 import { unstable_rethrow } from 'next/navigation';
-import { adminApi, ApiError, type HubSpotPropertiesResponse } from '@/lib/admin-api';
+import {
+  adminApi,
+  ApiError,
+  type HubSpotPropertiesResponse,
+  type SalesforceFieldsResponse,
+} from '@/lib/admin-api';
 import { getMessages } from '@quill/shared';
 import type { FormDestination } from '@quill/types';
 
@@ -45,6 +50,13 @@ export interface ConnectIntegrationsData {
   googlePickerAvailable: boolean;
   /** The form's own name, which names the spreadsheet the card creates. */
   formName: string;
+  /** Whether Salesforce is connected for the account. */
+  salesforceConnected: boolean;
+  /**
+   * The connected org's fields. Read only when connected: an account without
+   * Salesforce should not pay a round trip for a card that shows a link.
+   */
+  salesforceFields: SalesforceFieldsResponse;
 }
 
 export async function loadConnectIntegrationsAction(
@@ -82,6 +94,7 @@ export async function loadConnectIntegrationsAction(
   // vanish from a deployment where it works.
   let googleSheetsAvailable = true;
   let googlePickerAvailable = false;
+  let salesforceConnected = false;
   try {
     const integrations = await adminApi.listIntegrations();
     hubspotConnected = integrations.providers.some((p) => p.provider === 'hubspot' && p.connected);
@@ -93,11 +106,25 @@ export async function loadConnectIntegrationsAction(
     );
     googleSheetsAvailable = !(integrations.unavailable ?? []).includes('google-sheets');
     googlePickerAvailable = integrations.googlePicker === true;
+    salesforceConnected = integrations.providers.some(
+      (p) => p.provider === 'salesforce' && p.connected,
+    );
   } catch (e) {
     unstable_rethrow(e);
     hubspotConnected = false;
     calendlyConnected = false;
     googleSheetsConnected = false;
+  }
+
+  // Like the HubSpot picker: a failed lookup degrades the card, never the tab.
+  let salesforceFields: SalesforceFieldsResponse = { enabled: false, reason: 'not_connected' };
+  if (salesforceConnected) {
+    try {
+      salesforceFields = await adminApi.salesforceFields();
+    } catch (e) {
+      unstable_rethrow(e);
+      salesforceFields = { enabled: false, reason: 'unavailable' };
+    }
   }
 
   return {
@@ -111,6 +138,8 @@ export async function loadConnectIntegrationsAction(
       googleSheetsAvailable,
       googlePickerAvailable,
       formName: form.name,
+      salesforceConnected,
+      salesforceFields,
     },
   };
 }
