@@ -41,6 +41,7 @@ import {
   MAX_SHEET_COLUMNS,
   hasExtraHubspotDestination,
   hasExtraSalesforceDestination,
+  sheetBaselineHeaders,
   sheetCells,
   writtenSheetHeaders,
   maskConfigSecrets,
@@ -1741,12 +1742,16 @@ export class FormDestinationsController {
     // column whose heading was just cleared keeps the position it holds there
     // (`sheetCells`), so row 1 is not rewritten to close the gap and no
     // response lands one cell to the left while the author types a new name.
+    //
+    // What is stored for that target is the baseline (`sheetBaselineHeaders`):
+    // the snapshot, else the headings a foreign row's columns stood for, else
+    // (a destination saved before any of that was recorded) the stored
+    // columns' own headings, which are what its row 1 was written from. So
+    // the very first edit to an old config is protected too.
     const writtenRow =
-      target &&
-      storedSnapshot &&
-      storedSnapshot.spreadsheetId === target.spreadsheetId &&
-      storedSnapshot.sheetTitle === target.sheetTitle
-        ? storedSnapshot.headers
+      target && storedEntry && sheetTargetOf(storedEntry)?.spreadsheetId === target.spreadsheetId &&
+      sheetTargetOf(storedEntry)?.sheetTitle === target.sheetTitle
+        ? sheetBaselineHeaders(storedEntry)
         : null;
     const headers = sheetHeadersOf(raw, writtenRow);
     // Nothing to sync without a NAMED column: held positions alone are a row

@@ -1,27 +1,78 @@
 'use client';
 
 import { trackDestinationWrite } from './connect-sync';
-import { publishIntegrationsSave } from './integrations-save-status';
+import { publishIntegrationsSave, readIntegrationsSave } from './integrations-save-status';
 
 /**
- * One save queue per form for the Connect tab's integrations, owned here and
- * not by the editor component, so it behaves the same whether or not the tab
- * is still on screen.
+ * One write lane per form for everything that writes its destinations, owned
+ * here and not by any component, so it behaves the same whether or not the
+ * Connect tab is still on screen.
  *
- * What it guarantees, and why each one matters:
- *  - Writes are SERIAL. Two saves of the whole destinations array in flight
- *    at once land in whatever order the network chooses.
- *  - Only the LATEST snapshot is ever written once a newer one exists. A save
- *    queued behind another replaces anything older still waiting, and a
- *    failed older write is dropped rather than retried. The bug this exists
- *    for: S1 in flight, the author edits and leaves the tab, the final save
- *    S2 lands, then S1 failed, was retried 1.5 s later and wrote over S2.
- *  - Only the latest snapshot is retried, and only by the queue when nobody
- *    is on the tab to do it (the editor's own controller retries while it is
- *    mounted). Bounded: a few seconds, then an honest "not saved".
- *  - The state the topbar and the save pill show comes from here, from the
- *    latest snapshot's outcome only, so the two indicators can never disagree
- *    and an older failure can never be reported as the current state.
+ * TWO KINDS OF WORK
+ *  - A SNAPSHOT is the Connect tab's whole destinations array
+ *    (`enqueueIntegrationsSave`). Only the latest one matters: a newer
+ *    snapshot replaces one still waiting, and an older one that fails is
+ *    dropped, never retried.
+ *  - An OUTSIDE WRITE reads what is stored, changes one thing and writes it
+ *    back (`runDestinationWrite`): the Build tab's per-question HubSpot
+ *    picker, a field-key rename, a spreadsheet attached after the tab was
+ *    left. It is NOT a snapshot: it never replaces one and never cancels a
+ *    retry. Treating a partial merge as a snapshot dropped the full save
+ *    waiting behind it and reported "saved".
+ *
+ * ORDER
+ *  One loop (`pump`) does all the writing, one write at a time:
+ *    1. the waiting snapshot, if there is one;
+ *    2. otherwise, if a failed snapshot is waiting for its retry, NOTHING:
+ *       an outside write must land on top of the snapshot, not under it
+ *       (the retry would write its older array over the outside change), so
+ *       it waits out the retries, which are bounded (`UNMOUNTED_RETRY_MS`);
+ *    3. otherwise the oldest outside write.
+ *  Snapshots therefore always go before outside writes, and an outside write
+ *  always reads a store that holds every snapshot that could still land.
+ *
+ * STATE (per form)                       WHO CHANGES IT
+ *  running   the loop is active          `pump` only (set on entry, cleared in `finally`)
+ *  waiting   the snapshot to send next   enqueue (set/replace), retry timer (set), `pump` (take)
+ *  writing   the snapshot being sent     `write` only
+ *  retry     a failed snapshot + timer   `write` (arm), its timer (fire), enqueue (cancel)
+ *  outside   outside writes, in order    `runDestinationWrite` (push), `pump` (shift)
+ *
+ * LIVENESS: nothing ever waits on a promise another part of the queue has to
+ * remember to resolve. The invariant is:
+ *
+ *    there is work  =>  the loop is running, OR a retry timer is armed.
+ *
+ *  - `enqueueIntegrationsSave` and `runDestinationWrite` add their work and
+ *    call `pump` in the same synchronous step. If the loop is already running
+ *    it will see the work: every `await` in the loop is followed by a fresh
+ *    read of `waiting` / `retry` / `outside`.
+ *  - The loop stops only when there is no waiting snapshot AND (a retry is
+ *    armed OR there are no outside writes). Between that check and clearing
+ *    `running` nothing is awaited, so no work can slip in unseen.
+ *  - A retry timer, when it fires, moves its snapshot to `waiting` and calls
+ *    `pump`. The only thing that cancels it is a newer snapshot, which sets
+ *    `waiting` and calls `pump` itself.
+ *  - The retry chain is finite: each attempt has an index into
+ *    `UNMOUNTED_RETRY_MS`, and past its end the snapshot is reported lost.
+ *
+ * EVERY PROMISE SETTLES
+ *  - A snapshot's: `superseded` when a newer one replaces it while it waits;
+ *    otherwise in `write`, on each of its five exits (not the latest, landed,
+ *    failed with the tab open, failed with retries left, failed for good).
+ *  - An outside write's: resolved or rejected in `runOutside`, which the loop
+ *    reaches as soon as no snapshot is waiting and no retry is armed.
+ *  Two assumptions, both about what callers pass in. A `send` or an outside
+ *  `write` settles: every caller passes a server action wrapped in
+ *  `callAction` (or `callActionWithRetry`), which times out. And neither one
+ *  awaits another call into this queue for the same form: it would be waiting
+ *  for the lane it is occupying.
+ *
+ * WHAT IS REPORTED (topbar and save pill, through `integrations-save-status`)
+ *  The latest snapshot's outcome only, so an older failure is never the
+ *  current state. An outside write says nothing unless asked to (`report`):
+ *  the picker has its own indicator, while a spreadsheet attached after the
+ *  tab was left has no screen of its own to fail on.
  */
 
 /** What one attempt of a write came back with. */
@@ -36,31 +87,38 @@ export type QueueOutcome<R> =
   /** A newer snapshot replaced this one before it was written, or after it failed. */
   | { kind: 'superseded' };
 
-interface Job<R> {
+type QueueMessages = { saveOffline: string; saveError: string; lost: string };
+
+interface Snapshot {
   seq: number;
-  send: () => Promise<R>;
+  send: () => Promise<unknown>;
   /** Shown instead of "saved" when the write lands (one card was left out). */
   partial: string | null;
-  resolve: (outcome: QueueOutcome<R>) => void;
+  messages: QueueMessages;
+  /** How many times it has been sent and failed with nobody on the tab. */
+  attempt: number;
+  resolve: (outcome: QueueOutcome<unknown>) => void;
+}
+
+interface OutsideWrite {
+  run: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+  /** Set when this write has to speak for itself in the topbar. */
+  report: { lost: string } | null;
 }
 
 interface FormQueue {
   seq: number;
-  inFlight: Job<unknown> | null;
-  pending: Job<unknown> | null;
   subscribers: number;
-  retryTimer: ReturnType<typeof setTimeout> | null;
-  /** The failed snapshot `retryTimer` is waiting to write again. */
-  retry: { job: Job<unknown>; attempt: number; messages: QueueMessages } | null;
-  /** A write from outside the queue that is running now: saves wait for it. */
-  foreign: Promise<void> | null;
-  /** Resolved whenever nothing is in flight (a snapshot may be waiting, a retry scheduled). */
-  quiet: (() => void)[];
+  running: boolean;
+  waiting: Snapshot | null;
+  writing: Snapshot | null;
+  retry: { snapshot: Snapshot; timer: ReturnType<typeof setTimeout> } | null;
+  outside: OutsideWrite[];
   idle: Promise<void> | null;
   settleIdle: (() => void) | null;
 }
-
-type QueueMessages = { saveOffline: string; saveError: string; lost: string };
 
 /** Waits before each retry of the latest snapshot when the tab is gone. */
 export const UNMOUNTED_RETRY_MS = [1500, 4000] as const;
@@ -72,13 +130,12 @@ function queueOf(formId: string): FormQueue {
   if (!q) {
     q = {
       seq: 0,
-      inFlight: null,
-      pending: null,
       subscribers: 0,
-      retryTimer: null,
+      running: false,
+      waiting: null,
+      writing: null,
       retry: null,
-      foreign: null,
-      quiet: [],
+      outside: [],
       idle: null,
       settleIdle: null,
     };
@@ -87,6 +144,9 @@ function queueOf(formId: string): FormQueue {
   return q;
 }
 
+const hasWork = (q: FormQueue): boolean =>
+  q.running || !!q.waiting || !!q.writing || !!q.retry || q.outside.length > 0;
+
 /** Keep a promise registered with `connect-sync` while the queue has work, so a remount reads after it. */
 function markBusy(formId: string, q: FormQueue): void {
   if (q.idle) return;
@@ -94,13 +154,8 @@ function markBusy(formId: string, q: FormQueue): void {
   trackDestinationWrite(formId, q.idle);
 }
 
-function markIdleIfDone(q: FormQueue): void {
-  if (!q.inFlight) {
-    const waiting = q.quiet;
-    q.quiet = [];
-    for (const resolve of waiting) resolve();
-  }
-  if (q.inFlight || q.pending || q.retryTimer || q.foreign) return;
+function settleIfIdle(q: FormQueue): void {
+  if (hasWork(q)) return;
   const settle = q.settleIdle;
   q.idle = null;
   q.settleIdle = null;
@@ -126,13 +181,17 @@ export function subscribeIntegrationsSave(formId: string): () => void {
 /** Whether the queue for a form has nothing in flight, waiting or scheduled. */
 export function integrationsSaveIdle(formId: string): boolean {
   const q = queues.get(formId);
-  return !q || (!q.inFlight && !q.pending && !q.retryTimer && !q.foreign);
+  return !q || !hasWork(q);
 }
 
 /**
- * Save this snapshot, after anything in flight, replacing anything older that
- * is still waiting. Resolves with this snapshot's first attempt, or with
- * `superseded` when a newer snapshot took its place.
+ * Save this snapshot, after anything being written, replacing anything older
+ * that is still waiting (and the retry of an older one that failed). Resolves
+ * with this snapshot's first attempt, or with `superseded` when a newer
+ * snapshot took its place.
+ *
+ * Safe to call at any time, from anywhere, any number of times: it only sets
+ * `waiting` and starts the loop if it is not running.
  */
 export function enqueueIntegrationsSave<R>(
   formId: string,
@@ -142,68 +201,109 @@ export function enqueueIntegrationsSave<R>(
   const q = queueOf(formId);
   markBusy(formId, q);
   publishIntegrationsSave(formId, { status: 'saving' });
-  if (q.retryTimer) {
+  if (q.retry) {
     // A newer snapshot supersedes the retry of an older one.
-    clearTimeout(q.retryTimer);
-    q.retryTimer = null;
+    clearTimeout(q.retry.timer);
     q.retry = null;
   }
   return new Promise<QueueOutcome<R>>((resolve) => {
-    const job: Job<R> = { seq: ++q.seq, send, partial: opts.partial ?? null, resolve };
-    if (q.pending) q.pending.resolve({ kind: 'superseded' });
-    q.pending = job as Job<unknown>;
-    if (!q.inFlight) void drain(formId, q, opts.messages);
+    q.waiting?.resolve({ kind: 'superseded' });
+    q.waiting = {
+      seq: ++q.seq,
+      send,
+      partial: opts.partial ?? null,
+      messages: opts.messages,
+      attempt: 0,
+      resolve: resolve as (outcome: QueueOutcome<unknown>) => void,
+    };
+    void pump(formId, q);
   });
 }
 
-async function drain(
+/**
+ * Run a destinations write that is not a snapshot, in line with the queue:
+ * after every snapshot that is waiting, being written, or still has a retry
+ * coming, and one at a time with other outside writes.
+ *
+ * Why it waits for the retries instead of going first: a failed snapshot is
+ * the Connect tab's whole array as it was when the author left. Written after
+ * this change, it would undo it. So it gets its full, bounded retry schedule;
+ * if it lands, this write is applied on top of it, and if it never does it is
+ * reported as lost (by the queue, as always) and this write goes ahead.
+ *
+ * Resolves or rejects with whatever `write` does. With `report`, the topbar
+ * says "Saving" while it runs (unless it is already showing a failure) and a
+ * result of `{ ok: false }` or a throw is reported as a lost change.
+ *
+ * Safe to call at any time and concurrently: calls run in the order made.
+ */
+export function runDestinationWrite<R>(
   formId: string,
-  q: FormQueue,
-  messages: QueueMessages,
-  attempt = 0,
-  /** The retry an outside write runs before itself: it must not wait for that write. */
-  ahead = false,
-): Promise<void> {
-  // A write from outside the queue goes first: this one must not land in the
-  // middle of its read-modify-write. Whoever is still waiting when it ends
-  // re-reads the queue below, so two drains that both waited cannot both send.
-  while (q.foreign && !ahead) await q.foreign;
-  if (q.inFlight) return;
-  const job = q.pending;
-  if (!job) {
-    markIdleIfDone(q);
-    return;
+  write: () => Promise<R>,
+  opts: { report?: { lost: string } } = {},
+): Promise<R> {
+  const q = queueOf(formId);
+  markBusy(formId, q);
+  return new Promise<R>((resolve, reject) => {
+    q.outside.push({ run: write, resolve: resolve as (value: unknown) => void, reject, report: opts.report ?? null });
+    void pump(formId, q);
+  });
+}
+
+/** The one loop that writes. See the file header for why it cannot stall. */
+async function pump(formId: string, q: FormQueue): Promise<void> {
+  if (q.running) return;
+  q.running = true;
+  try {
+    for (;;) {
+      const snapshot = q.waiting;
+      if (snapshot) {
+        q.waiting = null;
+        await write(formId, q, snapshot);
+        continue;
+      }
+      // A failed snapshot still has a retry coming: its timer restarts the
+      // loop, and outside writes wait for it (see `runDestinationWrite`).
+      if (q.retry) break;
+      const next = q.outside.shift();
+      if (!next) break;
+      await runOutside(formId, q, next);
+    }
+  } finally {
+    q.running = false;
+    settleIfIdle(q);
   }
-  q.pending = null;
-  q.inFlight = job;
+}
+
+/** Send one snapshot and decide what its outcome means. Never throws. */
+async function write(formId: string, q: FormQueue, snapshot: Snapshot): Promise<void> {
+  q.writing = snapshot;
   let result: unknown;
   try {
-    result = await job.send();
+    result = await snapshot.send();
   } catch (e) {
     result = { ok: false, transport: true, message: e instanceof Error ? e.message : 'save failed' };
   }
-  q.inFlight = null;
-  const isLatest = job.seq === q.seq;
+  q.writing = null;
 
-  if (!isLatest) {
+  if (snapshot.seq !== q.seq) {
     // An older snapshot: whatever it came back with, the newer one decides.
     // Its failure is never retried and never reported.
-    job.resolve(failed(result) ? { kind: 'superseded' } : { kind: 'sent', result });
-    void drain(formId, q, messages);
+    snapshot.resolve(failed(result) ? { kind: 'superseded' } : { kind: 'sent', result });
     return;
   }
 
   if (!failed(result)) {
     publishIntegrationsSave(
       formId,
-      job.partial ? { status: 'partial', detail: job.partial } : { status: 'saved' },
+      snapshot.partial ? { status: 'partial', detail: snapshot.partial } : { status: 'saved' },
     );
-    job.resolve({ kind: 'sent', result });
-    markIdleIfDone(q);
+    snapshot.resolve({ kind: 'sent', result });
     return;
   }
 
   // The latest snapshot failed.
+  const { messages } = snapshot;
   if (q.subscribers > 0) {
     // The editor is on screen: its controller decides about retrying.
     publishIntegrationsSave(
@@ -212,99 +312,57 @@ async function drain(
         ? { status: 'retrying', detail: messages.saveOffline }
         : { status: 'error', detail: result.message ?? messages.saveError },
     );
-    job.resolve({ kind: 'sent', result });
-    markIdleIfDone(q);
+    snapshot.resolve({ kind: 'sent', result });
     return;
   }
-  const wait = UNMOUNTED_RETRY_MS[attempt];
+  const wait = UNMOUNTED_RETRY_MS[snapshot.attempt];
   if (wait === undefined) {
     // Nobody to retry it and nothing left to try: say so, without a promise.
     publishIntegrationsSave(formId, { status: 'error', detail: messages.lost, lost: true });
-    job.resolve({ kind: 'sent', result });
-    markIdleIfDone(q);
+    snapshot.resolve({ kind: 'sent', result });
     return;
   }
-  // Retry THIS snapshot later, unless a newer one arrives first.
-  if (attempt === 0) job.resolve({ kind: 'sent', result });
-  q.retry = { job, attempt: attempt + 1, messages };
-  q.retryTimer = setTimeout(() => runRetry(formId, q), wait);
-  markIdleIfDone(q);
+  // Retry THIS snapshot later, unless a newer one arrives first. The caller
+  // has its answer (the first attempt's); the retries are the queue's own.
+  snapshot.resolve({ kind: 'sent', result });
+  const again: Snapshot = { ...snapshot, attempt: snapshot.attempt + 1, resolve: () => {} };
+  const timer = setTimeout(() => {
+    if (q.retry?.snapshot !== again) return;
+    q.retry = null;
+    q.waiting = again;
+    void pump(formId, q);
+  }, wait);
+  q.retry = { snapshot: again, timer };
 }
 
-/** Write the failed snapshot again: when its timer fires, or early (see `runDestinationWrite`). */
-function runRetry(formId: string, q: FormQueue, ahead = false): void {
-  const retry = q.retry;
-  if (q.retryTimer) clearTimeout(q.retryTimer);
-  q.retryTimer = null;
-  q.retry = null;
-  if (!retry || q.pending || q.inFlight) {
-    markIdleIfDone(q);
-    return;
-  }
-  q.pending = { ...retry.job, resolve: () => {} };
-  void drain(formId, q, retry.messages, retry.attempt, ahead);
-}
-
-/**
- * Resolves once nothing is being written. A snapshot still WAITING does not
- * count: with an outside write open it is parked behind that write, and
- * waiting for it here would be waiting for ourselves.
- */
-function whenQuiet(q: FormQueue): Promise<void> {
-  if (!q.inFlight) return Promise.resolve();
-  return new Promise<void>((resolve) => q.quiet.push(resolve));
-}
-
-/**
- * Run a destinations write that does not go through the queue's snapshots
- * (the Build tab's per-question HubSpot picker, a field-key rename, a card
- * action that finished after the tab was left), in line with it.
- *
- * Those writes read the stored destinations, change one thing and write the
- * array back. Next to the queue that is a race in both directions: a failed
- * snapshot waiting for its retry would be written over the new mapping a few
- * seconds later, undoing it, and a snapshot in flight could land between the
- * other write's read and its write. So:
- *  - it waits for whatever the queue is writing;
- *  - a failed snapshot waiting for its retry gets that try NOW, first, so the
- *    write that follows reads it if it lands;
- *  - if it still has not landed, its retry is dropped, since writing that
- *    older array later would undo this write, and the change it carried is
- *    reported as lost (it never reached the server);
- *  - queue saves that arrive meanwhile wait for this write to finish.
- */
-export async function runDestinationWrite<R>(formId: string, write: () => Promise<R>): Promise<R> {
-  const q = queueOf(formId);
-  // One at a time among themselves too.
-  while (q.foreign) await q.foreign;
-  let release!: () => void;
-  q.foreign = new Promise<void>((resolve) => (release = resolve));
-  markBusy(formId, q);
+/** Run one outside write and settle its promise. Never throws. */
+async function runOutside(formId: string, q: FormQueue, task: OutsideWrite): Promise<void> {
+  // It speaks in the topbar only when asked to, and only over "saved": a
+  // failure already showing (the snapshot's) must not be painted over.
+  const before = readIntegrationsSave(formId)?.status;
+  const speaks = !!task.report && (before === undefined || before === 'saved');
+  if (speaks) publishIntegrationsSave(formId, { status: 'saving' });
+  const lost = () => {
+    if (task.report) publishIntegrationsSave(formId, { status: 'error', detail: task.report.lost, lost: true });
+  };
   try {
-    await whenQuiet(q);
-    if (q.retry) {
-      runRetry(formId, q, true);
-      await whenQuiet(q);
+    const result = await task.run();
+    if (failed(result)) lost();
+    // "Saved" only when it is this write's own "Saving" that is showing and
+    // no snapshot arrived meanwhile: a waiting snapshot publishes "Saving"
+    // too, and its outcome is not known yet.
+    else if (speaks && !q.waiting && readIntegrationsSave(formId)?.status === 'saving') {
+      publishIntegrationsSave(formId, { status: 'saved' });
     }
-    if (q.retry) {
-      const { messages } = q.retry;
-      if (q.retryTimer) clearTimeout(q.retryTimer);
-      q.retryTimer = null;
-      q.retry = null;
-      publishIntegrationsSave(formId, { status: 'error', detail: messages.lost, lost: true });
-    }
-    return await write();
-  } finally {
-    q.foreign = null;
-    // A save that arrived meanwhile is parked in its own `drain`, waiting on
-    // this promise: releasing it is what sends it.
-    release();
-    markIdleIfDone(q);
+    task.resolve(result);
+  } catch (e) {
+    lost();
+    task.reject(e);
   }
 }
 
 /** Specs only: forget every queue. */
 export function resetIntegrationsSaveQueues(): void {
-  for (const q of queues.values()) if (q.retryTimer) clearTimeout(q.retryTimer);
+  for (const q of queues.values()) if (q.retry) clearTimeout(q.retry.timer);
   queues.clear();
 }

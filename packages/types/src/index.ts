@@ -964,76 +964,140 @@ export interface SheetCell<T> {
  * The cells of one sheet row, in order: `writableSheetColumns`, plus the
  * positions a column with a cleared heading still holds.
  *
- * `written` is the row 1 dForms last wrote to the SAME spreadsheet and tab
- * (the destination's `headerSnapshot`; see `writtenSheetHeaders`). Without it
- * this is exactly `writableSheetColumns`.
+ * `written` is the row 1 dForms has on record for the SAME spreadsheet and
+ * tab (see `writtenSheetHeaders`). Without it this is exactly
+ * `writableSheetColumns`.
  *
  * Why positions are held: an author renaming column B clears its heading
  * first. Dropping the column at that moment moved every later column one cell
  * to the left, for row 1 and for any response delivered before the new name
- * was typed. A column whose position `written` covers keeps it instead: row 1
- * is left alone and its cell is empty, until the column gets a heading again
- * or is deleted for real. A column that never had a heading holds nothing and
- * stays out, as before.
+ * was typed. A column that stands at a position `written` covers keeps it
+ * instead: row 1 is left alone there and its cell is delivered empty, until
+ * the column gets a heading again or is deleted for real. A column that never
+ * had a heading holds nothing and stays out, as before.
  *
- * Which unnamed column holds a position is read off the alignment: walking
- * the columns against `written`, an unnamed column holds the next written
- * position unless that position is the next NAMED column's own heading (then
- * the unnamed one is new, sitting in front of it). If a named column does not
- * line up with `written` at all (a reorder, a delete), nothing is held: row 1
- * is about to be rewritten for the named columns anyway.
+ * WHICH unnamed column holds a position is decided by POSITION, not by
+ * reading headings ahead. The columns are laid over `written` left to right:
+ * a named column takes the next position, an unnamed one either holds the
+ * next position or is not in the sheet at all. Of all the ways to do that,
+ * the one that changes the sheet least is taken, counting:
+ *   - a named column whose position holds a different heading in `written`
+ *     (it was renamed or moved): one change;
+ *   - a position of `written` no column stands on any more (its column was
+ *     deleted): one change;
+ *   - a named column past the end of `written` (appended): no change.
+ * On a tie the unnamed column is left out, which is what a column that was
+ * added and never named should be.
+ *
+ * Comparing by position is what makes two identical headings side by side
+ * work. `[A, X, X]` with the first X cleared is `[A, _, X]`: looking ahead by
+ * text saw "the next heading is X, and so is this position" and took the
+ * cleared column for a new one, so row 1 was rewritten and the third column
+ * moved. By position, holding it leaves every column where it was (no
+ * change), and dropping it leaves a written position with no column (one
+ * change), so it is held.
+ *
+ * THE LIMIT. Columns have no identity beyond their place in the list, so an
+ * edit that both moves columns and clears a heading before it is saved can
+ * only be read as the smallest change that explains it. Whatever is chosen,
+ * this function is the single answer: row 1, every delivered row and the
+ * card's letters are all built from it, so they agree with each other even
+ * then.
  */
 export function sheetCells<T extends { header?: string; source?: string; key?: string }>(
   columns: readonly T[] | undefined,
   written?: readonly string[] | null,
 ): SheetCell<T>[] {
   const list = columns ?? [];
-  const plain = (): SheetCell<T>[] =>
-    list.filter(isWritableSheetColumn).map((column) => ({ column, header: column.header!.trim(), held: false }));
-  if (!written?.length || list.every(isWritableSheetColumn)) return plain();
-  const out: SheetCell<T>[] = [];
-  let p = 0;
-  for (let i = 0; i < list.length; i++) {
-    const column = list[i]!;
-    if (isWritableSheetColumn(column)) {
-      const header = column.header!.trim();
-      // Renamed in place or moved: positions no longer mean what they did.
-      if (p < written.length && written[p] !== header) return plain();
-      out.push({ column, header, held: false });
-      p++;
-      continue;
-    }
-    if (p >= written.length) continue;
-    const nextNamed = list.slice(i + 1).find(isWritableSheetColumn)?.header?.trim();
-    if (written[p] === nextNamed) continue;
-    out.push({ column, header: written[p]!, held: true });
-    p++;
+  const named = list.map((c) => isWritableSheetColumn(c));
+  if (!written?.length || named.every(Boolean)) {
+    return list
+      .filter((_, i) => named[i])
+      .map((column) => ({ column, header: column.header!.trim(), held: false }));
   }
-  return out;
+  const n = list.length;
+  const w = written.length;
+  // cost[i][p]: the least change for columns i.. when p positions are taken.
+  // holds[i][p]: whether unnamed column i holds position p in that best case.
+  const cost: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(n + 1).fill(0));
+  const holds: boolean[][] = Array.from({ length: n }, () => new Array<boolean>(n + 1).fill(false));
+  for (let p = 0; p <= n; p++) cost[n]![p] = Math.max(0, w - p);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let p = 0; p <= i; p++) {
+      if (named[i]) {
+        const moved = p < w && written[p] !== list[i]!.header!.trim() ? 1 : 0;
+        cost[i]![p] = moved + cost[i + 1]![p + 1]!;
+        continue;
+      }
+      const out = cost[i + 1]![p]!;
+      const held = p < w ? cost[i + 1]![p + 1]! : Number.POSITIVE_INFINITY;
+      holds[i]![p] = held < out;
+      cost[i]![p] = Math.min(out, held);
+    }
+  }
+  const cells: SheetCell<T>[] = [];
+  for (let i = 0; i < n; i++) {
+    const column = list[i]!;
+    const p = cells.length;
+    if (named[i]) cells.push({ column, header: column.header!.trim(), held: false });
+    else if (holds[i]![p]) cells.push({ column, header: written[p]!, held: true });
+  }
+  return cells;
 }
 
 /**
- * The row 1 dForms last wrote for the spreadsheet and tab this destination
- * points at, or null when it never recorded one (or recorded it for another
- * target). Read from the STORED destination: the API owns `headerSnapshot`.
+ * The row 1 dForms has on record for the spreadsheet and tab this destination
+ * points at, or null when it has none (or has it for another target). Read
+ * from the STORED destination: the API owns these fields.
+ *
+ * That is `headerSnapshot` (what dForms wrote there) or, for a row 1 that is
+ * somebody else's, `headerForeign` (the headings these columns stood for when
+ * dForms found it may not write them). Either one says which positions the
+ * columns occupy, which is all `sheetCells` needs it for.
  */
 export function writtenSheetHeaders(destination: object | null | undefined): string[] | null {
   const settings = (destination as { settings?: unknown } | null | undefined)?.settings;
   if (!settings || typeof settings !== 'object') return null;
-  const { spreadsheetId, sheetTitle, headerSnapshot } = settings as {
+  const { spreadsheetId, sheetTitle, headerSnapshot, headerForeign } = settings as {
     spreadsheetId?: unknown;
     sheetTitle?: unknown;
     headerSnapshot?: unknown;
+    headerForeign?: unknown;
   };
-  if (!headerSnapshot || typeof headerSnapshot !== 'object') return null;
-  const snap = headerSnapshot as { spreadsheetId?: unknown; sheetTitle?: unknown; headers?: unknown };
-  if (typeof spreadsheetId !== 'string' || !spreadsheetId.trim() || snap.spreadsheetId !== spreadsheetId.trim()) {
-    return null;
-  }
+  if (typeof spreadsheetId !== 'string' || !spreadsheetId.trim()) return null;
   const tab = typeof sheetTitle === 'string' ? sheetTitle.trim() : '';
-  if ((typeof snap.sheetTitle === 'string' ? snap.sheetTitle : '') !== tab) return null;
-  if (!Array.isArray(snap.headers)) return null;
-  return snap.headers.filter((h): h is string => typeof h === 'string');
+  for (const recorded of [headerSnapshot, headerForeign]) {
+    if (!recorded || typeof recorded !== 'object') continue;
+    const snap = recorded as { spreadsheetId?: unknown; sheetTitle?: unknown; headers?: unknown };
+    if (snap.spreadsheetId !== spreadsheetId.trim()) continue;
+    if ((typeof snap.sheetTitle === 'string' ? snap.sheetTitle : '') !== tab) continue;
+    if (!Array.isArray(snap.headers)) continue;
+    return snap.headers.filter((h): h is string => typeof h === 'string');
+  }
+  return null;
+}
+
+/**
+ * The row 1 to count a destination's columns against: what dForms has on
+ * record (`writtenSheetHeaders`) or, when it never recorded anything, the
+ * headings of the columns as they are stored now.
+ *
+ * The fallback is for a destination saved before snapshots existed. Its
+ * stored columns ARE what its row 1 was written from, so the first edit made
+ * to it (clearing a middle heading, say) is protected like any later one,
+ * instead of shifting the columns once and being protected from then on.
+ * Null for a destination with no spreadsheet.
+ */
+export function sheetBaselineHeaders(destination: object | null | undefined): string[] | null {
+  const recorded = writtenSheetHeaders(destination);
+  if (recorded) return recorded;
+  const entry = (destination ?? {}) as { settings?: unknown; columns?: unknown };
+  const spreadsheetId = (entry.settings as { spreadsheetId?: unknown } | undefined)?.spreadsheetId;
+  if (typeof spreadsheetId !== 'string' || !spreadsheetId.trim()) return null;
+  const columns = Array.isArray(entry.columns) ? (entry.columns as { header?: unknown }[]) : [];
+  return columns
+    .filter((c) => c && typeof c.header === 'string' && c.header.trim())
+    .map((c) => (c.header as string).trim());
 }
 
 /**

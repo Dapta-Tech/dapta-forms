@@ -12,7 +12,7 @@ import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
 import {
   sheetCells,
   WEBHOOK_SECRET_MASK,
-  writtenSheetHeaders,
+  sheetBaselineHeaders,
   type DestinationEvent,
   type FormDestination,
 } from '@quill/types';
@@ -23,7 +23,7 @@ import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { ProviderLogo } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
-import { callAction, isTransportError } from '@/lib/call-action';
+import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { browserTimezones, isKnownTimezone } from '@/lib/timezones';
 import { useAutosave } from '@/lib/use-autosave';
 import { cn } from '@/lib/cn';
@@ -47,7 +47,7 @@ import {
   useCombinedSave,
   useIntegrationsSave,
 } from '@/lib/integrations-save-status';
-import { enqueueIntegrationsSave, subscribeIntegrationsSave } from '@/lib/integrations-save-queue';
+import { enqueueIntegrationsSave, runDestinationWrite, subscribeIntegrationsSave } from '@/lib/integrations-save-queue';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
 import {
@@ -281,7 +281,10 @@ export function initialGoogleSheets(destinations: FormDestination[]): GoogleShee
     spreadsheetId: stored.settings?.spreadsheetId ?? '',
     sheetTitle: stored.settings?.sheetTitle ?? '',
     columns: stored.columns ?? [],
-    writtenHeaders: writtenSheetHeaders(stored),
+    // What the API will count the columns against on the next save: the row
+    // 1 it has on record, or for a config older than that, the stored
+    // columns' own headings.
+    writtenHeaders: sheetBaselineHeaders(stored),
   };
 }
 
@@ -954,15 +957,25 @@ export function IntegrationsEditor({
       if (!mountedRef.current) {
         // The card's action finished after the tab was left: "Create sheet"
         // was pressed, the author moved to Build, and the spreadsheet now
-        // exists in their Drive. It is attached to the form through the save
-        // queue (serial with every other write, retried, reported in the
-        // topbar), merged onto what the form stores now rather than written
-        // from this editor's old snapshot.
+        // exists in their Drive. It is attached to the form as an OUTSIDE
+        // write on the form's save lane (`runDestinationWrite`): one card,
+        // merged onto what the form stores at that moment.
+        //
+        // NOT as a snapshot. It was enqueued as one, and a snapshot replaces
+        // the save waiting behind it and cancels the retry of a failed one:
+        // with Salesforce switched on just before leaving and that last save
+        // failing once, only the spreadsheet was sent, the topbar said
+        // "saved" and the Salesforce change was gone. As an outside write it
+        // waits for that save (and its retries) and lands on top of it.
         const card = builtGoogleSheets(next);
         if (!card) return;
-        void enqueueIntegrationsSave(id, () => callAction(() => mergeIntegrationCardAction(id, card)), {
-          messages: { saveOffline: m.saveOffline, saveError: m.saveError, lost: m.saveLostAfterLeave },
-        });
+        void runDestinationWrite(
+          id,
+          // The merge is idempotent (it sets this one card), so a dropped
+          // connection is retried in place before the change is called lost.
+          () => callActionWithRetry(() => mergeIntegrationCardAction(id, card), { attempts: 3, baseDelayMs: 1500 }),
+          { report: { lost: m.saveLostAfterLeave } },
+        );
         return;
       }
       setSheets(next);

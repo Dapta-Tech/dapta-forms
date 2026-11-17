@@ -18,7 +18,7 @@ import {
   type SheetHeaderSync,
   type WebhookPingResult,
 } from '@/lib/admin-api';
-import { writtenSheetHeaders, type FormDestination } from '@quill/types';
+import { sheetBaselineHeaders, type FormDestination } from '@quill/types';
 
 /**
  * Save the integrations (destinations) for a form. Uses the API's PARTIAL
@@ -59,7 +59,7 @@ export async function saveIntegrationsAction(
       ok: true,
       ...(saved.formActivityError ? { formActivityError: saved.formActivityError } : {}),
       ...(saved.sheetHeaders ? { sheetHeaders: saved.sheetHeaders } : {}),
-      sheetWritten: writtenSheetHeaders(
+      sheetWritten: sheetBaselineHeaders(
         (saved.config?.destinations ?? []).find((d: { type?: string }) => d.type === 'google-sheets'),
       ),
     };

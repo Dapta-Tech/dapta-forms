@@ -17,6 +17,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDb, getAccountByCode, getFormById, listForms, migrate, seed, updateForm, type Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
+import { sheetCells, writtenSheetHeaders } from '@quill/types';
 import { FormDestinationsController } from './integrations.controller';
 import { ApiMcpBackend } from './mcp.backend.parity';
 import { AuthService } from './auth.service';
@@ -621,6 +622,64 @@ describe('a heading cleared on a column dForms already wrote keeps its place', (
     d.columns.splice(1, 1);
     await controller.putDestinations(asOwner(), formId, { destinations: [d] });
     expect(row1).toEqual(['Submitted', 'Company']);
+  });
+
+  // A config from the release before snapshots: nothing is recorded for its
+  // row 1. Its FIRST edit being a cleared middle heading used to shift the
+  // columns (there was no snapshot to hold the position against). The stored
+  // columns are the baseline for that save.
+  it('protects the very first edit of a config that has no snapshot yet', async () => {
+    await store(fromEditor(OLD)); // stored as the old release left it
+    expect(await storedSnapshot()).toBeUndefined();
+    row1 = [...OLD];
+    writes = [];
+    reads = 0;
+    const out = await controller.putDestinations(asOwner(), formId, { destinations: [cleared()] });
+    expect(writes).toEqual([]);
+    expect(row1).toEqual(OLD);
+    expect(reads).toBe(1);
+    // Row 1 was found equal to the held layout, and that is now on record...
+    expect((out as { sheetHeaders?: unknown }).sheetHeaders).toEqual({ outcome: 'unchanged' });
+    expect(await storedSnapshot()).toEqual({ spreadsheetId: SHEET, sheetTitle: 'Responses', headers: OLD });
+    // ...so the new name goes into the same position.
+    await controller.putDestinations(asOwner(), formId, {
+      destinations: [fromEditor(['Submitted', 'Work email', 'Company'])],
+    });
+    expect(row1).toEqual(['Submitted', 'Work email', 'Company']);
+  });
+
+  it('holds the position on a row 1 that is somebody else\'s, too', async () => {
+    await store(fromEditor(OLD));
+    row1 = ['Date', 'Mail', 'Org']; // hand-written headings, never dForms'
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(OLD)] });
+    writes = [];
+    const out = await controller.putDestinations(asOwner(), formId, { destinations: [cleared()] });
+    expect(writes).toEqual([]);
+    expect(row1).toEqual(['Date', 'Mail', 'Org']);
+    // Still three positions, the middle one held: what a delivered row is built from.
+    const stored = (await getFormById(db, accountId, formId))!.config as { destinations: Record<string, unknown>[] };
+    expect(sheetCells(stored.destinations[0]!.columns as never[], writtenSheetHeaders(stored.destinations[0])).map((c) => c.held)).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    expect((out as { sheetHeaders?: { outcome?: string } }).sheetHeaders?.outcome ?? 'known').toMatch(/foreign|known/);
+  });
+
+  // Two adjacent columns with the same heading: clearing the first one must
+  // not be taken for a new column in front of the second.
+  it('holds the first of two identical headings when it is cleared', async () => {
+    const TWICE = ['Submitted', 'Note', 'Note'];
+    row1 = [];
+    await store(fromEditor(TWICE));
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(TWICE)] });
+    expect(row1).toEqual(TWICE);
+    writes = [];
+    const d = fromEditor(TWICE);
+    d.columns[1] = { ...d.columns[1]!, header: '' };
+    await controller.putDestinations(asOwner(), formId, { destinations: [d] });
+    expect(writes).toEqual([]);
+    expect(row1).toEqual(TWICE);
   });
 
   it('still leaves a never-named column out of row 1', async () => {

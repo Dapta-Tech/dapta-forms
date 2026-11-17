@@ -220,6 +220,24 @@ describe('which columns a delivered row holds', () => {
     expect(body.values).toEqual([['sam@example.com', '', '42']]);
   });
 
+  it('keeps the cell under the first of two identical headings when it is cleared', async () => {
+    const fetchImpl = answers(200, OK);
+    await new GoogleSheetsDestination(
+      options({
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'X', source: 'score' },
+        ],
+        writtenHeaders: ['A', 'X', 'X'],
+      }),
+      fetchImpl,
+    ).deliver(ctx());
+    const body = JSON.parse(String(callOf(fetchImpl)[1].body)) as { values: string[][] };
+    // Three cells: the score stays under the THIRD column.
+    expect(body.values).toEqual([['sam@example.com', '', '42']]);
+  });
+
   it('still leaves out a column that never had a heading, with a row 1 recorded', async () => {
     const fetchImpl = answers(200, OK);
     await new GoogleSheetsDestination(

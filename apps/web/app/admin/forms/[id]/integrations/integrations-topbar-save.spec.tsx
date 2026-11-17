@@ -254,6 +254,64 @@ describe('an action that finishes after the tab is left', () => {
     expect(mayRead).toBe(true);
   });
 
+  // The audit's scenario on the first fix. The late result was enqueued as if
+  // it were a full snapshot, but it is one card: it replaced the save waiting
+  // behind it and cancelled the retry of a failed one. Create a sheet, switch
+  // Salesforce on, leave; the tab's last save fails once. Only the sheet was
+  // sent, the topbar said "saved", and the Salesforce change was gone.
+  it('keeps the tab\'s last save when it failed once: the Salesforce change AND the sheet are both stored', async () => {
+    let answer!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    actions.saveIntegrationsAction.mockRejectedValueOnce(new Error('network blip')).mockResolvedValue({ ok: true });
+    actions.mergeIntegrationCardAction.mockResolvedValue({ ok: true });
+    const el = await mount('form-both', sheetsOn);
+    await act(async () => createButton(el).click());
+    await edit(el); // Salesforce on
+    act(() => root!.unmount()); // leave: the terminal save goes out, and fails
+    root = null;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      answer({ ok: true, data: { ok: true, spreadsheetId: 'sheet-new', spreadsheetTitle: 'Leads', sheetTitle: 'Responses', gid: 0 } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The sheet waits for the failed save's retry instead of taking its place.
+    expect(actions.mergeIntegrationCardAction).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    // The Salesforce save was retried and landed...
+    expect(actions.saveIntegrationsAction).toHaveBeenCalledTimes(2);
+    const retried = actions.saveIntegrationsAction.mock.calls[1]![1] as { type: string; enabled?: boolean }[];
+    expect(retried.find((d) => d.type === 'salesforce')?.enabled).toBe(true);
+    // ...and THEN the sheet was merged on top of it.
+    expect(actions.mergeIntegrationCardAction).toHaveBeenCalledTimes(1);
+    expect(actions.mergeIntegrationCardAction.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      actions.saveIntegrationsAction.mock.invocationCallOrder[1]!,
+    );
+    expect(actions.mergeIntegrationCardAction.mock.calls[0]![1]).toMatchObject({
+      type: 'google-sheets',
+      settings: { spreadsheetId: 'sheet-new' },
+    });
+    expect(readIntegrationsSave('form-both')).toMatchObject({ status: 'saved' });
+    expect(readIntegrationsSave('form-both')?.lost).toBeFalsy();
+  });
+
+  it('says the change was lost when the sheet cannot be attached, after retrying it', async () => {
+    let answer!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    actions.mergeIntegrationCardAction.mockRejectedValue(new Error('network down'));
+    const el = await mount('form-orphan', sheetsOn);
+    await act(async () => createButton(el).click());
+    act(() => root!.unmount());
+    root = null;
+    await act(async () => {
+      answer({ ok: true, data: { ok: true, spreadsheetId: 'sheet-new', spreadsheetTitle: 'Leads', sheetTitle: 'Responses', gid: 0 } });
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(actions.mergeIntegrationCardAction).toHaveBeenCalledTimes(3);
+    expect(readIntegrationsSave('form-orphan')).toMatchObject({ status: 'error', lost: true, detail: m.saveLostAfterLeave });
+  });
+
   it('says nothing when the late action failed: there is nothing to save', async () => {
     let answer!: (v: unknown) => void;
     actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
