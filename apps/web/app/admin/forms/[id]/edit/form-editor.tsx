@@ -65,7 +65,7 @@ import { stepFromGalleryItem, stepListLabel, type GalleryItem } from './_compone
 import { TEMPLATES } from './_components/templates';
 import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
-import { useIntegrationsSave, worseSaveStatus } from '@/lib/integrations-save-status';
+import { saveStatusReason, useIntegrationsSave, worseSaveStatus } from '@/lib/integrations-save-status';
 import './_components/builder.css';
 
 const AUTOSAVE_MS = 900;
@@ -451,10 +451,7 @@ export function FormEditor({
   // says "Saved" while the integrations failed to save.
   const integrationsSave = useIntegrationsSave(id);
   const status = worseSaveStatus(autosave.status, integrationsSave?.status);
-  const statusDetailText =
-    integrationsSave && integrationsSave.status === status && status !== 'saved'
-      ? (integrationsSave.detail ?? null)
-      : autosave.detail;
+  const statusDetailText = saveStatusReason(status, autosave, integrationsSave);
 
   // --- Crash recovery: work the backup caught that never reached the server --
   const [recovery, setRecovery] = useState<EditorSnapshot | null>(null);

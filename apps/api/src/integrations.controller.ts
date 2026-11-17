@@ -1427,11 +1427,29 @@ const PERMANENT_SYNC_FAILURES = new Set(['not_connected', 'not_found', 'forbidde
  */
 const BROKEN_SYNC_TTL_MS = 15 * 60_000;
 
-function brokenOf(entry: Record<string, unknown> | undefined): SheetHeaderBroken | null {
+function brokenOf(
+  entry: Record<string, unknown> | undefined,
+  now: number = Date.now(),
+): SheetHeaderBroken | null {
   const raw = isRecord(entry?.settings) ? entry.settings.headerBroken : undefined;
   const base = snapshotOf(entry ? { settings: { headerSnapshot: raw } } : undefined);
   if (!base || !isRecord(raw) || typeof raw.at !== 'number' || typeof raw.reason !== 'string') return null;
+  // A mark from the future is not one this API wrote (it stamps `Date.now()`),
+  // and honoring it would skip Google until that date: treated as absent. A
+  // minute of slack covers clocks between replicas.
+  if (!Number.isFinite(raw.at) || raw.at > now + 60_000) return null;
   return { ...base, reason: raw.reason, at: raw.at };
+}
+
+/** The keys of a Google Sheets entry's settings that only the API writes. */
+const API_SHEETS_KEYS = ['headerSnapshot', 'headerForeign', 'headerBroken'] as const;
+
+/** A destination as a client sent it, with the API-owned Sheets keys removed. */
+function withoutClientSheetsState(entry: unknown): unknown {
+  if (!isRecord(entry) || entry.type !== 'google-sheets' || !isRecord(entry.settings)) return entry;
+  const settings = { ...entry.settings };
+  for (const key of API_SHEETS_KEYS) delete settings[key];
+  return { ...entry, settings };
 }
 
 const sameList = (a: string[], b: string[]): boolean =>
@@ -1500,7 +1518,13 @@ export class FormDestinationsController {
     // a form exists in the portal that nothing points at. A HubSpot failure
     // never fails the save: an author must be able to edit their mappings while
     // a portal is unreachable or has not granted the scopes.
-    const mirror = await this.syncMirror(p.accountId, before.name, destinations, stored);
+    // The Sheets bookkeeping is the API's own on EVERY Sheets entry, not just
+    // the first one the header sync looks after: a second entry must not
+    // carry a forged snapshot or failure mark into the store, where it would
+    // be trusted the moment the first entry is removed. `syncSheetHeaders`
+    // sets the first entry's from what is stored.
+    const incoming = destinations.map(withoutClientSheetsState);
+    const mirror = await this.syncMirror(p.accountId, before.name, incoming, stored);
     // Same rule for the spreadsheet's header row: brought in line BEFORE
     // storing, so the snapshot of what was written lands in this same write.
     const sheets = await this.syncSheetHeaders(p.accountId, mirror.destinations, stored);
@@ -1619,7 +1643,9 @@ export class FormDestinationsController {
       const current = list[index] as Record<string, unknown>;
       const target = sheetTargetOf(current);
       if (!target || target.spreadsheetId !== where.spreadsheetId || target.sheetTitle !== where.sheetTitle) return;
-      if (attempt > 0 && JSON.stringify(snapshotOf(current)) !== JSON.stringify(readSnapshot)) return;
+      // A snapshot recorded since this request read one is newer than this
+      // one and wins, on the first attempt as much as on the retry.
+      if (JSON.stringify(snapshotOf(current)) !== JSON.stringify(readSnapshot)) return;
       const settings: Record<string, unknown> = { ...(isRecord(current.settings) ? current.settings : {}) };
       if (state.snapshot) settings.headerSnapshot = state.snapshot;
       if (state.foreign) settings.headerForeign = state.foreign;

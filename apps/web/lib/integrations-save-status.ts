@@ -67,3 +67,21 @@ export function worseSaveStatus<T extends SaveRankKey>(form: T, integrations: Sa
   if (!integrations) return form;
   return SAVE_RANK[integrations] > SAVE_RANK[form] ? integrations : form;
 }
+
+/**
+ * The reason shown under the topbar's indicator: the reason of whichever save
+ * is at the state shown, and BOTH when both are (the form's draft and the
+ * integrations can fail for different reasons, and naming one hides the other).
+ */
+export function saveStatusReason(
+  shown: string,
+  form: { status: string; detail: string | null },
+  integrations: IntegrationsSaveState | undefined,
+): string | null {
+  const reasons: string[] = [];
+  if (form.status === shown && form.detail?.trim()) reasons.push(form.detail.trim());
+  if (integrations && integrations.status === shown && shown !== 'saved' && integrations.detail?.trim()) {
+    reasons.push(integrations.detail.trim());
+  }
+  return reasons.length ? reasons.join(' · ') : null;
+}

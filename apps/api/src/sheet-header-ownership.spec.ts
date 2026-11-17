@@ -500,3 +500,72 @@ describe('a sync that fails for good is not paid for on every save', () => {
     expect(calls).toBeGreaterThan(after);
   });
 });
+
+describe('the API-owned Sheets keys, on every Sheets entry (set_destinations goes through putDestinations)', () => {
+  it('strips a forged snapshot and failure mark from a SECOND entry, so it syncs normally once it is the first', async () => {
+    row1 = ['Name', 'Phone']; // somebody's own heading row
+    const forged = { spreadsheetId: SHEET, sheetTitle: 'Responses', headers: ['Name', 'Phone'] };
+    const sheetsA = { ...fromEditor(OLD), settings: { spreadsheetId: 'sheet-A', sheetTitle: 'Responses' } };
+    const sheetsB = {
+      ...fromEditor(OLD),
+      settings: {
+        spreadsheetId: SHEET,
+        sheetTitle: 'Responses',
+        headerSnapshot: forged,
+        headerBroken: { ...forged, reason: 'forbidden', at: Date.now() + 10 * 365 * 24 * 3600_000 },
+      },
+    };
+    await controller.putDestinations(asOwner(), formId, { destinations: [sheetsA, sheetsB] });
+    const stored = async () =>
+      (((await getFormById(db, accountId, formId))!.config as { destinations: Record<string, unknown>[] }).destinations);
+    const storedB = (await stored())[1]!.settings as Record<string, unknown>;
+    expect(storedB).not.toHaveProperty('headerSnapshot');
+    expect(storedB).not.toHaveProperty('headerBroken');
+
+    // Remove A: B is the first Sheets entry now. It must ask Google (the
+    // forged far-future failure mark is gone) and must NOT overwrite the
+    // foreign row 1 (the forged snapshot claiming it is gone too).
+    reads = 0;
+    const out = await controller.putDestinations(asOwner(), formId, {
+      destinations: [{ ...sheetsB, settings: { spreadsheetId: SHEET, sheetTitle: 'Responses' } }],
+    });
+    expect(reads).toBeGreaterThan(0);
+    expect((out as { sheetHeaders?: { outcome: string } }).sheetHeaders?.outcome).toBe('foreign');
+    expect(row1).toEqual(['Name', 'Phone']);
+  });
+
+  it('ignores a stored failure mark dated in the future', async () => {
+    await store({
+      ...fromEditor(OLD),
+      settings: {
+        spreadsheetId: SHEET,
+        sheetTitle: 'Responses',
+        headerBroken: {
+          spreadsheetId: SHEET,
+          sheetTitle: 'Responses',
+          headers: ['Submitted', 'Work email', 'Company'],
+          reason: 'forbidden',
+          at: Date.now() + 3600_000,
+        },
+      },
+    });
+    reads = 0;
+    await controller.putDestinations(asOwner(), formId, {
+      destinations: [fromEditor(['Submitted', 'Work email', 'Company'])],
+    });
+    expect(reads).toBeGreaterThan(0);
+  });
+});
+
+describe('recording a snapshot never replaces a newer one', () => {
+  it('gives up on the FIRST attempt when a newer snapshot was recorded since the read', async () => {
+    const older = { spreadsheetId: SHEET, sheetTitle: 'Responses', headers: OLD };
+    const newer = { spreadsheetId: SHEET, sheetTitle: 'Responses', headers: ['Submitted', 'Work email', 'Company'] };
+    await store({ ...fromEditor(OLD), settings: { spreadsheetId: SHEET, sheetTitle: 'Responses', headerSnapshot: newer } });
+    // The request read `older`; a save recorded `newer` before it got here.
+    await (controller as unknown as {
+      recordSheetState: (a: string, f: string, s: unknown, r: unknown) => Promise<void>;
+    }).recordSheetState(accountId, formId, { snapshot: older, foreign: null }, older);
+    expect(await storedSnapshot()).toEqual(newer);
+  });
+});
