@@ -108,6 +108,12 @@ export interface DestinationRefusal {
   type: ConnectedDestinationType;
   message: string;
   integrationsUrl: string;
+  /**
+   * True when this DEPLOYMENT cannot connect the provider at all (Google
+   * Sheets without a Google OAuth client): there is nothing to connect, so the
+   * integrations page is no help and the same call will keep being refused.
+   */
+  unavailable: boolean;
 }
 
 export interface ConnectionVerdict {
@@ -277,15 +283,22 @@ export function connectionVerdict(input: {
     if (needsConnection(type) && !input.connected.has(type)) {
       const mine = canonical(raw, input.strip);
       const unchanged = storedCanonical.some((s) => isDeepStrictEqual(s, mine));
+      const unavailable = input.unavailable?.has(type) ?? false;
       if (input.agent && !unchanged) {
-        refusal ??= { index, type, message: notConnectedMessage(type, input.integrationsUrl, index, input.unavailable?.has(type) ?? false), integrationsUrl: input.integrationsUrl };
+        refusal ??= {
+          index,
+          type,
+          message: notConnectedMessage(type, input.integrationsUrl, index, unavailable),
+          integrationsUrl: input.integrationsUrl,
+          unavailable,
+        };
         return;
       }
       warnings.push({
         code: INTEGRATION_NOT_CONNECTED,
         index,
         type,
-        message: savedMessage(type, input.integrationsUrl, unchanged, input.unavailable?.has(type) ?? false),
+        message: savedMessage(type, input.integrationsUrl, unchanged, unavailable),
         integrationsUrl: input.integrationsUrl,
       });
       return;

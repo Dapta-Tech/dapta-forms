@@ -1559,6 +1559,7 @@ export class FormDestinationsController {
         provider: verdict.refusal.type,
         index: verdict.refusal.index,
         integrationsUrl: verdict.refusal.integrationsUrl,
+        unavailable: verdict.refusal.unavailable,
       });
     }
     const mirror = await this.syncMirror(p.accountId, before.name, incoming, stored);

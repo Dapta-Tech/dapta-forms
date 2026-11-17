@@ -171,16 +171,21 @@ async function calendlyTypes(ctx: ToolContext): Promise<{ data: EventTypesData; 
 
 const eventTypesInput = z.object({
   workspace_id: workspaceId,
+  // Required, with no default on purpose: a scheduler step the editor adds is
+  // born dcal while a step with no provider reads as calendly, so neither
+  // default would be right for every caller. The caller names the provider of
+  // the step it is filling.
   provider: z
     .enum(['calendly', 'dcal'])
-    .default('calendly')
-    .describe("The scheduler provider: calendly (the workspace's connected Calendly account) or dcal. New scheduler steps default to dcal."),
+    .describe(
+      "Required. The scheduler provider of the step being filled: calendly (the workspace's connected Calendly account) or dcal. There is no default: new scheduler steps default to dcal, and a step with no provider reads as calendly.",
+    ),
 });
 
 export const listEventTypes: ToolDef = {
   name: 'list_event_types',
   title: 'List scheduler event types',
-  description: `The event types a scheduler step can embed (scheduler.url), for one provider. calendly: the event types of the connected Calendly account, with their booking link, duration and questions; enabled false when Calendly is not connected. dcal: not readable over MCP. ${DCAL_NEEDS_SESSION} The answer is enabled false with that reason, and says whether this deployment has dCal at all. ${DASHBOARD_ONLY}`,
+  description: `The event types a scheduler step can embed (scheduler.url), for the provider named in the required provider argument (no default: name the step's scheduler.provider). calendly: the event types of the connected Calendly account, with their booking link, duration and questions; enabled false when Calendly is not connected. dcal: not readable over MCP. ${DCAL_NEEDS_SESSION} The answer is enabled false with that reason, and says whether this deployment has dCal at all. ${DASHBOARD_ONLY}`,
   write: false,
   workspace: 'required',
   annotations: READ_PROVIDER,

@@ -1,6 +1,6 @@
 import * as z from 'zod4';
 import { actingAs, workspaceId, type ToolDef } from '../tools';
-import { untrusted } from '../support';
+import { INTEGRATION_UNAVAILABLE_HINT, isUnavailableProvider, untrusted } from '../support';
 import { CONFIRM_FIRST, FORM_MISSING, attempt, formIdArg, plural } from './shared';
 
 /** Where a form's responses go: its webhooks, its HubSpot destination and its spreadsheet. */
@@ -37,7 +37,7 @@ export const setDestinations: ToolDef = {
     "The list usually starts from get_form's `destinations` (the live form's, with ids, secrets masked), keeping every entry that is not being changed, with its id.",
     'Signing secrets come back masked. A masked secret sent back unchanged keeps the stored one; a new string replaces it; null removes it.',
     'A webhook URL needs https. ping_webhook sends one test delivery.',
-    "Google Sheets and Salesforce deliver through the workspace's own connection (list_integrations shows it). A new or changed enabled entry for a provider that is not connected is refused with INTEGRATION_NOT_CONNECTED, whose message holds the dForms integrations page: connecting Google or Salesforce is a consent screen that only works in the person's browser, so the link goes to the user and the save is tried again afterwards. An entry sent back exactly as get_form returned it is kept even when its provider was disconnected since, and `warnings` names it. A spreadsheet entry only writes to a spreadsheet dForms created or the user picked in the dashboard (Google's drive.file access), so `spreadsheetId` comes from get_form, not from a link the user pastes.",
+    "Google Sheets and Salesforce deliver through the workspace's own connection (list_integrations shows it). A new or changed enabled entry for a provider that is not connected is refused with INTEGRATION_NOT_CONNECTED, whose message holds the dForms integrations page: connecting Google or Salesforce is a consent screen that only works in the person's browser, so the link goes to the user and the save is tried again afterwards. On a deployment that cannot connect the provider at all (list_integrations lists it in unavailable), the refusal says so instead: there is no page and no retry, and the entry is left out or switched off until whoever runs the deployment sets the provider up. An entry sent back exactly as get_form returned it is kept even when its provider was disconnected since, and `warnings` names it. A spreadsheet entry only writes to a spreadsheet dForms created or the user picked in the dashboard (Google's drive.file access), so `spreadsheetId` comes from get_form, not from a link the user pastes.",
     "For a Google Sheets destination, the save also brings row 1 of the spreadsheet in line with the columns' headers, but only when row 1 is empty or still holds what dForms wrote there. `sheet_header_row` says what happened: `foreign` means row 1 holds something else and was left untouched (the responses still go in, under whatever row 1 says), `failed` means Google could not be reached or refused, and neither undoes the save. Replacing a row 1 that is not dForms' own is done by the author in the dashboard, behind a confirmation.",
     CONFIRM_FIRST,
   ].join(' '),
@@ -95,7 +95,8 @@ export const setDestinations: ToolDef = {
   }),
   async run(args: z.infer<typeof setDestinationsInput>, ctx) {
     const out = await attempt(ctx.backend.setDestinations(actingAs(ctx), args.form_id, args.destinations), FORM_MISSING, {
-      INTEGRATION_NOT_CONNECTED: NOT_CONNECTED_HINT,
+      // A provider this deployment cannot connect at all has no page and no retry.
+      INTEGRATION_NOT_CONNECTED: (e) => (isUnavailableProvider(e) ? INTEGRATION_UNAVAILABLE_HINT : NOT_CONNECTED_HINT),
     });
     const warnings = (out.warnings ?? []).map((w) => ({
       code: w.code,
