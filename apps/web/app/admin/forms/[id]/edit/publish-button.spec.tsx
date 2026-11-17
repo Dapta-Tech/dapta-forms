@@ -88,9 +88,9 @@ const element = (opts: MountOpts) => (
   />
 );
 
-async function mount(opts: MountOpts = {}) {
+async function mount(opts: MountOpts = {}, into: HTMLElement = document.body) {
   host = document.createElement('div');
-  document.body.append(host);
+  into.append(host);
   root = createRoot(host);
   await act(async () => root.render(element(opts)));
 }
@@ -663,6 +663,153 @@ describe('the reason under a blocked Publish', () => {
       main().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     expect(reason()!.className).toBe('sr-only');
+  });
+
+  it('never takes pointer events while it is showing', async () => {
+    await mount({ hasQuestions: false });
+    await click(main());
+    expect(reason()!.className).toMatch(/\bpointer-events-none\b/);
+    await hover('mouseover');
+    expect(reason()!.className).toMatch(/\bpointer-events-none\b/);
+  });
+
+  /** A pointer going down somewhere: on a phone, the next tap. */
+  const pointerDown = (target: EventTarget, pointerType = 'touch') =>
+    act(async () => {
+      const event = new Event('pointerdown', { bubbles: true });
+      Object.defineProperty(event, 'pointerType', { value: pointerType });
+      target.dispatchEvent(event);
+    });
+
+  it('opened by a press, closes on the next pointer down outside the button, not on one inside it', async () => {
+    await mount({ hasQuestions: false });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    await click(main());
+    expect(reason()!.dataset.openedBy).toBe('press');
+
+    // Tapping the button again is not "outside": it stays (and restarts its timer).
+    await pointerDown(main());
+    expect(reason()!.dataset.open).toBe('true');
+
+    await pointerDown(outside);
+    expect(reason()!.className).toBe('sr-only');
+    expect(reason()!.dataset.open).toBeUndefined();
+  });
+
+  it('opened by a press, closes by itself after about four seconds, and a new press restarts the wait', async () => {
+    vi.useFakeTimers();
+    try {
+      await mount({ saveStatus: 'error' });
+      await click(main());
+      expect(reason()!.dataset.open).toBe('true');
+      await act(async () => vi.advanceTimersByTime(3900));
+      expect(reason()!.dataset.open).toBe('true');
+      await act(async () => vi.advanceTimersByTime(200));
+      expect(reason()!.className).toBe('sr-only');
+
+      await click(main());
+      await act(async () => vi.advanceTimersByTime(3000));
+      await click(main());
+      await act(async () => vi.advanceTimersByTime(3000));
+      expect(reason()!.dataset.open).toBe('true');
+      await act(async () => vi.advanceTimersByTime(1100));
+      expect(reason()!.className).toBe('sr-only');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('opened by a press, closes on a scroll', async () => {
+    await mount({ hasQuestions: false });
+    await click(main());
+    expect(reason()!.dataset.open).toBe('true');
+    await act(async () => {
+      document.body.dispatchEvent(new Event('scroll'));
+    });
+    expect(reason()!.className).toBe('sr-only');
+  });
+
+  it('closes on Escape when it was opened by hover and the button never had focus', async () => {
+    await mount({ saveStatus: 'conflict' });
+    const elsewhere = document.createElement('input');
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    await hover('mouseover');
+    expect(reason()!.dataset.openedBy).toBe('hover');
+    expect(document.activeElement).toBe(elsewhere);
+    await act(async () => {
+      elsewhere.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(reason()!.className).toBe('sr-only');
+  });
+
+  it('opened by hover or by keyboard focus, does NOT close by itself or on an outside pointer down', async () => {
+    vi.useFakeTimers();
+    try {
+      await mount({ hasQuestions: false });
+      // A mouse over the button, then a click with that mouse: still a hover.
+      await hover('mouseover');
+      await pointerDown(main(), 'mouse');
+      await click(main());
+      expect(reason()!.dataset.openedBy).toBe('hover');
+      await act(async () => vi.advanceTimersByTime(10_000));
+      expect(reason()!.dataset.open).toBe('true');
+      await hover('mouseout');
+      expect(reason()!.className).toBe('sr-only');
+
+      // Keyboard focus, then Enter (a click): it stays for as long as the focus does.
+      vi.spyOn(main(), 'matches').mockImplementation((sel: string) => sel === ':focus-visible');
+      await act(async () => main().focus());
+      expect(reason()!.dataset.openedBy).toBe('focus');
+      await click(main());
+      expect(reason()!.dataset.openedBy).toBe('focus');
+      await act(async () => vi.advanceTimersByTime(10_000));
+      await pointerDown(document.body);
+      expect(reason()!.dataset.open).toBe('true');
+      await act(async () => main().blur());
+      expect(reason()!.className).toBe('sr-only');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('hangs under the whole top bar when the bar has a second row below the pill, and stays in the viewport', async () => {
+    // A phone: the bar wraps, tools on the second row. Bar 0..89, pill 6..42
+    // with its right edge at 150, tooltip 224 wide: left to itself it would
+    // sit over the tools and start at x = -74.
+    const rect = (r: Partial<DOMRect>) => DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0, ...r });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === 'HEADER') return rect({ x: 0, y: 0, width: 320, height: 89 });
+      if (this.dataset.testid === 'publish-control') return rect({ x: 10, y: 6, width: 140, height: 36 });
+      if (this.dataset.testid === 'publish-reason') return rect({ x: 0, y: 0, width: 224, height: 40 });
+      return rect({ x: 900, y: 10, width: 32, height: 36 });
+    });
+    const bar = document.createElement('header');
+    document.body.append(bar);
+    await mount({ hasQuestions: false }, bar);
+    await click(main());
+    // 89 - 42 = 47px of bar below the pill: the tooltip starts under all of it.
+    expect(reason()!.style.top).toBe('calc(100% + 47px)');
+    // 150 - 224 = -74; nudged right to keep 8px from the edge.
+    expect(reason()!.style.transform).toBe('translateX(82px)');
+    expect(reason()!.className).toMatch(/max-w-\[calc\(100vw-1rem\)\]/);
+  });
+
+  it('stays right under the pill when the bar is a single row', async () => {
+    const rect = (r: Partial<DOMRect>) => DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0, ...r });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === 'HEADER') return rect({ x: 0, y: 0, width: 1440, height: 56 });
+      if (this.dataset.testid === 'publish-control') return rect({ x: 1270, y: 10, width: 154, height: 36 });
+      if (this.dataset.testid === 'publish-reason') return rect({ x: 0, y: 0, width: 224, height: 40 });
+      return rect({ x: 900, y: 10, width: 32, height: 36 });
+    });
+    const bar = document.createElement('header');
+    document.body.append(bar);
+    await mount({ hasQuestions: false }, bar);
+    await hover('mouseover');
+    expect(reason()!.style.top).toBe('calc(100% + 0px)');
+    expect(reason()!.style.transform).toBe('');
   });
 
   it('is absent when Publish can be pressed, and a press publishes', async () => {

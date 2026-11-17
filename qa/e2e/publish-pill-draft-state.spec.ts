@@ -69,7 +69,8 @@ test('a webhook with no URL does not hold the pill: publish, then it reads Publi
 test('a blocked Publish is focusable and says why', async ({ page, request }) => {
   const form = await createForm(request, `qa-pill-empty-${Date.now()}`, []);
   await page.goto(`/admin/forms/${form.id}/edit`);
-  await expect(pill(page)).toHaveAttribute('data-state', 'empty', { timeout: 20_000 });
+  await expect(pill(page)).toBeVisible({ timeout: 20_000 });
+  await expect(pill(page)).toHaveAttribute('data-state', 'empty');
 
   const button = publishBtn(page);
   await expect(button).toHaveAccessibleName('Publish');
@@ -88,4 +89,61 @@ test('a blocked Publish is focusable and says why', async ({ page, request }) =>
     publishedAt: number | null;
   };
   expect(stored.publishedAt).toBeNull();
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 320, height: 700 }, hasTouch: true });
+
+  test('the reason opened by a tap covers no tool, takes no taps, and goes away', async ({ page, request }) => {
+    const form = await createForm(request, `qa-pill-phone-${Date.now()}`, []);
+    await page.goto(`/admin/forms/${form.id}/edit`);
+    // Visible first: while the page streams in, the pill is in the DOM (so its
+    // attributes read) inside a hidden boundary, with no box to tap.
+    await expect(pill(page)).toBeVisible({ timeout: 20_000 });
+    await expect(pill(page)).toHaveAttribute('data-state', 'empty');
+    const reason = page.getByTestId('publish-reason');
+    // A real touch at the button's centre: `tap()` refuses an aria-disabled target.
+    const tapPublish = async () => {
+      const box = (await publishBtn(page).boundingBox())!;
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    };
+
+    await tapPublish();
+    await expect(reason).toHaveAttribute('data-opened-by', 'press');
+    const geometry = await page.evaluate(() => {
+      const tip = document.querySelector('[data-testid="publish-reason"]')!;
+      const t = tip.getBoundingClientRect();
+      const bar = document.querySelector('[data-testid="editor-header"]')!;
+      const control = document.querySelector('[data-testid="publish-control"]')!;
+      const covered = [...bar.querySelectorAll('button, a, input')]
+        .filter((el) => !control.contains(el))
+        .map((el) => el.getBoundingClientRect())
+        .filter((r) => r.width > 0 && !(r.right <= t.left || r.left >= t.right || r.bottom <= t.top || r.top >= t.bottom));
+      return {
+        left: t.left,
+        right: t.right,
+        top: t.top,
+        barBottom: bar.getBoundingClientRect().bottom,
+        covered: covered.length,
+        pointerEvents: getComputedStyle(tip).pointerEvents,
+      };
+    });
+    // The top bar is two rows here; the reason hangs under both, inside the screen.
+    expect(geometry.top).toBeGreaterThanOrEqual(geometry.barBottom);
+    expect(geometry.covered).toBe(0);
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(320);
+    expect(geometry.pointerEvents).toBe('none');
+
+    // A tool takes the tap while the reason is up, and that tap puts it away.
+    await page.getByTestId('toolbar-preview').tap();
+    await expect(page.getByTestId('preview-viewport')).toBeVisible();
+    await expect(reason).not.toHaveAttribute('data-open', 'true');
+    await page.keyboard.press('Escape');
+
+    // Left alone, it goes by itself.
+    await tapPublish();
+    await expect(reason).toHaveAttribute('data-open', 'true');
+    await expect(reason).not.toHaveAttribute('data-open', 'true', { timeout: 6_000 });
+  });
 });

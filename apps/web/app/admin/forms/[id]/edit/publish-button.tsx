@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { getMessages, t } from '@quill/shared';
 import {
   publishFormAction,
@@ -31,6 +31,18 @@ const SEGMENT =
   "relative inline-flex shrink-0 items-center justify-center text-inherit transition-colors focus-visible:!outline-hidden after:pointer-events-none after:absolute after:inset-[3px] after:rounded-full after:content-[''] focus-visible:after:shadow-[inset_0_0_0_2px_currentColor]";
 
 type LabelKey = 'publish' | 'published' | 'saving' | 'publishing' | 'reverting';
+
+/**
+ * How the reason under a blocked Publish came to be showing, because each way
+ * in has its own way out: `hover` leaves with the pointer, `focus` with the
+ * focus, and `press` (a tap: no hover to end, and on iOS no focus either) on
+ * the next pointer down elsewhere, on a scroll, or by itself after a moment.
+ */
+type ReasonOpen = false | 'hover' | 'focus' | 'press';
+/** How long a reason opened by a press stays up on its own. */
+const REASON_PRESS_MS = 4000;
+/** The least the reason keeps clear of the viewport's edges. */
+const REASON_EDGE_PX = 8;
 
 /**
  * The editor's explicit Publish control for the draft→publish flow. Autosave
@@ -144,8 +156,17 @@ export function PublishButton({
   const [previousAt, setPreviousAt] = useState<number | null>(initialPreviousPublishedAt);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const reasonId = useId();
-  /** Whether the reason under a blocked Publish is showing (hover, keyboard focus, or a press). */
-  const [reasonOpen, setReasonOpen] = useState(false);
+  /** Whether the reason under a blocked Publish is showing, and what opened it. */
+  const [reasonOpen, setReasonOpen] = useState<ReasonOpen>(false);
+  /** Bumped by every press that shows the reason, so each one restarts its timer. */
+  const [reasonPress, setReasonPress] = useState(0);
+  /** Measured each time it opens: how far below the pill it hangs, and how far it is nudged right. */
+  const [reasonPlace, setReasonPlace] = useState({ drop: 0, shift: 0 });
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLButtonElement>(null);
+  const reasonRef = useRef<HTMLSpanElement>(null);
+  /** What the last pointer down on the main half was: `mouse`, `touch` or `pen`. */
+  const lastPointer = useRef<string | null>(null);
   const { confirm, dialog } = useConfirmDialog();
   const busy = publishing || reverting;
   /** `saveCount` at the moment of the last successful publish; -1 = none yet. */
@@ -246,6 +267,37 @@ export function PublishButton({
     }
   }
 
+  // Escape puts the reason away whenever it is showing, wherever the focus is:
+  // opened by hover alone, the button never had it.
+  useEffect(() => {
+    if (!reasonOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setReasonOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [reasonOpen]);
+
+  // Opened by a press, nothing else will close it: a tap leaves no hover to
+  // end, and iOS Safari does not focus a button on tap, so there is no blur
+  // either. So: the next pointer down anywhere but the button, any scroll, or
+  // a few seconds, whichever comes first.
+  useEffect(() => {
+    if (reasonOpen !== 'press') return;
+    const close = () => setReasonOpen(false);
+    const onDown = (e: Event) => {
+      if (!mainRef.current?.contains(e.target as Node)) close();
+    };
+    const timer = window.setTimeout(close, REASON_PRESS_MS);
+    document.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('scroll', close, { capture: true, passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('scroll', close, { capture: true });
+    };
+  }, [reasonOpen, reasonPress]);
+
   const canRevert = previousAt != null && !busy;
   /**
    * What the pill is saying. With no draft on the server yet: `saving` while
@@ -291,6 +343,33 @@ export function PublishButton({
         : state === 'saving'
           ? 'saving'
           : 'publish';
+  // Where the reason goes, measured rather than assumed. Under the pill by
+  // default. When the top bar has more below the pill's row (it wraps into two
+  // rows below `lg`, tools on the second), it hangs under the WHOLE bar instead,
+  // so it never lies over Preview and the link tools. And it is nudged right if
+  // its left edge would leave the viewport.
+  const hasReason = reason != null;
+  useLayoutEffect(() => {
+    if (!reasonOpen || !hasReason) return;
+    const measure = () => {
+      const wrap = wrapperRef.current;
+      const tip = reasonRef.current;
+      if (!wrap || !tip) return;
+      const pill = wrap.getBoundingClientRect();
+      const bar = wrap.closest('header');
+      const below = bar ? bar.getBoundingClientRect().bottom - pill.bottom : 0;
+      const drop = below >= pill.height / 2 ? below : 0;
+      // The tip is right-aligned to the pill, so its left edge is known without
+      // reading back a position this effect may itself have shifted.
+      const left = pill.right - tip.getBoundingClientRect().width;
+      const shift = Math.max(0, REASON_EDGE_PX - left);
+      setReasonPlace((prev) => (prev.drop === drop && prev.shift === shift ? prev : { drop, shift }));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [reasonOpen, hasReason]);
+
   // Every label the main half can show, stacked in one grid cell so the half is
   // always as wide as the widest of them: the pill never resizes (and shifts the
   // topbar) when it flips between states. Only the current one is visible, and
@@ -317,6 +396,7 @@ export function PublishButton({
     // `font-semibold` and set its body text at 600.
     <>
       <div
+        ref={wrapperRef}
         data-tour="publish"
         data-testid="publish-control"
         data-state={state}
@@ -331,9 +411,20 @@ export function PublishButton({
           type="button"
           // Pressing a blocked Publish shows why instead of doing nothing: on a
           // touch screen there is no hover and no keyboard focus to do it.
+          ref={mainRef}
+          onPointerDown={(e) => {
+            lastPointer.current = e.pointerType;
+          }}
           onClick={() => {
             if (blocked) {
-              setReasonOpen(reason != null);
+              if (reason == null) return;
+              // Already showing for a reason that ends by itself (the keyboard's
+              // focus, a mouse that is still over it): leave it be. Anything
+              // else is a press, with its own ways out.
+              setReasonOpen((open) =>
+                open === 'focus' || (open === 'hover' && lastPointer.current === 'mouse') ? open : 'press',
+              );
+              setReasonPress((n) => n + 1);
               return;
             }
             setReasonOpen(false);
@@ -342,16 +433,13 @@ export function PublishButton({
           aria-disabled={blocked || undefined}
           aria-busy={busy || undefined}
           aria-describedby={reason ? reasonId : undefined}
-          onMouseEnter={() => setReasonOpen(true)}
+          onMouseEnter={() => setReasonOpen((open) => open || 'hover')}
           onMouseLeave={() => setReasonOpen(false)}
           onFocus={(e) => {
             // Keyboard focus only: a click focuses too, and has its own branch above.
-            if (e.currentTarget.matches(':focus-visible')) setReasonOpen(true);
+            if (e.currentTarget.matches(':focus-visible')) setReasonOpen('focus');
           }}
           onBlur={() => setReasonOpen(false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setReasonOpen(false);
-          }}
           data-testid="publish-button"
           className={cn(
             SEGMENT,
@@ -461,16 +549,28 @@ export function PublishButton({
             is a reason, so a screen reader has the description the moment the
             button takes focus; drawn as a tooltip only on hover, keyboard
             focus or a press. Its own weight and colours: it sits inside the
-            pill, which is semibold and may be green. */}
+            pill, which is semibold and may be green. `pointer-events-none`:
+            it is something to read, and whatever lies under it (on a phone,
+            the first thing below the top bar) must still take the tap. */}
         {reason ? (
           <span
+            ref={reasonRef}
             id={reasonId}
             role="tooltip"
             data-testid="publish-reason"
-            data-open={reasonOpen || undefined}
+            data-open={reasonOpen ? 'true' : undefined}
+            data-opened-by={reasonOpen || undefined}
+            style={
+              reasonOpen
+                ? {
+                    top: `calc(100% + ${reasonPlace.drop}px)`,
+                    transform: reasonPlace.shift ? `translateX(${reasonPlace.shift}px)` : undefined,
+                  }
+                : undefined
+            }
             className={
               reasonOpen
-                ? 'absolute right-0 top-full z-50 mt-1.5 w-56 cursor-default whitespace-normal rounded-md border border-border bg-popover px-2.5 py-2 text-left text-xs font-normal leading-relaxed text-popover-foreground shadow-lg'
+                ? 'pointer-events-none absolute right-0 z-50 mt-1.5 w-56 max-w-[calc(100vw-1rem)] whitespace-normal rounded-md border border-border bg-popover px-2.5 py-2 text-left text-xs font-normal leading-relaxed text-popover-foreground shadow-lg'
                 : 'sr-only'
             }
           >
