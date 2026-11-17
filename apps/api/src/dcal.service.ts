@@ -269,20 +269,26 @@ export class DcalService {
       if (e.hidden === true) continue;
       out.push(this.toDto(e, personalUrl(e.slug), null));
     }
-    // Bounded on purpose. One sequential call per team, each with its own
-    // timeout, can outlive the browser's 15s abort and leave the request
-    // hanging; an account with many teams is the case that does it.
-    for (const team of (teams ?? []).slice(0, MAX_TEAMS)) {
-      if (!team.id || !team.slug) continue;
-      const events = await this.call<DcalEventType[]>(
-        bearer,
-        `/v1/teams/${encodeURIComponent(team.id)}/event-types`,
-        options.workspaceId,
-      );
+    // Bounded AND concurrent. Bounded alone was not enough: one call per team
+    // in sequence, each with its own timeout, made the worst case twenty
+    // timeouts end to end, far past the browser's 15s abort. In parallel the
+    // worst case is one timeout, whatever the number of teams.
+    const listed = (teams ?? []).slice(0, MAX_TEAMS).filter((team) => team.id && team.slug);
+    const perTeam = await Promise.all(
+      listed.map((team) =>
+        this.call<DcalEventType[]>(
+          bearer,
+          `/v1/teams/${encodeURIComponent(team.id!)}/event-types`,
+          options.workspaceId,
+        ),
+      ),
+    );
+    for (const [i, team] of listed.entries()) {
+      const events = perTeam[i];
       for (const e of events ?? []) {
         if (!e.slug || !e.id || e.hidden === true) continue;
         out.push(
-          this.toDto(e, `${appUrl}/${enc(code)}/team/${enc(team.slug)}/${enc(e.slug)}`, team.name?.trim() || null),
+          this.toDto(e, `${appUrl}/${enc(code)}/team/${enc(team.slug!)}/${enc(e.slug)}`, team.name?.trim() || null),
         );
       }
     }

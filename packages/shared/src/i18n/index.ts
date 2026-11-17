@@ -2049,6 +2049,8 @@ export interface FormsMessages {
         /** A required Lead field nothing feeds, and the value a new Lead gets there. */
         requiredFallback: string;
         companyFallback: string;
+        /** Org-required Lead fields nothing fills: every new Lead will be refused. */
+        requiredUnfilled: string;
         /** Mapped Lead fields that a matched Contact does not have, skipped there. */
         contactSkips: string;
         utmTitle: string;
@@ -4465,6 +4467,8 @@ export const en: FormsMessages = {
         remove: 'Remove',
         emailMissing: 'Map a question to Email. Without it Salesforce cannot find or create the record.',
         requiredFallback: '{field} is not mapped. A new Lead gets “{value}” there.',
+        requiredUnfilled:
+          'Your Salesforce org requires {fields} on every new Lead, and no question or fixed value fills it. New Leads will be refused until you map it.',
         companyFallback:
           'Company is not mapped. A new Lead gets the company from a work email, or “{value}” for a personal one.',
         contactSkips:
@@ -7206,6 +7210,8 @@ export const es: FormsMessages = {
         remove: 'Quitar',
         emailMissing: 'Asigna una pregunta a Email. Sin eso, Salesforce no puede encontrar ni crear el registro.',
         requiredFallback: '{field} no está asignado. Un Lead nuevo recibe “{value}” ahí.',
+        requiredUnfilled:
+          'Tu org de Salesforce exige {fields} en cada Lead nuevo, y ninguna pregunta ni valor fijo lo llena. Los Leads nuevos se van a rechazar hasta que lo asignes.',
         companyFallback:
           'Company no está asignado. Un Lead nuevo toma la empresa de un correo de trabajo, o “{value}” si el correo es personal.',
         contactSkips:
