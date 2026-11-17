@@ -3,7 +3,6 @@
 '@quill/engine': minor
 '@quill/shared': minor
 '@quill/mcp': patch
-'@quill/web': minor
 ---
 
 A form can forward the visitor's UTM parameters to its redirect (#310).
