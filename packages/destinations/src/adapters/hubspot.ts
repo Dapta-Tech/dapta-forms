@@ -119,8 +119,8 @@ interface HubSpotErrorResponse {
  *
  * Reliability: a transport failure (network, non-2xx after invalid-property
  * stripping) THROWS so the durable outbox retries. A submission with no email to
- * key on is a permanent no-op (`delivered:false`, marked done — retrying can't
- * conjure an email). A Note failure is logged but never fails the delivery (the
+ * key on is a permanent no-op (`delivered:false`, recorded as skipped, since
+ * retrying cannot conjure an email). A Note failure is logged but never fails the delivery (the
  * contact upsert already succeeded — the durable part).
  */
 export class HubspotDestination implements SubmissionDestination {

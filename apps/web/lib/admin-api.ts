@@ -462,7 +462,15 @@ export interface HubSpotProperty {
 
 /** The property-picker response: disabled (no server token) or the property list. */
 /** What was being delivered. Mirrors `OutboxKind` in @quill/db. */
-export type DeliveryKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync' | 'analytics' | 'dapta_sync';
+export type DeliveryKind =
+  | 'webhook'
+  | 'email'
+  | 'hubspot'
+  | 'google-sheets'
+  | 'salesforce'
+  | 'booking_sync'
+  | 'analytics'
+  | 'dapta_sync';
 
 /**
  * How a delivery ended. `pending` covers both "not attempted yet" and "waiting
@@ -497,8 +505,42 @@ export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; properties: HubSpotProperty[] };
 
-/** Account-level integration providers (paste-token connections). */
-export type IntegrationProvider = 'hubspot' | 'calendly';
+/**
+ * Account-level integration providers.
+ *
+ * Two of them are paste-token connections. `google-sheets` is not: it is
+ * connected by walking Google's consent screen, so the panel starts it through
+ * `authorizeGoogleSheets` and `connectIntegration` refuses it outright (the API
+ * answers 400 rather than storing a credential that would die within the hour).
+ */
+export type IntegrationProvider = 'hubspot' | 'calendly' | 'google-sheets' | 'salesforce';
+
+/**
+ * Why a Salesforce connection was refused (the API's `reason`), one per thing
+ * the admin has to go and fix. Never Salesforce's own error text.
+ */
+export type SalesforceConnectError =
+  | 'domain_invalid'
+  | 'invalid_client'
+  | 'no_run_as'
+  | 'rejected'
+  | 'unreachable';
+
+/** One writable Lead field of the connected org, for the mapping editor. */
+export interface SalesforceField {
+  /** API name, what a mapping stores. */
+  name: string;
+  label: string;
+  type: string;
+  /** Salesforce refuses a NEW Lead without it. */
+  required: boolean;
+  options?: { value: string; label: string }[];
+}
+
+/** GET /v1/integrations/salesforce/fields. */
+export type SalesforceFieldsResponse =
+  | { enabled: false; reason: 'not_connected' | 'rejected' | 'unavailable' }
+  | { enabled: true; cached: boolean; lead: SalesforceField[]; contact: string[] };
 
 /**
  * One account-level connection's token-free status (GET /v1/integrations). The
@@ -512,6 +554,59 @@ export interface IntegrationStatus {
   connectedAt: number;
 }
 
+/** One tab of a spreadsheet. `gid` is the `#gid=` in its URL. */
+export interface SheetTab {
+  title: string;
+  gid: number;
+}
+
+/**
+ * The tab picker's answer. `enabled: false` carries WHY, because the four
+ * reasons send an author to four different places: connect Google, check the
+ * link, ask whoever owns the spreadsheet for access, or try again.
+ */
+export type GoogleSheetsTabsResponse =
+  | { enabled: true; spreadsheetTitle: string; tabs: SheetTab[] }
+  | { enabled: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/** A spreadsheet created for a form in the connected Google account. */
+export type GoogleSheetsCreateResponse =
+  | { ok: true; spreadsheetId: string; spreadsheetTitle: string; sheetTitle: string; gid: number }
+  | { ok: false; reason: 'not_connected' | 'forbidden' | 'unavailable' };
+
+/**
+ * What Google's Picker needs to open. The access token here is the one Google
+ * credential that reaches a browser, because the Picker cannot run without it;
+ * it reaches only the files this app created or was handed, and lasts an hour.
+ */
+export type GoogleSheetsPickerResponse =
+  | { enabled: true; accessToken: string; apiKey: string; appId: string }
+  | { enabled: false; reason: 'not_connected' | 'unavailable' };
+
+/** What writing the header row did. `written: false` means row 1 was in use. */
+export type GoogleSheetsHeaderRowResponse =
+  | { ok: true; written: true }
+  | { ok: true; written: false; reason: 'not_empty' }
+  | { ok: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/**
+ * What keeping a form's header row in line with its columns did (the API's
+ * `SheetHeaderSync`). `foreign`: row 1 holds something dForms did not write,
+ * and it was left exactly as it was.
+ */
+export type SheetHeaderSync =
+  | { outcome: 'written' | 'unchanged' }
+  /** A `check` found row 1 is dForms' own but out of date (nothing written). */
+  | { outcome: 'stale' }
+  /** Row 1 does not match: what it holds, and what would be written instead. */
+  | { outcome: 'foreign'; current: string[]; headers: string[] }
+  | { outcome: 'failed'; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/** POST /v1/forms/:id/destinations/google-sheets/header-row. */
+export type FormSheetHeaderRowResponse =
+  | ({ ok: true } & SheetHeaderSync)
+  | { ok: false; reason: 'not_configured' };
+
 /** GET /v1/integrations — this account's connections + server encryption availability. */
 export interface IntegrationsResponse {
   encryptionAvailable: boolean;
@@ -523,6 +618,25 @@ export interface IntegrationsResponse {
    * integration that is actively syncing.
    */
   serverProvided?: IntegrationProvider[];
+  /**
+   * Providers this DEPLOYMENT cannot connect at all, because configuration only
+   * its operator can supply is absent (Google Sheets needs an OAuth client
+   * registered with Google). The pages leave their cards out: a card whose
+   * button can only fail is worse than no card.
+   */
+  unavailable?: IntegrationProvider[];
+  /**
+   * Whether an EXISTING spreadsheet can be chosen (Google's Picker needs a
+   * browser key the operator supplies). False or absent, the spreadsheet card
+   * offers only "create a new spreadsheet".
+   */
+  googlePicker?: boolean;
+  /**
+   * dCal on this deployment: where event types are created. Absent or null
+   * when the deployment has no dCal, and then the Connections page leaves its
+   * card out. Not a connection: dCal uses the author's own Dapta sign-in.
+   */
+  dcal?: { createEventUrl: string } | null;
 }
 
 /**
@@ -596,6 +710,57 @@ export interface CalendlyEventType {
 export type CalendlyEventTypesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; connectedAs: string | null; eventTypes: CalendlyEventType[] };
+
+/**
+ * One question a dCal event type's booking form asks, beyond the name, email
+ * and notes its form always asks. `name` is the field's own name, which is
+ * also its prefill parameter (`answer_<name>`): a NAME, where Calendly's ids
+ * are positional.
+ */
+export interface DcalBookingField {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+}
+
+/** A dCal event type the scheduler step can embed. */
+export interface DcalEventType {
+  /** dCal's own event-type id (what the step stores as `eventTypeUri`). */
+  id: string;
+  name: string;
+  /** The public booking page, already assembled by the API. */
+  schedulingUrl: string;
+  active: boolean;
+  durationMinutes: number;
+  /** Null for the author's own events; the team's name for a team event. */
+  teamName: string | null;
+  bookingFields: DcalBookingField[];
+}
+
+/** A workspace the author can act in, for the picker's switcher. */
+export interface DcalWorkspace {
+  id: string;
+  name: string;
+  current: boolean;
+}
+
+/**
+ * The dCal picker's response. Unlike the other two, "unavailable" here never
+ * means "connect something": there is no credential to connect, so it means
+ * this deployment has no dCal, or there is no session to forward to it.
+ */
+export type DcalEventTypesResponse =
+  | { enabled: false; reason: string }
+  | {
+      enabled: true;
+      cached: boolean;
+      connectedAs: string | null;
+      workspaces: DcalWorkspace[];
+      eventTypes: DcalEventType[];
+      /** dCal's event-type editor, for an author who has none yet. */
+      createEventUrl: string | null;
+    };
 
 export type { FormDestination };
 
@@ -813,7 +978,21 @@ export const adminApi = {
     req<CalendlyEventTypesResponse>('GET', '/v1/integrations/calendly/event-types'),
   /** Partial write: replaces ONLY the config's `destinations` key server-side. */
   updateFormDestinations: (id: string, destinations: FormDestination[]) =>
-    req<FormDetail>('PUT', `/v1/forms/${id}/destinations`, { destinations }),
+    req<FormDetail & { formActivityError?: string; sheetHeaders?: SheetHeaderSync }>(
+      'PUT',
+      `/v1/forms/${id}/destinations`,
+      { destinations },
+    ),
+  /**
+   * Bring the form's spreadsheet header row in line with its STORED columns.
+   * The API reads everything it needs from the form, so this sends no body.
+   */
+  syncFormSheetHeaders: (id: string, opts?: { replace?: boolean; check?: boolean }) =>
+    req<FormSheetHeaderRowResponse>(
+      'POST',
+      `/v1/forms/${id}/destinations/google-sheets/header-row`,
+      opts?.replace ? { replace: true } : opts?.check ? { check: true } : undefined,
+    ),
 
   // Account-level integration connections (paste-token model; admin/owner writes)
   /** This account's connections (token-free) + whether server encryption is available. */
@@ -881,6 +1060,42 @@ export const adminApi = {
   /** Validate + encrypt-store a pasted provider token; returns the token-free status. */
   connectIntegration: (provider: IntegrationProvider, token: string) =>
     req<IntegrationStatus>('POST', `/v1/integrations/${provider}/connect`, { token }),
+  /**
+   * Start the Google Sheets consent flow: returns the Google URL to send the
+   * browser to. The account this flow will connect is carried in a signed state
+   * minted by this authenticated call, so the URL must be followed as-is and
+   * never rebuilt by the caller.
+   */
+  authorizeGoogleSheets: (returnTo?: string) =>
+    req<{ authUrl: string }>(
+      'POST',
+      '/v1/integrations/google-sheets/authorize',
+      returnTo ? { returnTo } : undefined,
+    ),
+  /** The tabs of one spreadsheet, for the mapping editor's picker. */
+  googleSheetsTabs: (spreadsheetId: string) =>
+    req<GoogleSheetsTabsResponse>(
+      'GET',
+      `/v1/integrations/google-sheets/tabs?spreadsheetId=${encodeURIComponent(spreadsheetId)}`,
+    ),
+  /** Create a spreadsheet for a form, header row included, in one call. */
+  googleSheetsCreate: (body: { title: string; sheetTitle: string; headers: string[] }) =>
+    req<GoogleSheetsCreateResponse>('POST', '/v1/integrations/google-sheets/spreadsheets', body),
+  /** What the browser needs to open Google's Picker (carries an access token). */
+  googleSheetsPicker: () =>
+    req<GoogleSheetsPickerResponse>('GET', '/v1/integrations/google-sheets/picker'),
+  /** Write the header row of the chosen tab, once. Never overwrites a used row 1. */
+  googleSheetsHeaderRow: (body: { spreadsheetId: string; sheetTitle?: string; headers: string[] }) =>
+    req<GoogleSheetsHeaderRowResponse>('POST', '/v1/integrations/google-sheets/header-row', body),
+  /**
+   * Connect a Salesforce org with Client Credentials. The API proves the three
+   * values before storing them and answers the token-free status.
+   */
+  connectSalesforce: (body: { domain: string; consumerKey: string; consumerSecret: string }) =>
+    req<IntegrationStatus>('POST', '/v1/integrations/salesforce/connect', body),
+  /** The connected org's writable Lead fields; `refresh` re-reads the org. */
+  salesforceFields: (refresh = false) =>
+    req<SalesforceFieldsResponse>('GET', `/v1/integrations/salesforce/fields${refresh ? '?refresh=1' : ''}`),
   /** Disconnect a provider for this account (idempotent → 204). */
   disconnectIntegration: (provider: IntegrationProvider) =>
     req<void>('DELETE', `/v1/integrations/${provider}`),

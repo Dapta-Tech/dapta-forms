@@ -1,5 +1,4 @@
 ---
-'@quill/api': patch
 '@quill/mcp': patch
 ---
 

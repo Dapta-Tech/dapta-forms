@@ -744,6 +744,7 @@ export function FormRenderer({
           provider: details.provider,
           ...(details.eventUri ? { eventUri: details.eventUri } : {}),
           ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+          ...(details.bookingUid ? { bookingUid: details.bookingUid } : {}),
           ...(details.startTime ? { startTime: details.startTime } : {}),
         }),
       );
@@ -900,6 +901,7 @@ export function FormRenderer({
           provider: details.provider,
           ...(details.eventUri ? { eventUri: details.eventUri } : {}),
           ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+          ...(details.bookingUid ? { bookingUid: details.bookingUid } : {}),
           ...(details.startTime ? { startTime: details.startTime } : {}),
         }),
       );
@@ -1461,6 +1463,10 @@ export function FormRenderer({
       answers,
       step.scheduler?.prefillMap,
       config.steps as FormStep[],
+      // The map's keys are the PROVIDER's field ids, and the two providers name
+      // them differently (dCal by field name, Calendly positionally), so the
+      // resolver cannot tell a custom question from a built-in without this.
+      step.scheduler?.provider ?? 'calendly',
     );
     const booking = step.scheduler
       ? schedulerToBooking(step.scheduler, schedPrefill.customAnswers)

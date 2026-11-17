@@ -771,9 +771,18 @@ export async function updateFormDestinations(
   accountId: string,
   id: string,
   destinations: unknown[],
+  /**
+   * Compare-and-swap: write only if the row still carries this `updated_at`
+   * (the one the caller read the destinations from), else `STALE` and nothing
+   * is written. For a caller that rewrites the array from its own read, such
+   * as the API recording a header snapshot, so a save landing in between is
+   * never overwritten. Absent: the old last-writer-wins write.
+   */
+  expectedUpdatedAt?: number,
 ): Promise<CrudResult<FormRow>> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
+  if (expectedUpdatedAt !== undefined && existing.updatedAt !== expectedUpdatedAt) return stale();
   // Preserve masked webhook secrets: when the integrations UI leaves the secret
   // field untouched it submits WEBHOOK_SECRET_MASK; keep the stored secret.
   const merged = mergeWebhookSecrets(
@@ -781,10 +790,16 @@ export async function updateFormDestinations(
     (existing.config as Record<string, unknown> | null)?.destinations,
   );
   const config = { ...(existing.config as Record<string, unknown>), destinations: merged };
-  await db.run(
-    sql`UPDATE form SET config = ${jsonParam(config)}, updated_at = ${Date.now()}
-        WHERE account_id = ${accountId} AND id = ${id}`,
+  // The stamp is bumped by at least 1 so a write in the same millisecond as
+  // the one it follows still changes it, and a compare-and-swap against the
+  // earlier stamp cannot mistake the two for one.
+  const now = Math.max(Date.now(), existing.updatedAt + 1);
+  const written = await db.get<{ id: string }>(
+    sql`UPDATE form SET config = ${jsonParam(config)}, updated_at = ${now}
+        WHERE account_id = ${accountId} AND id = ${id} ${staleGuard(expectedUpdatedAt)}
+        RETURNING id`,
   );
+  if (!written) return expectedUpdatedAt !== undefined ? stale() : { ok: false, reason: 'NOT_FOUND' };
   return { ok: true, value: (await getFormById(db, accountId, id))! };
 }
 
@@ -952,18 +967,30 @@ export async function listLiveStepCounts(db: Db, accountId: string): Promise<Map
  * Exported for `POST /v1/forms`, the other way a config that names another
  * form's mirror can arrive: a config copied from an existing form.
  */
+const OWNED_SETTINGS: Record<string, readonly string[]> = {
+  hubspot: ['formGuid', 'formSignature'],
+  'google-sheets': ['headerSnapshot', 'headerForeign', 'headerBroken'],
+};
+
 export function withoutOwnedMirrorState(config: unknown): unknown {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return config;
   const destinations = (config as { destinations?: unknown }).destinations;
   if (!Array.isArray(destinations)) return config;
   const cleaned = destinations.map((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
-    if ((entry as { type?: unknown }).type !== 'hubspot') return entry;
+    const type = (entry as { type?: unknown }).type;
+    // The keys the API writes for itself, per destination type. A config
+    // arriving from outside (a create through the API or MCP, a duplicate)
+    // must never carry them: a forged Google Sheets `headerSnapshot` would let
+    // the first heading change overwrite somebody's row 1, and a forged
+    // `headerForeign` or `headerBroken` would stop the header row from ever
+    // syncing.
+    const owned = OWNED_SETTINGS[typeof type === 'string' ? type : ''];
+    if (!owned) return entry;
     const settings = (entry as { settings?: unknown }).settings;
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return entry;
     const rest = { ...(settings as Record<string, unknown>) };
-    delete rest.formGuid;
-    delete rest.formSignature;
+    for (const key of owned) delete rest[key];
     return { ...(entry as Record<string, unknown>), settings: rest };
   });
   return { ...(config as Record<string, unknown>), destinations: cleaned };

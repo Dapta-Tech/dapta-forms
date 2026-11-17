@@ -32,6 +32,9 @@ import { AdminService } from './admin.service';
 import { AuthService } from './auth.service';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
+import { GoogleSheetsAccessTokens } from './google-sheets-token';
+import { SalesforceAccessTokens } from './salesforce-auth';
+import { SalesforceFieldsService } from './salesforce-fields';
 import { BookingEffects } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
 import { AnalyticsEffects } from './analytics-effects';
@@ -72,6 +75,7 @@ import {
   HubspotPropertiesService,
   IntegrationsController,
 } from './integrations.controller';
+import { DcalService } from './dcal.service';
 
 /** Product telemetry for "a person joined" — shared by the auth provider and the projection. */
 function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
@@ -267,6 +271,24 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
       useFactory: (env: ServerEnv, db: Db) => new CalendlyEventTypesService(env, db),
       inject: [ENV, DB],
     },
+    // dCal's event-type picker. No DB: this one holds no credential at all and
+    // forwards the author's own session (see DcalService). Factory for the same
+    // reason as its two siblings: `fetch` must not be DI-reflected.
+    {
+      provide: DcalService,
+      useFactory: (env: ServerEnv) => new DcalService(env),
+      inject: [ENV],
+    },
+    // The access token a Google Sheets delivery writes with, minted per account
+    // from its stored refresh token and cached. ONE instance for the whole app
+    // on purpose: the controller mints with it (to list a spreadsheet's tabs)
+    // and the delivery path mints with it, and a second cache would let a
+    // disconnect clear one of them while the other kept writing.
+    GoogleSheetsAccessTokens,
+    // One token cache and one field cache app-wide, shared by the controller
+    // and the delivery path so a disconnect clears what both of them read.
+    SalesforceAccessTokens,
+    SalesforceFieldsService,
     // Drains the durable outbox (submission emails + destinations) with
     // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).
     OutboxWorker,

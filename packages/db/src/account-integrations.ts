@@ -14,7 +14,21 @@ import type { Db } from './client';
 import { parseJsonColumn, jsonParam } from './forms';
 import { encryptToken, decryptToken, tokenLast4 } from './crypto';
 
-export const integrationProviders = ['hubspot', 'calendly'] as const;
+/**
+ * `google-sheets` is the one provider whose stored token is not pasted by the
+ * operator: it is the OAuth REFRESH TOKEN the Google consent flow handed back,
+ * and the client id and secret that redeem it stay in the deployment's env
+ * rather than in this table. So the storage contract is unchanged (one opaque
+ * secret string per account, encrypted), and `tokenLast4` still shows the tail
+ * of a real credential.
+ *
+ * `salesforce` stores a JSON object rather than a bare token, because a Client
+ * Credentials connection is three values that only work together: the org's My
+ * Domain, the consumer key and the consumer secret. It is still ONE encrypted
+ * string per account, so the storage contract holds; the caller passes the
+ * `last4` to show, since the tail of a JSON string is a closing brace.
+ */
+export const integrationProviders = ['hubspot', 'calendly', 'google-sheets', 'salesforce'] as const;
 export type IntegrationProvider = (typeof integrationProviders)[number];
 
 export interface IntegrationMeta {
@@ -102,8 +116,10 @@ export async function upsertIntegration(
   token: string,
   encryptionKey: string,
   label?: string | null,
+  /** Override the displayed tail when `token` is not itself the credential. */
+  last4?: string,
 ): Promise<IntegrationStatus> {
-  const meta: IntegrationMeta = { last4: tokenLast4(token) };
+  const meta: IntegrationMeta = { last4: last4 ?? tokenLast4(token) };
   if (label) meta.label = label;
   const encrypted = encryptToken(token, encryptionKey);
   const now = Date.now();

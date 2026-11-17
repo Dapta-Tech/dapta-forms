@@ -16,6 +16,7 @@ import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './c
 import { saveQuestionMappingAction } from './question-hubspot-actions';
 import type { BuilderMessages } from './builder-messages';
 import { callAction, isTransportError } from '@/lib/call-action';
+import { runDestinationWrite } from '@/lib/integrations-save-queue';
 
 /**
  * QuestionHubspotSection — the Build tab's per-question "HubSpot / Map to"
@@ -220,7 +221,10 @@ export function QuestionHubspotSection({
 
     const seq = (saveSeq.current.get(key) ?? 0) + 1;
     saveSeq.current.set(key, seq);
-    void callAction(() => saveQuestionMappingAction(formId, key, nextValue || null))
+    // In line with the Connect tab's save queue: a failed save still waiting
+    // for its retry there would otherwise write its older array over this
+    // mapping a few seconds later (see `runDestinationWrite`).
+    void runDestinationWrite(formId, () => callAction(() => saveQuestionMappingAction(formId, key, nextValue || null)))
       .then((res) => {
         if (seq !== saveSeq.current.get(key)) return; // superseded by a newer pick
         setSaving((k) => (k === key ? null : k));
@@ -286,12 +290,17 @@ export function QuestionHubspotSection({
           <p role="alert" className="text-xs text-muted-foreground">
             {readiness.blocker === 'no_source' ? m.needsEmail : m.schedulerDisconnected}
           </p>
+          {/* Calendly is connected on the workspace's Integrations page, not
+              on a form, so this one does leave: in a new tab, so the form
+              being built stays where it was. */}
           <Link
             href="/admin/integrations"
+            target="_blank"
+            rel="noopener noreferrer"
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
-            {m.goToConnections}
-            <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 11 }} />
+            {m.goToIntegrations}
+            <i aria-hidden className="pi pi-external-link" style={{ fontSize: 11 }} />
           </Link>
         </div>
       );
@@ -302,14 +311,16 @@ export function QuestionHubspotSection({
       return (
         <div className="flex flex-col items-start gap-2">
           <p className="text-xs text-muted-foreground">{m.notConnected}</p>
-          <Link
-            href="/admin/integrations"
+          {/* HubSpot connects in place on this form's Connect tab now. */}
+          <Button
             data-testid="qs-hubspot-connect-account"
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            variant="outline"
+            size="sm"
+            onClick={onOpenConnect}
           >
-            {m.goToConnections}
+            {m.connectInConnect}
             <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 11 }} />
-          </Link>
+          </Button>
         </div>
       );
     }

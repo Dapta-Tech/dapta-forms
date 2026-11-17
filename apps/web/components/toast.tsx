@@ -44,7 +44,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 p-4 sm:items-end"
+        // `--toast-offset` lifts the stack above a fixed bottom-right element
+        // that would otherwise sit under the toasts (the Connect tab's save
+        // pill sets it while it is on screen; see `html.has-save-pill`).
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 p-4 pb-[calc(1rem+var(--toast-offset,0px))] sm:items-end"
         aria-live="polite"
         aria-atomic="false"
       >

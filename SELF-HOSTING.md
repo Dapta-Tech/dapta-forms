@@ -321,6 +321,8 @@ date, or a sunset before the deprecation refuses to boot.
 | Var | Default | Required when | Secret |
 |---|---|---|---|
 | `HUBSPOT_PRIVATE_APP_TOKEN` | _(unset)_ | to enable the HubSpot destination (else it reports a disabled state) | yes |
+| `DCAL_API_BASE_URL` | _(unset)_ | to offer dCal as a scheduler (needs `DCAL_APP_URL` too) | no |
+| `DCAL_APP_URL` | _(unset)_ | to offer dCal as a scheduler (needs `DCAL_API_BASE_URL` too) | no |
 
 Webhook destinations are configured **per form in the admin UI** (URL + optional
 HMAC secret) — no environment variable.
@@ -508,6 +510,45 @@ through the same outbox with retry + backoff).
 - **HubSpot** — set `HUBSPOT_PRIVATE_APP_TOKEN` (server-side). Unset = the HubSpot
   destination and its property picker report a clear disabled state, so a
   webhook-only deployment needs nothing here.
+
+### Salesforce (optional)
+
+A form can send each completed response to a Salesforce org. There is nothing
+to set on the server beyond `FORMS_ENCRYPTION_KEY`, which already stores every
+connection: each workspace connects its own org from the Connections page with
+three values from an External Client App (the org's My Domain, the consumer key
+and the consumer secret) using the Client Credentials Flow. They are stored
+encrypted and proved against Salesforce before they are saved.
+
+The API sends the consumer secret only to the org's own My Domain
+(`*.my.salesforce.com`), and then writes to the instance URL Salesforce returns
+with the token, always a `*.salesforce.com` or `*.force.com` host. An egress
+allowlist needs those Salesforce hosts. A delivery looks the
+respondent up by email first and updates an existing Contact or Lead before it
+creates a new Lead.
+
+### dCal as a scheduler (optional)
+
+A scheduler question can embed a [dCal](https://github.com/Dapta-Tech/dapta-calendars-slate)
+booking page instead of Calendly. Set **both** `DCAL_API_BASE_URL` (the dCal API
+the Forms API calls, server-side) and `DCAL_APP_URL` (the dCal app the visitor's
+browser reaches). With only the first, every booking URL the picker builds would
+be relative and the author's save would fail validation, so the picker reports a
+disabled state instead of offering event types that cannot be saved.
+
+There is no token here. The picker forwards the signed-in author's own session
+to dCal, so each author sees exactly the event types they can already see there,
+and a deployment whose sign-in is the local provider cannot offer dCal at all
+(no session to forward). Both values are read at runtime, so the same web image
+serves every environment.
+
+A dCal step prefills the booking form from answers the visitor already gave, so
+the booking page receives a name and an address in its query string. dCal strips
+them from the address bar before any analytics tag on that page reads the URL.
+
+If a proxy in front of the web app adds a Content-Security-Policy, allow the
+`DCAL_APP_URL` host in `frame-src`: the booking page is embedded in an iframe,
+in the public form and in the builder's canvas.
 
 ## Upgrades & rollback
 

@@ -22,6 +22,7 @@ import {
 } from '@quill/db';
 import { transcriptOfError, type DeliveryTranscript } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
+import type { FormDestination } from '@quill/types';
 import { EmailEffects, OutboxSkipError } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { BookingSyncEffects } from './booking-sync';
@@ -36,6 +37,9 @@ import { DB, ENV } from './tokens';
  * fire-and-forget side-effects into no-silent-loss delivery.
  *
  *   - Success → the row is marked `done`.
+ *   - A permanent refusal or a deliberate no-op (`OutboxSkipError`) → the row
+ *     is marked `skipped` once, with the reason and any transcript, and never
+ *     retried. A destination that resolved `delivered:false` lands here.
  *   - Failure → attempts++ and the row is rescheduled (backoff); once attempts
  *     reach `max_attempts` it is marked `failed` and logged (the row remains as
  *     the delivery-log record — nothing is silently dropped).
@@ -45,6 +49,21 @@ import { DB, ENV } from './tokens';
  * deterministically without waiting on the interval; `fetchImpl` is swappable
  * for webhook-delivery tests.
  */
+/**
+ * Outbox kinds that are submission destinations, all delivered the same way:
+ * through `DestinationEffects.deliver`, which rebuilds the adapter from the
+ * stored destination. Every `FormDestination['type']` belongs here; the type
+ * annotation makes a missing one a compile error rather than an
+ * `unknown outbox kind` at delivery time.
+ */
+const DESTINATION_KIND_LIST: Record<FormDestination['type'], true> = {
+  webhook: true,
+  hubspot: true,
+  'google-sheets': true,
+  salesforce: true,
+};
+const DESTINATION_KINDS: ReadonlySet<string> = new Set(Object.keys(DESTINATION_KIND_LIST));
+
 @Injectable()
 export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('OutboxWorker');
@@ -153,7 +172,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       return true;
     } catch (err) {
       if (err instanceof OutboxSkipError) {
-        if (await markOutboxSkipped(this.db, row.id, { reason: err.message, now: now() }, claim)) {
+        const skip = { reason: err.message, now: now(), transcript: err.transcript };
+        if (await markOutboxSkipped(this.db, row.id, skip, claim)) {
           this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) skipped: ${err.message}`);
         } else this.logLostLease(row);
         return true;
@@ -198,7 +218,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       await this.email.deliver(row.action, row.payload, row.accountId);
       return undefined;
     }
-    if (row.kind === 'webhook' || row.kind === 'hubspot') {
+    if (DESTINATION_KINDS.has(row.kind)) {
       if (row.payload == null) throw new Error(`${row.kind} outbox row missing payload`);
       return await this.destinations.deliver(row.action, row.payload);
     }

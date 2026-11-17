@@ -330,7 +330,7 @@ export interface OutcomeOverrideRule {
 
 /** Scheduling handoff for an outcome (additive; mirrors the config schema). */
 export interface OutcomeBooking {
-  provider: 'hubspot_meetings' | 'calendly';
+  provider: 'hubspot_meetings' | 'calendly' | 'dcal';
   url: string;
   prefill?: boolean;
 }
@@ -517,8 +517,12 @@ export interface FormBranding {
 
 /** A `scheduler` step's embedded booking config (Calendly in v1). */
 export interface FormScheduler {
-  /** Scheduling provider. v1 ships Calendly; the embed also supports HubSpot Meetings. */
-  provider?: 'calendly' | 'hubspot_meetings';
+  /**
+   * Scheduling provider. v1 shipped Calendly; the embed also supports HubSpot
+   * Meetings and dCal. Mirrors `formSchedulerSchema.provider` in @quill/types:
+   * the two unions must move together.
+   */
+  provider?: 'calendly' | 'hubspot_meetings' | 'dcal';
   /** The picked Calendly event type's stable URI (builder reference). */
   eventTypeUri?: string | null;
   /** Its display name, stored so the builder can label it without a lookup. */
@@ -922,7 +926,18 @@ export function emailSourceFor(config: FormConfig): EmailSource {
   // answer from `?email=` and that answer reaches the submission.
   const question = config.steps.find((s) => s.type === 'email');
   if (question) return { kind: 'question', key: question.key };
-  const scheduler = config.steps.find((s) => s.type === 'scheduler');
+  // Only a scheduler whose invitee can actually be READ BACK counts. Calendly
+  // is fetched for it after the booking (`booking-sync`); dCal is not, and its
+  // booked message carries no name or address on purpose, because it is posted
+  // to any framing page. So a dCal scheduler supplies no address, and saying it
+  // did would tell an author their contact key was covered while every lead
+  // quietly failed to sync with "no respondent email resolvable".
+  //
+  // Absent means Calendly, as everywhere else: a scheduler authored before dCal
+  // existed is read exactly as it was.
+  const scheduler = config.steps.find(
+    (s) => s.type === 'scheduler' && s.scheduler?.provider !== 'dcal',
+  );
   if (scheduler) return { kind: 'scheduler', key: scheduler.key };
   return null;
 }

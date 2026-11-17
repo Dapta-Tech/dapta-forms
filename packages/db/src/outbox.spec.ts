@@ -572,6 +572,35 @@ describe('the delivery transcript', () => {
     expect(row?.responseBody).toBe('{"error":"nope"}');
   });
 
+  it('keeps them on a skipped row, the state a permanent refusal ends in', async () => {
+    // A provider that answered 400 is never retried, so this row is the only
+    // place its answer survives. Skipping without it told the author nothing.
+    const id = await seedPending();
+    const claim = await currentClaim(id, 2_000);
+    await markOutboxSkipped(db, id, {
+      reason: 'HTTP 400: STRING_TOO_LONG: Last Name: data value too large',
+      now: 2_000,
+      transcript: { requestBody: '{"LastName":"x"}', responseStatus: 400, responseBody: '[{"errorCode":"STRING_TOO_LONG"}]' },
+    }, claim);
+    const row = await readBack(id);
+    expect(row).toMatchObject({
+      status: 'skipped',
+      attempts: 0,
+      lastError: 'HTTP 400: STRING_TOO_LONG: Last Name: data value too large',
+      requestBody: '{"LastName":"x"}',
+      responseStatus: 400,
+      responseBody: '[{"errorCode":"STRING_TOO_LONG"}]',
+    });
+  });
+
+  it('records no transcript on a skip that reported none', async () => {
+    const id = await seedPending();
+    const claim = await currentClaim(id, 2_000);
+    await markOutboxSkipped(db, id, { reason: 'no email in submission', now: 2_000 }, claim);
+    const row = await readBack(id);
+    expect(row).toMatchObject({ status: 'skipped', requestBody: null, responseStatus: null, responseBody: null });
+  });
+
   it('does not let a later attempt with no transcript erase the earlier one', async () => {
     // The last retry of a webhook whose host stopped resolving reports no
     // response. Nulling the stored one would throw away the only evidence of

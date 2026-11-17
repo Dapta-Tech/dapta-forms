@@ -62,6 +62,7 @@ import {
   type FormOutcome,
   type StepCondition,
   type Answers,
+  contactKeyReadiness,
 } from './form-logic';
 
 const step = (partial: Partial<FormStep> & Pick<FormStep, 'key' | 'type'>): FormStep => partial;
@@ -2669,5 +2670,51 @@ describe('nameFieldLabels', () => {
     expect(
       nameFieldLabels(name({ fields: ['nombre', 'apellido'], fieldLabels: { firstname: 'x', apellido: 'Apellido' } })),
     ).toEqual(['', 'Apellido']);
+  });
+});
+
+describe('emailSourceFor — a dCal scheduler supplies no address', () => {
+  const sched = (provider?: string): FormStep =>
+    ({
+      key: 'scheduler_1',
+      type: 'scheduler',
+      question: '',
+      required: true,
+      ...(provider ? { scheduler: { provider } } : {}),
+    }) as unknown as FormStep;
+
+  it('does not count a dCal scheduler, because nothing reads its invitee back', () => {
+    // Calendly is fetched after the booking; dCal is not, and its booked
+    // message carries no address on purpose. Counting it told an author their
+    // contact key was covered while every lead failed to sync.
+    expect(emailSourceFor({ version: 1, steps: [sched('dcal')] } as FormConfig)).toBeNull();
+  });
+
+  it('still counts a Calendly scheduler, and one that names no provider', () => {
+    expect(emailSourceFor({ version: 1, steps: [sched('calendly')] } as FormConfig)).toEqual({
+      kind: 'scheduler',
+      key: 'scheduler_1',
+    });
+    // Absent means Calendly, as everywhere else.
+    expect(emailSourceFor({ version: 1, steps: [sched()] } as FormConfig)).toEqual({
+      kind: 'scheduler',
+      key: 'scheduler_1',
+    });
+  });
+
+  it('prefers a real email question over any scheduler', () => {
+    const email = { key: 'email_1', type: 'email', question: '', required: true } as unknown as FormStep;
+    expect(emailSourceFor({ version: 1, steps: [sched('dcal'), email] } as FormConfig)).toEqual({
+      kind: 'question',
+      key: 'email_1',
+    });
+  });
+
+  it('reports no source at all for a form whose only scheduler is dCal', () => {
+    const readiness = contactKeyReadiness({ version: 1, steps: [sched('dcal')] } as FormConfig, {
+      scheduler: true,
+    });
+    // Not `scheduler_disconnected`: connecting Calendly would fix nothing here.
+    expect(readiness).toEqual({ ok: false, blocker: 'no_source', source: null });
   });
 });

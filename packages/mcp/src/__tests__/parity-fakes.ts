@@ -89,7 +89,7 @@ export function parityFakes(): ApiParityBackend {
         throw new BackendError(400, 'BAD_REQUEST', 'Invalid body.', [
           { path: 'destinations.0.type', message: 'Invalid discriminator value.', code: 'invalid_union_discriminator' },
         ]);
-      return { formId: id, updatedAt: NOW + 1, destinations, formActivityError: null };
+      return { formId: id, updatedAt: NOW + 1, destinations, formActivityError: null, sheetHeaders: null };
     },
     pingWebhook: async (c, id) => {
       needAdmin(c);
