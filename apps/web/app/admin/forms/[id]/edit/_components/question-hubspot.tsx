@@ -16,6 +16,7 @@ import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './c
 import { saveQuestionMappingAction } from './question-hubspot-actions';
 import type { BuilderMessages } from './builder-messages';
 import { callAction, isTransportError } from '@/lib/call-action';
+import { runDestinationWrite } from '@/lib/integrations-save-queue';
 
 /**
  * QuestionHubspotSection — the Build tab's per-question "HubSpot / Map to"
@@ -220,7 +221,10 @@ export function QuestionHubspotSection({
 
     const seq = (saveSeq.current.get(key) ?? 0) + 1;
     saveSeq.current.set(key, seq);
-    void callAction(() => saveQuestionMappingAction(formId, key, nextValue || null))
+    // In line with the Connect tab's save queue: a failed save still waiting
+    // for its retry there would otherwise write its older array over this
+    // mapping a few seconds later (see `runDestinationWrite`).
+    void runDestinationWrite(formId, () => callAction(() => saveQuestionMappingAction(formId, key, nextValue || null)))
       .then((res) => {
         if (seq !== saveSeq.current.get(key)) return; // superseded by a newer pick
         setSaving((k) => (k === key ? null : k));

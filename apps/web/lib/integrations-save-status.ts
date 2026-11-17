@@ -24,6 +24,12 @@ export type IntegrationsSaveState = {
   detail?: string | null;
   /** The save failed after the tab unmounted: the change is not stored. */
   lost?: boolean;
+  /**
+   * The lost change was already said in a toast. A lost change is announced
+   * ONCE, wherever the author is when it happens; without this every visit to
+   * the Connect tab said it again.
+   */
+  announced?: boolean;
 };
 
 const states = new Map<string, IntegrationsSaveState>();
@@ -31,8 +37,55 @@ const listeners = new Set<() => void>();
 
 export function publishIntegrationsSave(formId: string, next: IntegrationsSaveState): void {
   const prev = states.get(formId);
-  if (prev && prev.status === next.status && prev.detail === next.detail && prev.lost === next.lost) return;
+  if (
+    prev &&
+    prev.status === next.status &&
+    prev.detail === next.detail &&
+    prev.lost === next.lost &&
+    prev.announced === next.announced
+  ) {
+    return;
+  }
   states.set(formId, next);
+  recombine(formId);
+  for (const listener of listeners) listener();
+}
+
+/** The lost change has been said in a toast: do not say it again. */
+export function markLostSaveAnnounced(formId: string): void {
+  const prev = states.get(formId);
+  if (prev?.lost && !prev.announced) publishIntegrationsSave(formId, { ...prev, announced: true });
+}
+
+/**
+ * The author read the "your last change was not saved" notice and dismissed
+ * it. What the tab shows by then is the server's real state, so there is
+ * nothing left unsaved to report: the error clears. Only a lost change can be
+ * acknowledged; a save that is failing right now cannot be waved away.
+ */
+export function acknowledgeLostIntegrationsSave(formId: string): void {
+  if (states.get(formId)?.lost) publishIntegrationsSave(formId, { status: 'saved' });
+}
+
+/** Forms whose Connect tab is on screen right now. */
+const connectOpen = new Set<string>();
+
+/**
+ * The Connect tab is on screen (or no longer is) for this form.
+ *
+ * `partial` is a statement about a CARD on that tab (a webhook switched on
+ * with no URL is not stored), not a save in progress. While the tab is open it
+ * is the save state, in the topbar and the pill. Once the author is elsewhere
+ * it would sit on the topbar indefinitely and hide the builder's own "Saving"
+ * and "Saved", so there the topbar speaks for the builder alone and the
+ * condition is marked on the Connect tab itself (`ConnectTabMark`). A save
+ * that failed, or a change that was lost, is different: that is unsaved work,
+ * and it stays in the topbar wherever the author is.
+ */
+export function setConnectTabOpen(formId: string, open: boolean): void {
+  if (open === connectOpen.has(formId)) return;
+  if (open) connectOpen.add(formId);
+  else connectOpen.delete(formId);
   recombine(formId);
   for (const listener of listeners) listener();
 }
@@ -104,7 +157,10 @@ const SAVED: CombinedSaveState = { status: 'saved', detail: null, lost: false };
 
 function recombine(formId: string): void {
   const form = formStates.get(formId) ?? { status: 'saved', detail: null };
-  const integrations = states.get(formId);
+  const raw = states.get(formId);
+  // Away from the Connect tab, a card left out of the save does not speak for
+  // the whole editor (see `setConnectTabOpen`).
+  const integrations = raw?.status === 'partial' && !connectOpen.has(formId) ? undefined : raw;
   const status = worseSaveStatus(form.status, integrations?.status);
   const next: CombinedSaveState = {
     status,

@@ -16,7 +16,7 @@ import {
 import {
   destinationFiresForPhase,
   destinationIsDeliverable,
-  writableSheetColumns,
+  writtenSheetHeaders,
   formConfigSchema,
   formDestinationSchema,
   type FormDestination,
@@ -324,9 +324,12 @@ export class DestinationEffects {
           accessToken,
           spreadsheetId: destination.settings?.spreadsheetId ?? '',
           sheetTitle: destination.settings?.sheetTitle ?? undefined,
-          // Only complete columns: the same ones the header row holds, so a
-          // column the author is still filling in shifts nothing.
-          columns: writableSheetColumns(destination.columns),
+          // Every stored column, with the row 1 dForms last wrote: the
+          // adapter resolves the cells (`sheetCells`), the same ones the
+          // header row holds, so a column with a cleared heading keeps its
+          // position and one never named is left out.
+          columns: destination.columns ?? [],
+          writtenHeaders: writtenSheetHeaders(destination),
         },
       };
     }

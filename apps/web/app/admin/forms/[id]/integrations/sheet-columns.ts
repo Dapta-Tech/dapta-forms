@@ -7,7 +7,7 @@
  * incomplete, what moving a row means) are worth testing without mounting an
  * editor around them.
  */
-import { isWritableSheetColumn, type SheetColumn, type SheetColumnSource } from '@quill/types';
+import { isWritableSheetColumn, sheetCells, type SheetColumn, type SheetColumnSource } from '@quill/types';
 import type { QuestionMeta } from './auto-map';
 
 /** The headers of the columns that are not questions, in the author's language. */
@@ -73,14 +73,45 @@ export function columnMissing(column: SheetColumn): 'header' | 'source' | null {
   return null;
 }
 
+/** Where one column of the card sits in the sheet. */
+export interface SheetPosition {
+  /** Its zero-based position in the row, or null for a column that is not in the sheet. */
+  index: number | null;
+  /**
+   * The heading row 1 still holds for a column whose heading was cleared:
+   * the position is kept (empty cells) until the column is named again or
+   * deleted. Null for every other column.
+   */
+  heldHeader: string | null;
+}
+
+/**
+ * Each column's position in the SHEET, by the API's own rule (`sheetCells`),
+ * so the card, row 1 and every delivered row count the same way. `written`
+ * is the row 1 dForms last wrote for this sheet (null when it wrote none).
+ */
+export function sheetPositions(columns: SheetColumn[], written?: readonly string[] | null): SheetPosition[] {
+  const cells = sheetCells(columns, written);
+  const at = new Map(cells.map((cell, i) => [cell.column, i] as const));
+  return columns.map((column) => {
+    const index = at.get(column);
+    if (index === undefined) return { index: null, heldHeader: null };
+    return { index, heldHeader: cells[index]!.held ? cells[index]!.header : null };
+  });
+}
+
 /**
  * Each column's letter in the SHEET, or null for one that is not written.
- * Letters count written columns only, so the card reads A, B, C, (none), D
- * for a row where the fourth column has no heading, exactly as row 1 does.
+ * Letters count the sheet's cells only, so the card reads A, B, C, (none), D
+ * for a row where the fourth column never had a heading, exactly as row 1
+ * does, and a column whose heading was cleared keeps the letter it holds.
  */
-export function sheetLetters(columns: SheetColumn[], letter: (i: number) => string): (string | null)[] {
-  let n = 0;
-  return columns.map((c) => (isCompleteColumn(c) ? letter(n++) : null));
+export function sheetLetters(
+  columns: SheetColumn[],
+  letter: (i: number) => string,
+  written?: readonly string[] | null,
+): (string | null)[] {
+  return sheetPositions(columns, written).map((p) => (p.index === null ? null : letter(p.index)));
 }
 
 /**

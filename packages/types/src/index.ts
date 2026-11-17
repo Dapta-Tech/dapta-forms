@@ -947,6 +947,95 @@ export function writableSheetColumns<T extends { header?: string; source?: strin
   return (columns ?? []).filter(isWritableSheetColumn);
 }
 
+/** One cell position of the sheet: the column behind it and the heading row 1 holds there. */
+export interface SheetCell<T> {
+  column: T;
+  /** The heading in row 1 at this position. */
+  header: string;
+  /**
+   * The column has no heading right now, but dForms wrote one at this position
+   * before: the position is HELD (row 1 keeps the old heading, the cell is
+   * delivered empty) so the columns after it do not shift.
+   */
+  held: boolean;
+}
+
+/**
+ * The cells of one sheet row, in order: `writableSheetColumns`, plus the
+ * positions a column with a cleared heading still holds.
+ *
+ * `written` is the row 1 dForms last wrote to the SAME spreadsheet and tab
+ * (the destination's `headerSnapshot`; see `writtenSheetHeaders`). Without it
+ * this is exactly `writableSheetColumns`.
+ *
+ * Why positions are held: an author renaming column B clears its heading
+ * first. Dropping the column at that moment moved every later column one cell
+ * to the left, for row 1 and for any response delivered before the new name
+ * was typed. A column whose position `written` covers keeps it instead: row 1
+ * is left alone and its cell is empty, until the column gets a heading again
+ * or is deleted for real. A column that never had a heading holds nothing and
+ * stays out, as before.
+ *
+ * Which unnamed column holds a position is read off the alignment: walking
+ * the columns against `written`, an unnamed column holds the next written
+ * position unless that position is the next NAMED column's own heading (then
+ * the unnamed one is new, sitting in front of it). If a named column does not
+ * line up with `written` at all (a reorder, a delete), nothing is held: row 1
+ * is about to be rewritten for the named columns anyway.
+ */
+export function sheetCells<T extends { header?: string; source?: string; key?: string }>(
+  columns: readonly T[] | undefined,
+  written?: readonly string[] | null,
+): SheetCell<T>[] {
+  const list = columns ?? [];
+  const plain = (): SheetCell<T>[] =>
+    list.filter(isWritableSheetColumn).map((column) => ({ column, header: column.header!.trim(), held: false }));
+  if (!written?.length || list.every(isWritableSheetColumn)) return plain();
+  const out: SheetCell<T>[] = [];
+  let p = 0;
+  for (let i = 0; i < list.length; i++) {
+    const column = list[i]!;
+    if (isWritableSheetColumn(column)) {
+      const header = column.header!.trim();
+      // Renamed in place or moved: positions no longer mean what they did.
+      if (p < written.length && written[p] !== header) return plain();
+      out.push({ column, header, held: false });
+      p++;
+      continue;
+    }
+    if (p >= written.length) continue;
+    const nextNamed = list.slice(i + 1).find(isWritableSheetColumn)?.header?.trim();
+    if (written[p] === nextNamed) continue;
+    out.push({ column, header: written[p]!, held: true });
+    p++;
+  }
+  return out;
+}
+
+/**
+ * The row 1 dForms last wrote for the spreadsheet and tab this destination
+ * points at, or null when it never recorded one (or recorded it for another
+ * target). Read from the STORED destination: the API owns `headerSnapshot`.
+ */
+export function writtenSheetHeaders(destination: object | null | undefined): string[] | null {
+  const settings = (destination as { settings?: unknown } | null | undefined)?.settings;
+  if (!settings || typeof settings !== 'object') return null;
+  const { spreadsheetId, sheetTitle, headerSnapshot } = settings as {
+    spreadsheetId?: unknown;
+    sheetTitle?: unknown;
+    headerSnapshot?: unknown;
+  };
+  if (!headerSnapshot || typeof headerSnapshot !== 'object') return null;
+  const snap = headerSnapshot as { spreadsheetId?: unknown; sheetTitle?: unknown; headers?: unknown };
+  if (typeof spreadsheetId !== 'string' || !spreadsheetId.trim() || snap.spreadsheetId !== spreadsheetId.trim()) {
+    return null;
+  }
+  const tab = typeof sheetTitle === 'string' ? sheetTitle.trim() : '';
+  if ((typeof snap.sheetTitle === 'string' ? snap.sheetTitle : '') !== tab) return null;
+  if (!Array.isArray(snap.headers)) return null;
+  return snap.headers.filter((h): h is string => typeof h === 'string');
+}
+
 /**
  * At most this many columns in one row. Well under a sheet's own limit; it
  * exists so a crafted config cannot make one delivery build an enormous row.

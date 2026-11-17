@@ -18,7 +18,7 @@ import {
   type SheetHeaderSync,
   type WebhookPingResult,
 } from '@/lib/admin-api';
-import type { FormDestination } from '@quill/types';
+import { writtenSheetHeaders, type FormDestination } from '@quill/types';
 
 /**
  * Save the integrations (destinations) for a form. Uses the API's PARTIAL
@@ -40,6 +40,12 @@ export async function saveIntegrationsAction(
   message?: string;
   formActivityError?: string;
   sheetHeaders?: SheetHeaderSync;
+  /**
+   * The row 1 the API has on record for the spreadsheet card after this save
+   * (null when it has none). The card uses it to keep a column whose heading
+   * was cleared on the letter it still holds in the sheet.
+   */
+  sheetWritten?: string[] | null;
 }> {
   try {
     // The API builds the HubSpot mirror form as part of this write and reports
@@ -53,12 +59,45 @@ export async function saveIntegrationsAction(
       ok: true,
       ...(saved.formActivityError ? { formActivityError: saved.formActivityError } : {}),
       ...(saved.sheetHeaders ? { sheetHeaders: saved.sheetHeaders } : {}),
+      sheetWritten: writtenSheetHeaders(
+        (saved.config?.destinations ?? []).find((d: { type?: string }) => d.type === 'google-sheets'),
+      ),
     };
   } catch (e) {
     unstable_rethrow(e);
     // Only the API's own refusal is worth showing as it is. A transport-level
     // message ("fetch failed") means nothing to an author, so the caller falls
     // back to its catalog sentence for that.
+    return { ok: false, message: e instanceof ApiError ? e.message : undefined };
+  }
+}
+
+/**
+ * Attach one card's destination to whatever the form stores NOW.
+ *
+ * For a card action that finishes after the Connect tab was left (a
+ * spreadsheet created in Drive while the author moved on to Build). The
+ * editor that started it is gone, and the snapshot it held is as old as the
+ * moment it unmounted: writing that whole array could undo a mapping made
+ * since. So this reads the fresh destinations and replaces only the first
+ * entry of the card's own type (or adds it), like the Build tab's
+ * per-question picker does, and the editor sends it through the form's save
+ * queue so it is serial with every other write.
+ */
+export async function mergeIntegrationCardAction(
+  id: string,
+  card: FormDestination,
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const form = await adminApi.getForm(id);
+    const destinations = (form.config.destinations ?? []) as FormDestination[];
+    const index = destinations.findIndex((d) => d.type === card.type);
+    const next = index === -1 ? [...destinations, card] : destinations.map((d, i) => (i === index ? card : d));
+    await adminApi.updateFormDestinations(id, next);
+    revalidatePath(`/admin/forms/${id}/integrations`);
+    return { ok: true };
+  } catch (e) {
+    unstable_rethrow(e);
     return { ok: false, message: e instanceof ApiError ? e.message : undefined };
   }
 }

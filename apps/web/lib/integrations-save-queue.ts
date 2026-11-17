@@ -50,9 +50,17 @@ interface FormQueue {
   pending: Job<unknown> | null;
   subscribers: number;
   retryTimer: ReturnType<typeof setTimeout> | null;
+  /** The failed snapshot `retryTimer` is waiting to write again. */
+  retry: { job: Job<unknown>; attempt: number; messages: QueueMessages } | null;
+  /** A write from outside the queue that is running now: saves wait for it. */
+  foreign: Promise<void> | null;
+  /** Resolved whenever nothing is in flight (a snapshot may be waiting, a retry scheduled). */
+  quiet: (() => void)[];
   idle: Promise<void> | null;
   settleIdle: (() => void) | null;
 }
+
+type QueueMessages = { saveOffline: string; saveError: string; lost: string };
 
 /** Waits before each retry of the latest snapshot when the tab is gone. */
 export const UNMOUNTED_RETRY_MS = [1500, 4000] as const;
@@ -62,7 +70,18 @@ const queues = new Map<string, FormQueue>();
 function queueOf(formId: string): FormQueue {
   let q = queues.get(formId);
   if (!q) {
-    q = { seq: 0, inFlight: null, pending: null, subscribers: 0, retryTimer: null, idle: null, settleIdle: null };
+    q = {
+      seq: 0,
+      inFlight: null,
+      pending: null,
+      subscribers: 0,
+      retryTimer: null,
+      retry: null,
+      foreign: null,
+      quiet: [],
+      idle: null,
+      settleIdle: null,
+    };
     queues.set(formId, q);
   }
   return q;
@@ -76,7 +95,12 @@ function markBusy(formId: string, q: FormQueue): void {
 }
 
 function markIdleIfDone(q: FormQueue): void {
-  if (q.inFlight || q.pending || q.retryTimer) return;
+  if (!q.inFlight) {
+    const waiting = q.quiet;
+    q.quiet = [];
+    for (const resolve of waiting) resolve();
+  }
+  if (q.inFlight || q.pending || q.retryTimer || q.foreign) return;
   const settle = q.settleIdle;
   q.idle = null;
   q.settleIdle = null;
@@ -102,7 +126,7 @@ export function subscribeIntegrationsSave(formId: string): () => void {
 /** Whether the queue for a form has nothing in flight, waiting or scheduled. */
 export function integrationsSaveIdle(formId: string): boolean {
   const q = queues.get(formId);
-  return !q || (!q.inFlight && !q.pending && !q.retryTimer);
+  return !q || (!q.inFlight && !q.pending && !q.retryTimer && !q.foreign);
 }
 
 /**
@@ -113,7 +137,7 @@ export function integrationsSaveIdle(formId: string): boolean {
 export function enqueueIntegrationsSave<R>(
   formId: string,
   send: () => Promise<R>,
-  opts: { partial?: string | null; messages: { saveOffline: string; saveError: string; lost: string } },
+  opts: { partial?: string | null; messages: QueueMessages },
 ): Promise<QueueOutcome<R>> {
   const q = queueOf(formId);
   markBusy(formId, q);
@@ -122,6 +146,7 @@ export function enqueueIntegrationsSave<R>(
     // A newer snapshot supersedes the retry of an older one.
     clearTimeout(q.retryTimer);
     q.retryTimer = null;
+    q.retry = null;
   }
   return new Promise<QueueOutcome<R>>((resolve) => {
     const job: Job<R> = { seq: ++q.seq, send, partial: opts.partial ?? null, resolve };
@@ -134,9 +159,16 @@ export function enqueueIntegrationsSave<R>(
 async function drain(
   formId: string,
   q: FormQueue,
-  messages: { saveOffline: string; saveError: string; lost: string },
+  messages: QueueMessages,
   attempt = 0,
+  /** The retry an outside write runs before itself: it must not wait for that write. */
+  ahead = false,
 ): Promise<void> {
+  // A write from outside the queue goes first: this one must not land in the
+  // middle of its read-modify-write. Whoever is still waiting when it ends
+  // re-reads the queue below, so two drains that both waited cannot both send.
+  while (q.foreign && !ahead) await q.foreign;
+  if (q.inFlight) return;
   const job = q.pending;
   if (!job) {
     markIdleIfDone(q);
@@ -194,15 +226,81 @@ async function drain(
   }
   // Retry THIS snapshot later, unless a newer one arrives first.
   if (attempt === 0) job.resolve({ kind: 'sent', result });
-  q.retryTimer = setTimeout(() => {
-    q.retryTimer = null;
-    if (q.pending || q.inFlight) {
-      markIdleIfDone(q);
-      return;
+  q.retry = { job, attempt: attempt + 1, messages };
+  q.retryTimer = setTimeout(() => runRetry(formId, q), wait);
+  markIdleIfDone(q);
+}
+
+/** Write the failed snapshot again: when its timer fires, or early (see `runDestinationWrite`). */
+function runRetry(formId: string, q: FormQueue, ahead = false): void {
+  const retry = q.retry;
+  if (q.retryTimer) clearTimeout(q.retryTimer);
+  q.retryTimer = null;
+  q.retry = null;
+  if (!retry || q.pending || q.inFlight) {
+    markIdleIfDone(q);
+    return;
+  }
+  q.pending = { ...retry.job, resolve: () => {} };
+  void drain(formId, q, retry.messages, retry.attempt, ahead);
+}
+
+/**
+ * Resolves once nothing is being written. A snapshot still WAITING does not
+ * count: with an outside write open it is parked behind that write, and
+ * waiting for it here would be waiting for ourselves.
+ */
+function whenQuiet(q: FormQueue): Promise<void> {
+  if (!q.inFlight) return Promise.resolve();
+  return new Promise<void>((resolve) => q.quiet.push(resolve));
+}
+
+/**
+ * Run a destinations write that does not go through the queue's snapshots
+ * (the Build tab's per-question HubSpot picker, a field-key rename, a card
+ * action that finished after the tab was left), in line with it.
+ *
+ * Those writes read the stored destinations, change one thing and write the
+ * array back. Next to the queue that is a race in both directions: a failed
+ * snapshot waiting for its retry would be written over the new mapping a few
+ * seconds later, undoing it, and a snapshot in flight could land between the
+ * other write's read and its write. So:
+ *  - it waits for whatever the queue is writing;
+ *  - a failed snapshot waiting for its retry gets that try NOW, first, so the
+ *    write that follows reads it if it lands;
+ *  - if it still has not landed, its retry is dropped, since writing that
+ *    older array later would undo this write, and the change it carried is
+ *    reported as lost (it never reached the server);
+ *  - queue saves that arrive meanwhile wait for this write to finish.
+ */
+export async function runDestinationWrite<R>(formId: string, write: () => Promise<R>): Promise<R> {
+  const q = queueOf(formId);
+  // One at a time among themselves too.
+  while (q.foreign) await q.foreign;
+  let release!: () => void;
+  q.foreign = new Promise<void>((resolve) => (release = resolve));
+  markBusy(formId, q);
+  try {
+    await whenQuiet(q);
+    if (q.retry) {
+      runRetry(formId, q, true);
+      await whenQuiet(q);
     }
-    q.pending = { ...job, resolve: () => {} };
-    void drain(formId, q, messages, attempt + 1);
-  }, wait);
+    if (q.retry) {
+      const { messages } = q.retry;
+      if (q.retryTimer) clearTimeout(q.retryTimer);
+      q.retryTimer = null;
+      q.retry = null;
+      publishIntegrationsSave(formId, { status: 'error', detail: messages.lost, lost: true });
+    }
+    return await write();
+  } finally {
+    q.foreign = null;
+    // A save that arrived meanwhile is parked in its own `drain`, waiting on
+    // this promise: releasing it is what sends it.
+    release();
+    markIdleIfDone(q);
+  }
 }
 
 /** Specs only: forget every queue. */

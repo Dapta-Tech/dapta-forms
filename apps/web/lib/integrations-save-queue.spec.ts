@@ -8,7 +8,13 @@
  * state of the latest snapshot only, so an older failure is never "lost".
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { enqueueIntegrationsSave, resetIntegrationsSaveQueues, subscribeIntegrationsSave } from './integrations-save-queue';
+import {
+  enqueueIntegrationsSave,
+  resetIntegrationsSaveQueues,
+  runDestinationWrite,
+  subscribeIntegrationsSave,
+} from './integrations-save-queue';
+import { awaitPendingDestinationWrite, trackDestinationWrite } from './connect-sync';
 import { readIntegrationsSave } from './integrations-save-status';
 
 const MSG = { saveOffline: 'offline', saveError: 'error', lost: 'lost after leaving' };
@@ -106,5 +112,140 @@ describe('the state reported is the latest snapshot\'s', () => {
     void enqueueIntegrationsSave('f6', s.send('x'), { partial: 'All saved except the webhook.', messages: MSG });
     await s.settleNext({ ok: true });
     expect(readIntegrationsSave('f6')).toEqual({ status: 'partial', detail: 'All saved except the webhook.' });
+  });
+});
+
+/**
+ * A write that does not go through the queue's snapshots: the Build tab's
+ * per-question HubSpot picker reads the stored destinations, changes one
+ * mapping and writes the array back.
+ *
+ * The audit's scenario: a save fails as the author leaves Connect, and within
+ * a few seconds they map a property from a question in Build. The queue's
+ * retry then wrote its older whole array over the new mapping. It reproduces:
+ * run the same sequence with the mapping written directly (as it was) and the
+ * store ends on the snapshot, without the mapping.
+ */
+describe('a write from outside the queue', () => {
+  /** A store both writers share, like the form's stored destinations. */
+  function store() {
+    const state = { value: 'A', failSnapshot: 1 };
+    // The Connect tab's snapshot: fails `failSnapshot` times, then lands.
+    const snapshot = (value: string) => async () => {
+      if (state.failSnapshot > 0) {
+        state.failSnapshot -= 1;
+        return { ok: false as const, transport: true as const, message: 'network down' };
+      }
+      state.value = value;
+      return { ok: true as const };
+    };
+    // The picker: read, change one thing, write back.
+    const mapping = async () => {
+      state.value = `${state.value}+map`;
+      return { ok: true as const };
+    };
+    return { state, snapshot, mapping };
+  }
+
+  it('the repro, with the mapping written directly: the retry undoes it', async () => {
+    const s = store();
+    void enqueueIntegrationsSave('fw0', s.snapshot('S1'), { messages: MSG });
+    await vi.advanceTimersByTimeAsync(0); // S1 failed, its retry is scheduled
+    await s.mapping(); // straight to the server, as the picker used to
+    expect(s.state.value).toBe('A+map');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(s.state.value).toBe('S1'); // the mapping is gone
+  });
+
+  it('runs the waiting retry first, so the write lands on top of it and nothing undoes it', async () => {
+    const s = store();
+    void enqueueIntegrationsSave('fw1', s.snapshot('S1'), { messages: MSG });
+    await vi.advanceTimersByTimeAsync(0);
+    await runDestinationWrite('fw1', s.mapping);
+    expect(s.state.value).toBe('S1+map');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(s.state.value).toBe('S1+map');
+    expect(readIntegrationsSave('fw1')).toMatchObject({ status: 'saved' });
+  });
+
+  it('drops a retry that still cannot land, and says that change was lost instead of undoing the write later', async () => {
+    const s = store();
+    s.state.failSnapshot = 99;
+    void enqueueIntegrationsSave('fw2', s.snapshot('S1'), { messages: MSG });
+    await vi.advanceTimersByTimeAsync(0);
+    await runDestinationWrite('fw2', s.mapping);
+    expect(s.state.value).toBe('A+map');
+    s.state.failSnapshot = 0; // the network is back: a retry WOULD land now
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(s.state.value).toBe('A+map');
+    expect(readIntegrationsSave('fw2')).toMatchObject({ status: 'error', lost: true, detail: MSG.lost });
+  });
+
+  it('makes a snapshot that arrives meanwhile wait for it, and waits for one already in flight', async () => {
+    const order: string[] = [];
+    let endWrite!: () => void;
+    const outside = runDestinationWrite('fw3', async () => {
+      order.push('write:start');
+      await new Promise<void>((r) => (endWrite = r));
+      order.push('write:end');
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const saved = enqueueIntegrationsSave(
+      'fw3',
+      async () => {
+        order.push('snapshot');
+        return { ok: true as const };
+      },
+      { messages: MSG },
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(order).toEqual(['write:start']);
+    endWrite();
+    await outside;
+    await saved;
+    expect(order).toEqual(['write:start', 'write:end', 'snapshot']);
+
+    // And the other way round: a snapshot in flight finishes first.
+    const s = server();
+    void enqueueIntegrationsSave('fw4', s.send('S'), { messages: MSG });
+    await vi.advanceTimersByTimeAsync(0);
+    let ran = false;
+    const later = runDestinationWrite('fw4', async () => {
+      ran = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ran).toBe(false);
+    await s.settleNext({ ok: true });
+    await later;
+    expect(ran).toBe(true);
+  });
+});
+
+/**
+ * The Connect tab waits for pending writes before it reads the form. It held
+ * ONE write per form: a card action still running (a spreadsheet being
+ * created) was replaced by the save the tab flushed on its way out, and a tab
+ * opened again read the form before the sheet was attached.
+ */
+describe('what a reopened Connect tab waits for', () => {
+  it('waits for every pending write, a slow action and the save that follows it included', async () => {
+    let endAction!: () => void;
+    const action = new Promise<void>((r) => (endAction = r));
+    trackDestinationWrite('cs1', action);
+    // The tab's own flush, registered after the action and finished first.
+    trackDestinationWrite('cs1', Promise.resolve());
+    let ready = false;
+    void awaitPendingDestinationWrite('cs1').then(() => (ready = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ready).toBe(false);
+    // The action's result is saved through the queue as it settles.
+    const s = server();
+    void action.then(() => enqueueIntegrationsSave('cs1', s.send('with sheet'), { messages: MSG }));
+    endAction();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ready).toBe(false);
+    await s.settleNext({ ok: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ready).toBe(true);
   });
 });

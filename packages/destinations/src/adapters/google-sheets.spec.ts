@@ -200,6 +200,43 @@ describe('which columns a delivered row holds', () => {
     expect(body.values).toEqual([['sam@example.com', '', '42', 'google']]);
   });
 
+  // The author is renaming column B and has cleared its heading: dForms
+  // wrote "B" to row 1 before, so the position is held with an empty cell and
+  // C stays under C. It used to be dropped, and C landed under B.
+  it('keeps an empty cell where a column with a cleared heading still holds its place', async () => {
+    const fetchImpl = answers(200, OK);
+    await new GoogleSheetsDestination(
+      options({
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'C', source: 'score' },
+        ],
+        writtenHeaders: ['A', 'B', 'C'],
+      }),
+      fetchImpl,
+    ).deliver(ctx());
+    const body = JSON.parse(String(callOf(fetchImpl)[1].body)) as { values: string[][] };
+    expect(body.values).toEqual([['sam@example.com', '', '42']]);
+  });
+
+  it('still leaves out a column that never had a heading, with a row 1 recorded', async () => {
+    const fetchImpl = answers(200, OK);
+    await new GoogleSheetsDestination(
+      options({
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: 'C', source: 'score' },
+          { header: '', source: 'answer', key: 'company' },
+        ],
+        writtenHeaders: ['A', 'C'],
+      }),
+      fetchImpl,
+    ).deliver(ctx());
+    const body = JSON.parse(String(callOf(fetchImpl)[1].body)) as { values: string[][] };
+    expect(body.values).toEqual([['sam@example.com', '42']]);
+  });
+
   it('is not built at all when no column has a heading', () => {
     const d = createDestination(
       { type: 'google-sheets', googleSheets: options({ columns: [{ header: '', source: 'score' }] }) },

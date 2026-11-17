@@ -28,6 +28,9 @@ const SHEET: GoogleSheetsState = {
   spreadsheetId: 'sheet-1',
   sheetTitle: 'Responses',
   columns: [{ header: 'Email', source: 'answer', key: 'email' }],
+  // Nothing recorded for row 1 yet (the API owns that, and a parse of what
+  // the card sends never carries it).
+  writtenHeaders: null,
 };
 
 describe('a reload brings back everything the pill called saved', () => {
@@ -45,7 +48,7 @@ describe('a reload brings back everything the pill called saved', () => {
   });
 
   it('keeps the switch on with no spreadsheet chosen yet', () => {
-    const state: GoogleSheetsState = { enabled: true, spreadsheetId: '', sheetTitle: '', columns: [] };
+    const state: GoogleSheetsState = { enabled: true, spreadsheetId: '', sheetTitle: '', columns: [], writtenHeaders: null };
     expect(reload(state)).toEqual(state);
   });
 

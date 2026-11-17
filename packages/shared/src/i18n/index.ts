@@ -1802,6 +1802,8 @@ export interface FormsMessages {
        * said once when they come back, since the screen shows what is stored.
        */
       saveLostAfterLeave: string;
+      /** Dismisses the "your last change was not saved" notice once it has been read. */
+      saveLostDismiss: string;
       /** V5-QA — saved, except one card that has a problem of its own. */
       autosavedPartial: string;
       saveError: string;
@@ -2155,6 +2157,8 @@ export interface FormsMessages {
         rowNeedsAnswer: string;
         rowNeedsUtm: string;
         rowNeedsHeader: string;
+        /** A column whose heading was cleared, still holding its place in the sheet. `{header}` is what row 1 says. */
+        rowHeldHeader: string;
         /** Row 1 does not match the columns, so nothing was overwritten on its own. */
         headersNotEmpty: string;
         /** Row 1 is dForms' own but out of date with the columns (it can be updated). */
@@ -4305,6 +4309,7 @@ export const en: FormsMessages = {
       saved: 'Integrations saved.',
       autosaved: 'Changes saved automatically',
       autosavedShort: 'Saved',
+      saveLostDismiss: 'Got it',
       saveLostAfterLeave:
         'Your last change on this tab could not be saved after you left it, so it is not in the integrations below.',
       autosavedPartial: 'Saved everything except the webhook.',
@@ -4609,6 +4614,8 @@ export const en: FormsMessages = {
         rowNeedsAnswer: 'Choose which answer fills this column. Until then its cells stay empty.',
         rowNeedsUtm: 'Choose which campaign tag fills this column. Until then its cells stay empty.',
         rowNeedsHeader: 'Give it a heading to write it to the sheet.',
+        rowHeldHeader:
+          'Give it a heading. Until then the sheet keeps "{header}" above this column and its cells stay empty, so the columns after it do not move.',
         headersNotEmpty: 'Row 1 of the sheet does not match these columns, so it was not changed on its own.',
         headersFailed: 'The header row could not be updated. Your columns are saved.',
         headersStale:
@@ -7081,6 +7088,7 @@ export const es: FormsMessages = {
       saved: 'Integraciones guardadas.',
       autosaved: 'Cambios guardados automáticamente',
       autosavedShort: 'Guardado',
+      saveLostDismiss: 'Entendido',
       saveLostAfterLeave:
         'Tu último cambio en esta pestaña no se pudo guardar después de que saliste, así que no está en las integraciones de abajo.',
       autosavedPartial: 'Se guardó todo menos el webhook.',
@@ -7388,6 +7396,8 @@ export const es: FormsMessages = {
         rowNeedsAnswer: 'Elige qué respuesta llena esta columna. Mientras tanto, sus celdas quedan vacías.',
         rowNeedsUtm: 'Elige qué etiqueta de campaña llena esta columna. Mientras tanto, sus celdas quedan vacías.',
         rowNeedsHeader: 'Ponle un encabezado para escribirla en la hoja.',
+        rowHeldHeader:
+          'Ponle un encabezado. Mientras tanto la hoja conserva «{header}» sobre esta columna y sus celdas quedan vacías, así las columnas siguientes no se mueven.',
         headersNotEmpty: 'La fila 1 de la hoja no coincide con estas columnas, así que no se cambió sola.',
         headersFailed: 'No se pudo actualizar la fila de encabezados. Tus columnas sí quedaron guardadas.',
         headersStale:

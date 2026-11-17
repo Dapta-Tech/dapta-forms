@@ -548,6 +548,54 @@ describe('the header row', () => {
     expect(hint(4)).toBe(m.gsheets.rowNeedsUtm);
   });
 
+  // The author is renaming the middle column and has cleared its heading.
+  // dForms wrote "B" there before, so the sheet keeps that position (an empty
+  // cell under "B") and C stays under C. The card must count the same way:
+  // the cleared column keeps its letter, and its note says what the sheet is
+  // doing meanwhile. It used to lose its letter and C became "B" on the card,
+  // as it did in the sheet.
+  it('keeps the letter of a column whose heading was cleared, when the sheet still holds its place', async () => {
+    const { el } = await mount({
+      state: {
+        ...STORED,
+        writtenHeaders: ['A', 'B', 'C'],
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'C', source: 'score' },
+          { header: '', source: 'answer', key: 'email' },
+        ],
+      },
+      formId: 'form-1',
+    });
+    const letters = [...el.querySelectorAll('[data-testid="gsheets-column-letter"]')].map((l) => l.textContent);
+    // Held column: B. The never-named one at the end: no letter.
+    expect(letters).toEqual(['A', 'B', 'C', '']);
+    const rows = [...el.querySelectorAll('[data-testid="gsheets-column"]')];
+    const hint = (i: number) => rows[i]!.querySelector('[data-testid="gsheets-column-missing"]');
+    expect(hint(1)?.textContent).toBe(m.gsheets.rowHeldHeader.replace('{header}', 'B'));
+    expect(hint(1)?.getAttribute('data-held')).toBe('true');
+    expect(hint(3)?.textContent).toBe(m.gsheets.rowNeedsHeader);
+    expect(hint(3)?.getAttribute('data-held')).toBeNull();
+  });
+
+  it('gives that column no letter when dForms never wrote a row 1 for this sheet', async () => {
+    const { el } = await mount({
+      state: {
+        ...STORED,
+        writtenHeaders: null,
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'C', source: 'score' },
+        ],
+      },
+      formId: 'form-1',
+    });
+    const letters = [...el.querySelectorAll('[data-testid="gsheets-column-letter"]')].map((l) => l.textContent);
+    expect(letters).toEqual(['A', '', 'B']);
+  });
+
   it('shows the row-1 mismatch above the column list', async () => {
     const { el } = await mount({ state: STORED, formId: 'form-1', headerSync: MISMATCH });
     const panel = el.querySelector('[data-testid="gsheets-header-mismatch"]')!;

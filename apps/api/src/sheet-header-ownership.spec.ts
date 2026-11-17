@@ -569,3 +569,61 @@ describe('recording a snapshot never replaces a newer one', () => {
     expect(await storedSnapshot()).toEqual(newer);
   });
 });
+
+describe('a heading cleared on a column dForms already wrote keeps its place', () => {
+  // The author renames the middle column: clears "Email", pauses, types the
+  // new name. While it is empty the column used to leave the sheet: row 1 was
+  // rewritten without it and every response delivered in that window put
+  // Company's answer under Email. Now the position is held.
+  const cleared = () => {
+    const d = fromEditor(OLD);
+    d.columns[1] = { ...d.columns[1]!, header: '' };
+    return d;
+  };
+
+  it('does not rewrite row 1 while the heading is empty, and reports nothing to fix', async () => {
+    await store(fromEditor(OLD));
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(OLD)] });
+    expect(row1).toEqual(OLD);
+    writes = [];
+    reads = 0;
+    const out = await controller.putDestinations(asOwner(), formId, { destinations: [cleared()] });
+    expect(writes).toEqual([]);
+    expect(row1).toEqual(OLD);
+    // Known to be in sync (the held position is what row 1 already says): no Google call at all.
+    expect(reads).toBe(0);
+    expect((out as { sheetHeaders?: unknown }).sheetHeaders).toBeUndefined();
+    expect(await storedSnapshot()).toEqual({ spreadsheetId: SHEET, sheetTitle: 'Responses', headers: OLD });
+  });
+
+  it('writes the new name in the SAME position once it is typed', async () => {
+    await store(fromEditor(OLD));
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(OLD)] });
+    await controller.putDestinations(asOwner(), formId, { destinations: [cleared()] });
+    await controller.putDestinations(asOwner(), formId, {
+      destinations: [fromEditor(['Submitted', 'Work email', 'Company'])],
+    });
+    expect(row1).toEqual(['Submitted', 'Work email', 'Company']);
+  });
+
+  it('rewrites row 1 without it only when the column is deleted for real', async () => {
+    await store(fromEditor(OLD));
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(OLD)] });
+    await controller.putDestinations(asOwner(), formId, { destinations: [cleared()] });
+    const d = cleared();
+    d.columns.splice(1, 1);
+    await controller.putDestinations(asOwner(), formId, { destinations: [d] });
+    expect(row1).toEqual(['Submitted', 'Company']);
+  });
+
+  it('still leaves a never-named column out of row 1', async () => {
+    await store(fromEditor(OLD));
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(OLD)] });
+    writes = [];
+    const d = fromEditor(OLD);
+    d.columns.push({ header: '', source: 'answer', key: 'extra' });
+    await controller.putDestinations(asOwner(), formId, { destinations: [d] });
+    expect(writes).toEqual([]);
+    expect(row1).toEqual(OLD);
+  });
+});
