@@ -12,7 +12,8 @@ describe('two saves, one indicator', () => {
     expect(worseSaveStatus('saved', 'error')).toBe('error');
     expect(worseSaveStatus('saved', 'retrying')).toBe('retrying');
     expect(worseSaveStatus('saving', 'saved')).toBe('saving');
-    expect(worseSaveStatus('conflict', 'error')).toBe('error');
+    // A conflict is the one the person has to act on: it outranks an error.
+    expect(worseSaveStatus('conflict', 'error')).toBe('conflict');
     expect(worseSaveStatus('saved', undefined)).toBe('saved');
   });
 

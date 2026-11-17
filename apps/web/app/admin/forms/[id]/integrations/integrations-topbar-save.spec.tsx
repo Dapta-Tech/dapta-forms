@@ -31,10 +31,11 @@ vi.mock('@/app/admin/integrations/actions', () => ({
   connectSalesforceAction: vi.fn(),
   startGoogleSheetsAuthAction: vi.fn(),
 }));
-vi.mock('@/components/toast', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), toast: vi.fn() }) }));
+const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), toast: vi.fn() }));
+vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
 
 import { IntegrationsEditor } from './integrations-editor';
-import { readIntegrationsSave } from '@/lib/integrations-save-status';
+import { publishIntegrationsSave, readIntegrationsSave } from '@/lib/integrations-save-status';
 
 const m = getMessages('en').admin.integrations;
 let root: Root | null = null;
@@ -115,5 +116,61 @@ describe('the topbar ends on the truth', () => {
     });
     expect(actions.saveIntegrationsAction.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(readIntegrationsSave('form-retry')?.status).toBe('saved');
+  });
+});
+
+describe('a save that fails after the tab is left', () => {
+  it('retries a bounded number of times, then says "not saved" without promising a retry', async () => {
+    actions.saveIntegrationsAction.mockRejectedValue(new Error('network down'));
+    const el = await mount('form-lost');
+    await edit(el);
+    act(() => root!.unmount());
+    root = null;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    // One terminal save plus the bounded retries, and then it stops.
+    expect(actions.saveIntegrationsAction).toHaveBeenCalledTimes(3);
+    const state = readIntegrationsSave('form-lost');
+    expect(state?.status).toBe('error');
+    expect(state?.lost).toBe(true);
+    expect(state?.detail).toBe(m.saveLostAfterLeave);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(actions.saveIntegrationsAction).toHaveBeenCalledTimes(3);
+  });
+
+  it('on coming back, says once that the change was lost and shows the real state', async () => {
+    publishIntegrationsSave('form-back', { status: 'error', detail: m.saveLostAfterLeave, lost: true });
+    await mount('form-back');
+    expect(toasts.error).toHaveBeenCalledWith(m.saveLostAfterLeave);
+    // The tab shows what the server holds: the topbar is not left on the
+    // failure of a visit that is over.
+    expect(readIntegrationsSave('form-back')?.status).toBe('saved');
+  });
+
+  it('saves after the tab is left when a retry gets through', async () => {
+    actions.saveIntegrationsAction.mockRejectedValueOnce(new Error('blip')).mockResolvedValue({ ok: true });
+    const el = await mount('form-blip');
+    await edit(el);
+    act(() => root!.unmount());
+    root = null;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(readIntegrationsSave('form-blip')?.status).toBe('saved');
+  });
+
+  it('a later successful save clears a lost one', async () => {
+    publishIntegrationsSave('form-clear', { status: 'error', detail: m.saveLostAfterLeave, lost: true });
+    actions.saveIntegrationsAction.mockResolvedValue({ ok: true });
+    const el = await mount('form-clear');
+    await edit(el);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(readIntegrationsSave('form-clear')).toMatchObject({ status: 'saved' });
+    expect(readIntegrationsSave('form-clear')?.lost).toBeFalsy();
   });
 });

@@ -555,6 +555,24 @@ describe('the header row', () => {
     expect(panel.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('offers to update a row 1 dForms wrote that fell out of date, in one press', async () => {
+    const { el, onHeaderSync } = await mount({ state: STORED, formId: 'form-1', headerSync: { outcome: 'stale' } });
+    const notice = el.querySelector('[data-testid="gsheets-header-stale"]')!;
+    expect(notice.textContent).toContain(m.gsheets.headersStale);
+    actions.syncSheetHeadersAction.mockResolvedValueOnce({ ok: true, data: { ok: true, outcome: 'written' } });
+    await act(async () => notice.querySelector<HTMLButtonElement>('[data-testid="gsheets-update-stale"]')!.click());
+    // No confirmation: it is the ordinary sync, which only rewrites a row it owns.
+    expect(el.querySelector('[data-testid="confirm-dialog"]')).toBeNull();
+    expect(actions.syncSheetHeadersAction).toHaveBeenLastCalledWith('form-1', false);
+    expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'written' });
+  });
+
+  it('shows the out-of-date notice when the check on open finds it', async () => {
+    actions.syncSheetHeadersAction.mockResolvedValue({ ok: true, data: { ok: true, outcome: 'stale' } });
+    const { onHeaderSync } = await mount({ state: STORED, formId: 'form-1' });
+    expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'stale' });
+  });
+
   it('only promises Google Drive where the Picker is there', async () => {
     const without = await mount({ pickerAvailable: false });
     expect(without.el.textContent).toContain(m.gsheets.sheetHelpCreateOnly);

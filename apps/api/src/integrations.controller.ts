@@ -1392,9 +1392,16 @@ function sheetTargetOf(
   return { spreadsheetId, sheetTitle };
 }
 
-/** A stored snapshot, duck-typed like `storedMirrorState` so an old row still yields one. */
-function snapshotOf(entry: Record<string, unknown> | undefined): SheetHeaderSnapshot | null {
-  const raw = isRecord(entry?.settings) ? entry.settings.headerSnapshot : undefined;
+/**
+ * A stored snapshot, duck-typed like `storedMirrorState` so an old row still
+ * yields one. `headerSnapshot` is what dForms last wrote to row 1;
+ * `headerForeign` is the headings it last found it may not write there.
+ */
+function snapshotOf(
+  entry: Record<string, unknown> | undefined,
+  key: 'headerSnapshot' | 'headerForeign' = 'headerSnapshot',
+): SheetHeaderSnapshot | null {
+  const raw = isRecord(entry?.settings) ? entry.settings[key] : undefined;
   if (!isRecord(raw) || typeof raw.spreadsheetId !== 'string' || !Array.isArray(raw.headers)) return null;
   return {
     spreadsheetId: raw.spreadsheetId,
@@ -1536,6 +1543,16 @@ export class FormDestinationsController {
     if (after && JSON.stringify(before) !== JSON.stringify(after)) {
       await this.recordSheetSnapshot(p.accountId, id, after);
     }
+    // The headings written came from the config read BEFORE the Sheets calls.
+    // An autosave that changed them in that window (a rename while "replace
+    // row 1" was in flight) means row 1 now holds the old ones: say so rather
+    // than "written", so the card offers to bring it up to date. The snapshot
+    // recorded above is the truth about row 1, so that update is automatic.
+    if (after && (synced.result?.outcome === 'written' || synced.result?.outcome === 'unchanged')) {
+      const fresh = await getFormById(this.db, p.accountId, id);
+      const now = sheetHeadersOf(firstSheetsEntry((fresh?.config as { destinations?: unknown } | null)?.destinations));
+      if (!sameList(now, after.headers)) return { ok: true, outcome: 'stale' };
+    }
     return { ok: true, ...(synced.result ?? { outcome: 'unchanged' }) };
   }
 
@@ -1551,33 +1568,43 @@ export class FormDestinationsController {
     formId: string,
     snapshot: SheetHeaderSnapshot,
   ): Promise<void> {
-    const fresh = await getFormById(this.db, accountId, formId);
-    const list = (fresh?.config as { destinations?: unknown } | null)?.destinations;
-    if (!fresh || !Array.isArray(list)) return;
-    const index = list.findIndex((d) => isRecord(d) && d.type === 'google-sheets');
-    if (index === -1) return;
-    const current = list[index] as Record<string, unknown>;
-    const target = sheetTargetOf(current);
-    if (!target || target.spreadsheetId !== snapshot.spreadsheetId || target.sheetTitle !== snapshot.sheetTitle) {
-      return;
+    // Compare-and-swap on the form's `updated_at`: the array written is the
+    // one just read plus this one field, and it lands only if nothing was
+    // written in between. A save that did land in between is kept, and the
+    // field is merged onto IT on the one retry.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const fresh = await getFormById(this.db, accountId, formId);
+      const list = (fresh?.config as { destinations?: unknown } | null)?.destinations;
+      if (!fresh || !Array.isArray(list)) return;
+      const index = list.findIndex((d) => isRecord(d) && d.type === 'google-sheets');
+      if (index === -1) return;
+      const current = list[index] as Record<string, unknown>;
+      const target = sheetTargetOf(current);
+      if (!target || target.spreadsheetId !== snapshot.spreadsheetId || target.sheetTitle !== snapshot.sheetTitle) {
+        return;
+      }
+      const settings: Record<string, unknown> = {
+        ...(isRecord(current.settings) ? current.settings : {}),
+        headerSnapshot: snapshot,
+      };
+      // Written means known: whatever was recorded as someone else's row 1 is not.
+      delete settings.headerForeign;
+      const next = [...list];
+      next[index] = { ...current, settings };
+      const out = await updateFormDestinations(this.db, accountId, formId, next, fresh.updatedAt);
+      if (out.ok || out.reason !== 'STALE') return;
     }
-    const next = [...list];
-    next[index] = {
-      ...current,
-      settings: { ...(isRecord(current.settings) ? current.settings : {}), headerSnapshot: snapshot },
-    };
-    await updateFormDestinations(this.db, accountId, formId, next);
   }
+
 
   /**
    * Keep the spreadsheet's row 1 in line with the columns, returning the
    * destinations to store and what the attempt did.
    *
-   * Runs only when this write CHANGES what row 1 should say: different
-   * headers, or a different spreadsheet or tab. A save that touched something
-   * else (a HubSpot mapping, the switch) costs Google nothing, and a row 1
-   * that was left alone as someone else's is not re-read on every keystroke
-   * after. `force` is the button, which asks regardless.
+   * Runs unless it is KNOWN what row 1 holds for these headings (see the
+   * comment at the skip below): a save that touched something else costs
+   * Google nothing once row 1 is in sync or known to be someone else's, and
+   * a failed sync is retried by the next save. `force` is the button.
    *
    * `headerSnapshot` is this method's own bookkeeping, sourced from what is
    * STORED and from the result, never from the caller, for the reason
@@ -1603,49 +1630,67 @@ export class FormDestinationsController {
     const raw = destinations[index] as Record<string, unknown>;
     const storedEntry = firstSheetsEntry(stored);
     const storedSnapshot = snapshotOf(storedEntry);
+    const storedForeign = snapshotOf(storedEntry, 'headerForeign');
 
-    // Strip-then-set, as `mirrorSettingsFor` does: a caller's snapshot never
+    // Strip-then-set, as `mirrorSettingsFor` does: a caller's bookkeeping never
     // survives, and the stored one is carried unless this attempt replaces it.
     const settings: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(isRecord(raw.settings) ? raw.settings : {})) {
-      if (k !== 'headerSnapshot') settings[k] = v;
+      if (k !== 'headerSnapshot' && k !== 'headerForeign') settings[k] = v;
     }
-    const withSnapshot = (snapshot: SheetHeaderSnapshot | null, result?: SheetHeaderSync) => {
+    const withState = (
+      snapshot: SheetHeaderSnapshot | null,
+      foreign: SheetHeaderSnapshot | null,
+      result?: SheetHeaderSync,
+    ) => {
       const next = [...destinations];
-      next[index] = { ...raw, settings: snapshot ? { ...settings, headerSnapshot: snapshot } : settings };
+      next[index] = {
+        ...raw,
+        settings: {
+          ...settings,
+          ...(snapshot ? { headerSnapshot: snapshot } : {}),
+          ...(foreign ? { headerForeign: foreign } : {}),
+        },
+      };
       return { destinations: next, ...(result ? { result } : {}) };
     };
+    const keep = (result?: SheetHeaderSync) => withState(storedSnapshot, storedForeign, result);
 
     const target = sheetTargetOf({ settings });
     const headers = sheetHeadersOf(raw);
-    if (!target || headers.length === 0) return withSnapshot(storedSnapshot);
+    if (!target || headers.length === 0) return keep();
 
     const storedTarget = sheetTargetOf(storedEntry);
     const sameTarget =
       storedTarget?.spreadsheetId === target.spreadsheetId &&
       storedTarget.sheetTitle === target.sheetTitle;
     const storedHeaders = sheetHeadersOf(storedEntry);
-    if (!opts.force && sameTarget && sameList(headers, storedHeaders)) {
-      return withSnapshot(storedSnapshot);
-    }
+    const forThis = (snap: SheetHeaderSnapshot | null) =>
+      !!snap && snap.spreadsheetId === target.spreadsheetId && snap.sheetTitle === target.sheetTitle;
+
+    // Skip Google only when it is KNOWN what row 1 holds for these headings:
+    // dForms wrote exactly them (the snapshot), or it already found row 1 is
+    // someone else's for exactly them (`headerForeign`, so an unrelated save
+    // does not re-read a sheet it has to leave alone anyway). Not on header
+    // equality with the stored config alone: a sync that FAILED (Google down
+    // while columns were reordered) left the config saying "A, B" and row 1
+    // saying "B, A", and every later save used to skip it, while deliveries
+    // wrote one column's answers under the other's heading.
+    const inSync = forThis(storedSnapshot) && sameList(storedSnapshot!.headers, headers);
+    const knownForeign = forThis(storedForeign) && sameList(storedForeign!.headers, headers);
+    if (!opts.force && (inSync || knownForeign)) return keep();
 
     const owned: string[][] = [];
-    if (
-      storedSnapshot &&
-      storedSnapshot.spreadsheetId === target.spreadsheetId &&
-      storedSnapshot.sheetTitle === target.sheetTitle
-    ) {
-      owned.push(storedSnapshot.headers);
-    }
+    if (forThis(storedSnapshot)) owned.push(storedSnapshot!.headers);
     if (sameTarget && storedHeaders.length > 0) owned.push(storedHeaders);
 
     let token = '';
     try {
       token = await this.googleAccessToken(accountId);
     } catch {
-      return withSnapshot(storedSnapshot, { outcome: 'failed', reason: 'unavailable' });
+      return keep({ outcome: 'failed', reason: 'unavailable' });
     }
-    if (!token) return withSnapshot(storedSnapshot, { outcome: 'failed', reason: 'not_connected' });
+    if (!token) return keep({ outcome: 'failed', reason: 'not_connected' });
 
     const result = await syncHeaderRow(
       token,
@@ -1657,12 +1702,17 @@ export class FormDestinationsController {
       opts.timeoutMs ?? SHEETS_SAVE_TIMEOUT_MS,
       { replace: opts.replace, check: opts.check },
     );
-    if (!result.ok) return withSnapshot(storedSnapshot, { outcome: 'failed', reason: result.reason });
+    // A failure records nothing, so the next save tries again.
+    if (!result.ok) return keep({ outcome: 'failed', reason: result.reason });
     if (result.outcome === 'foreign') {
-      return withSnapshot(storedSnapshot, { outcome: 'foreign', current: result.current, headers });
+      return withState(storedSnapshot, { ...target, headers }, {
+        outcome: 'foreign',
+        current: result.current,
+        headers,
+      });
     }
-    if (result.outcome === 'stale') return withSnapshot(storedSnapshot, { outcome: 'stale' });
-    return withSnapshot({ ...target, headers }, { outcome: result.outcome });
+    if (result.outcome === 'stale') return keep({ outcome: 'stale' });
+    return withState({ ...target, headers }, null, { outcome: result.outcome });
   }
 
   /** Seam for the specs: the account's Google access token, or `''` without one. */

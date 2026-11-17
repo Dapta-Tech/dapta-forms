@@ -130,8 +130,15 @@ describe('saving new columns updates the header row dForms wrote', () => {
     expect(row1).toEqual(['Submitted', 'Work email', 'booking']);
   });
 
-  it('asks Google nothing when a save leaves the headings as they were', async () => {
-    await store(fromEditor(OLD));
+  it('asks Google nothing when a save leaves headings that are known to be in row 1', async () => {
+    await store({
+      ...fromEditor(OLD),
+      settings: {
+        spreadsheetId: SHEET,
+        sheetTitle: 'Responses',
+        headerSnapshot: { spreadsheetId: SHEET, sheetTitle: 'Responses', headers: OLD },
+      },
+    });
     await controller.putDestinations(asOwner(), formId, {
       destinations: [{ ...fromEditor(OLD), enabled: false }],
     });
@@ -350,5 +357,84 @@ describe('the check on open never undoes an edit made while Google was slow', ()
       headers: OLD,
     });
     expect(writes).toEqual([]);
+  });
+});
+
+describe('a sync that failed is not forgotten (Google down while columns were reordered)', () => {
+  const REORDERED = ['Email', 'Submitted', 'Company'];
+  const inSync = () => ({
+    ...fromEditor(OLD),
+    settings: {
+      spreadsheetId: SHEET,
+      sheetTitle: 'Responses',
+      headerSnapshot: { spreadsheetId: SHEET, sheetTitle: 'Responses', headers: OLD },
+    },
+  });
+
+  it('retries on the next save, even one that changes nothing about the columns', async () => {
+    await store(inSync());
+    // Google answers 503 to everything while the author reorders the columns.
+    const base = controller.fetchImpl;
+    controller.fetchImpl = (async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
+    const failed = await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(REORDERED)] });
+    expect((failed as { sheetHeaders?: unknown }).sheetHeaders).toEqual({ outcome: 'failed', reason: 'unavailable' });
+    expect(row1).toEqual(OLD);
+
+    // The card opening on the drifted sheet says so (a look, no write).
+    controller.fetchImpl = base;
+    const look = await controller.syncFormSheetHeaders(asOwner(), formId, { check: true });
+    expect(look).toEqual({ ok: true, outcome: 'stale' });
+    expect(writes).toEqual([]);
+
+    // Google is back. A save that only flips the switch still repairs row 1:
+    // what row 1 holds for these headings is not KNOWN, so it is checked.
+    await controller.putDestinations(asOwner(), formId, {
+      destinations: [{ ...fromEditor(REORDERED), enabled: false }],
+    });
+    expect(row1).toEqual(REORDERED);
+    // And once known, the next unrelated save asks Google nothing.
+    const readsAfter = reads;
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(REORDERED)] });
+    expect(reads).toBe(readsAfter);
+  });
+
+  it('does not re-read a row 1 it already found is someone else\'s, on every save', async () => {
+    row1 = ['Name', 'Phone'];
+    await store(fromEditor(OLD));
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(REORDERED)] });
+    const after = reads;
+    await controller.putDestinations(asOwner(), formId, { destinations: [{ ...fromEditor(REORDERED), enabled: false }] });
+    expect(reads).toBe(after);
+    expect(row1).toEqual(['Name', 'Phone']);
+  });
+});
+
+describe('a confirmed replace that races an edit', () => {
+  it('reports stale, not written, when the headings changed while row 1 was being written', async () => {
+    row1 = ['Name', 'Phone'];
+    await store(fromEditor(OLD));
+    // Hold the replace's WRITE until the author's rename has been stored.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let held = false;
+    const base = controller.fetchImpl;
+    controller.fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (!held && init?.method === 'PUT') {
+        held = true;
+        await gate;
+      }
+      return base(url, init);
+    }) as unknown as typeof fetch;
+    const replace = controller.syncFormSheetHeaders(asOwner(), formId, { replace: true });
+    await new Promise((r) => setTimeout(r, 0));
+    const renamed = ['Submitted', 'Work email', 'Company'];
+    // The rename's own sync sees a foreign row 1 (the replace has not landed).
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(renamed)] });
+    release();
+    await expect(replace).resolves.toEqual({ ok: true, outcome: 'stale' });
+    expect(row1).toEqual(OLD);
+    // The snapshot says what row 1 really holds, so the next save fixes it.
+    await controller.putDestinations(asOwner(), formId, { destinations: [{ ...fromEditor(renamed), enabled: false }] });
+    expect(row1).toEqual(renamed);
   });
 });

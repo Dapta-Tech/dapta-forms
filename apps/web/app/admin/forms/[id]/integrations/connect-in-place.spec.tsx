@@ -166,6 +166,11 @@ describe('the autosave pill', () => {
     expect(document.documentElement.classList.contains('has-save-pill')).toBe(false);
   });
 
+  it('says nothing will be sent while a chosen sheet has no column with a heading', async () => {
+    await render(<SaveStatusPill status="pending" detail={null} pendingText={m.autosavedNoColumns} m={m} />);
+    expect(fixed().textContent).toBe(m.autosavedNoColumns);
+  });
+
   it('still speaks before the first save when there is something to read', async () => {
     await render(<SaveStatusPill status="pending" detail={null} touched={false} m={m} />);
     expect(fixed().textContent).toBe(m.autosavedPendingSheet);

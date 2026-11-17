@@ -33,7 +33,7 @@ import type {
 import { TokenConnectForm } from '@/app/admin/integrations/connect-forms';
 import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
 import { trackDestinationWrite } from '@/lib/connect-sync';
-import { publishIntegrationsSave } from '@/lib/integrations-save-status';
+import { publishIntegrationsSave, readIntegrationsSave } from '@/lib/integrations-save-status';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
 import {
@@ -58,6 +58,13 @@ type Msgs = FormsMessages['admin']['integrations'];
 
 /** Same debounce as the builder's autosave, so both tabs feel identical. */
 const AUTOSAVE_MS = 900;
+
+/**
+ * The waits before each retry of a save that fails AFTER the tab unmounted,
+ * when the autosave controller (which retries a mounted save) is gone. Bounded:
+ * a few seconds, then an honest "not saved".
+ */
+const UNMOUNTED_RETRY_MS = [1500, 4000];
 
 /** Module constants, not literals in JSX: the history's fetch keys off these. */
 const WEBHOOK_HISTORY_KINDS: DeliveryKind[] = ['webhook'];
@@ -481,6 +488,14 @@ export function IntegrationsEditor({
 }) {
   const { error } = useToast();
   const errorRef = useRef(error);
+  // Whether this tab is still on screen; read by a save that outlives it.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
@@ -722,11 +737,28 @@ export function IntegrationsEditor({
       // a component effect is gone by then, and the topbar would be left
       // saying "Saving" (or "Not saved" after a retry that succeeded).
       publishIntegrationsSave(id, { status: 'saving' });
-      const write = callAction(() => saveIntegrationsAction(id, built.destinations));
-      // Register the write so a Connect-tab remount reads it back, not the state
-      // it is about to overwrite (V4-05 race).
+      // Mounted, a failure is retried by the controller. After the tab
+      // unmounts nothing would retry it (the controller is disposed), so the
+      // retries happen HERE, bounded, and the last word is honest: either
+      // saved, or "not saved" with no promise of another try.
+      const write = (async () => {
+        let res = await callAction(() => saveIntegrationsAction(id, built.destinations));
+        for (const wait of UNMOUNTED_RETRY_MS) {
+          if (mountedRef.current || (!isTransportError(res) && res.ok)) break;
+          await new Promise((r) => setTimeout(r, wait));
+          res = await callAction(() => saveIntegrationsAction(id, built.destinations));
+        }
+        return res;
+      })();
+      // Register the write (retries included) so a Connect-tab remount reads it
+      // back, not the state it is about to overwrite (V4-05 race).
       trackDestinationWrite(id, write);
       const res = await write;
+      const failed = isTransportError(res) || !res.ok;
+      if (failed && !mountedRef.current) {
+        publishIntegrationsSave(id, { status: 'error', detail: m.saveLostAfterLeave, lost: true });
+        return isTransportError(res) ? res : { ok: false, message: res.message ?? m.saveError };
+      }
       if (isTransportError(res)) {
         publishIntegrationsSave(id, { status: 'retrying', detail: m.saveOffline });
         return res;
@@ -771,6 +803,15 @@ export function IntegrationsEditor({
     debounceMs: AUTOSAVE_MS,
   });
   const { markDirty: markDirtyRaw } = autosave;
+  // On mount the tab shows what the server holds (it waited for any write a
+  // previous mount left in flight), so that is the truth to publish: never a
+  // status inherited from an earlier visit. A change that was lost after the
+  // author left is said once, here, since it is not on the screen they see.
+  useEffect(() => {
+    const previous = readIntegrationsSave(id);
+    if (previous?.lost) errorRef.current(m.saveLostAfterLeave);
+    publishIntegrationsSave(id, { status: 'saved' });
+  }, [id, m]);
   // An edit makes the topbar say "Saving" at once, like the pill does, rather
   // than only when the debounced save starts.
   const markDirty = useCallback(() => {
@@ -789,10 +830,13 @@ export function IntegrationsEditor({
   // `builtGoogleSheets`), but sends nothing yet: "saved" alone would read as
   // "it works now". Said as what it is instead.
   const sheetsPending = sheets.enabled && !sheets.spreadsheetId;
+  // A spreadsheet but no column with a heading: stored, and nothing is sent.
+  const sheetsNoColumns =
+    sheets.enabled && !!sheets.spreadsheetId && !sheets.columns.some((c) => c.header.trim());
   const status: SaveStatus =
     autosave.status === 'saved' && partialBlocked
       ? 'partial'
-      : autosave.status === 'saved' && sheetsPending
+      : autosave.status === 'saved' && (sheetsPending || sheetsNoColumns)
         ? 'pending'
         : autosave.status === 'conflict'
           ? 'error'
@@ -916,7 +960,13 @@ export function IntegrationsEditor({
 
       {/* The Save button is gone (V5-A4): everything here autosaves, so what
           belongs on screen is the state of that save, not an action. */}
-      <SaveStatusPill status={status} detail={statusDetail} touched={saveTouched} m={m} />
+      <SaveStatusPill
+        status={status}
+        detail={statusDetail}
+        touched={saveTouched}
+        pendingText={sheetsNoColumns ? m.autosavedNoColumns : null}
+        m={m}
+      />
     </div>
   );
 }
@@ -974,12 +1024,15 @@ export function SaveStatusPill({
   status,
   detail,
   touched = true,
+  pendingText = null,
   m,
 }: {
   status: SaveStatus;
   detail: string | null;
   /** A save has run since the tab opened. Before that a plain "saved" is noise. */
   touched?: boolean;
+  /** What the `pending` state says, when it is not the no-spreadsheet sentence. */
+  pendingText?: string | null;
   m: Msgs;
 }) {
   const [mounted, setMounted] = useState(false);
@@ -1015,7 +1068,7 @@ export function SaveStatusPill({
         : status === 'partial'
           ? `${m.autosavedPartial} ${detail ?? ''}`.trim()
           : status === 'pending'
-            ? m.autosavedPendingSheet
+            ? pendingText ?? m.autosavedPendingSheet
             : status === 'retrying'
               ? m.saveRetrying
               : m.saving;

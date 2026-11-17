@@ -927,6 +927,14 @@ export function writableSheetColumns<T extends { header?: string; source?: strin
  */
 export const MAX_SHEET_COLUMNS = 200;
 
+/** Where a spreadsheet destination writes, and a list of row-1 headings there. */
+const sheetHeaderStateSchema = z.object({
+  spreadsheetId: z.string().min(1).max(200),
+  /** `''` is the first tab, the same as an absent `sheetTitle`. */
+  sheetTitle: z.string().max(200),
+  headers: z.array(z.string().max(200)).max(MAX_SHEET_COLUMNS),
+});
+
 /**
  * Append every submission to a Google Sheet as a new row.
  *
@@ -959,14 +967,13 @@ export const googleSheetsDestinationSchema = z.object({
        * to the columns rewrite row 1 while a row 1 that holds anything else
        * is never touched.
        */
-      headerSnapshot: z
-        .object({
-          spreadsheetId: z.string().min(1).max(200),
-          /** `''` is the first tab, the same as an absent `sheetTitle`. */
-          sheetTitle: z.string().max(200),
-          headers: z.array(z.string().max(200)).max(MAX_SHEET_COLUMNS),
-        })
-        .optional(),
+      headerSnapshot: sheetHeaderStateSchema.optional(),
+      /**
+       * The headings dForms last found it may NOT write to row 1 (row 1 held
+       * something else), and where. Owned by the API like `headerSnapshot`:
+       * it only spares a sheet a re-read on every unrelated save.
+       */
+      headerForeign: sheetHeaderStateSchema.optional(),
     })
     .default({}),
   /**

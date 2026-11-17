@@ -771,9 +771,18 @@ export async function updateFormDestinations(
   accountId: string,
   id: string,
   destinations: unknown[],
+  /**
+   * Compare-and-swap: write only if the row still carries this `updated_at`
+   * (the one the caller read the destinations from), else `STALE` and nothing
+   * is written. For a caller that rewrites the array from its own read, such
+   * as the API recording a header snapshot, so a save landing in between is
+   * never overwritten. Absent: the old last-writer-wins write.
+   */
+  expectedUpdatedAt?: number,
 ): Promise<CrudResult<FormRow>> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
+  if (expectedUpdatedAt !== undefined && existing.updatedAt !== expectedUpdatedAt) return stale();
   // Preserve masked webhook secrets: when the integrations UI leaves the secret
   // field untouched it submits WEBHOOK_SECRET_MASK; keep the stored secret.
   const merged = mergeWebhookSecrets(
@@ -781,10 +790,16 @@ export async function updateFormDestinations(
     (existing.config as Record<string, unknown> | null)?.destinations,
   );
   const config = { ...(existing.config as Record<string, unknown>), destinations: merged };
-  await db.run(
-    sql`UPDATE form SET config = ${jsonParam(config)}, updated_at = ${Date.now()}
-        WHERE account_id = ${accountId} AND id = ${id}`,
+  // The stamp is bumped by at least 1 so a write in the same millisecond as
+  // the one it follows still changes it, and a compare-and-swap against the
+  // earlier stamp cannot mistake the two for one.
+  const now = Math.max(Date.now(), existing.updatedAt + 1);
+  const written = await db.get<{ id: string }>(
+    sql`UPDATE form SET config = ${jsonParam(config)}, updated_at = ${now}
+        WHERE account_id = ${accountId} AND id = ${id} ${staleGuard(expectedUpdatedAt)}
+        RETURNING id`,
   );
+  if (!written) return expectedUpdatedAt !== undefined ? stale() : { ok: false, reason: 'NOT_FOUND' };
   return { ok: true, value: (await getFormById(db, accountId, id))! };
 }
 

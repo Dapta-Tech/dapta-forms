@@ -62,6 +62,7 @@ function headerSyncLine(
     case 'unchanged':
       return { text: g.headersUnchanged, tone: 'ok' };
     case 'stale':
+      // Drawn by `StaleRowNotice` instead, with its action.
       return null;
     case 'foreign':
       // Drawn by `HeaderMismatch` instead, with the side-by-side and the way out.
@@ -231,8 +232,9 @@ export function GoogleSheetsCard({
    * A LOOK, not a sync: one read, nothing written to the sheet and nothing
    * stored. It works from a copy of the config read before Google answers,
    * and an edit autosaved in that window must win (a write from here could
-   * put stale headings back). Only a mismatch is reported; a row that is
-   * dForms' own but out of date is fixed by the next save.
+   * put stale headings back). A row 1 that does not match is reported with
+   * the way out; one that is dForms' own but out of date (a sync that failed
+   * while Google was down) is reported with a one-press update.
    */
   const checkedOnOpen = useRef(false);
   useEffect(() => {
@@ -242,7 +244,7 @@ export function GoogleSheetsCard({
     void (async () => {
       const res = await callAction(() => syncSheetHeadersAction(formId, 'check'));
       if (!res?.ok || !res.data?.ok) return;
-      if (res.data.outcome === 'foreign') {
+      if (res.data.outcome === 'foreign' || res.data.outcome === 'stale') {
         const { ok: _ok, ...sync } = res.data;
         onHeaderSync?.(sync as SheetHeaderSync);
       }
@@ -509,6 +511,9 @@ export function GoogleSheetsCard({
 
             {/* ABOVE the column list: it is about the whole row 1, and on a
                 phone a list of stacked columns would push it out of sight. */}
+            {headerSync?.outcome === 'stale' ? (
+              <StaleRowNotice pending={pending} onUpdate={() => void syncHeaders()} m={m.gsheets} />
+            ) : null}
             {headerSync?.outcome === 'foreign' ? (
               <HeaderMismatch
                 sync={headerSync}
@@ -720,6 +725,46 @@ export function GoogleSheetsCard({
  * so a disabled one looked exactly like an enabled one. Faded instead.
  */
 const SOFT_DISABLED = 'disabled:bg-muted disabled:opacity-45';
+
+/**
+ * Row 1 is dForms' own but out of date (a sync failed while Google was down,
+ * or an edit raced a write): responses would land under the wrong headings.
+ * dForms wrote that row, so the fix is offered directly, with no confirmation:
+ * it is the ordinary sync, which only ever rewrites a row it can prove is its own.
+ */
+function StaleRowNotice({
+  pending,
+  onUpdate,
+  m,
+}: {
+  pending: boolean;
+  onUpdate: () => void;
+  m: Msgs['gsheets'];
+}) {
+  return (
+    <div
+      role="status"
+      data-testid="gsheets-header-stale"
+      className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+    >
+      <p className="flex items-start gap-2 text-foreground">
+        <i aria-hidden className="pi pi-exclamation-circle mt-0.5 shrink-0 text-warning-ink" style={{ fontSize: 13 }} />
+        <span>{m.headersStale}</span>
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={onUpdate}
+        disabled={pending}
+        data-testid="gsheets-update-stale"
+      >
+        <i aria-hidden className="pi pi-refresh" style={{ fontSize: 11 }} />
+        {m.writeHeaders}
+      </Button>
+    </div>
+  );
+}
 
 /**
  * Row 1 does not match the columns: say so plainly, show what is in the sheet

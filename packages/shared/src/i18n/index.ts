@@ -1802,6 +1802,13 @@ export interface FormsMessages {
       autosavedPendingSheet: string;
       /** The folded save pill's label, a word or two. */
       autosavedShort: string;
+      /** Saved, with a spreadsheet chosen but no column with a heading yet. */
+      autosavedNoColumns: string;
+      /**
+       * The last change on the tab failed to save after the author left it;
+       * said once when they come back, since the screen shows what is stored.
+       */
+      saveLostAfterLeave: string;
       /** V5-QA — saved, except one card that has a problem of its own. */
       autosavedPartial: string;
       saveError: string;
@@ -2139,6 +2146,8 @@ export interface FormsMessages {
         rowNeedsHeader: string;
         /** Row 1 does not match the columns, so nothing was overwritten on its own. */
         headersNotEmpty: string;
+        /** Row 1 is dForms' own but out of date with the columns (it can be updated). */
+        headersStale: string;
         headersFailed: string;
         /** The side-by-side shown when row 1 does not match. */
         headersColumn: string;
@@ -4286,6 +4295,9 @@ export const en: FormsMessages = {
       autosaved: 'Changes saved automatically',
       autosavedPendingSheet: 'Saved. Google Sheets starts sending once it has a spreadsheet.',
       autosavedShort: 'Saved',
+      autosavedNoColumns: 'Saved. Nothing is sent to the sheet until a column has a heading.',
+      saveLostAfterLeave:
+        'Your last change on this tab could not be saved after you left it, so it is not in the integrations below.',
       autosavedPartial: 'Saved everything except the webhook.',
       saveError: 'Could not save integrations.',
       saveOffline:
@@ -4580,6 +4592,8 @@ export const en: FormsMessages = {
         rowNeedsHeader: 'Give it a heading to write it to the sheet.',
         headersNotEmpty: 'Row 1 of the sheet does not match these columns, so it was not changed on its own.',
         headersFailed: 'The header row could not be updated. Your columns are saved.',
+        headersStale:
+          'Row 1 of the sheet is out of date with these columns, so responses would land under the wrong headings. dForms wrote it, so it can update it now.',
         headersColumn: 'Column',
         headersInSheet: 'In the sheet now',
         headersToWrite: 'Will be written',
@@ -7049,6 +7063,9 @@ export const es: FormsMessages = {
       autosaved: 'Cambios guardados automáticamente',
       autosavedPendingSheet: 'Guardado. Google Sheets empieza a enviar cuando tenga una hoja.',
       autosavedShort: 'Guardado',
+      autosavedNoColumns: 'Guardado. No se envía nada a la hoja hasta que una columna tenga encabezado.',
+      saveLostAfterLeave:
+        'Tu último cambio en esta pestaña no se pudo guardar después de que saliste, así que no está en las integraciones de abajo.',
       autosavedPartial: 'Se guardó todo menos el webhook.',
       saveError: 'No se pudieron guardar las integraciones.',
       saveOffline:
@@ -7346,6 +7363,8 @@ export const es: FormsMessages = {
         rowNeedsHeader: 'Ponle un encabezado para escribirla en la hoja.',
         headersNotEmpty: 'La fila 1 de la hoja no coincide con estas columnas, así que no se cambió sola.',
         headersFailed: 'No se pudo actualizar la fila de encabezados. Tus columnas sí quedaron guardadas.',
+        headersStale:
+          'La fila 1 de la hoja no está al día con estas columnas, así que las respuestas quedarían bajo encabezados equivocados. La escribió dForms, así que puede actualizarla ahora.',
         headersColumn: 'Columna',
         headersInSheet: 'En la hoja ahora',
         headersToWrite: 'Se escribirá',

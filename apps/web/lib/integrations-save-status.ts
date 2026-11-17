@@ -18,6 +18,8 @@ import { useSyncExternalStore } from 'react';
 export type IntegrationsSaveState = {
   status: 'saved' | 'saving' | 'retrying' | 'error';
   detail?: string | null;
+  /** The save failed after the tab unmounted: the change is not stored. */
+  lost?: boolean;
 };
 
 const states = new Map<string, IntegrationsSaveState>();
@@ -25,7 +27,7 @@ const listeners = new Set<() => void>();
 
 export function publishIntegrationsSave(formId: string, next: IntegrationsSaveState): void {
   const prev = states.get(formId);
-  if (prev && prev.status === next.status && prev.detail === next.detail) return;
+  if (prev && prev.status === next.status && prev.detail === next.detail && prev.lost === next.lost) return;
   states.set(formId, next);
   for (const listener of listeners) listener();
 }
@@ -48,8 +50,12 @@ export function useIntegrationsSave(formId: string): IntegrationsSaveState | und
   );
 }
 
-/** Rank of a save state, worst highest, for showing two saves as one. */
-const SAVE_RANK = { saved: 0, saving: 1, retrying: 2, conflict: 3, error: 4 } as const;
+/**
+ * Rank of a save state, worst highest, for showing two saves as one.
+ * A conflict outranks an error: it is the one the person has to act on (pick
+ * a version), while an error retries on its own.
+ */
+const SAVE_RANK = { saved: 0, saving: 1, retrying: 2, error: 3, conflict: 4 } as const;
 type SaveRankKey = keyof typeof SAVE_RANK;
 
 /** The worse of the form's own save and the integrations' save. */
