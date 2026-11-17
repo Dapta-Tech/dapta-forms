@@ -33,6 +33,7 @@ export function publishIntegrationsSave(formId: string, next: IntegrationsSaveSt
   const prev = states.get(formId);
   if (prev && prev.status === next.status && prev.detail === next.detail && prev.lost === next.lost) return;
   states.set(formId, next);
+  recombine(formId);
   for (const listener of listeners) listener();
 }
 
@@ -84,4 +85,61 @@ export function saveStatusReason(
     reasons.push(integrations.detail.trim());
   }
   return reasons.length ? reasons.join(' · ') : null;
+}
+
+/** The form's own (builder) save, as the editor's autosave reports it. */
+export type FormSaveState = { status: 'saved' | 'saving' | 'retrying' | 'error' | 'conflict'; detail: string | null };
+
+/** What BOTH indicators show: one object, so they cannot read two different versions. */
+export interface CombinedSaveState {
+  status: 'saved' | 'saving' | 'partial' | 'retrying' | 'error' | 'conflict';
+  detail: string | null;
+  /** The integrations' last change was lost after the tab was left. */
+  lost: boolean;
+}
+
+const formStates = new Map<string, FormSaveState>();
+const combined = new Map<string, CombinedSaveState>();
+const SAVED: CombinedSaveState = { status: 'saved', detail: null, lost: false };
+
+function recombine(formId: string): void {
+  const form = formStates.get(formId) ?? { status: 'saved', detail: null };
+  const integrations = states.get(formId);
+  const status = worseSaveStatus(form.status, integrations?.status);
+  const next: CombinedSaveState = {
+    status,
+    detail: saveStatusReason(status, form, integrations),
+    lost: integrations?.status === status && !!integrations.lost,
+  };
+  const prev = combined.get(formId);
+  if (prev && prev.status === next.status && prev.detail === next.detail && prev.lost === next.lost) return;
+  combined.set(formId, next);
+}
+
+/** The editor reports its own (builder) save here, beside the integrations'. */
+export function publishFormSave(formId: string, next: FormSaveState): void {
+  const prev = formStates.get(formId);
+  if (prev && prev.status === next.status && prev.detail === next.detail) return;
+  formStates.set(formId, next);
+  recombine(formId);
+  for (const listener of listeners) listener();
+}
+
+/**
+ * The state the topbar AND the save pill render, from one snapshot. Both read
+ * this hook, so in any render they show the same thing; reading the builder's
+ * status from React state in one and from a store in the other is what left
+ * 60 to 90 ms windows where they disagreed.
+ */
+export function useCombinedSave(formId: string): CombinedSaveState {
+  return useSyncExternalStore(
+    subscribe,
+    () => combined.get(formId) ?? SAVED,
+    () => SAVED,
+  );
+}
+
+/** The combined state outside React (specs, and anything that must not subscribe). */
+export function readCombinedSave(formId: string): CombinedSaveState {
+  return combined.get(formId) ?? SAVED;
 }

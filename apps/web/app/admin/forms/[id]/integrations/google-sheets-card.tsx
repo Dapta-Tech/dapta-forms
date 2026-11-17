@@ -502,7 +502,10 @@ export function GoogleSheetsCard({
                   <Button
                     variant="soft"
                     size="sm"
-                    onClick={() => void syncHeaders()}
+                    // On a row 1 already known not to match, the plain sync
+                    // can only find that again and write nothing: the button
+                    // goes to the confirmed replace instead of doing nothing.
+                    onClick={() => void syncHeaders(headerSync?.outcome === 'foreign')}
                     disabled={pending || !state.spreadsheetId || state.columns.length === 0}
                     className={SOFT_DISABLED}
                     data-testid="gsheets-sync-headers"

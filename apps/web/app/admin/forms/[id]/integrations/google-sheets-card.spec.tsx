@@ -573,6 +573,15 @@ describe('the header row', () => {
     expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'stale' });
   });
 
+  it('on a row 1 known not to match, the header button asks to replace it instead of doing nothing', async () => {
+    const { el } = await mount({ state: STORED, formId: 'form-1', headerSync: MISMATCH });
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-sync-headers"]')!.click());
+    expect(el.querySelector('[data-testid="confirm-dialog"]')).not.toBeNull();
+    actions.syncSheetHeadersAction.mockResolvedValueOnce({ ok: true, data: { ok: true, outcome: 'written' } });
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="confirm-dialog-confirm"]')!.click());
+    expect(actions.syncSheetHeadersAction).toHaveBeenLastCalledWith('form-1', true);
+  });
+
   it('only promises Google Drive where the Picker is there', async () => {
     const without = await mount({ pickerAvailable: false });
     expect(without.el.textContent).toContain(m.gsheets.sheetHelpCreateOnly);

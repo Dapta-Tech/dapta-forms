@@ -35,7 +35,7 @@ const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn
 vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
 
 import { IntegrationsEditor } from './integrations-editor';
-import { publishIntegrationsSave, readIntegrationsSave } from '@/lib/integrations-save-status';
+import { publishIntegrationsSave, readCombinedSave as readCombined, readIntegrationsSave } from '@/lib/integrations-save-status';
 
 const m = getMessages('en').admin.integrations;
 let root: Root | null = null;
@@ -141,13 +141,18 @@ describe('a save that fails after the tab is left', () => {
     expect(actions.saveIntegrationsAction).toHaveBeenCalledTimes(3);
   });
 
-  it('on coming back, says once that the change was lost and shows the real state', async () => {
+  it('on coming back, says once that the change was lost, and the state stays an error', async () => {
     publishIntegrationsSave('form-back', { status: 'error', detail: m.saveLostAfterLeave, lost: true });
     await mount('form-back');
     expect(toasts.error).toHaveBeenCalledWith(m.saveLostAfterLeave);
-    // The tab shows what the server holds: the topbar is not left on the
-    // failure of a visit that is over.
-    expect(readIntegrationsSave('form-back')?.status).toBe('saved');
+    // Not "saved" beside the notice: the topbar and the pill stay on the
+    // error until a later save succeeds (see the next spec).
+    expect(readIntegrationsSave('form-back')).toMatchObject({ status: 'error', lost: true });
+    expect(readCombined('form-back')).toMatchObject({ status: 'error', lost: true });
+    // The pill says it too, before any edit on this visit.
+    expect(document.body.querySelector('[data-testid="integrations-save-status"]')?.getAttribute('data-status')).toBe(
+      'error',
+    );
   });
 
   it('saves after the tab is left when a retry gets through', async () => {

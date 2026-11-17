@@ -32,7 +32,7 @@ import type {
 } from '@/lib/admin-api';
 import { TokenConnectForm } from '@/app/admin/integrations/connect-forms';
 import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
-import { publishIntegrationsSave, readIntegrationsSave, useIntegrationsSave } from '@/lib/integrations-save-status';
+import { publishIntegrationsSave, readIntegrationsSave, useCombinedSave } from '@/lib/integrations-save-status';
 import { enqueueIntegrationsSave, subscribeIntegrationsSave } from '@/lib/integrations-save-queue';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
@@ -603,6 +603,8 @@ export function IntegrationsEditor({
   function buildDestinations(): {
     destinations: FormDestination[];
     webhookError: string | null;
+    /** The webhook is switched on with no URL: not stored, so not "saved". */
+    webhookNeedsUrl: boolean;
   } {
     const out: FormDestination[] = [];
     let webhookError: string | null = null;
@@ -752,7 +754,7 @@ export function IntegrationsEditor({
     // Last: every destination kind this screen does not edit (see
     // `carriedOthers`). Without this, saving here deletes them.
     out.push(...carriedOthers(savedDestinations.current));
-    return { destinations: out, webhookError };
+    return { destinations: out, webhookError, webhookNeedsUrl: webhook.enabled && !url };
   }
 
   // --- Autosave (V5-A4) ------------------------------------------------------
@@ -771,6 +773,8 @@ export function IntegrationsEditor({
   const autosave = useAutosave<{
     destinations: FormDestination[];
     webhookError: string | null;
+    /** The webhook is switched on with no URL: not stored, so not "saved". */
+    webhookNeedsUrl: boolean;
   }>({
     getSnapshot: () => buildRef.current(),
     // `buildDestinations` already quarantines the only invalid input (a bad
@@ -793,7 +797,14 @@ export function IntegrationsEditor({
         id,
         () => callAction(() => saveIntegrationsAction(id, built.destinations)),
         {
-          partial: built.webhookError ? `${m.autosavedPartial} ${built.webhookError}`.trim() : null,
+          // Partial, not saved: a webhook URL that is not valid, or a webhook
+          // switched on with no URL at all (a webhook cannot be stored without
+          // one, so "saved" would come back switched off after a reload).
+          partial: built.webhookError
+            ? `${m.autosavedPartial} ${built.webhookError}`.trim()
+            : built.webhookNeedsUrl
+              ? `${m.autosavedPartial} ${m.webhookNeedsUrl}`
+              : null,
           messages: { saveOffline: m.saveOffline, saveError: m.saveError, lost: m.saveLostAfterLeave },
         },
       );
@@ -842,7 +853,13 @@ export function IntegrationsEditor({
   // author left is said once, here, since it is not on the screen they see.
   useEffect(() => {
     const previous = readIntegrationsSave(id);
-    if (previous?.lost) errorRef.current(m.saveLostAfterLeave);
+    if (previous?.lost) {
+      // Said once, and the state STAYS an error (topbar and pill) until a
+      // later save succeeds: what was lost is not on this screen, and a green
+      // "saved" beside the notice would contradict it.
+      errorRef.current(m.saveLostAfterLeave);
+      return;
+    }
     publishIntegrationsSave(id, { status: 'saved' });
   }, [id, m]);
   // Whether the author has edited anything on this visit. The pill says
@@ -857,9 +874,9 @@ export function IntegrationsEditor({
   }, [id, markDirtyRaw]);
   // The pill reads the SAME state the topbar reads (the form's save queue
   // publishes it), so the two can never disagree, not even for a frame.
-  const shared = useIntegrationsSave(id);
-  const status: SaveStatus = shared?.status ?? 'saved';
-  const statusDetail = shared?.detail ?? null;
+  const shared = useCombinedSave(id);
+  const status: SaveStatus = shared.status;
+  const statusDetail = shared.detail;
 
   /**
    * Every card edit funnels through these so an edit is marked dirty at the
@@ -978,14 +995,14 @@ export function IntegrationsEditor({
       <SaveStatusPill
         status={status}
         detail={statusDetail}
-        touched={saveTouched}
+        touched={saveTouched || shared.lost}
         m={m}
       />
     </div>
   );
 }
 
-type SaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'partial';
+type SaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'partial' | 'conflict';
 
 /** The pill's look for each save state. Tokens only, so both themes follow. */
 const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> = {
@@ -1003,12 +1020,22 @@ const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> 
     icon: 'pi-exclamation-triangle',
     dot: 'text-destructive',
   },
+  // The form's draft was saved elsewhere: the topbar's state, so the pill's too.
+  conflict: {
+    box: 'border-destructive/60 bg-destructive/10 text-destructive',
+    icon: 'pi-exclamation-triangle',
+    dot: 'text-destructive',
+  },
 };
 
 /** How long a "saved" pill stays spelled out before it folds to its short form. */
 const PILL_FOLD_MS = 2500;
-/** On a phone, how long a settled pill stays before it steps out of the way. */
-const PILL_NARROW_HIDE_MS = { saved: 2500, other: 6000 } as const;
+/**
+ * How long a settled pill stays before it steps out of the way, at every
+ * width: once settled, the topbar keeps saying the state (and the cards say
+ * what they wait for), so the pill never sits over content for long.
+ */
+const PILL_HIDE_MS = { saved: 4000, other: 7000 } as const;
 
 /** Below `sm`, where any floating element sits on the controls being scrolled. */
 const NARROW_QUERY = '(max-width: 639px)';
@@ -1027,8 +1054,13 @@ const NARROW_QUERY = '(max-width: 639px)';
  *  - it never takes a tap: `pointer-events: none` in every state, so a button
  *    under it is always pressable;
  *  - a plain "saved" folds to a short, flat "Saved" after a moment;
- *  - on a phone, once settled it steps away after a few seconds (the topbar
- *    keeps saying the state), so it does not sit over the rows being scrolled.
+ *  - once settled it steps away after a few seconds, at every width (the
+ *    topbar keeps saying the state), so it never sits over content for long;
+ *  - it reads the same store snapshot as the topbar (`useCombinedSave`), so
+ *    the two never show different states.
+ *
+ * A lost change (failed after the tab was left) shows even before an edit:
+ * it is an error the author has to know about.
  */
 export function SaveStatusPill({
   status,
@@ -1053,6 +1085,26 @@ export function SaveStatusPill({
     document.documentElement.classList.add('has-save-pill');
     return () => document.documentElement.classList.remove('has-save-pill');
   }, [visible]);
+  // The pill wraps (a partial or failed save can take two or three lines), so
+  // the toast stack is lifted by the pill's real height, not a one-line guess:
+  // a toast never lands on top of the pill.
+  const [pillEl, setPillEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!pillEl || typeof ResizeObserver === 'undefined') return;
+    const root = document.documentElement;
+    const lift = () =>
+      root.style.setProperty(
+        '--toast-offset',
+        `calc(${Math.ceil(pillEl.getBoundingClientRect().height) + 12}px + env(safe-area-inset-bottom, 0px))`,
+      );
+    lift();
+    const observer = new ResizeObserver(lift);
+    observer.observe(pillEl);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty('--toast-offset');
+    };
+  }, [pillEl]);
   useEffect(() => {
     setGone(false);
     setFolded(false);
@@ -1063,18 +1115,14 @@ export function SaveStatusPill({
       if (narrow) setFolded(true);
       else timers.push(setTimeout(() => setFolded(true), PILL_FOLD_MS));
     }
-    if (narrow) {
-      timers.push(
-        setTimeout(() => setGone(true), status === 'saved' ? PILL_NARROW_HIDE_MS.saved : PILL_NARROW_HIDE_MS.other),
-      );
-    }
+    timers.push(setTimeout(() => setGone(true), status === 'saved' ? PILL_HIDE_MS.saved : PILL_HIDE_MS.other));
     return () => timers.forEach(clearTimeout);
   }, [status, detail]);
   const tone = PILL_TONE[status];
   const text =
     status === 'saved'
       ? m.autosaved
-      : status === 'error'
+      : status === 'error' || status === 'conflict'
         ? (detail ?? m.saveError)
         : status === 'partial'
           ? (detail ?? m.autosavedPartial)
@@ -1084,6 +1132,7 @@ export function SaveStatusPill({
   if (!mounted || !visible) return null;
   return createPortal(
     <div
+      ref={setPillEl}
       data-testid="integrations-save-status"
       data-status={status}
       data-folded={folded || undefined}
@@ -1112,9 +1161,9 @@ export function SaveStatusPill({
         >
           <i className={cn('pi', tone.icon)} style={{ fontSize: folded ? 10 : 12 }} />
         </span>
-        {/* Two lines before it clips: a partial save names the card that did
-            not go through, and that sentence is the point of the state. */}
-        <span className="line-clamp-2 min-w-0 leading-snug">{folded ? m.autosavedShort : text}</span>
+        {/* Never clipped: a partial or failed save names what did not go
+            through, and that sentence is the point of the state. It wraps. */}
+        <span className="min-w-0 break-words leading-snug">{folded ? m.autosavedShort : text}</span>
       </div>
     </div>,
     document.body,
@@ -1380,7 +1429,10 @@ function ValueMapGroupCard({
   // question — collapsing the rows out from under someone who just chose one
   // would be worse than the long scroll this is fixing.
   const filled = group.rows.filter((r) => r.from.trim() || r.to.trim()).length;
-  const [open, setOpen] = useState(filled === 0);
+  // A group with a half-filled row opens too: that row says what it still
+  // needs, and a collapsed header ("1 value(s)") would hide it after a reload.
+  const unfinished = group.rows.some((r) => halfRow(r.from, r.to)) || (!group.stepKey.trim() && filled > 0);
+  const [open, setOpen] = useState(filled === 0 || unfinished);
 
   // INTERSECTION, not union: the HubSpot adapter writes the one translated
   // value to every target property, so a value only one of them accepts is a
@@ -1824,6 +1876,9 @@ export function WebhookCard({
           <p id="webhook-url-error" role="alert" className="text-xs text-destructive">
             {urlError}
           </p>
+        ) : !state.url.trim() ? (
+          // Switched on, nothing to send to: said here, on the card.
+          <RowHint text={m.webhookNeedsUrl} />
         ) : null}
         {/* Test delivery: the fastest way to find out the far end is wrong is to
             send it something, rather than waiting for a real respondent. */}
@@ -2084,7 +2139,7 @@ export function HubspotCard({
 
   /** The property currently mapped for a question key (via the pairs array). */
   const questionProp = (key: string): string =>
-    state.fieldMappings.find((p) => p.key === key)?.property ?? '';
+    state.fieldMappings.find((p) => p.key === key && p.property.trim())?.property ?? '';
 
   /** Upsert/clear the mapping for a question key (empty value removes the row). */
   const setQuestionProp = (key: string, value: string) => {
@@ -2097,9 +2152,13 @@ export function HubspotCard({
 
   // Custom rows = mappings whose key is not one of the form's questions (hidden
   // fields / legacy keys). Tracked with their real index for stable editing.
+  // A row keyed on one of the form's questions but with no property yet is a
+  // half-filled row, stored as a draft: it is shown here, with its note, rather
+  // than folded into that question's own row, which would show nothing and so
+  // make a saved row look gone after a reload.
   const customRows = state.fieldMappings
     .map((pair, index) => ({ pair, index }))
-    .filter(({ pair }) => !questionKeys.has(pair.key));
+    .filter(({ pair }) => !questionKeys.has(pair.key) || !pair.property.trim());
 
   // Keys already used by ANY mapping row (main section or custom). Questions
   // already mapped drop out of a custom row's picker (no double-mapping); a

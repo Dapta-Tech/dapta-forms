@@ -1911,6 +1911,11 @@ export interface FormsMessages {
       hubspotRowNeedsQuestion: string;
       /** Inline on the Sheets card: switched on, no spreadsheet yet. */
       gsheetsNoSheetYet: string;
+      /**
+       * The webhook switched on with no URL: it is not saved (a webhook needs a
+       * URL to be stored), said on the card and as the partial save's reason.
+       */
+      webhookNeedsUrl: string;
       /** Inline on the Sheets card: a spreadsheet, but no column with a heading. */
       gsheetsNoNamedColumn: string;
       /** HubSpot keys contacts on email — a form with no address cannot sync. */
@@ -4402,6 +4407,7 @@ export const en: FormsMessages = {
       hubspotRowNeedsValue: 'Saved. Give it a value to send it.',
       hubspotRowNeedsQuestion: 'Saved. Choose the question these values belong to.',
       gsheetsNoSheetYet: 'Nothing is sent yet: create or choose a spreadsheet.',
+      webhookNeedsUrl: 'Paste the webhook URL to start sending. Until then the webhook is not saved.',
       gsheetsNoNamedColumn: 'Nothing is sent to the sheet until a column has a heading.',
       emailRequiredTitle: 'This form has no email address to sync',
       emailRequiredBody:
@@ -7179,6 +7185,7 @@ export const es: FormsMessages = {
       hubspotRowNeedsValue: 'Guardada. Ponle un valor para enviarla.',
       hubspotRowNeedsQuestion: 'Guardada. Elige la pregunta a la que pertenecen estos valores.',
       gsheetsNoSheetYet: 'Todavía no se envía nada: crea o elige una hoja.',
+      webhookNeedsUrl: 'Pega la URL del webhook para empezar a enviar. Mientras tanto, el webhook no queda guardado.',
       gsheetsNoNamedColumn: 'No se envía nada a la hoja hasta que una columna tenga encabezado.',
       emailRequiredTitle: 'Este formulario no tiene correo que sincronizar',
       emailRequiredBody:

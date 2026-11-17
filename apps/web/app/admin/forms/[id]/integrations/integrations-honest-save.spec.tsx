@@ -38,8 +38,15 @@ vi.mock('@/app/admin/integrations/actions', () => ({
 const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), toast: vi.fn() }));
 vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
 
-import { hubspotDrafts, initialHubspot, IntegrationsEditor } from './integrations-editor';
-import { readIntegrationsSave, worseSaveStatus } from '@/lib/integrations-save-status';
+import type { ContactKeyReadiness } from '@quill/engine';
+import { HubspotCard, hubspotDrafts, initialHubspot, IntegrationsEditor } from './integrations-editor';
+import {
+  publishFormSave,
+  publishIntegrationsSave,
+  readCombinedSave,
+  readIntegrationsSave,
+  worseSaveStatus,
+} from '@/lib/integrations-save-status';
 import { resetIntegrationsSaveQueues } from '@/lib/integrations-save-queue';
 
 const m = getMessages('en').admin.integrations;
@@ -198,5 +205,99 @@ describe('the pill on load', () => {
       { type: 'google-sheets', enabled: true, settings: {}, columns: [] } as unknown as FormDestination,
     ]);
     expect(document.body.querySelector('[data-testid="integrations-save-status"]')).toBeNull();
+  });
+});
+
+describe('a webhook switched on with no URL is never called saved', () => {
+  it('reports partial with the reason, and says on the card what is missing', async () => {
+    actions.saveIntegrationsAction.mockResolvedValue({ ok: true });
+    const el = await mount('form-nourl');
+    await act(async () => sw(el, 'Webhook').click());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    // Nothing was stored for the webhook (a webhook needs a URL), so a reload
+    // brings it back switched off: the indicators must not have said "saved".
+    const sent = actions.saveIntegrationsAction.mock.calls.at(-1)![1] as { type: string }[];
+    expect(sent.some((d) => d.type === 'webhook')).toBe(false);
+    expect(readIntegrationsSave('form-nourl')).toMatchObject({ status: 'partial' });
+    expect(readIntegrationsSave('form-nourl')?.detail).toContain(m.webhookNeedsUrl);
+    expect(readCombinedSave('form-nourl').status).toBe('partial');
+    expect(el.textContent).toContain(m.webhookNeedsUrl);
+  });
+});
+
+describe('HubSpot draft rows render after a reload', () => {
+  const ready = { ok: true, blocker: null, source: { kind: 'question', key: 'email' } } as ContactKeyReadiness;
+  async function card(stored: unknown) {
+    const state = initialHubspot([formDestinationSchema.parse(stored) as FormDestination]);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <HubspotCard
+          state={state}
+          onChange={() => {}}
+          properties={[{ name: 'company', label: 'Company' }]}
+          pickerEnabled
+          accountConnected
+          showMapping
+          extraHubspotStored={false}
+          readiness={ready}
+          questions={[
+            { key: 'email', type: 'email', label: 'Email' },
+            { key: 'role', type: 'select', label: 'Role' },
+          ]}
+          formId="form-1"
+          locale="en"
+          m={m}
+        />,
+      );
+    });
+    return container;
+  }
+
+  it('shows a row keyed on a question with no property yet, with its note', async () => {
+    const el = await card({ type: 'hubspot', enabled: true, drafts: { mappings: [{ key: 'role', property: '' }] } });
+    const hints = [...el.querySelectorAll('[data-testid="row-incomplete"]')].map((h) => h.textContent);
+    expect(hints).toContain(m.hubspotRowNeedsProperty);
+  });
+
+  it('opens a value translation that holds an unfinished row, so its note shows', async () => {
+    const el = await card({
+      type: 'hubspot',
+      enabled: true,
+      valueMaps: { role: { founder: 'Founder' } },
+      drafts: { valueMaps: [{ stepKey: 'role', rows: [{ from: 'lead', to: '' }] }] },
+    });
+    const hints = [...el.querySelectorAll('[data-testid="row-incomplete"]')].map((h) => h.textContent);
+    expect(hints).toContain(m.hubspotRowNeedsValue);
+  });
+});
+
+describe('one snapshot for both indicators', () => {
+  it('combines the form save and the integrations save the same way for both', () => {
+    publishFormSave('form-both', { status: 'saving', detail: null });
+    publishIntegrationsSave('form-both', { status: 'saved' });
+    expect(readCombinedSave('form-both').status).toBe('saving');
+    publishFormSave('form-both', { status: 'saved', detail: null });
+    publishIntegrationsSave('form-both', { status: 'retrying', detail: 'offline' });
+    expect(readCombinedSave('form-both')).toMatchObject({ status: 'retrying', detail: 'offline' });
+    publishFormSave('form-both', { status: 'conflict', detail: 'saved elsewhere' });
+    expect(readCombinedSave('form-both')).toMatchObject({ status: 'conflict', detail: 'saved elsewhere' });
+  });
+
+  it('the pill renders the combined state, the one the topbar renders', async () => {
+    actions.saveIntegrationsAction.mockResolvedValue({ ok: true });
+    const el = await mount('form-one');
+    await act(async () => sw(el, 'Salesforce').click());
+    await act(async () => {
+      publishFormSave('form-one', { status: 'retrying', detail: 'draft offline' });
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    const pill = document.body.querySelector('[data-testid="integrations-save-status"]')!;
+    expect(pill.getAttribute('data-status')).toBe(readCombinedSave('form-one').status);
+    expect(pill.getAttribute('data-status')).toBe('retrying');
   });
 });

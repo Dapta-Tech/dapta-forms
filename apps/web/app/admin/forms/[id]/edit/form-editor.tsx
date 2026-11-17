@@ -65,7 +65,7 @@ import { stepFromGalleryItem, stepListLabel, type GalleryItem } from './_compone
 import { TEMPLATES } from './_components/templates';
 import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
-import { saveStatusReason, useIntegrationsSave, worseSaveStatus } from '@/lib/integrations-save-status';
+import { publishFormSave, useCombinedSave } from '@/lib/integrations-save-status';
 import './_components/builder.css';
 
 const AUTOSAVE_MS = 900;
@@ -449,9 +449,15 @@ export function FormEditor({
   // The topbar speaks for BOTH saves: the form's, and the Connect tab's
   // integrations (a separate autosave). Whichever is worse wins, so it never
   // says "Saved" while the integrations failed to save.
-  const integrationsSave = useIntegrationsSave(id);
-  const status = worseSaveStatus(autosave.status, integrationsSave?.status);
-  const statusDetailText = saveStatusReason(status, autosave, integrationsSave);
+  //
+  // Both saves feed ONE store snapshot, which the topbar and the Connect tab's
+  // save pill both render, so in any render they show the same state.
+  useEffect(() => {
+    publishFormSave(id, { status: autosave.status, detail: autosave.detail });
+  }, [id, autosave.status, autosave.detail]);
+  const shownSave = useCombinedSave(id);
+  const status = shownSave.status;
+  const statusDetailText = shownSave.detail;
 
   // --- Crash recovery: work the backup caught that never reached the server --
   const [recovery, setRecovery] = useState<EditorSnapshot | null>(null);
