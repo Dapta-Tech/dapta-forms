@@ -10,7 +10,7 @@ import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Client } from '@modelcontextprotocol/client';
-import { sql, upsertSubmission } from '@quill/db';
+import { sql, updateFormDestinations, upsertSubmission } from '@quill/db';
 import { WEBHOOK_SECRET_MASK } from '@quill/types';
 import { AnalyticsService } from './analytics.service';
 import { APP_URL, bootHarness, errorText, structured, type Harness } from './mcp-harness';
@@ -552,6 +552,83 @@ describe('integrations, read only', () => {
     expect(structured<{ enabled: boolean }>(await member.callTool({ name: 'list_hubspot_properties', arguments: {} })).enabled).toBe(false);
     expect(structured<{ enabled: boolean }>(await member.callTool({ name: 'list_calendly_event_types', arguments: {} })).enabled).toBe(false);
     expect((await c.callTool({ name: 'list_webhooks', arguments: { workspace_id: 3 } })).isError).toBe(true);
+  });
+});
+
+describe('destinations and integrations the workspace has not connected, over the real handlers', () => {
+  it('refuses a new spreadsheet destination with INTEGRATION_NOT_CONNECTED and the absolute integrations page', async () => {
+    const c = await owner();
+    const id = await newForm(c);
+    const text = errorText(
+      await c.callTool({
+        name: 'set_destinations',
+        arguments: {
+          form_id: id,
+          destinations: [
+            {
+              type: 'google-sheets',
+              enabled: true,
+              settings: { spreadsheetId: 'sheet-1' },
+              columns: [{ header: 'Email', source: 'answer', key: 'email' }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Google Sheets is not connected/);
+    expect(text).toContain(`${APP_URL.replace(/\/+$/, '')}/admin/integrations`);
+    // Nothing was stored.
+    const form = structured<{ destinations: unknown[] }>(await c.callTool({ name: 'get_form', arguments: { form_id: id } }));
+    expect(form.destinations).toEqual([]);
+  });
+
+  it('refuses a new Salesforce destination the same way', async () => {
+    const c = await owner();
+    const id = await newForm(c);
+    const text = errorText(
+      await c.callTool({
+        name: 'set_destinations',
+        arguments: { form_id: id, destinations: [{ type: 'salesforce', enabled: true, fieldMappings: { email: 'Email' } }] },
+      }),
+    );
+    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Salesforce is not connected/);
+  });
+
+  it('keeps a stored entry whose connection is gone through an unrelated webhook edit, and says so', async () => {
+    const c = await owner();
+    const id = await newForm(c);
+    const sheet = {
+      type: 'google-sheets',
+      enabled: true,
+      settings: { spreadsheetId: 'sheet-1' },
+      columns: [{ header: 'Email', source: 'answer', key: 'email' }],
+    };
+    // Stored while Google was connected, as the editor would have.
+    const row = await h.db.get<{ account_id: string }>(sql`SELECT account_id FROM form WHERE id = ${id}`);
+    await updateFormDestinations(h.db, row!.account_id, id, [sheet] as never);
+    const read = structured<{ destinations: unknown[] }>(await c.callTool({ name: 'get_form', arguments: { form_id: id } }));
+    const out = structured<{ warnings: Array<{ code: string; index: number; integrations_url: string | null }> }>(
+      await c.callTool({
+        name: 'set_destinations',
+        arguments: { form_id: id, destinations: [...read.destinations, { type: 'webhook', enabled: true, settings: { url: 'https://example.com/hook' } }] },
+      }),
+    );
+    expect(out.warnings).toEqual([
+      expect.objectContaining({ code: 'INTEGRATION_NOT_CONNECTED', index: 0, integrations_url: `${APP_URL.replace(/\/+$/, '')}/admin/integrations` }),
+    ]);
+  });
+
+  it('answers dCal event types with the specific reason and never reaches the dCal route', async () => {
+    const out = structured<{ provider: string; enabled: boolean; reason: string }>(
+      await member.callTool({ name: 'list_event_types', arguments: { provider: 'dcal' } }),
+    );
+    expect(out.provider).toBe('dcal');
+    expect(out.enabled).toBe(false);
+    expect(out.reason).toMatch(/dCal|dForms deployment has no dCal/);
+    const integrations = structured<{ not_connected: string[]; unavailable: string[] }>(
+      await member.callTool({ name: 'list_integrations', arguments: {} }),
+    );
+    expect(integrations.not_connected).toEqual(expect.arrayContaining(['google-sheets', 'salesforce']));
   });
 });
 

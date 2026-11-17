@@ -145,7 +145,7 @@ its REST route, with the same role rule and the same masking.
 | Folders | `POST /v1/folders` | `create_folder` | write |
 | Folders | `PATCH /v1/folders/:id` | `rename_folder` | write |
 | Folders | `DELETE /v1/folders/:id` | `delete_folder` | **destructive** (forms are unfiled, never deleted) |
-| Destinations | `PUT /v1/forms/:id/destinations` | `set_destinations` | **destructive** (replaces the list; secrets come back masked; `sheet_header_row` carries the route's `sheetHeaders`: what the save did to row 1 of a Google Sheets destination) |
+| Destinations | `PUT /v1/forms/:id/destinations` | `set_destinations` | **destructive** (replaces the list; secrets come back masked; `sheet_header_row` carries the route's `sheetHeaders`: what the save did to row 1 of a Google Sheets destination; a new or changed enabled Google Sheets or Salesforce entry whose provider is not connected is refused with `INTEGRATION_NOT_CONNECTED` and the integrations page; an entry kept as stored comes back in `warnings`) |
 | Destinations | `POST /v1/forms/:id/destinations/webhook/ping` | `ping_webhook` | write, owners and admins (the endpoint's status; sample answers for input steps, in the phase the webhook listens to, `test: true` at the top) |
 | Responses | `GET /v1/forms/:id/submissions/:submissionId` | `get_response` | read |
 | Responses | `GET /v1/forms/:id/submissions/:submissionId/files/:stepKey` | `get_response_file` | read (a short-lived link, never the bytes) |
@@ -174,10 +174,10 @@ its REST route, with the same role rule and the same masking.
 | Notifications | `GET /v1/forms/:id/notifications` | `list_form_notifications` | read, owners and admins |
 | Notifications | `PUT /v1/forms/:id/notifications/:emailKey` | `update_form_notification` | write, owners and admins |
 | Notifications | `POST /v1/forms/:id/notifications/:emailKey/reset` | `reset_form_notification` | **destructive**, owners and admins |
-| Integrations | `GET /v1/integrations` | `list_integrations` | read |
+| Integrations | `GET /v1/integrations` | `list_integrations` | read (HubSpot, Calendly, Google Sheets and Salesforce, with `not_connected`, `unavailable` and whether the deployment has dCal) |
 | Integrations | `GET /v1/integrations/webhooks` | `list_webhooks` | read |
 | Integrations | `GET /v1/integrations/hubspot/properties` | `list_hubspot_properties` | read (calls HubSpot) |
-| Integrations | `GET /v1/integrations/calendly/event-types` | `list_calendly_event_types` | read (calls Calendly) |
+| Integrations | `GET /v1/integrations/calendly/event-types` | `list_event_types` (`provider: calendly`) | read (calls Calendly). `list_calendly_event_types` is the same tool under its first name, kept for clients that call it (`TOOL_ALIASES`). `provider: dcal` answers `enabled: false` with the reason: dCal reads the person's own Dapta session, which no MCP credential is, so a dCal event is picked in the editor |
 | Identity | `GET /v1/me` | `whoami` | read |
 | Identity | `GET /v1/me/profile` | `get_my_profile` | read |
 | Identity | `GET /v1/vanity` | `get_workspace_link_code` | read |

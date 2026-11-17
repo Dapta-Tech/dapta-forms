@@ -993,6 +993,8 @@ export const API_REFERENCE = {
       encryptionAvailable: true,
       providers: [{ provider: 'hubspot', connected: true, last4: '9f2c', label: 'Acme portal', connectedAt: STAMP }],
       serverProvided: [],
+      unavailable: [],
+      dcal: null,
     },
   },
   'GET /v1/integrations/webhooks': {

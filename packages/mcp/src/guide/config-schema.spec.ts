@@ -162,6 +162,16 @@ describe('formConfigJsonSchema', () => {
     expect(validate({ ...QUIZ_CONFIG, branding: { ...(QUIZ_CONFIG.branding ?? {}), showHeader: false } })).toBe(true);
   });
 
+  it('documents dcal as a scheduler provider and as the default of a new scheduler step', () => {
+    const found = fieldDescriptions(schema, 'steps.[].scheduler.provider');
+    expect(found.length).toBeGreaterThan(0);
+    for (const d of found) expect(d).toBe(FIELD_DESCRIPTIONS['steps.[].scheduler.provider']);
+    expect(FIELD_DESCRIPTIONS['steps.[].scheduler.provider']).toMatch(/dcal/);
+    expect(FIELD_DESCRIPTIONS['steps.[].scheduler.provider']).toMatch(/born with dcal; absent means calendly/);
+    // What the description promises is what the editor really writes.
+    expect(createEmptyStep('scheduler').scheduler?.provider).toBe('dcal');
+  });
+
   it('describes the one-page row width, name labels and density fields', () => {
     for (const path of ['steps.[].width', 'steps.[].fieldLabels', 'branding.density']) {
       expect(hasField(schema, path)).toBe(true);

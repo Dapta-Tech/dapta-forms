@@ -83,12 +83,13 @@ import { isInputlessStep, type FormStep } from '@quill/engine';
 import { syncMirrorForm, type MirrorSyncResult } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
-import { header } from './auth.provider';
+import { header, isAgentPrincipal } from './auth.provider';
 import { apiKeyFromRequest } from './api-keys';
 import { DcalService, type DcalEventTypesResponse, dcalCreateEventUrl } from './dcal.service';
 import { assertAdmin } from './permissions';
 import { parse } from './validation';
 import { keyDestinationsBodyIssues } from './strict-config';
+import { connectionVerdict, INTEGRATION_NOT_CONNECTED, integrationsPageUrl } from './destination-connections';
 import { RateLimitGuard } from './rate-limit';
 import { captchaActive, type CaptchaVerifier } from './captcha';
 import { fileLinksFor } from './file-link';
@@ -1532,6 +1533,29 @@ export class FormDestinationsController {
     // be trusted the moment the first entry is removed. `syncSheetHeaders`
     // sets the first entry's from what is stored.
     const incoming = destinations.map(withoutClientSheetsState);
+    // A Sheets or Salesforce entry with no connection behind it delivers into
+    // nothing: an agent's new or changed one is refused, everything else is
+    // stored with a warning. See `destination-connections.ts` for the rule.
+    const connected = new Set<string>(
+      (await listIntegrationStatuses(this.db, p.accountId)).map((s) => s.provider),
+    );
+    const verdict = connectionVerdict({
+      incoming,
+      stored,
+      connected,
+      agent: isAgentPrincipal(p),
+      integrationsUrl: integrationsPageUrl(this.env?.PUBLIC_APP_URL),
+      strip: withoutClientSheetsState,
+    });
+    if (verdict.refusal) {
+      throw new BadRequestException({
+        error: INTEGRATION_NOT_CONNECTED,
+        message: verdict.refusal.message,
+        provider: verdict.refusal.type,
+        index: verdict.refusal.index,
+        integrationsUrl: verdict.refusal.integrationsUrl,
+      });
+    }
     const mirror = await this.syncMirror(p.accountId, before.name, incoming, stored);
     // Same rule for the spreadsheet's header row: brought in line BEFORE
     // storing, so the snapshot of what was written lands in this same write.
@@ -1544,6 +1568,7 @@ export class FormDestinationsController {
       config: maskConfigSecrets(out.value.config),
       ...(mirror.error ? { formActivityError: mirror.error } : {}),
       ...(sheets.result ? { sheetHeaders: sheets.result } : {}),
+      ...(verdict.warnings.length ? { warnings: verdict.warnings } : {}),
     };
   }
 

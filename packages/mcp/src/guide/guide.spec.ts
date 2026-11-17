@@ -69,4 +69,16 @@ describe('formGuide', () => {
       .filter((f) => f.endsWith('.ts'));
     for (const file of sources) expect(readFileSync(file, 'utf8'), file).not.toMatch(/\.dapta\.(ai|dev|com)/i);
   });
+
+  it('tells an agent that new scheduler steps default to dCal and where its event is picked', () => {
+    const scheduler = formGuide('rules').step_types?.find((t) => t.type === 'scheduler');
+    expect(scheduler?.use_for).toMatch(/default to provider dcal; absent means calendly/);
+    expect(scheduler?.use_for).toMatch(/list_event_types/);
+  });
+
+  it('tells an agent that a destination of a provider not connected is refused, with a page to connect it', () => {
+    const rules = formGuide('rules').rules!.join(' ');
+    expect(rules).toContain('INTEGRATION_NOT_CONNECTED');
+    expect(rules).toMatch(/Salesforce destination/);
+  });
 });

@@ -271,6 +271,7 @@ Every error is JSON with a stable \`error\` code and an English \`message\`:
 |---|---|---|
 | 400 | \`BAD_REQUEST\` | Read \`issues[]\`, fix every entry, send again. |
 | 400 | \`STEPS_REQUIRED\` | A \`PUT /v1/forms/{id}\` config without \`steps\`. Send the full \`steps\` array. |
+| 400 | \`INTEGRATION_NOT_CONNECTED\` | A new or changed Google Sheets or Salesforce destination, switched on, for a provider the workspace has not connected. Give the user \`integrationsUrl\`: connecting happens in their browser. Then send the destinations again. |
 | 401 | \`INVALID_API_KEY\` | The key is unknown, revoked, or its owner is no longer in the workspace. Ask the user for a new key. |
 | 403 | \`KEY_NOT_ALLOWED\` | This route is dashboard only. Tell the user to do it in dForms. |
 | 403 | \`WORKSPACE_FORBIDDEN\` | You sent a workspace header for another workspace. Drop the header. |

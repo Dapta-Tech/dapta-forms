@@ -508,6 +508,7 @@ export function toBackendError(error: unknown): unknown {
   const details: Record<string, unknown> = {};
   if (typeof record.updatedAt === 'number') details.updatedAt = record.updatedAt;
   if (typeof record.retryAfterSec === 'number') details.retryAfterSec = record.retryAfterSec;
+  if (typeof record.integrationsUrl === 'string') details.integrationsUrl = record.integrationsUrl;
   return new BackendError(status, code, message, issues, details);
 }
 
