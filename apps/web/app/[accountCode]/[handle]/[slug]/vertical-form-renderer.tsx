@@ -237,9 +237,9 @@ export function VerticalFormRenderer({
   const sessionId = useSessionId(sessionKey);
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
-  const resolveVisit = useHostVisit(visitCapture, name);
   // The visitor's campaign for the booking page: the same set the submission carries.
-  const { utm: campaign, record: recordCampaign } = useCampaignUtm();
+  const { utm: campaign, record: recordCampaign, learnHost } = useCampaignUtm();
+  const resolveVisit = useHostVisit(visitCapture, name, learnHost);
 
   /**
    * Authorize one upload for a `file` step.

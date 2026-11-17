@@ -210,9 +210,9 @@ export function FormRenderer({
   useCalendlyPreload(calendlyPreloadKeys, sessionId);
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
-  const resolveVisit = useHostVisit(visitCapture, name);
   // The visitor's campaign for the booking page: the same set the submission carries.
-  const { utm: campaign, own: ownUtm, record: recordCampaign } = useCampaignUtm();
+  const { utm: campaign, own: ownUtm, record: recordCampaign, learnHost } = useCampaignUtm();
+  const resolveVisit = useHostVisit(visitCapture, name, learnHost);
 
   /**
    * Authorize one upload for a `file` step.

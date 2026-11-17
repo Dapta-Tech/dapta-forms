@@ -13,6 +13,7 @@ import { sameCampaign, useCampaignUtm } from './renderer-shared';
 let root: Root | null = null;
 let host: HTMLElement | null = null;
 let record: ((utm: Record<string, string>) => void) | null = null;
+let learnHost: ((hostUtm: Record<string, string>) => void) | null = null;
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -29,6 +30,7 @@ afterEach(() => {
 function Probe() {
   const campaign = useCampaignUtm();
   record = campaign.record;
+  learnHost = campaign.learnHost;
   return <pre data-utm={JSON.stringify(campaign.utm)} data-own={JSON.stringify(campaign.own)} />;
 }
 
@@ -60,5 +62,18 @@ describe('useCampaignUtm', () => {
     expect(read().utm).toEqual(landing);
     // The page's own set is empty, so a preloaded widget would lose it.
     expect(sameCampaign(read().utm, read().own)).toBe(false);
+  });
+
+  it("takes the landing's campaign from the host's answer, with no save before the scheduler", async () => {
+    await mount();
+    await act(async () => learnHost!({ utm_source: 'linkedin', utm_content: 'carousel-2' }));
+    expect(read().utm).toEqual({ utm_source: 'linkedin', utm_content: 'carousel-2' });
+  });
+
+  it("never lets the landing's campaign replace the form URL's own", async () => {
+    window.history.replaceState(null, '', '/?utm_content=own-link');
+    await mount();
+    await act(async () => learnHost!({ utm_content: 'landing' }));
+    expect(read().utm).toEqual({ utm_content: 'own-link' });
   });
 });
