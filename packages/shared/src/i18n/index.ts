@@ -7592,7 +7592,7 @@ export const es: FormsMessages = {
           'Esta respuesta no tiene email ni teléfono, así que HighLevel no puede saber si el contacto ya existe. No se envió nada.',
         highlevelTokenRejected: 'HighLevel dejó de aceptar el token. Conecta HighLevel de nuevo con un token nuevo.',
         highlevelLocationForbidden:
-          'El token no tiene acceso a esta sub-account o le falta un scope. Conecta HighLevel de nuevo.',
+          'El token no tiene acceso a esta subcuenta o le falta un scope. Conecta HighLevel de nuevo.',
         bookingRejected: 'HubSpot rechazó la actualización del agendamiento con HTTP {status}. Revisa las propiedades del agendamiento.',
       },
       highlevel: {
@@ -7802,7 +7802,7 @@ export const es: FormsMessages = {
           token_format: 'Eso no es un token de Private Integration de HighLevel. Empieza por pit-.',
           invalid_token: 'HighLevel no aceptó el token. Revisa que lo copiaste completo o crea uno nuevo.',
           wrong_location:
-            'Este token no tiene acceso a ese Location ID. Usa el token y el Location ID de la misma sub-account.',
+            'Este token no tiene acceso a ese Location ID. Usa el token y el Location ID de la misma subcuenta.',
           missing_scope:
             'Al token le falta un scope. Dale contacts.write, locations.readonly y locations/customFields.readonly.',
           unreachable: 'HighLevel no respondió. Vuelve a intentar en un momento.',

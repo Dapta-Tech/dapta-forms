@@ -14,9 +14,10 @@
  * `name` of each standard field, which the fields route returns as data (the
  * web app labels them from the i18n catalog instead).
  *
- * Inert for now: no route, adapter or screen uses any of this yet. Until the
- * adapter exists the destination factory turns every `gohighlevel` delivery
- * into a log-only no-op with {@link GOHIGHLEVEL_REASONS}.notConnected.
+ * Inert for now: there is no connect route, fields route, adapter or screen
+ * yet. The destination factory turns every `gohighlevel` delivery into a
+ * log-only no-op with {@link GOHIGHLEVEL_REASONS}.notConnected, and the API
+ * refuses an agent's `gohighlevel` entry as not connectable.
  */
 import type { FormFieldType } from '@quill/engine';
 // Type-only: the stored shapes are inferred from the schemas in `index.ts`.
@@ -127,9 +128,13 @@ export type GoHighLevelCustomFieldDataType = (typeof GOHIGHLEVEL_CUSTOM_FIELD_DA
  *   options  a list of strings (multiple choice, checkbox)
  *   date     `YYYY-MM-DD`, the day named in the destination's `dayTimezone`
  *
- * Left out on purpose, so the fields route never offers them and the schema
- * refuses them: `TEXTBOX_LIST`, `FLOAT`, `SIGNATURE` and `FILE_UPLOAD` (the
- * upsert does not take them), and `TIME` (its value format is not confirmed).
+ * Left out on purpose: `TEXTBOX_LIST`, `SIGNATURE` and `FILE_UPLOAD` (the
+ * upsert does not take them), and `FLOAT` and `TIME` (how the upsert takes
+ * their value is not confirmed). The fields route never offers them, the API
+ * refuses a mapping to one on save, and the adapter leaves such a value out.
+ * The schema itself accepts every known type (see
+ * {@link GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES}), so moving a type out of this
+ * list later can never stop a stored config from parsing.
  * The spelling `MONETORY` is GHL's own.
  */
 export const GOHIGHLEVEL_VALUE_KIND = {
@@ -159,12 +164,24 @@ export function isGoHighLevelMappableDataType(type: unknown): type is GoHighLeve
   return typeof type === 'string' && Object.prototype.hasOwnProperty.call(GOHIGHLEVEL_VALUE_KIND, type);
 }
 
-/** The custom-field types the score may go to: a number. */
-export const GOHIGHLEVEL_SCORE_DATA_TYPES = ['NUMERICAL'] as const;
-/** The custom-field types the submitted date may go to. */
-export const GOHIGHLEVEL_DATE_DATA_TYPES = ['DATE'] as const;
-/** The custom-field types a UTM value may go to: free text. */
-export const GOHIGHLEVEL_UTM_DATA_TYPES = ['TEXT', 'LARGE_TEXT'] as const;
+/**
+ * The custom-field types each kind of mapping may target: any mappable type
+ * for an answer or a fixed value, a number for the score, a date for the
+ * submitted day, free text for a UTM. The editor offers only these, the API
+ * refuses anything else on save, and the adapter skips anything else.
+ */
+export const GOHIGHLEVEL_SLOT_DATA_TYPES = {
+  field: GOHIGHLEVEL_MAPPABLE_DATA_TYPES,
+  score: ['NUMERICAL'],
+  date: ['DATE'],
+  utm: ['TEXT', 'LARGE_TEXT'],
+} as const satisfies Record<string, readonly GoHighLevelMappableDataType[]>;
+export type GoHighLevelMappingSlot = keyof typeof GOHIGHLEVEL_SLOT_DATA_TYPES;
+
+/** Whether a custom field of `dataType` may receive this kind of mapping. */
+export function goHighLevelSlotAccepts(slot: GoHighLevelMappingSlot, dataType: unknown): boolean {
+  return (GOHIGHLEVEL_SLOT_DATA_TYPES[slot] as readonly unknown[]).includes(dataType);
+}
 
 /** The five UTM parameters a destination can forward. GHL's own attribution cannot be written by API. */
 export const GOHIGHLEVEL_UTM_KEYS = [

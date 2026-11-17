@@ -34,11 +34,8 @@ import {
 } from '@quill/engine';
 import { submissionVisitSchema, submissionVisitViewSchema } from './submission-visit';
 import {
-  GOHIGHLEVEL_DATE_DATA_TYPES,
-  GOHIGHLEVEL_MAPPABLE_DATA_TYPES,
-  GOHIGHLEVEL_SCORE_DATA_TYPES,
+  GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES,
   GOHIGHLEVEL_STANDARD_FIELD_KEYS,
-  GOHIGHLEVEL_UTM_DATA_TYPES,
   GOHIGHLEVEL_UTM_KEYS,
 } from './gohighlevel';
 
@@ -1265,20 +1262,21 @@ const goHighLevelStandardTargetSchema = z.object({
   field: z.enum(GOHIGHLEVEL_STANDARD_FIELD_KEYS),
 });
 
-/** A custom field of the location whose type is one of `dataTypes`. */
-const goHighLevelCustomTargetOf = <T extends readonly [string, ...string[]]>(dataTypes: T) =>
-  z.object({
-    kind: z.literal('custom'),
-    /** What the upsert takes. */
-    id: z.string().trim().min(1).max(100),
-    /** GHL's `fieldKey` (`contact.utm_source`), kept to show the row without asking GHL. */
-    key: z.string().max(200),
-    /** The type when it was chosen, kept to validate the row without asking GHL. */
-    dataType: z.enum(dataTypes),
-  });
-
-/** Any mappable custom field. A type the upsert does not take is refused here. */
-export const goHighLevelCustomFieldTargetSchema = goHighLevelCustomTargetOf(GOHIGHLEVEL_MAPPABLE_DATA_TYPES);
+/**
+ * A custom field of the location. `dataType` is any type GHL reports, not only
+ * the mappable ones: which type a mapping may target is an AUTHORING rule
+ * (`goHighLevelSlotAccepts`, checked by the API on save and by the adapter at
+ * delivery), so narrowing it later never makes a stored config stop parsing.
+ */
+export const goHighLevelCustomFieldTargetSchema = z.object({
+  kind: z.literal('custom'),
+  /** What the upsert takes. */
+  id: z.string().trim().min(1).max(100),
+  /** GHL's `fieldKey` (`contact.utm_source`), kept to show the row without asking GHL. */
+  key: z.string().max(200),
+  /** The type when it was chosen, kept to validate the row without asking GHL. */
+  dataType: z.enum(GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES),
+});
 export type GoHighLevelCustomFieldTarget = z.infer<typeof goHighLevelCustomFieldTargetSchema>;
 
 /** Where one answer goes: a standard field or a custom field. */
@@ -1306,10 +1304,11 @@ export type GoHighLevelStaticField = z.infer<typeof goHighLevelStaticFieldSchema
  * Unlike Salesforce, a mapping target is not a bare name: a standard field and
  * a custom field are told apart, and a custom field is named by its id (what
  * the upsert takes) with its key and type kept alongside. The score, the
- * submitted date and the UTMs go to custom fields only, of a type that can
- * hold them, so the schema refuses a combination GHL would reject. Whether a
+ * submitted date and the UTMs go to custom fields only. Which custom-field
+ * types each mapping may target (`goHighLevelSlotAccepts`) and whether a
  * standard field suits a question's type (`GOHIGHLEVEL_STANDARD_FIELDS`
- * `sources`) needs the form's steps, so the API checks it on save.
+ * `sources`) are authoring rules the API checks on save, not parse rules, so
+ * a stored config keeps parsing if either list changes.
  *
  * Precedence when two sources write one field: the mappings, then the UTMs,
  * then the date and the score; `staticFields` only fill what is still empty.
@@ -1325,13 +1324,11 @@ export const goHighLevelDestinationSchema = z.object({
     .record(z.string().min(1).max(200), z.array(goHighLevelFieldTargetSchema).min(1).max(20))
     .default({}),
   /** utm_* -> a text custom field. */
-  utmMappings: z
-    .record(z.enum(GOHIGHLEVEL_UTM_KEYS), goHighLevelCustomTargetOf(GOHIGHLEVEL_UTM_DATA_TYPES))
-    .default({}),
+  utmMappings: z.record(z.enum(GOHIGHLEVEL_UTM_KEYS), goHighLevelCustomFieldTargetSchema).default({}),
   /** A number custom field to receive the score. */
-  scoreField: goHighLevelCustomTargetOf(GOHIGHLEVEL_SCORE_DATA_TYPES).nullable().optional(),
+  scoreField: goHighLevelCustomFieldTargetSchema.nullable().optional(),
   /** A date custom field to receive the submitted day. */
-  dateField: goHighLevelCustomTargetOf(GOHIGHLEVEL_DATE_DATA_TYPES).nullable().optional(),
+  dateField: goHighLevelCustomFieldTargetSchema.nullable().optional(),
   /** The IANA zone that names the submitted DAY. Blank/absent = UTC. */
   dayTimezone: z.string().max(64).optional(),
   /** Fixed values, each filling its field only when nothing else did. */
@@ -1342,8 +1339,8 @@ export const goHighLevelDestinationSchema = z.object({
   source: z.string().max(200).nullable().optional(),
   /**
    * Rows the author started and has not finished (a question with no field
-   * yet, a fixed value with no field, a tag being typed). Stored so they
-   * survive a reload; never read by a delivery.
+   * yet, a fixed value with no field). Stored so they survive a reload; never
+   * read by a delivery.
    */
   drafts: z
     .object({

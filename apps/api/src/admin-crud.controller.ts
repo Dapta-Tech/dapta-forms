@@ -73,10 +73,8 @@ import {
   formInputSchema,
   publishFormInputSchema,
   formSlugInputSchema,
-  hasExtraHubspotDestination,
   extraOnePerFormDestination,
   maskConfigSecrets,
-  ONE_HUBSPOT_DESTINATION_MESSAGE,
   memberInviteSchema,
   memberPatchSchema,
   notificationSettingPatchSchema,
@@ -611,15 +609,9 @@ export class AdminCrudController {
     // exempt — see `hasExtraHubspotDestination`). Same one-HubSpot rule as
     // PUT /forms/:id/destinations — enforced here rather than in the schema so
     // stored configs that already carry two keep parsing.
-    if (hasExtraHubspotDestination((input.config as { destinations?: unknown } | undefined)?.destinations)) {
-      throw new BadRequestException({
-        error: 'BAD_REQUEST',
-        message: ONE_HUBSPOT_DESTINATION_MESSAGE,
-      });
-    }
-    // Same rule for Salesforce and HighLevel: two destinations draining in
-    // parallel would both look the respondent up, both find nothing, and both
-    // create a record.
+    // The same rule covers Salesforce and HighLevel: two destinations draining
+    // in parallel would both look the respondent up, both find nothing, and
+    // both create a record.
     const extra = extraOnePerFormDestination((input.config as { destinations?: unknown } | undefined)?.destinations);
     if (extra) throw new BadRequestException({ error: 'BAD_REQUEST', message: extra.message });
     // A Sheets or Salesforce destination with no connection behind it would

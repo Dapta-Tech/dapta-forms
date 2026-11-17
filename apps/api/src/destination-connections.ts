@@ -47,8 +47,9 @@ export const DESTINATION_INCOMPLETE = 'DESTINATION_INCOMPLETE';
 export const CONNECTED_DESTINATIONS = {
   'google-sheets': 'Google Sheets',
   salesforce: 'Salesforce',
-  // Nothing can connect HighLevel yet (there is no connect route), so an
-  // agent's HighLevel entry is always refused here and a browser's is warned.
+  // Nothing can connect HighLevel yet (there is no connect route), so it is
+  // also in `unavailableDestinationProviders`: an agent's HighLevel entry is
+  // always refused here, as not retryable, and a browser's is warned.
   gohighlevel: 'HighLevel',
 } as const;
 export type ConnectedDestinationType = keyof typeof CONNECTED_DESTINATIONS;
@@ -78,7 +79,35 @@ export async function connectedDestinationProviders(
 
 /** The destination providers this DEPLOYMENT cannot connect at all, as `GET /v1/integrations` reports them. */
 export function unavailableDestinationProviders(env: GoogleOAuthEnv | undefined): Set<string> {
-  return new Set(googleOAuthClient(env) ? [] : ['google-sheets']);
+  // HighLevel until its connect route exists. Not in `GET /v1/integrations`
+  // `unavailable`, which only lists cards the Connections page shows.
+  return new Set([...(googleOAuthClient(env) ? [] : ['google-sheets']), 'gohighlevel']);
+}
+
+/**
+ * Why a provider cannot be connected at all, and what to do until it can, as
+ * the refusal and the warning say it. Google Sheets: the deployment has no
+ * OAuth client. HighLevel: dForms cannot connect it yet.
+ */
+function unavailableWording(type: ConnectedDestinationType): {
+  why: string;
+  until: string;
+  saved: (what: string) => string;
+} {
+  if (type === 'gohighlevel') {
+    return {
+      why: 'dForms cannot connect HighLevel yet',
+      until: 'Leave this destination out or switched off.',
+      saved: (what) => `HighLevel cannot be connected in dForms yet, so ${what} delivers nothing.`,
+    };
+  }
+  const name = CONNECTED_DESTINATIONS[type];
+  return {
+    why: `this dForms deployment cannot connect ${name} at all (it has no OAuth client for it)`,
+    until: 'Whoever runs this deployment has to set that up first; until then, leave this destination out or switched off.',
+    saved: (what) =>
+      `This dForms deployment cannot connect ${name} at all (it has no OAuth client for it), so ${what} delivers nothing until whoever runs the deployment sets that up.`,
+  };
 }
 
 /** The admin page where a workspace connects its integrations. */
@@ -242,7 +271,8 @@ function canonical(entry: unknown, strip: (e: unknown) => unknown): unknown {
 function notConnectedMessage(type: ConnectedDestinationType, url: string, index: number, unavailable: boolean): string {
   const name = CONNECTED_DESTINATIONS[type];
   if (unavailable) {
-    return `Destination ${index + 1} is a new or changed ${name} destination, and this dForms deployment cannot connect ${name} at all (it has no OAuth client for it), so it would deliver nothing. Whoever runs this deployment has to set that up first; until then, leave this destination out or switched off.`;
+    const { why, until } = unavailableWording(type);
+    return `Destination ${index + 1} is a new or changed ${name} destination, and ${why}, so it would deliver nothing. ${until}`;
   }
   return `Destination ${index + 1} is a new or changed ${name} destination, and ${name} is not connected in this workspace, so it would deliver nothing. An entry sent back exactly as the form stores it is kept; this one differs from every stored entry or is not stored at all. Connecting ${name} takes a browser: open ${url}, connect it there, then save the destinations again.`;
 }
@@ -251,9 +281,7 @@ function notConnectedMessage(type: ConnectedDestinationType, url: string, index:
 function savedMessage(type: ConnectedDestinationType, url: string, unchanged: boolean, unavailable: boolean): string {
   const name = CONNECTED_DESTINATIONS[type];
   const what = unchanged ? 'this destination was kept as it was stored, but it' : 'this destination was saved, but it';
-  if (unavailable) {
-    return `This dForms deployment cannot connect ${name} at all (it has no OAuth client for it), so ${what} delivers nothing until whoever runs the deployment sets that up.`;
-  }
+  if (unavailable) return unavailableWording(type).saved(what);
   return `${name} is not connected in this workspace, so ${what} delivers nothing until someone connects ${name} at ${url} (in a browser).`;
 }
 

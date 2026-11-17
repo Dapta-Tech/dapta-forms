@@ -7,9 +7,11 @@ import {
   extraOnePerFormDestination,
   formConfigSchema,
   formDestinationSchema,
+  GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES,
   GOHIGHLEVEL_MAPPABLE_DATA_TYPES,
   GOHIGHLEVEL_STANDARD_FIELD_KEYS,
   GOHIGHLEVEL_STANDARD_FIELDS,
+  goHighLevelSlotAccepts,
   hasExtraDestinationOfType,
   isGoHighLevelMappableDataType,
   ONE_GOHIGHLEVEL_DESTINATION_MESSAGE,
@@ -58,24 +60,39 @@ describe('gohighlevel destination', () => {
     expect(formDestinationSchema.parse(full)).toEqual(full);
   });
 
-  it('refuses a custom field of a type the upsert does not take', () => {
-    for (const dataType of ['TEXTBOX_LIST', 'FLOAT', 'SIGNATURE', 'FILE_UPLOAD', 'TIME', 'SOMETHING_NEW']) {
-      const entry = { type: 'gohighlevel', fieldMappings: { q: [custom('f', dataType)] } };
-      expect(formDestinationSchema.safeParse(entry).success, dataType).toBe(false);
-      expect(isGoHighLevelMappableDataType(dataType), dataType).toBe(false);
+  it('stores a custom field of any type GHL reports, so narrowing what is mappable never breaks a stored config', () => {
+    for (const dataType of GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES) {
+      const entry = { type: 'gohighlevel', fieldMappings: { q: [custom('f', dataType)] }, scoreField: custom('s', dataType) };
+      expect(formDestinationSchema.safeParse(entry).success, dataType).toBe(true);
     }
-    for (const dataType of GOHIGHLEVEL_MAPPABLE_DATA_TYPES) expect(isGoHighLevelMappableDataType(dataType)).toBe(true);
+    // A type GHL never reported is not something the fields route could have offered.
+    expect(formDestinationSchema.safeParse({ type: 'gohighlevel', fieldMappings: { q: [custom('f', 'NEW_KIND')] } }).success).toBe(false);
   });
 
-  it('refuses the score, the date and a UTM on a custom field that cannot hold them', () => {
-    // Each one alone is what makes the entry invalid.
+  it('says which custom-field types each kind of mapping may target', () => {
+    for (const dataType of ['TEXTBOX_LIST', 'FLOAT', 'SIGNATURE', 'FILE_UPLOAD', 'TIME', 'NEW_KIND']) {
+      expect(isGoHighLevelMappableDataType(dataType), dataType).toBe(false);
+      expect(goHighLevelSlotAccepts('field', dataType), dataType).toBe(false);
+    }
+    for (const dataType of GOHIGHLEVEL_MAPPABLE_DATA_TYPES) {
+      expect(isGoHighLevelMappableDataType(dataType)).toBe(true);
+      expect(goHighLevelSlotAccepts('field', dataType)).toBe(true);
+    }
+    expect(goHighLevelSlotAccepts('score', 'NUMERICAL')).toBe(true);
+    expect(goHighLevelSlotAccepts('score', 'TEXT')).toBe(false);
+    expect(goHighLevelSlotAccepts('date', 'DATE')).toBe(true);
+    expect(goHighLevelSlotAccepts('date', 'TEXT')).toBe(false);
+    expect(goHighLevelSlotAccepts('utm', 'TEXT')).toBe(true);
+    expect(goHighLevelSlotAccepts('utm', 'LARGE_TEXT')).toBe(true);
+    expect(goHighLevelSlotAccepts('utm', 'NUMERICAL')).toBe(false);
+  });
+
+  it('refuses the score, the date and a UTM on a standard field, and a UTM key that is not one of the five', () => {
     const valid = { scoreField: custom('s', 'NUMERICAL'), dateField: custom('d', 'DATE'), utmMappings: { utm_source: custom('u', 'TEXT') } };
     expect(formDestinationSchema.safeParse({ type: 'gohighlevel', ...valid }).success).toBe(true);
     const refused = [
-      { scoreField: custom('s', 'TEXT') },
       { scoreField: { kind: 'standard', field: 'email' } },
-      { dateField: custom('d', 'TEXT') },
-      { utmMappings: { utm_source: custom('u', 'NUMERICAL') } },
+      { dateField: { kind: 'standard', field: 'dateOfBirth' } },
       { utmMappings: { utm_source: { kind: 'standard', field: 'website' } } },
       { utmMappings: { gclid: custom('u', 'TEXT') } },
     ];
@@ -157,7 +174,7 @@ describe('configs stored before HighLevel', () => {
       utmMappings: {},
     };
     const parsed = formConfigSchema.parse({ version: 1, steps: [], destinations: [...legacy, ghl] });
-    // Byte for byte: no default filled in, no `events` key gained.
-    expect(parsed.destinations).toEqual([...legacy, ghl]);
+    // Exactly as stored: no default filled in, no `events` key gained.
+    expect(parsed.destinations).toStrictEqual([...legacy, ghl]);
   });
 });
