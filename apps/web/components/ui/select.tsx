@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getMessages } from '@quill/shared';
 import { cn } from '@/lib/cn';
-import { fitMenu, type MenuFit, type Span } from './select-fit';
+import { placeMenu, sameFit, type AncestorBox, type MenuFit } from './select-fit';
 
 /**
  * Select — a branded, token-styled combobox that replaces the OS-native
@@ -30,43 +30,35 @@ import { fitMenu, type MenuFit, type Span } from './select-fit';
  * because a list of five that all read "Where should we send the..." gives the
  * person nothing to choose between. It opens leftward when growing rightward
  * would leave the visible area AND leftward fits; when neither side holds it,
- * it narrows to the room there is and the options wrap. The width is settled
- * once, as the menu opens, and filtering never changes it (see `select-fit.ts`).
+ * it narrows to the room there is and the options wrap. The width follows the
+ * whole option list, never the filtered one: typing in the search box does not
+ * change it, options that arrive while it is open do (see `select-fit.ts`).
  */
-
-/** Gutter kept between the menu and whatever would cut it off. */
-const EDGE = 8;
 
 /**
- * The horizontal band of the viewport in which the menu can be seen: the window,
- * narrowed by every ancestor that clips it.
+ * The Select's ancestors as `visibleBand` wants them: plain boxes and computed
+ * style values, read off the DOM from the root's parent outward. `clipping` is
+ * the subset whose resizing can change where the menu may go.
  *
  * The menu is `absolute` inside the Select's own `relative` root, not portalled,
- * so an ancestor with any `overflow` other than `visible` cuts it off exactly
- * like the window does (and `overflow-y: auto` alone is enough: CSS computes
- * `overflow-x` to `auto` along with it). The walk follows the containing-block
- * chain, because that is what decides clipping: an `absolute` box ignores the
- * static ancestors below its containing block, and a `fixed` one (a dialog
- * overlay) ignores everything above it.
+ * so these ancestors are what can cut it off. What to make of them is decided
+ * in `select-fit.ts`, where it can be tested with made-up geometry.
  */
-function visibleBand(root: HTMLElement): Span {
-  let left = EDGE;
-  let right = document.documentElement.clientWidth - EDGE;
-  let absolute = false;
+function ancestorsOf(root: HTMLElement): { boxes: AncestorBox[]; clipping: HTMLElement[] } {
+  const boxes: AncestorBox[] = [];
+  const clipping: HTMLElement[] = [];
   for (let node = root.parentElement; node && node !== document.body; node = node.parentElement) {
     const style = getComputedStyle(node);
-    if (absolute && style.position === 'static') continue;
-    // A box with no width of its own (`display: contents`, an inline wrapper)
-    // reports an overflow value it cannot apply; it clips nothing.
-    if (style.overflowX !== 'visible' && node.clientWidth > 0) {
-      const inner = node.getBoundingClientRect().left + node.clientLeft;
-      left = Math.max(left, inner + EDGE);
-      right = Math.min(right, inner + node.clientWidth - EDGE);
-    }
-    if (style.position === 'fixed') break;
-    absolute = style.position === 'absolute';
+    const left = node.getBoundingClientRect().left + node.clientLeft;
+    boxes.push({
+      position: style.position,
+      overflowX: style.overflowX,
+      transformed: style.transform !== 'none',
+      inner: { left, right: left + node.clientWidth },
+    });
+    if (style.overflowX !== 'visible') clipping.push(node);
   }
-  return { left, right };
+  return { boxes, clipping };
 }
 
 export interface SelectOption {
@@ -118,8 +110,16 @@ export function Select({
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  /** Side and width of the open panel; null until measured (see the layout effect). */
+  const labelRef = useRef<HTMLSpanElement>(null);
+  /**
+   * The width the options ask for on their own, measured with the whole list in
+   * the panel; null while it has yet to be measured (see the layout effects).
+   */
+  const [content, setContent] = useState<number | null>(null);
+  /** Side and width of the open panel; null until placed. */
   const [fit, setFit] = useState<MenuFit | null>(null);
+  /** The trigger's label does not fit its slot (ellipsis or line clamp). */
+  const [clipped, setClipped] = useState(false);
 
   const filtered = useMemo(() => {
     if (!searchable) return options;
@@ -131,6 +131,10 @@ export function Select({
   }, [options, query, searchable]);
 
   const selected = options.find((o) => o.value === value);
+  const shownLabel = selected ? selected.label : (placeholder ?? '');
+  // What the menu's width depends on: the labels of the WHOLE list. The filter
+  // is deliberately not part of it.
+  const optionsKey = useMemo(() => options.map((o) => o.label).join('\n'), [options]);
 
   // Next selectable index from `from` in `dir` — clamps (no wrap) and skips
   // disabled rows so keyboard nav never lands on an unpickable option.
@@ -162,35 +166,74 @@ export function Select({
   }, [open, searchable]);
 
   // The panel grows to its content, so it can run past the window, or past a
-  // dialog or rail that clips it. Its first render carries no width: that is the
-  // one moment every option is in the list (the filter is empty), so what is
-  // measured here is the width the longest option asks for. It is then pinned,
-  // before paint, to that width or to the room there is. Pinned is the point:
-  // left to `w-max`, the panel re-fit itself to the surviving options on every
-  // keystroke in the search box and jumped under the pointer.
+  // dialog or rail that clips it. Left to `w-max` it also re-fit itself to the
+  // surviving options on every keystroke in the search box and jumped under the
+  // pointer. So its width is measured, then pinned, in two steps.
+  //
+  // Step one: anything that changes what the options ask for (opening, or the
+  // option list itself changing while open) asks for a fresh measurement.
+  // Typing in the search box is not on that list.
   useLayoutEffect(() => {
-    if (!open) {
-      setFit(null);
-      return;
-    }
+    setContent(null);
+    if (!open) setFit(null);
+  }, [open, optionsKey]);
+
+  // Step two. While `content` is null the panel renders the whole list with no
+  // width of its own, so what is read here is the width the longest option asks
+  // for; it is pinned before paint, to that width or to the room there is. Once
+  // measured, the placement is kept current: the window, the Select itself or
+  // an ancestor that clips it can all change size with the menu open.
+  useLayoutEffect(() => {
+    if (!open) return;
     const root = rootRef.current;
     const panel = panelRef.current;
     if (!root || !panel) return;
-    // What the OPTIONS ask for, without the `min-w-full` floor: the floor is the
-    // trigger's width, and that one is read fresh on every placement, so a menu
-    // that was only as wide as its trigger still follows it through a resize.
-    panel.style.minWidth = '0';
-    const content = panel.getBoundingClientRect().width;
-    panel.style.minWidth = '';
-    const place = () => {
-      const trigger = root.getBoundingClientRect();
-      setFit(fitMenu(Math.max(content, trigger.width), trigger, visibleBand(root)));
+    const place = (width: number) =>
+      placeMenu(width, root.getBoundingClientRect(), document.documentElement.clientWidth, ancestorsOf(root).boxes);
+
+    if (content === null) {
+      // Without the `min-w-full` floor: that floor is the trigger's width, and
+      // `placeMenu` applies it from the trigger as it is at each placement.
+      panel.style.minWidth = '0';
+      const measured = panel.getBoundingClientRect().width;
+      panel.style.minWidth = '';
+      setContent(measured);
+      setFit(place(measured));
+      return;
+    }
+
+    const replace = () => {
+      const next = place(content);
+      setFit((prev) => (sameFit(prev, next) ? prev : next));
     };
-    place();
-    // A window resize moves the edges but not what the options ask for.
-    window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
-  }, [open]);
+    window.addEventListener('resize', replace);
+    // A side panel that is dragged narrower, a dialog that reflows: no window
+    // resize happens, and the menu would be left hanging out of its container.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(replace);
+    if (observer) {
+      observer.observe(root);
+      for (const node of ancestorsOf(root).clipping) observer.observe(node);
+    }
+    return () => {
+      window.removeEventListener('resize', replace);
+      observer?.disconnect();
+    };
+  }, [open, content]);
+
+  // The trigger truncates a label that does not fit its slot. When it does, the
+  // full text goes in `title`, so it can still be read; when it does not, there
+  // is no tooltip repeating what is already on screen.
+  useEffect(() => {
+    const label = labelRef.current;
+    if (!label) return;
+    const check = () =>
+      setClipped(label.scrollWidth > label.clientWidth || label.scrollHeight > label.clientHeight + 1);
+    check();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(check);
+    observer.observe(label);
+    return () => observer.disconnect();
+  }, [shownLabel, labelClassName]);
 
   // Keep the active option scrolled into view while arrowing through the list.
   useEffect(() => {
@@ -222,6 +265,17 @@ export function Select({
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      // This Escape closed a menu, and that is all it does. Without stopping
+      // it here the same keypress went on to whatever hosts the Select: a
+      // dialog listening on `window` closed along with the menu, taking the
+      // author's place in it. The handler only exists while the menu is open,
+      // so a second Escape is the host's again. Both calls are needed. The
+      // first ends it for React ancestors and for anything above the root. But
+      // React dispatches FROM the root (the document, in the app), so a
+      // listener a popover added to `document` sits beside React's own, not
+      // above it, and only the second reaches that one.
+      e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
       close();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -236,6 +290,11 @@ export function Select({
     }
   };
 
+  // The measuring pass shows every option whatever the filter says; it is
+  // replaced by the filtered list before the browser paints.
+  const sizing = open && content === null;
+  const shown = sizing ? options : filtered;
+
   return (
     // `min-w-0`: where a caller lays the Select out as a flex or grid item, its
     // automatic minimum is the whole selected label on one line, so one long
@@ -249,6 +308,9 @@ export function Select({
         id={id}
         disabled={disabled}
         aria-label={ariaLabel}
+        // A description, not a name: the accessible name stays `aria-label`
+        // or the label text itself.
+        title={clipped && shownLabel ? shownLabel : undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         // Inline, like the panel's own `outline: none`: the app-wide focus
@@ -263,8 +325,8 @@ export function Select({
           className,
         )}
       >
-        <span className={cn(labelClassName ?? 'truncate', !selected && 'text-muted-foreground')}>
-          {selected ? selected.label : (placeholder ?? '')}
+        <span ref={labelRef} className={cn(labelClassName ?? 'truncate', !selected && 'text-muted-foreground')}>
+          {shownLabel}
         </span>
         <svg
           aria-hidden
@@ -291,7 +353,8 @@ export function Select({
             fit?.side === 'end' ? 'right-0' : 'left-0',
           )}
           // Inline so it outranks `w-max`; `min-w-full` and the cap still apply.
-          style={fit ? { width: fit.width } : undefined}
+          // None while measuring: that pass needs the panel at its own width.
+          style={fit && !sizing ? { width: fit.width } : undefined}
           onKeyDown={onKeyDown}
         >
           {searchable ? (
@@ -319,7 +382,7 @@ export function Select({
             style={{ outline: 'none' }}
             className="max-h-64 overflow-y-auto p-1"
           >
-            {filtered.map((o, i) => {
+            {shown.map((o, i) => {
               const isSelected = o.value === value;
               return (
                 <li
@@ -358,7 +421,7 @@ export function Select({
                 </li>
               );
             })}
-            {filtered.length === 0 ? (
+            {shown.length === 0 ? (
               <li className="px-2 py-3 text-sm text-muted-foreground">{m.noResults}</li>
             ) : null}
           </ul>
