@@ -255,6 +255,8 @@ export async function writeHeaderRow(
 export type HeaderSyncResult =
   /** Row 1 now reads exactly `headers` (it was written, or already did). */
   | { ok: true; outcome: 'written' | 'unchanged' }
+  /** `check` only: row 1 is dForms' own but out of date. Nothing was written. */
+  | { ok: true; outcome: 'stale' }
   /**
    * Row 1 holds something dForms cannot prove it wrote. Left exactly as it
    * was: it may be a customer's own heading or their first row of data, and a
@@ -322,7 +324,7 @@ export async function syncHeaderRow(
   owned: string[][],
   fetchImpl: typeof fetch = fetch,
   timeoutMs: number = SHEETS_ADMIN_TIMEOUT_MS,
-  opts: { replace?: boolean } = {},
+  opts: { replace?: boolean; check?: boolean } = {},
 ): Promise<HeaderSyncResult> {
   const wanted = headers.map((h) => h.trim());
   if (wanted.length === 0) return { ok: true, outcome: 'unchanged' };
@@ -354,6 +356,11 @@ export async function syncHeaderRow(
   if (!ours && !opts.replace) {
     return { ok: true, outcome: 'foreign', current: row.slice(0, used).map(cellText) };
   }
+  // A look, not a sync: what the Connect tab does when the card opens. It
+  // must never write, because what it would write was read from the stored
+  // config before the author's next edit, and a write landing after that edit
+  // would put stale headings back in the sheet.
+  if (opts.check) return { ok: true, outcome: 'stale' };
 
   const width = Math.max(wanted.length, used);
   const values = Array.from({ length: width }, (_, i) => wanted[i] ?? '');

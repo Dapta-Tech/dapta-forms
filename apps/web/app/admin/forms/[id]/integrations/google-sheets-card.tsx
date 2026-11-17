@@ -23,7 +23,7 @@ import {
   syncSheetHeadersAction,
 } from './actions';
 import { pickSpreadsheet } from './google-picker';
-import { columnMissing, defaultColumns, isCompleteColumn, moveColumn } from './sheet-columns';
+import { columnMissing, defaultColumns, isCompleteColumn, moveColumn, sheetLetters } from './sheet-columns';
 import { sheetUrlFor } from './sheet-url';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -61,6 +61,8 @@ function headerSyncLine(
       return { text: g.headersWritten, tone: 'ok' };
     case 'unchanged':
       return { text: g.headersUnchanged, tone: 'ok' };
+    case 'stale':
+      return null;
     case 'foreign':
       // Drawn by `HeaderMismatch` instead, with the side-by-side and the way out.
       return null;
@@ -226,9 +228,11 @@ export function GoogleSheetsCard({
    * a button first. Once per open: the ref survives re-renders, and a sheet
    * picked later is checked by the save that stores it.
    *
-   * It is the ordinary, conservative sync: one read, and a write only into a
-   * row 1 that is provably dForms' own. Only a mismatch is reported here; a
-   * row that already matches has nothing to say on open.
+   * A LOOK, not a sync: one read, nothing written to the sheet and nothing
+   * stored. It works from a copy of the config read before Google answers,
+   * and an edit autosaved in that window must win (a write from here could
+   * put stale headings back). Only a mismatch is reported; a row that is
+   * dForms' own but out of date is fixed by the next save.
    */
   const checkedOnOpen = useRef(false);
   useEffect(() => {
@@ -236,7 +240,7 @@ export function GoogleSheetsCard({
     if (!state.columns.some(isCompleteColumn)) return;
     checkedOnOpen.current = true;
     void (async () => {
-      const res = await callAction(() => syncSheetHeadersAction(formId));
+      const res = await callAction(() => syncSheetHeadersAction(formId, 'check'));
       if (!res?.ok || !res.data?.ok) return;
       if (res.data.outcome === 'foreign') {
         const { ok: _ok, ...sync } = res.data;
@@ -374,20 +378,18 @@ export function GoogleSheetsCard({
       : []),
     ...(tabs ?? []).map((t) => ({ value: t.title, label: t.title })),
   ];
-  // Columns the author is still filling in are not stored, so they are not in
-  // row 1 either. While any exist, a green "row 1 matches" would be a claim
-  // about the columns on screen that is not true: say which ones are pending.
-  const pendingLetters = state.columns
-    .map((c, i) => (isCompleteColumn(c) ? null : sheetColumnLetter(i)))
-    .filter((l): l is string => l !== null);
+  // Each column's letter in the sheet: written columns only, so the card,
+  // the mismatch table, row 1 and every delivered row count the same way.
+  const letters = sheetLetters(state.columns, sheetColumnLetter);
+  // Columns with no heading are saved but not in the sheet. While any exist,
+  // a green "row 1 matches" alone would be a claim about the columns on
+  // screen that is not true: say how many are waiting for a heading.
+  const unnamed = letters.filter((l) => l === null).length;
   const syncResult = headerSync ? headerSyncLine(headerSync, m.gsheets) : null;
   const syncLine: { text: string; tone: 'ok' | 'warn' | 'error' | 'info' } | null =
-    pendingLetters.length && state.spreadsheetId && (!syncResult || syncResult.tone === 'ok')
+    unnamed && state.spreadsheetId && (!syncResult || syncResult.tone === 'ok')
       ? {
-          text: (pendingLetters.length === 1 ? m.gsheets.columnPendingOne : m.gsheets.columnPendingMany).replace(
-            '{cols}',
-            pendingLetters.join(', '),
-          ),
+          text: unnamed === 1 ? m.gsheets.columnPendingOne : m.gsheets.columnPendingMany.replace('{n}', String(unnamed)),
           tone: 'info',
         }
       : syncResult;
@@ -550,12 +552,18 @@ export function GoogleSheetsCard({
                           className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-2 gap-y-2 px-3 py-2.5 @2xl:grid-cols-[1.75rem_minmax(0,1.15fr)_10rem_minmax(0,1fr)_6.5rem]"
                         >
                           {/* The sheet's own column letter: what the author
-                              will see above this heading in Google Sheets. */}
+                              will see above this heading in Google Sheets.
+                              A column with no heading is not in the sheet,
+                              so it gets an empty slot, not a letter. */}
                           <span
                             aria-hidden
-                            className="col-start-1 row-start-1 flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-semibold tabular-nums text-muted-foreground"
+                            data-testid="gsheets-column-letter"
+                            className={cn(
+                              'col-start-1 row-start-1 flex h-7 w-7 items-center justify-center rounded-md text-xs font-semibold tabular-nums',
+                              letters[index] ? 'bg-muted text-muted-foreground' : 'border border-dashed border-border',
+                            )}
                           >
-                            {sheetColumnLetter(index)}
+                            {letters[index] ?? ''}
                           </span>
                           <Input
                             value={column.header}
@@ -637,8 +645,9 @@ export function GoogleSheetsCard({
                               onClick={() => setColumns(state.columns.filter((_, i) => i !== index))}
                             />
                           </div>
-                          {/* What THIS row still needs, exactly: the row is
-                              saved, it is just not in the sheet yet. */}
+                          {/* What THIS row still needs, exactly. No heading:
+                              saved, not in the sheet. No answer: in the sheet,
+                              with empty cells until one is chosen. */}
                           {missing ? (
                             <p
                               data-testid="gsheets-column-missing"
@@ -648,11 +657,9 @@ export function GoogleSheetsCard({
                               <i aria-hidden className="pi pi-info-circle mt-px shrink-0" style={{ fontSize: 12 }} />
                               {missing === 'header'
                                 ? m.gsheets.rowNeedsHeader
-                                : missing === 'both'
-                                  ? m.gsheets.rowNeedsBoth
-                                  : column.source === 'utm'
-                                    ? m.gsheets.rowNeedsUtm
-                                    : m.gsheets.rowNeedsAnswer}
+                                : column.source === 'utm'
+                                  ? m.gsheets.rowNeedsUtm
+                                  : m.gsheets.rowNeedsAnswer}
                             </p>
                           ) : null}
                         </li>

@@ -476,7 +476,8 @@ describe('the header row', () => {
     actions.syncSheetHeadersAction.mockResolvedValue({ ok: true, data: { ok: true, ...MISMATCH } });
     const { box, onHeaderSync } = await mount({ state: STORED, formId: 'form-1' });
     expect(actions.syncSheetHeadersAction).toHaveBeenCalledTimes(1);
-    expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1');
+    // A look: the check mode writes nothing and stores nothing.
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1', 'check');
     expect(onHeaderSync).toHaveBeenCalledWith(MISMATCH);
     // A later render (any edit) does not ask Google again.
     await act(async () =>
@@ -510,42 +511,41 @@ describe('the header row', () => {
     expect(actions.syncSheetHeadersAction).not.toHaveBeenCalled();
   });
 
-  it('names a column still being filled in, instead of claiming row 1 matches', async () => {
+  it('counts columns waiting for a heading, instead of claiming row 1 matches', async () => {
     const { el } = await mount({
-      state: { ...STORED, columns: [...STORED.columns, { header: 'booking', source: 'answer' }] },
+      state: { ...STORED, columns: [...STORED.columns, { header: '', source: 'answer', key: 'company' }] },
       formId: 'form-1',
       headerSync: { outcome: 'unchanged' },
     });
     const line = el.querySelector('[data-testid="gsheets-header-sync"]')!;
-    expect(line.textContent).toBe(m.gsheets.columnPendingOne.replace('{cols}', 'B'));
-    expect(line.textContent).toMatch(/saved/);
-    expect(line.textContent).not.toContain(m.gsheets.headersUnchanged);
+    expect(line.textContent).toBe(m.gsheets.columnPendingOne);
     expect(line.getAttribute('data-tone')).toBe('info');
   });
 
-  it('tells each unfinished row exactly what it still needs', async () => {
+  it('letters columns as the sheet does, and tells each row exactly what it needs', async () => {
+    // A complete, B heading only, C complete, D no heading, E complete.
     const { el } = await mount({
       state: {
         ...STORED,
         columns: [
-          ...STORED.columns,
-          { header: 'booking', source: 'answer' },
-          { header: '', source: 'answer', key: 'email' },
-          { header: 'Source', source: 'utm' },
-          { header: '', source: 'answer' },
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: 'B', source: 'answer' },
+          { header: 'C', source: 'score' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'E', source: 'utm' },
         ],
       },
       formId: 'form-1',
     });
-    const hints = [...el.querySelectorAll('[data-testid="gsheets-column-missing"]')].map((h) => h.textContent);
-    expect(hints).toEqual([
-      m.gsheets.rowNeedsAnswer,
-      m.gsheets.rowNeedsHeader,
-      m.gsheets.rowNeedsUtm,
-      m.gsheets.rowNeedsBoth,
-    ]);
-    // Complete rows say nothing.
-    expect(el.querySelectorAll('[data-testid="gsheets-column"]')[0]!.querySelector('[data-testid="gsheets-column-missing"]')).toBeNull();
+    const letters = [...el.querySelectorAll('[data-testid="gsheets-column-letter"]')].map((l) => l.textContent);
+    expect(letters).toEqual(['A', 'B', 'C', '', 'D']);
+    const rows = [...el.querySelectorAll('[data-testid="gsheets-column"]')];
+    const hint = (i: number) => rows[i]!.querySelector('[data-testid="gsheets-column-missing"]')?.textContent ?? null;
+    expect(hint(0)).toBeNull();
+    expect(hint(1)).toBe(m.gsheets.rowNeedsAnswer);
+    expect(hint(2)).toBeNull();
+    expect(hint(3)).toBe(m.gsheets.rowNeedsHeader);
+    expect(hint(4)).toBe(m.gsheets.rowNeedsUtm);
   });
 
   it('shows the row-1 mismatch above the column list', async () => {

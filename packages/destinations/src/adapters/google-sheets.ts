@@ -34,7 +34,7 @@ import type {
   DestinationResult,
   SubmissionDestination,
 } from '../destination.port';
-import type { SheetColumn } from '@quill/types';
+import { writableSheetColumns, type SheetColumn } from '@quill/types';
 
 export const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -188,7 +188,9 @@ export class GoogleSheetsDestination implements SubmissionDestination {
 
   async deliver(ctx: DestinationContext): Promise<DestinationResult> {
     const { accessToken, spreadsheetId, sheetTitle, columns } = this.options;
-    const row = buildRow(columns, ctx);
+    // Written columns only (`isWritableSheetColumn`): the same ones row 1
+    // holds, so a column the author has not named yet shifts nothing.
+    const row = buildRow(writableSheetColumns(columns), ctx);
     const body = JSON.stringify({ values: [row] });
 
     const url = new URL(

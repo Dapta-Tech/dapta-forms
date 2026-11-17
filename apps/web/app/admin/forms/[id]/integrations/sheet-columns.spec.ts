@@ -9,6 +9,7 @@ import { mappableQuestions, type QuestionMeta } from './auto-map';
 import {
   defaultColumns,
   columnMissing,
+  sheetLetters,
   isCompleteColumn,
   moveColumn,
   sameHeaders,
@@ -75,16 +76,14 @@ describe('defaultColumns', () => {
 });
 
 describe('isCompleteColumn', () => {
-  it('needs a heading', () => {
+  it('is the one rule: a column with a heading is in the sheet', () => {
     expect(isCompleteColumn({ header: '  ', source: 'score' })).toBe(false);
     expect(isCompleteColumn({ header: 'Score', source: 'score' })).toBe(true);
-  });
-
-  it('needs the key for the two sources that name something', () => {
-    expect(isCompleteColumn({ header: 'Email', source: 'answer' })).toBe(false);
-    expect(isCompleteColumn({ header: 'Email', source: 'answer', key: 'email' })).toBe(true);
-    expect(isCompleteColumn({ header: 'Source', source: 'utm' })).toBe(false);
-    expect(isCompleteColumn({ header: 'Source', source: 'utm', key: 'utm_source' })).toBe(true);
+    // A heading with nothing chosen to fill it IS written (empty cells), so
+    // picking the answer later shifts no column after it.
+    expect(isCompleteColumn({ header: 'Email', source: 'answer' })).toBe(true);
+    expect(isCompleteColumn({ header: 'Source', source: 'utm' })).toBe(true);
+    expect(isCompleteColumn({ header: '', source: 'answer', key: 'email' })).toBe(false);
   });
 });
 
@@ -107,9 +106,21 @@ describe('storedColumns', () => {
   it('names exactly what an unfinished row still needs', () => {
     expect(columnMissing({ header: 'booking', source: 'answer' })).toBe('source');
     expect(columnMissing({ header: '', source: 'answer', key: 'email' })).toBe('header');
-    expect(columnMissing({ header: ' ', source: 'utm' })).toBe('both');
+    // No heading is the whole story: it is not in the sheet at all.
+    expect(columnMissing({ header: ' ', source: 'utm' })).toBe('header');
     expect(columnMissing({ header: '', source: 'score' })).toBe('header');
     expect(columnMissing({ header: 'Score', source: 'score' })).toBeNull();
+  });
+
+  it('letters only the written columns, the way row 1 does', () => {
+    const cols: SheetColumn[] = [
+      { header: 'A', source: 'answer', key: 'q1' },
+      { header: 'B', source: 'answer' },
+      { header: 'C', source: 'score' },
+      { header: '', source: 'answer', key: 'q4' },
+      { header: 'E', source: 'outcome' },
+    ];
+    expect(sheetLetters(cols, (i) => 'ABCDEFG'[i]!)).toEqual(['A', 'B', 'C', null, 'D']);
   });
 
   it('leaves no key behind on a source that takes none', () => {

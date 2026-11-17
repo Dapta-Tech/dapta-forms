@@ -11,6 +11,7 @@
  *      with `=` must stay text, and a row must keep its length when an optional
  *      question goes unanswered, or every column below it shifts.
  */
+import { createDestination } from '../factory';
 import { describe, expect, it, vi } from 'vitest';
 import type { SheetColumn } from '@quill/types';
 import type { DestinationContext } from '../destination.port';
@@ -173,6 +174,38 @@ describe('a delivery', () => {
     const [url, init] = callOf(fetchImpl);
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer ya29.token');
     expect(url).not.toContain('ya29.token');
+  });
+});
+
+describe('which columns a delivered row holds', () => {
+  // The one rule (`isWritableSheetColumn`): a column with a heading is in the
+  // sheet, one without is not. A complete, B heading with no answer yet,
+  // C complete, D no heading, E complete: row 1 is A, B, C, E, and so is
+  // every delivered row, with an empty cell under B.
+  it('writes A, B (empty), C, E and skips D, in the same letters as row 1', async () => {
+    const fetchImpl = answers(200, OK);
+    await new GoogleSheetsDestination(
+      options({
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: 'B', source: 'answer' },
+          { header: 'C', source: 'score' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'E', source: 'utm', key: 'utm_source' },
+        ],
+      }),
+      fetchImpl,
+    ).deliver(ctx());
+    const body = JSON.parse(String(callOf(fetchImpl)[1].body)) as { values: string[][] };
+    expect(body.values).toEqual([['sam@example.com', '', '42', 'google']]);
+  });
+
+  it('is not built at all when no column has a heading', () => {
+    const d = createDestination(
+      { type: 'google-sheets', googleSheets: options({ columns: [{ header: '', source: 'score' }] }) },
+      answers(200, OK),
+    );
+    expect(d.type).not.toBe('google-sheets');
   });
 });
 

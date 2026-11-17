@@ -276,13 +276,20 @@ describe('columns still being filled in', () => {
     expect(stored).toEqual(half.columns);
   });
 
-  it('are left out of row 1 until complete, so nothing shifts in the sheet', async () => {
+  it('write row 1 by the one rule: a heading is a column, no heading is not', async () => {
+    // A complete, B heading with no answer yet, C complete, D no heading,
+    // E complete. Row 1 holds A, B, C, E in letters A to D.
     await store(fromEditor(OLD));
-    const half = { ...fromEditor(OLD), columns: [...fromEditor(OLD).columns, { header: 'booking', source: 'answer' }] };
-    await controller.putDestinations(asOwner(), formId, { destinations: [half] });
-    // The headings did not change as far as the sheet is concerned: no call.
-    expect(reads).toBe(0);
-    expect(row1).toEqual(OLD);
+    const cols = [
+      { header: 'A', source: 'answer', key: 'q1' },
+      { header: 'B', source: 'answer' },
+      { header: 'C', source: 'score' },
+      { header: '', source: 'answer', key: 'q4' },
+      { header: 'E', source: 'outcome' },
+    ];
+    row1 = [];
+    await controller.putDestinations(asOwner(), formId, { destinations: [{ ...fromEditor(OLD), columns: cols }] });
+    expect(row1).toEqual(['A', 'B', 'C', 'E']);
   });
 
   it('keeps a switched-on card with no spreadsheet, and asks Google nothing', async () => {
@@ -294,5 +301,54 @@ describe('columns still being filled in', () => {
       { type: 'google-sheets', enabled: true, settings: {}, columns: [] },
     ]);
     expect(reads).toBe(0);
+  });
+});
+
+describe('the check on open never undoes an edit made while Google was slow', () => {
+  it('writes nothing and stores nothing, so the edit survives in the config and the sheet', async () => {
+    await store(fromEditor(OLD));
+    row1 = [];
+    // Google reads row 1 NOW (empty) but the answer only arrives once
+    // released: the worst case, an answer from before the edit.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let held = false;
+    const base = controller.fetchImpl;
+    controller.fetchImpl = (async (url: string, init?: RequestInit) => {
+      const res = await base(url, init);
+      if (!held && (init?.method ?? 'GET') === 'GET') {
+        held = true;
+        await gate;
+      }
+      return res;
+    }) as unknown as typeof fetch;
+
+    const check = controller.syncFormSheetHeaders(asOwner(), formId, { check: true });
+    // Meanwhile the author renames a column and the autosave stores it (and
+    // writes it to row 1, which was empty).
+    const edited = ['Submitted', 'Work email', 'Company'];
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(edited)] });
+    const writesBefore = writes.length;
+    release();
+    await expect(check).resolves.toMatchObject({ ok: true, outcome: 'stale' });
+
+    // Reload: the edit is there, and the sheet still says what the edit wrote.
+    const form = await getFormById(db, accountId, formId);
+    const stored = (form!.config as { destinations: { columns: { header: string }[] }[] }).destinations[0]!;
+    expect(stored.columns.map((c) => c.header)).toEqual(edited);
+    expect(writes.length).toBe(writesBefore);
+    expect(row1).toEqual(edited);
+  });
+
+  it('reports a row 1 that does not match, still without writing', async () => {
+    row1 = ['Name', 'Phone'];
+    await store(fromEditor(OLD));
+    await expect(controller.syncFormSheetHeaders(asOwner(), formId, { check: true })).resolves.toEqual({
+      ok: true,
+      outcome: 'foreign',
+      current: ['Name', 'Phone'],
+      headers: OLD,
+    });
+    expect(writes).toEqual([]);
   });
 });

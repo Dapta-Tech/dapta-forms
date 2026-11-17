@@ -716,7 +716,7 @@ export function destinationIsDeliverable(destination: {
   if (typeof settings.spreadsheetId !== 'string' || !settings.spreadsheetId.trim()) return false;
   const columns = Array.isArray(destination.columns) ? destination.columns : [];
   return columns.some(
-    (c) => typeof c === 'object' && c !== null && isWritableSheetColumn(c as { header?: string; source: string; key?: string }),
+    (c) => typeof c === 'object' && c !== null && isWritableSheetColumn(c as { header?: string }),
   );
 }
 
@@ -885,9 +885,10 @@ export const sheetColumnSchema = z.object({
    * can rename a column without the question changing, and because a sheet that
    * already has data must keep the heading its existing rows were written under.
    *
-   * May be empty: a column the author is still filling in is stored as it is,
-   * so it survives a reload, and is left out of the sheet (row 1 and every
-   * delivered row alike) until it is complete. See `isWritableSheetColumn`.
+   * May be empty: a column the author has added but not named yet is stored
+   * as it is, so it survives a reload, and is left out of the sheet (row 1 and
+   * every delivered row alike) until it has a heading. See
+   * `isWritableSheetColumn`.
    */
   header: z.string().max(200),
   source: z.enum(sheetColumnSource),
@@ -897,20 +898,24 @@ export const sheetColumnSchema = z.object({
 export type SheetColumn = z.infer<typeof sheetColumnSchema>;
 
 /**
- * A column that goes into the sheet: it has a heading, and the sources that
- * name something (`answer`, `utm`) name it. The one rule, shared by the
- * header row, every delivered row and the editor, so the three always agree
- * on which columns exist and in what order. An incomplete column is stored
- * (the author's work survives a reload) and simply skipped until it is done.
+ * A column that goes into the sheet: one with a heading. Nothing else.
+ *
+ * The ONE rule for which columns exist in the sheet and in what order, used
+ * by the header row, every delivered row, the create call, the editor's
+ * column letters and `destinationIsDeliverable`, so all of them always agree.
+ * A heading with no answer chosen yet is written (its heading in row 1, an
+ * empty cell in every row) rather than skipped: skipping it would shift every
+ * column after it the moment the answer is picked. This is also what every
+ * config written before the rule existed meant by `{header, source:'answer'}`
+ * with no key. A column with no heading has nothing to put in row 1, so it is
+ * stored (the author's work survives a reload) and not written.
  */
-export function isWritableSheetColumn(column: { header?: string; source: string; key?: string }): boolean {
-  if (!column.header?.trim()) return false;
-  if (column.source === 'answer' || column.source === 'utm') return !!column.key?.trim();
-  return true;
+export function isWritableSheetColumn(column: { header?: string; source?: string; key?: string }): boolean {
+  return !!column.header?.trim();
 }
 
 /** The columns that go into the sheet, in order. */
-export function writableSheetColumns<T extends { header?: string; source: string; key?: string }>(
+export function writableSheetColumns<T extends { header?: string; source?: string; key?: string }>(
   columns: readonly T[] | undefined,
 ): T[] {
   return (columns ?? []).filter(isWritableSheetColumn);

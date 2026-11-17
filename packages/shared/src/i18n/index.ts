@@ -2128,16 +2128,15 @@ export interface FormsMessages {
         /** Row 1 already read exactly these headings. */
         headersUnchanged: string;
         /**
-         * Columns that are not written yet (no heading, or nothing chosen to
-         * fill them). `{cols}` is their sheet letters.
+         * Columns with no heading: stored, not written to the sheet. `{n}` is
+         * how many (Many only).
          */
         columnPendingOne: string;
         columnPendingMany: string;
-        /** Under one unfinished column row: exactly what it still needs. */
+        /** Under one column row: exactly what it still needs. */
         rowNeedsAnswer: string;
         rowNeedsUtm: string;
         rowNeedsHeader: string;
-        rowNeedsBoth: string;
         /** Row 1 does not match the columns, so nothing was overwritten on its own. */
         headersNotEmpty: string;
         headersFailed: string;
@@ -4574,12 +4573,11 @@ export const en: FormsMessages = {
         writeHeaders: 'Update the header row',
         headersWritten: 'Row 1 of the sheet now matches these columns.',
         headersUnchanged: 'Row 1 of the sheet already matches these columns.',
-        columnPendingOne: 'Column {cols} is saved, and goes into the sheet once it is complete.',
-        columnPendingMany: 'Columns {cols} are saved, and go into the sheet once they are complete.',
-        rowNeedsAnswer: 'Choose which answer fills it to write it to the sheet.',
-        rowNeedsUtm: 'Choose which campaign tag fills it to write it to the sheet.',
+        columnPendingOne: 'A column without a heading is saved, and goes into the sheet once it has one.',
+        columnPendingMany: '{n} columns without a heading are saved, and go into the sheet once they have one.',
+        rowNeedsAnswer: 'Choose which answer fills this column. Until then its cells stay empty.',
+        rowNeedsUtm: 'Choose which campaign tag fills this column. Until then its cells stay empty.',
         rowNeedsHeader: 'Give it a heading to write it to the sheet.',
-        rowNeedsBoth: 'Give it a heading and choose what fills it to write it to the sheet.',
         headersNotEmpty: 'Row 1 of the sheet does not match these columns, so it was not changed on its own.',
         headersFailed: 'The header row could not be updated. Your columns are saved.',
         headersColumn: 'Column',
@@ -7341,12 +7339,11 @@ export const es: FormsMessages = {
         writeHeaders: 'Actualizar encabezados en la hoja',
         headersWritten: 'La fila 1 de la hoja quedó igual a estas columnas.',
         headersUnchanged: 'La fila 1 de la hoja ya coincide con estas columnas.',
-        columnPendingOne: 'La columna {cols} quedó guardada y entra en la hoja cuando esté completa.',
-        columnPendingMany: 'Las columnas {cols} quedaron guardadas y entran en la hoja cuando estén completas.',
-        rowNeedsAnswer: 'Elige qué respuesta la llena para escribirla en la hoja.',
-        rowNeedsUtm: 'Elige qué etiqueta de campaña la llena para escribirla en la hoja.',
+        columnPendingOne: 'Una columna sin encabezado quedó guardada y entra en la hoja cuando tenga uno.',
+        columnPendingMany: '{n} columnas sin encabezado quedaron guardadas y entran en la hoja cuando tengan uno.',
+        rowNeedsAnswer: 'Elige qué respuesta llena esta columna. Mientras tanto, sus celdas quedan vacías.',
+        rowNeedsUtm: 'Elige qué etiqueta de campaña llena esta columna. Mientras tanto, sus celdas quedan vacías.',
         rowNeedsHeader: 'Ponle un encabezado para escribirla en la hoja.',
-        rowNeedsBoth: 'Ponle un encabezado y elige qué la llena para escribirla en la hoja.',
         headersNotEmpty: 'La fila 1 de la hoja no coincide con estas columnas, así que no se cambió sola.',
         headersFailed: 'No se pudo actualizar la fila de encabezados. Tus columnas sí quedaron guardadas.',
         headersColumn: 'Columna',

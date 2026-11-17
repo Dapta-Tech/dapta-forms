@@ -180,11 +180,15 @@ export async function googleSheetsPickerAction(): Promise<
  */
 export async function syncSheetHeadersAction(
   formId: string,
-  /** The author confirmed "replace row 1": overwrite it even if it does not match. */
-  replace = false,
+  /**
+   * `replace`: the author confirmed "replace row 1". `check`: the card is
+   * opening, so only look (nothing written, nothing stored).
+   */
+  mode: boolean | 'check' = false,
 ): Promise<{ ok: true; data: FormSheetHeaderRowResponse } | { ok: false; message?: string }> {
   try {
-    return { ok: true, data: await adminApi.syncFormSheetHeaders(formId, { replace }) };
+    const opts = mode === 'check' ? { check: true } : { replace: mode === true };
+    return { ok: true, data: await adminApi.syncFormSheetHeaders(formId, opts) };
   } catch (e) {
     unstable_rethrow(e);
     if (e instanceof ApiError) return { ok: false, message: e.message };

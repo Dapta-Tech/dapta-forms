@@ -52,19 +52,35 @@ export function defaultColumns(
 }
 
 /**
- * Does this row say enough to write a cell? The API's own rule
- * (`isWritableSheetColumn`), so the editor, the header row and every
- * delivered row agree on which columns are in the sheet.
+ * Is this column in the sheet? The API's own rule (`isWritableSheetColumn`:
+ * it has a heading), so the card's letters, row 1 and every delivered row
+ * agree on which columns exist and in what order.
  */
 export function isCompleteColumn(column: SheetColumn): boolean {
   return isWritableSheetColumn(column);
 }
 
-/** What a column still needs before it goes into the sheet, or null when complete. */
-export function columnMissing(column: SheetColumn): 'header' | 'source' | 'both' | null {
-  const noHeader = !column.header.trim();
-  const noSource = (column.source === 'answer' || column.source === 'utm') && !column.key?.trim();
-  return noHeader && noSource ? 'both' : noHeader ? 'header' : noSource ? 'source' : null;
+/**
+ * What a column still needs, or null when it is done.
+ *
+ * `header`: no heading, so it is not in the sheet at all. `source`: it is in
+ * the sheet (heading in row 1), but nothing fills its cells yet, so they stay
+ * empty until an answer or a campaign tag is chosen.
+ */
+export function columnMissing(column: SheetColumn): 'header' | 'source' | null {
+  if (!column.header.trim()) return 'header';
+  if ((column.source === 'answer' || column.source === 'utm') && !column.key?.trim()) return 'source';
+  return null;
+}
+
+/**
+ * Each column's letter in the SHEET, or null for one that is not written.
+ * Letters count written columns only, so the card reads A, B, C, (none), D
+ * for a row where the fourth column has no heading, exactly as row 1 does.
+ */
+export function sheetLetters(columns: SheetColumn[], letter: (i: number) => string): (string | null)[] {
+  let n = 0;
+  return columns.map((c) => (isCompleteColumn(c) ? letter(n++) : null));
 }
 
 /**

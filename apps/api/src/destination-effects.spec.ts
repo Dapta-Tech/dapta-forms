@@ -237,11 +237,12 @@ describe('per-event trigger filter (enqueue-time)', () => {
     // Stored so the author's switch and half-typed columns survive a reload;
     // never handed to an adapter that could only log a no-op per submission.
     const noSheet = { type: 'google-sheets', enabled: true, settings: {}, columns: [] };
+    // Only an unnamed column: nothing would be written.
     const unfinished = {
       type: 'google-sheets',
       enabled: true,
       settings: { spreadsheetId: 'sheet-1' },
-      columns: [{ header: 'booking', source: 'answer' }],
+      columns: [{ header: '', source: 'answer', key: 'email' }],
     };
     const ready = {
       type: 'google-sheets',

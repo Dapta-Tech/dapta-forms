@@ -716,13 +716,26 @@ export function IntegrationsEditor({
       // A bad webhook URL is reported on its own card and blocks only itself —
       // the rest of the tab still persists.
       setWebhookError(built.webhookError);
+      // The editor's topbar shows this save too (see `integrations-save-status`).
+      // Published from HERE, the one function every save runs through, the
+      // terminal save the controller fires after the tab unmounts included:
+      // a component effect is gone by then, and the topbar would be left
+      // saying "Saving" (or "Not saved" after a retry that succeeded).
+      publishIntegrationsSave(id, { status: 'saving' });
       const write = callAction(() => saveIntegrationsAction(id, built.destinations));
       // Register the write so a Connect-tab remount reads it back, not the state
       // it is about to overwrite (V4-05 race).
       trackDestinationWrite(id, write);
       const res = await write;
-      if (isTransportError(res)) return res;
-      if (!res.ok) return { ok: false, message: res.message ?? m.saveError };
+      if (isTransportError(res)) {
+        publishIntegrationsSave(id, { status: 'retrying', detail: m.saveOffline });
+        return res;
+      }
+      if (!res.ok) {
+        publishIntegrationsSave(id, { status: 'error', detail: res.message ?? m.saveError });
+        return { ok: false, message: res.message ?? m.saveError };
+      }
+      publishIntegrationsSave(id, { status: 'saved' });
       // HubSpot refused to build the mirror form. The save itself went through,
       // so this is a NOTICE on the card and not a save error — losing the
       // author's mappings because a portal is missing a scope would be worse
@@ -757,7 +770,13 @@ export function IntegrationsEditor({
     onFailure: (message, kind) => errorRef.current(kind === 'transport' ? m.saveOffline : message),
     debounceMs: AUTOSAVE_MS,
   });
-  const { markDirty } = autosave;
+  const { markDirty: markDirtyRaw } = autosave;
+  // An edit makes the topbar say "Saving" at once, like the pill does, rather
+  // than only when the debounced save starts.
+  const markDirty = useCallback(() => {
+    publishIntegrationsSave(id, { status: 'saving' });
+    markDirtyRaw();
+  }, [id, markDirtyRaw]);
   // Whether a save has run since the tab opened: the pill stays quiet until
   // then, instead of greeting an untouched page with "saved".
   const [saveTouched, setSaveTouched] = useState(false);
@@ -782,11 +801,6 @@ export function IntegrationsEditor({
     autosave.status === 'error' || autosave.status === 'retrying'
       ? autosave.detail
       : partialBlocked;
-  // The editor's topbar says "saved" for the form; it must not say so while
-  // the integrations on this tab failed to save. Published here, read there.
-  useEffect(() => {
-    publishIntegrationsSave(id, { status: autosave.status === 'conflict' ? 'error' : autosave.status, detail: statusDetail });
-  }, [id, autosave.status, statusDetail]);
 
   /**
    * Every card edit funnels through these so an edit is marked dirty at the

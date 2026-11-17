@@ -506,6 +506,8 @@ export type GoogleSheetsHeaderRowResponse =
  */
 export type SheetHeaderSync =
   | { outcome: 'written' | 'unchanged' }
+  /** A `check` found row 1 is dForms' own but out of date; the next save fixes it. */
+  | { outcome: 'stale' }
   /**
    * Row 1 does not match and was left alone. `current` is what it holds and
    * `headers` what would be written, for the card's side-by-side.
@@ -1365,16 +1367,16 @@ interface SheetHeaderSnapshot {
 const SHEETS_SAVE_TIMEOUT_MS = 4_000;
 
 /**
- * The headers a destination's columns put in row 1, in order: the complete
- * columns only (`isWritableSheetColumn`), the same ones every delivered row
- * holds, so a column still being filled in shifts nothing in the sheet.
+ * The headers a destination's columns put in row 1, in order: the written
+ * columns only (`isWritableSheetColumn`: the ones with a heading), the same
+ * ones every delivered row holds, so an unnamed column shifts nothing.
  */
 function sheetHeadersOf(entry: Record<string, unknown> | undefined): string[] {
   const columns = Array.isArray(entry?.columns) ? entry.columns : [];
   return columns
     .filter(
       (c): c is { header: string; source: string; key?: string } =>
-        isRecord(c) && typeof c.header === 'string' && typeof c.source === 'string' && isWritableSheetColumn(c as never),
+        isRecord(c) && typeof c.header === 'string' && isWritableSheetColumn({ header: c.header }),
     )
     .map((c) => c.header.trim());
 }
@@ -1512,20 +1514,59 @@ export class FormDestinationsController {
     // that may overwrite a row 1 dForms cannot prove it wrote. A literal
     // `true` only; anything else is the ordinary, conservative sync.
     const replace = isRecord(body) && body.replace === true;
+    // `check: true` is the card opening: one read, reported, nothing written
+    // to the sheet and nothing stored. It runs on a copy of the config read
+    // before Google answers, and an edit autosaved meanwhile must win.
+    const check = !replace && isRecord(body) && body.check === true;
     const synced = await this.syncSheetHeaders(p.accountId, stored as unknown[], stored, {
       force: true,
       replace,
+      check,
       timeoutMs: SHEETS_SAVE_TIMEOUT_MS * 2,
     });
+    if (check) return { ok: true, ...(synced.result ?? { outcome: 'unchanged' }) };
     const before = snapshotOf(entry);
     const after = snapshotOf(firstSheetsEntry(synced.destinations));
     // Written back only when the snapshot moved, so a press that finds row 1
-    // already right (or someone else's) is a read and nothing more.
-    if (JSON.stringify(before) !== JSON.stringify(after)) {
-      const out = await updateFormDestinations(this.db, p.accountId, id, synced.destinations);
-      if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    // already right (or someone else's) is a read and nothing more. And ONLY
+    // the snapshot, merged onto a FRESH read of the form: the Sheets calls
+    // above can take seconds (this also runs when the card opens), and an
+    // edit autosaved in that window must not be overwritten by the copy of
+    // the destinations read before them.
+    if (after && JSON.stringify(before) !== JSON.stringify(after)) {
+      await this.recordSheetSnapshot(p.accountId, id, after);
     }
     return { ok: true, ...(synced.result ?? { outcome: 'unchanged' }) };
+  }
+
+  /**
+   * Set `headerSnapshot` on the stored Sheets destination that writes to the
+   * same spreadsheet and tab, read-modify-write on the CURRENT config, every
+   * other field of every destination left exactly as stored. If the author
+   * has since pointed the card elsewhere, there is nothing to record: the
+   * snapshot describes a row 1 the destination no longer writes to.
+   */
+  private async recordSheetSnapshot(
+    accountId: string,
+    formId: string,
+    snapshot: SheetHeaderSnapshot,
+  ): Promise<void> {
+    const fresh = await getFormById(this.db, accountId, formId);
+    const list = (fresh?.config as { destinations?: unknown } | null)?.destinations;
+    if (!fresh || !Array.isArray(list)) return;
+    const index = list.findIndex((d) => isRecord(d) && d.type === 'google-sheets');
+    if (index === -1) return;
+    const current = list[index] as Record<string, unknown>;
+    const target = sheetTargetOf(current);
+    if (!target || target.spreadsheetId !== snapshot.spreadsheetId || target.sheetTitle !== snapshot.sheetTitle) {
+      return;
+    }
+    const next = [...list];
+    next[index] = {
+      ...current,
+      settings: { ...(isRecord(current.settings) ? current.settings : {}), headerSnapshot: snapshot },
+    };
+    await updateFormDestinations(this.db, accountId, formId, next);
   }
 
   /**
@@ -1555,7 +1596,7 @@ export class FormDestinationsController {
     accountId: string,
     destinations: unknown[],
     stored: unknown,
-    opts: { force?: boolean; replace?: boolean; timeoutMs?: number } = {},
+    opts: { force?: boolean; replace?: boolean; check?: boolean; timeoutMs?: number } = {},
   ): Promise<{ destinations: unknown[]; result?: SheetHeaderSync }> {
     const index = destinations.findIndex((d) => isRecord(d) && d.type === 'google-sheets');
     if (index === -1) return { destinations };
@@ -1614,12 +1655,13 @@ export class FormDestinationsController {
       owned,
       this.fetchImpl,
       opts.timeoutMs ?? SHEETS_SAVE_TIMEOUT_MS,
-      { replace: opts.replace },
+      { replace: opts.replace, check: opts.check },
     );
     if (!result.ok) return withSnapshot(storedSnapshot, { outcome: 'failed', reason: result.reason });
     if (result.outcome === 'foreign') {
       return withSnapshot(storedSnapshot, { outcome: 'foreign', current: result.current, headers });
     }
+    if (result.outcome === 'stale') return withSnapshot(storedSnapshot, { outcome: 'stale' });
     return withSnapshot({ ...target, headers }, { outcome: result.outcome });
   }
 

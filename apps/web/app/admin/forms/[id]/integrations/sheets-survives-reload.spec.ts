@@ -57,11 +57,14 @@ describe('a reload brings back everything the pill called saved', () => {
 });
 
 describe('what is stored mid-setup is never delivered to', () => {
-  it('skips a destination with no spreadsheet, or with no complete column', () => {
+  it('skips a destination with no spreadsheet, or with no named column', () => {
     const noSheet = builtGoogleSheets({ enabled: true, spreadsheetId: '', sheetTitle: '', columns: SHEET.columns })!;
     expect(destinationIsDeliverable(noSheet)).toBe(false);
-    const onlyUnfinished = builtGoogleSheets({ ...SHEET, columns: [{ header: 'booking', source: 'answer' }] })!;
-    expect(destinationIsDeliverable(onlyUnfinished)).toBe(false);
+    const onlyUnnamed = builtGoogleSheets({ ...SHEET, columns: [{ header: '', source: 'answer', key: 'email' }] })!;
+    expect(destinationIsDeliverable(onlyUnnamed)).toBe(false);
+    // A heading with no answer yet is a column of the sheet: deliverable.
+    const headingOnly = builtGoogleSheets({ ...SHEET, columns: [{ header: 'booking', source: 'answer' }] })!;
+    expect(destinationIsDeliverable(headingOnly)).toBe(true);
     expect(destinationIsDeliverable(builtGoogleSheets(SHEET)!)).toBe(true);
   });
 });
