@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState, useTransition } from 'react';
-import type { FormsMessages } from '@quill/shared';
+import { getMessages, type FormsMessages } from '@quill/shared';
 import { propertiesFor, type FormDestination } from '@quill/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,9 @@ import type { QuestionMeta } from './auto-map';
 import { Card } from './integrations-card';
 import { salesforceFieldsAction } from './actions';
 import { DeliveryHistory } from './delivery-history';
+import { useToast } from '@/components/toast';
+import { SalesforceConnectForm } from '@/app/admin/integrations/connect-forms';
+import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
 import type { Locale } from '@quill/shared';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -172,6 +175,7 @@ export function SalesforceCard({
   initialFields,
   extraStored = false,
   formId,
+  access = DEFAULT_CONNECT_ACCESS,
   locale,
   m,
 }: {
@@ -186,10 +190,17 @@ export function SalesforceCard({
   extraStored?: boolean;
   /** For the delivery history. Absent in isolated specs, which then skip it. */
   formId?: string;
+  /** Who may connect Salesforce from here (see `ConnectInPlace`). */
+  access?: ConnectAccess;
   locale?: string;
   m: Msgs;
 }) {
   const sm = m.salesforce;
+  const cm = getMessages(locale ?? 'en').admin.connections;
+  const { success } = useToast();
+  // Local, seeded from the tab's load: connecting from this card flips it
+  // without the author having to reload the form to see the mapping.
+  const [isConnected, setConnected] = useState(connected);
   const [fields, setFields] = useState<SalesforceFieldsResponse>(initialFields);
   const [refreshing, startRefresh] = useTransition();
   const ticket = useRef(0);
@@ -254,13 +265,27 @@ export function SalesforceCard({
         ) : null
       }
     >
-      {!connected ? (
-        <p className="text-sm text-muted-foreground" data-testid="salesforce-not-connected">
-          {sm.notConnected}{' '}
-          <a className="font-medium text-foreground underline" href="/admin/integrations">
-            {sm.connectLink}
-          </a>
-        </p>
+      {!isConnected ? (
+        <ConnectInPlace
+          provider={sm.title}
+          title={sm.connectTitle}
+          body={sm.notConnected}
+          access={access}
+          m={m}
+          cm={cm}
+          testId="salesforce-not-connected"
+        >
+          <SalesforceConnectForm
+            m={cm}
+            onConnected={() => {
+              setConnected(true);
+              success(fill(cm.connectSuccess, { provider: sm.title }));
+              // The org's fields, read fresh: the tab loaded none, because
+              // there was no org to read them from.
+              refresh();
+            }}
+          />
+        </ConnectInPlace>
       ) : (
         <div className="flex flex-col gap-5" data-testid="salesforce-mapping">
           <div className="flex flex-wrap items-start justify-between gap-3">

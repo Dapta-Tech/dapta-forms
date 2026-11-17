@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { contactKeyReadiness, hasScoringSignal, type ContactKeyReadiness, type FormConfig } from '@quill/engine';
 import type { FormSpamProtection, FormTracking } from '@quill/types';
 import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/components/toast';
 import { awaitPendingDestinationWrite } from '@/lib/connect-sync';
 import { mappableQuestions } from '../../integrations/auto-map';
 import { IntegrationsEditor, type QuestionMeta } from '../../integrations/integrations-editor';
@@ -126,6 +127,49 @@ export function ConnectPanel({
 
 // --- Integrations (embeds the existing IntegrationsEditor) -------------------
 
+/**
+ * Say how a Google consent round trip started from this tab ended, once, and
+ * take the flag out of the address.
+ *
+ * "Continue with Google" on the spreadsheet card sends the author to Google,
+ * and the API's callback brings them back to this form with `tab=connect` and
+ * an outcome flag. The Connect tab loads its connections fresh on mount, so a
+ * successful round trip already shows the card as connected; this only adds
+ * the sentence, and removes the flag so a reload or the back button cannot
+ * announce it again. `tab` stays: it is what put the author on this tab.
+ *
+ * Read off `window.location` rather than `useSearchParams`, which would make
+ * every caller of this panel sit inside a Suspense boundary for one read.
+ */
+export function useGoogleReturnNotice(locale: Locale): boolean {
+  const { success, error } = useToast();
+  const announced = useRef(false);
+  // Whether this visit is the return from a SUCCESSFUL connect, read once on
+  // the first render, before the effect below takes the flag out of the URL.
+  const [justConnected] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      new URL(window.location.href).searchParams.get('google') === 'connected',
+  );
+  useEffect(() => {
+    if (announced.current || typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const google = url.searchParams.get('google');
+    const failure = url.searchParams.get('error');
+    if (!google && failure !== 'google' && failure !== 'google_scope') return;
+    announced.current = true;
+    const c = getMessages(locale).admin.connections;
+    if (google === 'connected') success(c.googleConnected);
+    else if (google === 'cancelled') error(c.googleCancelled);
+    else if (failure === 'google_scope') error(c.googleScopeError);
+    else error(c.googleError);
+    url.searchParams.delete('google');
+    url.searchParams.delete('error');
+    window.history.replaceState(window.history.state, '', url);
+  }, [locale, success, error]);
+  return justConnected;
+}
+
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
@@ -153,6 +197,7 @@ function IntegrationsSection({
 }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const googleJustConnected = useGoogleReturnNotice(locale);
 
   // Whether this form can key a CRM contact at all. Derived from the LIVE
   // config so adding an email question unblocks the mapping immediately, and
@@ -223,6 +268,11 @@ function IntegrationsSection({
           googlePickerAvailable={state.data.googlePickerAvailable}
           salesforceConnected={state.data.salesforceConnected}
           salesforceFields={state.data.salesforceFields}
+          access={{
+            canConnect: state.data.canConnect,
+            encryptionAvailable: state.data.encryptionAvailable,
+          }}
+          googleJustConnected={googleJustConnected}
           formName={state.data.formName}
           questions={questions}
           readiness={readiness}

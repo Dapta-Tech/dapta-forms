@@ -1,20 +1,25 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
-import type { FormsMessages } from '@quill/shared';
+import { getMessages, type FormsMessages } from '@quill/shared';
 import { sheetColumnSource, type SheetColumn, type SheetColumnSource } from '@quill/types';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { IntegrationMark } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { callAction } from '@/lib/call-action';
-import type { SheetTab } from '@/lib/admin-api';
+import { cn } from '@/lib/cn';
+import type { SheetHeaderSync, SheetTab } from '@/lib/admin-api';
+import { GoogleConnectButton } from '@/app/admin/integrations/connect-forms';
 import type { QuestionMeta } from './auto-map';
 import { Card } from './integrations-card';
+import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
 import {
   googleSheetsCreateAction,
-  googleSheetsHeaderRowAction,
   googleSheetsPickerAction,
   googleSheetsTabsAction,
+  syncSheetHeadersAction,
 } from './actions';
 import { pickSpreadsheet } from './google-picker';
 import { defaultColumns, isCompleteColumn, moveColumn } from './sheet-columns';
@@ -32,6 +37,68 @@ export interface GoogleSheetsState {
 
 /** The five `utm_*` keys, the only keys a `utm` column may name. */
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
+
+/** The spreadsheet's own letter for the nth column (0 -> A, 26 -> AA). */
+export function sheetColumnLetter(index: number): string {
+  let out = '';
+  let n = index + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+/** The sentence and tone for what the last header-row sync did. */
+function headerSyncLine(
+  sync: SheetHeaderSync,
+  g: Msgs['gsheets'],
+): { text: string; tone: 'ok' | 'warn' | 'error' } | null {
+  switch (sync.outcome) {
+    case 'written':
+      return { text: g.headersWritten, tone: 'ok' };
+    case 'unchanged':
+      return { text: g.headersUnchanged, tone: 'ok' };
+    case 'foreign':
+      return { text: g.headersNotEmpty, tone: 'warn' };
+    default:
+      // Not connected says nothing here: the card is already showing the
+      // connect prompt in that case.
+      if (sync.reason === 'not_connected') return null;
+      return { text: sync.reason === 'forbidden' ? g.sheetForbidden : g.headersFailed, tone: 'error' };
+  }
+}
+
+/** A quiet, fixed-size icon button for the column rows. */
+function RowIconButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      // `disabled:bg-transparent` overrides the base button's grey disabled
+      // fill: a disabled arrow at the top or bottom of the list should read as
+      // absent, not as a grey blob in the middle of a quiet row.
+      className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:bg-transparent disabled:opacity-35"
+    >
+      <i aria-hidden className={cn('pi', icon)} style={{ fontSize: 13 }} />
+    </Button>
+  );
+}
 
 /**
  * The spreadsheet card on a form's Connect tab.
@@ -57,6 +124,11 @@ export function GoogleSheetsCard({
   connected,
   pickerAvailable = false,
   formName = '',
+  formId,
+  access = DEFAULT_CONNECT_ACCESS,
+  headerSync = null,
+  onHeaderSync,
+  beforeHeaderSync,
   locale,
   m,
 }: {
@@ -69,6 +141,22 @@ export function GoogleSheetsCard({
   pickerAvailable?: boolean;
   /** Names the spreadsheet a click on "create" makes. */
   formName?: string;
+  /**
+   * The form this card belongs to: where "Continue with Google" returns to, and
+   * which form's stored columns the header button syncs. Absent in isolated
+   * specs, which then get neither.
+   */
+  formId?: string;
+  /** Who may connect Google from here (see `ConnectInPlace`). */
+  access?: ConnectAccess;
+  /** What the last save (or press) did to row 1 of the sheet. */
+  headerSync?: SheetHeaderSync | null;
+  onHeaderSync?: (sync: SheetHeaderSync | null) => void;
+  /**
+   * Settle any pending autosave before the header button reads the STORED
+   * columns, so it syncs what is on screen and not the save before it.
+   */
+  beforeHeaderSync?: () => Promise<unknown>;
   locale?: string;
   m: Msgs;
 }) {
@@ -197,29 +285,23 @@ export function GoogleSheetsCard({
     });
   }
 
-  function writeHeaders() {
-    const headers = state.columns.filter(isCompleteColumn).map((c) => c.header.trim());
-    if (!state.spreadsheetId || headers.length === 0) return;
+  function syncHeaders() {
+    if (!formId || !state.spreadsheetId) return;
     start(async () => {
-      const res = await callAction(() =>
-        googleSheetsHeaderRowAction({
-          spreadsheetId: state.spreadsheetId,
-          sheetTitle: state.sheetTitle || undefined,
-          headers,
-        }),
-      );
+      await beforeHeaderSync?.();
+      const res = await callAction(() => syncSheetHeadersAction(formId));
       if (!res.ok) {
-        error(m.gsheets.headersFailed);
+        onHeaderSync?.({ outcome: 'failed', reason: 'unavailable' });
         return;
       }
       if (!res.data.ok) {
-        error(res.data.reason === 'forbidden' ? m.gsheets.sheetForbidden : m.gsheets.headersFailed);
+        // Nothing stored yet to sync (no complete column): the save that
+        // stores one runs the sync itself.
+        onHeaderSync?.(null);
         return;
       }
-      if (res.data.written) success(m.gsheets.headersWritten);
-      // Row 1 already held something. Not an error: it is almost always a sheet
-      // that already has the headings, and overwriting would have been worse.
-      else success(m.gsheets.headersNotEmpty);
+      const { ok: _ok, ...sync } = res.data;
+      onHeaderSync?.(sync as SheetHeaderSync);
     });
   }
 
@@ -233,6 +315,21 @@ export function GoogleSheetsCard({
       ? [{ value: current, label: current }, ...options]
       : options;
   };
+  const sourceOptions = sheetColumnSource.map((source) => ({
+    value: source,
+    label: m.gsheets.sources[source],
+  }));
+  const tabOptions = [
+    { value: '', label: m.gsheets.tabFirst },
+    // A stored tab the list does not (yet) hold stays selectable as itself.
+    ...(state.sheetTitle && !(tabs ?? []).some((t) => t.title === state.sheetTitle)
+      ? [{ value: state.sheetTitle, label: state.sheetTitle }]
+      : []),
+    ...(tabs ?? []).map((t) => ({ value: t.title, label: t.title })),
+  ];
+  const syncLine = headerSync ? headerSyncLine(headerSync, m.gsheets) : null;
+  const cm = getMessages(locale ?? 'en').admin.connections;
+  const returnTo = formId ? `/admin/forms/${formId}/edit` : undefined;
 
   return (
     <Card
@@ -244,202 +341,260 @@ export function GoogleSheetsCard({
       logo="google-sheets"
     >
       {!connected ? (
-        <p className="text-sm text-muted-foreground" data-testid="gsheets-not-connected">
-          {m.gsheets.notConnected}
-        </p>
+        <ConnectInPlace
+          provider={m.gsheets.title}
+          title={m.gsheets.connectTitle}
+          body={m.gsheets.notConnected}
+          access={access}
+          m={m}
+          cm={cm}
+          testId="gsheets-not-connected"
+        >
+          <GoogleConnectButton returnTo={returnTo} m={cm} />
+        </ConnectInPlace>
       ) : (
         <>
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium">{m.gsheets.sheetLabel}</span>
+          <section className="flex flex-col gap-2">
+            <h3 className="text-sm font-semibold">{m.gsheets.sheetLabel}</h3>
             {state.spreadsheetId ? (
               <a
-                className="inline-flex w-fit items-center gap-1.5 text-sm font-medium underline underline-offset-2"
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-fit max-w-full')}
                 data-testid="gsheets-current"
                 href={sheetUrlFor(state.spreadsheetId)}
                 target="_blank"
-                rel="noreferrer noopener"
+                rel="noopener noreferrer"
+                title={m.gsheets.openSheet}
               >
-                {sheetName || m.gsheets.openSheet}
-                <i aria-hidden className="pi pi-external-link" style={{ fontSize: 11 }} />
+                <IntegrationMark provider="google-sheets" size={14} />
+                <span className="truncate">{sheetName || m.gsheets.openSheet}</span>
+                <i aria-hidden className="pi pi-external-link text-muted-foreground" style={{ fontSize: 11 }} />
               </a>
             ) : (
               <p className="text-sm text-muted-foreground">{m.gsheets.sheetHelp}</p>
             )}
             <div className="flex flex-wrap gap-2">
               <Button
-                variant={state.spreadsheetId ? 'secondary' : 'default'}
+                variant={state.spreadsheetId ? 'soft' : 'default'}
+                size="sm"
                 onClick={createSheet}
                 disabled={pending}
               >
+                <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
                 {m.gsheets.createSheet}
               </Button>
               {pickerAvailable ? (
-                <Button variant="secondary" onClick={chooseSheet} disabled={pending}>
+                <Button variant="soft" size="sm" onClick={chooseSheet} disabled={pending}>
+                  <i aria-hidden className="pi pi-folder" style={{ fontSize: 11 }} />
                   {m.gsheets.chooseSheet}
                 </Button>
               ) : null}
             </div>
-          </div>
+          </section>
 
           {state.spreadsheetId ? (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{m.gsheets.tabLabel}</span>
-              <select
-                className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            <section className="flex max-w-sm flex-col gap-1.5">
+              <h3 className="text-sm font-semibold">{m.gsheets.tabLabel}</h3>
+              <Select
                 value={state.sheetTitle}
-                onChange={(e) => patch({ sheetTitle: e.target.value })}
+                onChange={(sheetTitle) => patch({ sheetTitle })}
+                options={tabOptions}
+                ariaLabel={m.gsheets.tabLabel}
                 disabled={loadingTabs || !tabs}
-              >
-                <option value="">{m.gsheets.tabFirst}</option>
-                {(tabs ?? []).map((t) => (
-                  <option key={t.gid} value={t.title}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
-              {tabsError ? <span className="text-xs text-destructive">{tabsError}</span> : null}
-            </label>
+                className="h-9"
+                locale={locale}
+              />
+              {tabsError ? (
+                <span role="alert" className="text-xs text-destructive">
+                  {tabsError}
+                </span>
+              ) : null}
+            </section>
           ) : null}
 
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium">{m.gsheets.columnsLabel}</span>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => setColumns(defaults())}
-                >
+          <section className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold">{m.gsheets.columnsLabel}</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">{m.gsheets.columnsHelp}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="soft" size="sm" onClick={() => setColumns(defaults())}>
                   {m.gsheets.fillFromForm}
                 </Button>
-                <Button
-                  variant="secondary"
-                  onClick={writeHeaders}
-                  disabled={pending || !state.spreadsheetId || state.columns.length === 0}
-                >
-                  {m.gsheets.writeHeaders}
-                </Button>
+                {formId ? (
+                  <Button
+                    variant="soft"
+                    size="sm"
+                    onClick={syncHeaders}
+                    disabled={pending || !state.spreadsheetId || state.columns.length === 0}
+                    data-testid="gsheets-sync-headers"
+                  >
+                    <i aria-hidden className="pi pi-refresh" style={{ fontSize: 11 }} />
+                    {m.gsheets.writeHeaders}
+                  </Button>
+                ) : null}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">{m.gsheets.columnsHelp}</p>
 
             {state.columns.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{m.gsheets.noColumns}</p>
+              <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                {m.gsheets.noColumns}
+              </p>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {state.columns.map((column, index) => (
-                  // An explicit GRID, not nested flex-wrap.
-                  //
-                  // The Connect tab is a narrow column with the settings panel
-                  // beside it, and flex-wrap there put the source select on a
-                  // line of its own above the heading, with the buttons on a
-                  // third: three ragged lines whose parts did not line up with
-                  // the row above or below. A grid gives every row the same
-                  // four slots, so the columns read down the list as well as
-                  // across, and the row collapses to one slot per line when
-                  // there is no room rather than wrapping wherever it lands.
-                  <li
-                    key={index}
-                    className="grid grid-cols-1 items-center gap-2 rounded-md border border-border/60 p-2 lg:grid-cols-[minmax(8rem,1fr)_10rem_11rem_auto]"
+              // A container query, not a viewport breakpoint: the Connect tab
+              // is a column beside the settings panel, so the window can be
+              // wide while this card is narrow. Every row is the same grid, so
+              // the four slots line up down the list as well as across it, and
+              // below the width they need the pickers drop under the heading
+              // instead of wrapping wherever they land.
+              <div className="@container">
+                <div className="overflow-visible rounded-lg border border-border">
+                  <div
+                    aria-hidden
+                    className="hidden grid-cols-[1.75rem_minmax(0,1.15fr)_10rem_minmax(0,1fr)_6.5rem] gap-x-2 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground @2xl:grid"
                   >
-                    <Input
-                      value={column.header}
-                      aria-label={m.gsheets.headerFor}
-                      placeholder={m.gsheets.headerFor}
-                      onChange={(e) => {
-                        const next = [...state.columns];
-                        next[index] = { ...column, header: e.target.value };
-                        setColumns(next);
-                      }}
-                    />
-                    <select
-                      className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                      aria-label={m.gsheets.sourceFor}
-                      value={column.source}
-                      onChange={(e) => {
-                        const source = e.target.value as SheetColumnSource;
-                        const next = [...state.columns];
-                        // Dropping the key when the source no longer takes one
-                        // keeps a stale question key from riding along into the
-                        // stored config, where nothing would ever read it.
-                        next[index] =
-                          source === 'answer' || source === 'utm'
-                            ? { ...column, source }
-                            : { header: column.header, source };
-                        setColumns(next);
-                      }}
-                    >
-                      {sheetColumnSource.map((source) => (
-                        <option key={source} value={source}>
-                          {m.gsheets.sources[source]}
-                        </option>
-                      ))}
-                    </select>
-                    {column.source === 'answer' || column.source === 'utm' ? (
-                      <select
-                        className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                        aria-label={m.gsheets.keyFor}
-                        value={column.key ?? ''}
-                        onChange={(e) => {
-                          const next = [...state.columns];
-                          next[index] = { ...column, key: e.target.value };
-                          setColumns(next);
-                        }}
-                      >
-                        <option value="">{m.gsheets.pickOne}</option>
-                        {(column.source === 'answer'
-                          ? answerOptions(column.key)
-                          : UTM_KEYS.map((k) => ({ value: k, label: k }))
-                        ).map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      // The slot is HELD even when this source takes no key, so
-                      // the buttons sit in the same place on every row. Without
-                      // it they slide left on the rows that need no key, and a
-                      // list of ten columns reads as ragged.
-                      <span aria-hidden className="hidden lg:block" />
-                    )}
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        aria-label={m.gsheets.moveUp}
-                        disabled={index === 0}
-                        onClick={() => setColumns(moveColumn(state.columns, index, -1))}
-                      >
-                        <i aria-hidden className="pi pi-arrow-up" style={{ fontSize: 11 }} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        aria-label={m.gsheets.moveDown}
-                        disabled={index === state.columns.length - 1}
-                        onClick={() => setColumns(moveColumn(state.columns, index, 1))}
-                      >
-                        <i aria-hidden className="pi pi-arrow-down" style={{ fontSize: 11 }} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        aria-label={m.gsheets.removeColumn}
-                        onClick={() => setColumns(state.columns.filter((_, i) => i !== index))}
-                      >
-                        <i aria-hidden className="pi pi-times" style={{ fontSize: 11 }} />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    <span />
+                    <span>{m.gsheets.headerFor}</span>
+                    <span>{m.gsheets.sourceFor}</span>
+                    <span>{m.gsheets.keyFor}</span>
+                    <span />
+                  </div>
+                  <ul className="divide-y divide-border">
+                    {state.columns.map((column, index) => {
+                      const takesKey = column.source === 'answer' || column.source === 'utm';
+                      return (
+                        <li
+                          key={index}
+                          data-testid="gsheets-column"
+                          className="grid grid-cols-[1.75rem_minmax(0,1fr)_6.5rem] items-center gap-x-2 gap-y-2 px-3 py-2.5 @2xl:grid-cols-[1.75rem_minmax(0,1.15fr)_10rem_minmax(0,1fr)_6.5rem]"
+                        >
+                          {/* The sheet's own column letter: what the author
+                              will see above this heading in Google Sheets. */}
+                          <span
+                            aria-hidden
+                            className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-semibold tabular-nums text-muted-foreground"
+                          >
+                            {sheetColumnLetter(index)}
+                          </span>
+                          <Input
+                            value={column.header}
+                            aria-label={m.gsheets.headerFor}
+                            placeholder={m.gsheets.headerFor}
+                            className="h-9"
+                            onChange={(e) => {
+                              const next = [...state.columns];
+                              next[index] = { ...column, header: e.target.value };
+                              setColumns(next);
+                            }}
+                          />
+                          <div className="col-span-2 col-start-2 row-start-2 grid grid-cols-2 gap-2 @2xl:contents">
+                            <Select
+                              value={column.source}
+                              ariaLabel={m.gsheets.sourceFor}
+                              options={sourceOptions}
+                              className="h-9"
+                              locale={locale}
+                              onChange={(value) => {
+                                const source = value as SheetColumnSource;
+                                const next = [...state.columns];
+                                // Dropping the key when the source no longer takes one
+                                // keeps a stale question key from riding along into the
+                                // stored config, where nothing would ever read it.
+                                next[index] =
+                                  source === 'answer' || source === 'utm'
+                                    ? { ...column, source }
+                                    : { header: column.header, source };
+                                setColumns(next);
+                              }}
+                            />
+                            {takesKey ? (
+                              <Select
+                                value={column.key ?? ''}
+                                ariaLabel={m.gsheets.keyFor}
+                                placeholder={m.gsheets.pickOne}
+                                options={
+                                  column.source === 'answer'
+                                    ? answerOptions(column.key)
+                                    : UTM_KEYS.map((k) => ({ value: k, label: k }))
+                                }
+                                searchable={column.source === 'answer'}
+                                className="h-9"
+                                locale={locale}
+                                onChange={(key) => {
+                                  const next = [...state.columns];
+                                  next[index] = { ...column, key };
+                                  setColumns(next);
+                                }}
+                              />
+                            ) : (
+                              // The slot is HELD when this source takes no key,
+                              // so the actions sit in the same place on every row.
+                              <span aria-hidden />
+                            )}
+                          </div>
+                          <div className="col-start-3 row-start-1 flex justify-end gap-1 @2xl:col-start-auto @2xl:row-start-auto">
+                            <RowIconButton
+                              icon="pi-arrow-up"
+                              label={m.gsheets.moveUp}
+                              disabled={index === 0}
+                              onClick={() => setColumns(moveColumn(state.columns, index, -1))}
+                            />
+                            <RowIconButton
+                              icon="pi-arrow-down"
+                              label={m.gsheets.moveDown}
+                              disabled={index === state.columns.length - 1}
+                              onClick={() => setColumns(moveColumn(state.columns, index, 1))}
+                            />
+                            <RowIconButton
+                              icon="pi-times"
+                              label={m.gsheets.removeColumn}
+                              onClick={() => setColumns(state.columns.filter((_, i) => i !== index))}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
             )}
 
+            {syncLine ? (
+              <p
+                role="status"
+                data-testid="gsheets-header-sync"
+                data-tone={syncLine.tone}
+                className={cn(
+                  'flex items-start gap-2 rounded-md border px-3 py-2 text-xs',
+                  syncLine.tone === 'ok' && 'border-signal-edge/40 bg-signal/10 text-foreground',
+                  syncLine.tone === 'warn' && 'border-warning/40 bg-warning/10 text-foreground',
+                  syncLine.tone === 'error' && 'border-destructive/40 bg-destructive/10 text-destructive',
+                )}
+              >
+                <i
+                  aria-hidden
+                  className={cn(
+                    'pi mt-px shrink-0',
+                    syncLine.tone === 'ok' && 'pi-check-circle text-signal-ink',
+                    syncLine.tone === 'warn' && 'pi-exclamation-circle text-warning-ink',
+                    syncLine.tone === 'error' && 'pi-exclamation-triangle',
+                  )}
+                  style={{ fontSize: 13 }}
+                />
+                <span>{syncLine.text}</span>
+              </p>
+            ) : null}
+
             <Button
-              variant="secondary"
+              variant="outline"
+              size="sm"
               className="self-start"
               onClick={() => setColumns([...state.columns, { header: '', source: 'answer' }])}
             >
+              <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
               {m.gsheets.addColumn}
             </Button>
-          </div>
+          </section>
         </>
       )}
     </Card>

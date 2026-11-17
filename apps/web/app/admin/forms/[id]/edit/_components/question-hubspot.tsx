@@ -290,7 +290,7 @@ export function QuestionHubspotSection({
             href="/admin/integrations"
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
-            {m.goToConnections}
+            {m.goToIntegrations}
             <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 11 }} />
           </Link>
         </div>
@@ -307,7 +307,7 @@ export function QuestionHubspotSection({
             data-testid="qs-hubspot-connect-account"
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
-            {m.goToConnections}
+            {m.goToIntegrations}
             <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 11 }} />
           </Link>
         </div>

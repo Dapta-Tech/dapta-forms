@@ -20,6 +20,18 @@ import { mappableQuestions, type QuestionMeta } from './auto-map';
 const actions = vi.hoisted(() => ({ salesforceFieldsAction: vi.fn() }));
 vi.mock('./actions', () => actions);
 
+// The connect form is the Integrations page's own, imported from there.
+const connectActions = vi.hoisted(() => ({
+  connectSalesforceAction: vi.fn(),
+  connectIntegrationAction: vi.fn(),
+  startGoogleSheetsAuthAction: vi.fn(),
+}));
+vi.mock('@/app/admin/integrations/actions', () => connectActions);
+
+const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
+vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
+
+import type { ConnectAccess } from './connect-in-place';
 import {
   builtSalesforce,
   initialSalesforce,
@@ -69,6 +81,24 @@ const base = (over: Partial<SalesforceState> = {}): SalesforceState => ({
   ...over,
 });
 
+const cm = getMessages('en').admin.connections;
+
+/** Type into a React-controlled input the way a person does. */
+function type(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  setter.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+async function fillSalesforce(el: HTMLElement, values: string[]) {
+  const form = el.querySelector('[data-testid="salesforce-connect-form"]')!;
+  await act(async () => {
+    form.querySelectorAll<HTMLInputElement>('input').forEach((input, i) => type(input, values[i] ?? ''));
+  });
+  const submit = [...form.querySelectorAll('button')].find((b) => b.textContent === cm.connect)!;
+  await act(async () => submit.click());
+}
+
 let root: Root | null = null;
 let container: HTMLElement | null = null;
 
@@ -86,7 +116,13 @@ afterEach(() => {
 
 async function mount(
   state: SalesforceState,
-  opts: { connected?: boolean; fields?: SalesforceFieldsResponse; questions?: QuestionMeta[] } = {},
+  opts: {
+    connected?: boolean;
+    fields?: SalesforceFieldsResponse;
+    questions?: QuestionMeta[];
+    access?: ConnectAccess;
+    locale?: string;
+  } = {},
 ) {
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -99,8 +135,9 @@ async function mount(
         questions={opts.questions ?? QUESTIONS}
         connected={opts.connected ?? true}
         initialFields={opts.fields ?? FIELDS}
-        locale="en"
-        m={m}
+        access={opts.access}
+        locale={opts.locale ?? 'en'}
+        m={opts.locale === 'es' ? getMessages('es').admin.integrations : m}
       />,
     );
   });
@@ -195,12 +232,64 @@ describe('what the card warns about', () => {
 });
 
 describe('the card', () => {
-  it('sends an unconnected account to Connections instead of showing a mapping', async () => {
+  it('connects in place instead of sending the author to another page', async () => {
     const el = await mount(base(), { connected: false });
-    expect(el.querySelector('[data-testid="salesforce-not-connected"] a')?.getAttribute('href')).toBe(
-      '/admin/integrations',
+    const prompt = el.querySelector('[data-testid="salesforce-not-connected"]')!;
+    expect(prompt.textContent).toContain(m.salesforce.connectTitle);
+    // The Integrations page's own three-field form, setup steps included.
+    expect(prompt.querySelector('[data-testid="salesforce-connect-form"]')).not.toBeNull();
+    expect(prompt.textContent).toContain(cm.salesforceSetupTitle);
+    expect([...prompt.querySelectorAll('input')].map((i) => i.type)).toEqual(['text', 'text', 'password']);
+    expect(prompt.querySelector('a[href="/admin/integrations"]')).toBeNull();
+    expect(el.querySelector('[data-testid="salesforce-mapping"]')).toBeNull();
+  });
+
+  it('says why a refused connect failed, in the Integrations page’s own words', async () => {
+    connectActions.connectSalesforceAction.mockResolvedValueOnce({ ok: false, reason: 'domain_invalid' });
+    const el = await mount(base(), { connected: false });
+    await fillSalesforce(el, ['not a domain', 'KEY', 'SECRET']);
+    expect(el.querySelector('[data-testid="salesforce-connect-problem"]')?.textContent).toBe(
+      cm.salesforceErrors.domain_invalid,
     );
     expect(el.querySelector('[data-testid="salesforce-mapping"]')).toBeNull();
+  });
+
+  it('switches to the mapping and loads the org’s fields once connected', async () => {
+    connectActions.connectSalesforceAction.mockResolvedValueOnce({
+      ok: true,
+      status: { provider: 'salesforce', connected: true, last4: '1234', label: 'Acme', connectedAt: 1 },
+    });
+    actions.salesforceFieldsAction.mockResolvedValueOnce({ ok: true, fields: FIELDS });
+    const el = await mount(base(), {
+      connected: false,
+      fields: { enabled: false, reason: 'not_connected' },
+    });
+    await fillSalesforce(el, ['acme.my.salesforce.com', 'KEY', 'SECRET']);
+    expect(el.querySelector('[data-testid="salesforce-mapping"]')).not.toBeNull();
+    expect(actions.salesforceFieldsAction).toHaveBeenCalledWith(true);
+    expect(toasts.success).toHaveBeenCalled();
+  });
+
+  it('tells a plain member an admin has to connect it, with no form to fill', async () => {
+    const el = await mount(base(), {
+      connected: false,
+      access: { canConnect: false, encryptionAvailable: true },
+    });
+    const prompt = el.querySelector('[data-testid="salesforce-not-connected"]')!;
+    expect(prompt.querySelector('[data-testid="connect-admin-only"]')?.textContent).toContain('Salesforce');
+    expect(prompt.querySelector('input')).toBeNull();
+    expect(prompt.querySelector('button')).toBeNull();
+  });
+
+  it('speaks Spanish with tú, and names Integraciones', async () => {
+    const el = await mount(base(), {
+      connected: false,
+      access: { canConnect: false, encryptionAvailable: true },
+      locale: 'es',
+    });
+    const text = el.querySelector('[data-testid="salesforce-not-connected"]')!.textContent!;
+    expect(text).toContain('Integraciones');
+    expect(text).not.toMatch(/Conexiones|Conectá/);
   });
 
   it('shows the Email alert, the placeholders and the Contact skips on screen', async () => {
