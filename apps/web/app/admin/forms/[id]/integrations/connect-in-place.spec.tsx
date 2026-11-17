@@ -146,22 +146,58 @@ describe('HubSpot connects in place', () => {
 describe('the autosave pill', () => {
   const fixed = () => document.body.querySelector<HTMLElement>('[data-testid="integrations-save-status"]')!;
 
-  it('is fixed to the bottom-right of the window on wide screens, outside the editor', async () => {
+  it('is fixed to the bottom-right of the window at every width, outside the editor', async () => {
     const el = await render(<SaveStatusPill status="saved" detail={null} m={m} />);
     // Portalled to body, so no ancestor's stacking context can pin it elsewhere.
     expect(el.contains(fixed())).toBe(false);
-    expect(fixed().className).toMatch(/\bfixed\b/);
-    expect(fixed().className).toContain('bottom-5');
-    expect(fixed().className).toContain('right-5');
-    expect(fixed().className).toContain('sm:block');
+    const cls = fixed().className;
+    expect(cls).toMatch(/\bfixed\b/);
+    expect(cls).not.toContain('hidden');
+    // On a phone too, lifted clear of the home indicator.
+    expect(cls).toContain('safe-area-inset-bottom');
+    expect(cls).toContain('right-4');
+    expect(cls).toContain('sm:right-5');
     expect(fixed().textContent).toBe(m.autosaved);
   });
 
-  it('sits in the flow on a phone, where a floating pill would cover controls', async () => {
-    const el = await render(<SaveStatusPill status="saved" detail={null} m={m} />);
-    const inline = el.querySelector<HTMLElement>('[data-testid="integrations-save-status-inline"]')!;
-    expect(inline.className).toContain('sm:hidden');
-    expect(inline.className).not.toMatch(/\bfixed\b/);
+  it('says nothing before the first save', async () => {
+    await render(<SaveStatusPill status="saved" detail={null} touched={false} m={m} />);
+    expect(document.body.querySelector('[data-testid="integrations-save-status"]')).toBeNull();
+    expect(document.documentElement.classList.contains('has-save-pill')).toBe(false);
+  });
+
+  it('still speaks before the first save when there is something to read', async () => {
+    await render(<SaveStatusPill status="pending" detail={null} touched={false} m={m} />);
+    expect(fixed().textContent).toBe(m.autosavedPendingSheet);
+  });
+
+  it('folds a plain "saved" to its check after a moment, keeping the sentence for screen readers', async () => {
+    vi.useFakeTimers();
+    try {
+      await render(<SaveStatusPill status="saved" detail={null} m={m} />);
+      expect(fixed().getAttribute('data-folded')).toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(fixed().getAttribute('data-folded')).toBe('true');
+      expect(fixed().getAttribute('title')).toBe(m.autosaved);
+      expect(fixed().querySelector('.sr-only')?.textContent).toBe(m.autosaved);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never folds a state that needs reading', async () => {
+    vi.useFakeTimers();
+    try {
+      await render(<SaveStatusPill status="error" detail="Network down" m={m} />);
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(fixed().getAttribute('data-folded')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([

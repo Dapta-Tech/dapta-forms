@@ -85,3 +85,21 @@ describe('the card comes back open', () => {
     expect(seen).toBe(true);
   });
 });
+
+describe('the flag stays gone', () => {
+  // Next syncs its router to a replaceState only when the state is not its
+  // own. Handing its state back kept `?google=connected` as the canonical
+  // URL, and the next server action (connecting Salesforce on the same tab)
+  // wrote it back into the address, so a reload announced it again.
+  it('strips the flag with a null state, so the router adopts the clean URL', async () => {
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: [] }, '', '/admin/forms/f1/edit?tab=connect&google=connected');
+    const spy = vi.spyOn(window.history, 'replaceState');
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    root = createRoot(el);
+    await act(async () => root!.render(<Probe />));
+    expect(spy).toHaveBeenCalledWith(null, '', expect.anything());
+    expect(String(spy.mock.calls.at(-1)![2])).not.toContain('google=');
+    spy.mockRestore();
+  });
+});

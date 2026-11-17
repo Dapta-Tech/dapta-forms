@@ -219,6 +219,33 @@ export function GoogleSheetsCard({
     })();
   }, [connected, state.spreadsheetId, m]);
 
+  /**
+   * Look at row 1 once when the card opens on a spreadsheet, so a sheet that
+   * drifted (headings written before dForms recorded them, or edited in the
+   * sheet) shows its mismatch and the way out without anyone having to press
+   * a button first. Once per open: the ref survives re-renders, and a sheet
+   * picked later is checked by the save that stores it.
+   *
+   * It is the ordinary, conservative sync: one read, and a write only into a
+   * row 1 that is provably dForms' own. Only a mismatch is reported here; a
+   * row that already matches has nothing to say on open.
+   */
+  const checkedOnOpen = useRef(false);
+  useEffect(() => {
+    if (checkedOnOpen.current || !formId || !connected || !state.spreadsheetId) return;
+    if (!state.columns.some(isCompleteColumn)) return;
+    checkedOnOpen.current = true;
+    void (async () => {
+      const res = await callAction(() => syncSheetHeadersAction(formId));
+      if (!res?.ok || !res.data?.ok) return;
+      if (res.data.outcome === 'foreign') {
+        const { ok: _ok, ...sync } = res.data;
+        onHeaderSync?.(sync as SheetHeaderSync);
+      }
+    })();
+    // Deliberately once per mount; the deps only gate when it may run.
+  }, [formId, connected, state.spreadsheetId, state.columns, onHeaderSync]);
+
   const defaults = () =>
     defaultColumns(questions, {
       submittedAt: m.gsheets.colSubmittedAt,
@@ -347,7 +374,23 @@ export function GoogleSheetsCard({
       : []),
     ...(tabs ?? []).map((t) => ({ value: t.title, label: t.title })),
   ];
-  const syncLine = headerSync ? headerSyncLine(headerSync, m.gsheets) : null;
+  // Columns the author is still filling in are not stored, so they are not in
+  // row 1 either. While any exist, a green "row 1 matches" would be a claim
+  // about the columns on screen that is not true: say which ones are pending.
+  const pendingLetters = state.columns
+    .map((c, i) => (isCompleteColumn(c) ? null : sheetColumnLetter(i)))
+    .filter((l): l is string => l !== null);
+  const syncResult = headerSync ? headerSyncLine(headerSync, m.gsheets) : null;
+  const syncLine: { text: string; tone: 'ok' | 'warn' | 'error' | 'info' } | null =
+    pendingLetters.length && state.spreadsheetId && (!syncResult || syncResult.tone === 'ok')
+      ? {
+          text: (pendingLetters.length === 1 ? m.gsheets.columnPendingOne : m.gsheets.columnPendingMany).replace(
+            '{cols}',
+            pendingLetters.join(', '),
+          ),
+          tone: 'info',
+        }
+      : syncResult;
   const cm = getMessages(locale ?? 'en').admin.connections;
   const returnTo = formId ? `/admin/forms/${formId}/edit` : undefined;
 
@@ -609,6 +652,7 @@ export function GoogleSheetsCard({
                   syncLine.tone === 'ok' && 'border-signal-edge/40 bg-signal/10 text-foreground',
                   syncLine.tone === 'warn' && 'border-warning/40 bg-warning/10 text-foreground',
                   syncLine.tone === 'error' && 'border-destructive/40 bg-destructive/10 text-destructive',
+                  syncLine.tone === 'info' && 'border-border bg-muted/40 text-foreground',
                 )}
               >
                 <i
@@ -618,6 +662,7 @@ export function GoogleSheetsCard({
                     syncLine.tone === 'ok' && 'pi-check-circle text-signal-ink',
                     syncLine.tone === 'warn' && 'pi-exclamation-circle text-warning-ink',
                     syncLine.tone === 'error' && 'pi-exclamation-triangle',
+                    syncLine.tone === 'info' && 'pi-info-circle text-muted-foreground',
                   )}
                   style={{ fontSize: 13 }}
                 />

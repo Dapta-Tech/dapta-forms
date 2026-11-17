@@ -2125,6 +2125,12 @@ export interface FormsMessages {
         headersWritten: string;
         /** Row 1 already read exactly these headings. */
         headersUnchanged: string;
+        /**
+         * Columns that are not written yet (no heading, or nothing chosen to
+         * fill them). `{cols}` is their sheet letters.
+         */
+        columnPendingOne: string;
+        columnPendingMany: string;
         /** Row 1 does not match the columns, so nothing was overwritten on its own. */
         headersNotEmpty: string;
         headersFailed: string;
@@ -4560,6 +4566,10 @@ export const en: FormsMessages = {
         writeHeaders: 'Update the header row',
         headersWritten: 'Row 1 of the sheet now matches these columns.',
         headersUnchanged: 'Row 1 of the sheet already matches these columns.',
+        columnPendingOne:
+          'Column {cols} is not in the sheet yet: give it a heading and choose what fills it, and it is written to row 1.',
+        columnPendingMany:
+          'Columns {cols} are not in the sheet yet: give each a heading and choose what fills it, and they are written to row 1.',
         headersNotEmpty: 'Row 1 of the sheet does not match these columns, so it was not changed on its own.',
         headersFailed: 'The header row could not be updated. Your columns are saved.',
         headersColumn: 'Column',
@@ -7320,6 +7330,10 @@ export const es: FormsMessages = {
         writeHeaders: 'Actualizar encabezados en la hoja',
         headersWritten: 'La fila 1 de la hoja quedó igual a estas columnas.',
         headersUnchanged: 'La fila 1 de la hoja ya coincide con estas columnas.',
+        columnPendingOne:
+          'La columna {cols} todavía no está en la hoja: ponle un encabezado y elige qué la llena, y se escribe en la fila 1.',
+        columnPendingMany:
+          'Las columnas {cols} todavía no están en la hoja: ponle a cada una un encabezado y elige qué la llena, y se escriben en la fila 1.',
         headersNotEmpty: 'La fila 1 de la hoja no coincide con estas columnas, así que no se cambió sola.',
         headersFailed: 'No se pudo actualizar la fila de encabezados. Tus columnas sí quedaron guardadas.',
         headersColumn: 'Columna',

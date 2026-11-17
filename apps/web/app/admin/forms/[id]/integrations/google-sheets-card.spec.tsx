@@ -7,7 +7,7 @@
  * Picker, and by no other route. A field to paste a link into would look
  * helpful and could never work, so its ABSENCE is a promise of this card.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getMessages } from '@quill/shared';
@@ -50,6 +50,11 @@ let container: HTMLElement | null = null;
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+beforeEach(() => {
+  // The card looks at row 1 once when it opens on a spreadsheet.
+  actions.syncSheetHeadersAction.mockResolvedValue({ ok: true, data: { ok: true, outcome: 'unchanged' } });
 });
 
 afterEach(() => {
@@ -422,8 +427,8 @@ describe('the header row', () => {
   });
 
   it('syncs the form’s STORED columns, and reports what happened', async () => {
-    actions.syncSheetHeadersAction.mockResolvedValueOnce({ ok: true, data: { ok: true, outcome: 'written' } });
     const { el, onHeaderSync } = await mount({ state: STORED, formId: 'form-1' });
+    actions.syncSheetHeadersAction.mockResolvedValueOnce({ ok: true, data: { ok: true, outcome: 'written' } });
     await act(async () => button(el, m.gsheets.writeHeaders)!.click());
     expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1', false);
     expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'written' });
@@ -459,12 +464,62 @@ describe('the header row', () => {
     await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-replace-row"]')!.click());
     expect(document.body.textContent).toContain(m.gsheets.replaceTitle);
     await act(async () => dialogButton('cancel')!.click());
-    expect(actions.syncSheetHeadersAction).not.toHaveBeenCalled();
+    expect(actions.syncSheetHeadersAction).not.toHaveBeenCalledWith('form-1', true);
 
     await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-replace-row"]')!.click());
     await act(async () => dialogButton('confirm')!.click());
     expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1', true);
     expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'written' });
+  });
+
+  it('looks at row 1 once when it opens, and shows a mismatch without a press', async () => {
+    actions.syncSheetHeadersAction.mockResolvedValue({ ok: true, data: { ok: true, ...MISMATCH } });
+    const { box, onHeaderSync } = await mount({ state: STORED, formId: 'form-1' });
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledTimes(1);
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1');
+    expect(onHeaderSync).toHaveBeenCalledWith(MISMATCH);
+    // A later render (any edit) does not ask Google again.
+    await act(async () =>
+      root!.render(
+        <GoogleSheetsCard
+          state={{ ...box.state, enabled: true }}
+          setState={() => {}}
+          questions={QUESTIONS}
+          connected
+          formId="form-1"
+          onHeaderSync={onHeaderSync}
+          locale="en"
+          m={m}
+        />,
+      ),
+    );
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('says nothing on open when row 1 already matches', async () => {
+    const { onHeaderSync } = await mount({ state: STORED, formId: 'form-1' });
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledTimes(1);
+    expect(onHeaderSync).not.toHaveBeenCalled();
+  });
+
+  it('does not look before there is a spreadsheet, or without a connection', async () => {
+    await mount({ state: { ...STORED, spreadsheetId: '' }, formId: 'form-1' });
+    act(() => root?.unmount());
+    container?.remove();
+    await mount({ state: STORED, formId: 'form-1', connected: false });
+    expect(actions.syncSheetHeadersAction).not.toHaveBeenCalled();
+  });
+
+  it('names a column still being filled in, instead of claiming row 1 matches', async () => {
+    const { el } = await mount({
+      state: { ...STORED, columns: [...STORED.columns, { header: 'booking', source: 'answer' }] },
+      formId: 'form-1',
+      headerSync: { outcome: 'unchanged' },
+    });
+    const line = el.querySelector('[data-testid="gsheets-header-sync"]')!;
+    expect(line.textContent).toBe(m.gsheets.columnPendingOne.replace('{cols}', 'B'));
+    expect(line.textContent).not.toContain(m.gsheets.headersUnchanged);
+    expect(line.getAttribute('data-tone')).toBe('info');
   });
 
   it('only promises Google Drive where the Picker is there', async () => {

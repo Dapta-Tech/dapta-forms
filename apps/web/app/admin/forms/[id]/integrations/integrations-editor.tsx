@@ -756,6 +756,12 @@ export function IntegrationsEditor({
     debounceMs: AUTOSAVE_MS,
   });
   const { markDirty } = autosave;
+  // Whether a save has run since the tab opened: the pill stays quiet until
+  // then, instead of greeting an untouched page with "saved".
+  const [saveTouched, setSaveTouched] = useState(false);
+  useEffect(() => {
+    if (autosave.status !== 'saved') setSaveTouched(true);
+  }, [autosave.status]);
   // This screen sends no lock stamp, so `conflict` cannot happen here; the
   // union still has to be closed, and an error is the honest rendering of it.
   // The spreadsheet card switched on with no spreadsheet stores nothing (see
@@ -889,7 +895,7 @@ export function IntegrationsEditor({
 
       {/* The Save button is gone (V5-A4): everything here autosaves, so what
           belongs on screen is the state of that save, not an action. */}
-      <SaveStatusPill status={status} detail={statusDetail} m={m} />
+      <SaveStatusPill status={status} detail={statusDetail} touched={saveTouched} m={m} />
     </div>
   );
 }
@@ -916,6 +922,9 @@ const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> 
   },
 };
 
+/** How long a "saved" pill stays spelled out before it folds to its check. */
+const PILL_FOLD_MS = 2500;
+
 /**
  * The autosave state, as a pill fixed to the bottom-right corner of the window.
  *
@@ -923,31 +932,45 @@ const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> 
  * stick?" for the whole tab: a pill at the end of a long list of cards was
  * found only by scrolling to it. `position: fixed` inside the editor would be
  * pinned to whichever ancestor opens a stacking context instead of the
- * window, so it is rendered outside them all.
+ * window, so it is rendered outside them all. On a phone too, lifted by the
+ * safe-area inset; the tab keeps bottom room so the last card scrolls clear.
  *
- * Below `sm` it is NOT fixed: on a phone a floating pill sits on top of the
- * controls it scrolls over. There it is the last thing in the tab, in the
- * flow, where it covers nothing.
- *
- * Its ground is solid card colour UNDER the tint, so whatever scrolls beneath
- * the fixed pill never shows through it.
+ * Three things keep it from sitting on content more than it has to:
+ *  - it says nothing until there is something to say: no "saved" on a page
+ *    nobody has edited yet (`touched`), unless a state needs reading anyway;
+ *  - a plain "saved" folds to its green check after a moment, so a pill that
+ *    has said its piece is a 36px disc rather than a bar over the text being
+ *    scrolled under it (the full sentence stays as its accessible name);
+ *  - its ground is solid card colour UNDER the tint, so nothing shows through.
  */
 export function SaveStatusPill({
   status,
   detail,
+  touched = true,
   m,
 }: {
   status: SaveStatus;
   detail: string | null;
+  /** A save has run since the tab opened. Before that a plain "saved" is noise. */
+  touched?: boolean;
   m: Msgs;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [folded, setFolded] = useState(false);
+  const visible = touched || status !== 'saved';
+  useEffect(() => setMounted(true), []);
   useEffect(() => {
-    setMounted(true);
+    if (!visible) return;
     // Lets the toast stack start above the pill (globals.css).
     document.documentElement.classList.add('has-save-pill');
     return () => document.documentElement.classList.remove('has-save-pill');
-  }, []);
+  }, [visible]);
+  useEffect(() => {
+    setFolded(false);
+    if (status !== 'saved') return;
+    const timer = setTimeout(() => setFolded(true), PILL_FOLD_MS);
+    return () => clearTimeout(timer);
+  }, [status, detail]);
   const tone = PILL_TONE[status];
   const text =
     status === 'saved'
@@ -961,23 +984,22 @@ export function SaveStatusPill({
             : status === 'retrying'
               ? m.saveRetrying
               : m.saving;
-  const pill = (fixed: boolean) => (
+  if (!mounted || !visible) return null;
+  return createPortal(
     <div
-      data-testid={fixed ? 'integrations-save-status' : 'integrations-save-status-inline'}
+      data-testid="integrations-save-status"
       data-status={status}
-      // Both are live regions; only one is ever displayed (the other is
-      // `display: none` at that width), so a change is announced once.
+      data-folded={folded || undefined}
       aria-live="polite"
+      title={folded ? text : undefined}
       className={cn(
-        'rounded-[1.25rem] bg-card shadow-lg',
-        fixed
-          ? 'fixed bottom-5 right-5 z-40 hidden max-w-[min(28rem,calc(100vw-2.5rem))] sm:block'
-          : 'self-end sm:hidden',
+        'fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-40 max-w-[calc(100vw-2rem)] rounded-[1.25rem] bg-card shadow-lg sm:right-5 sm:bottom-5 sm:max-w-[28rem]',
       )}
     >
       <div
         className={cn(
-          'flex items-center gap-2 rounded-[1.25rem] border py-1.5 pl-1.5 pr-4 text-sm font-medium',
+          'flex items-center gap-2 rounded-[1.25rem] border text-sm font-medium transition-[padding] duration-200',
+          folded ? 'p-1.5' : 'py-1.5 pl-1.5 pr-4',
           tone.box,
         )}
       >
@@ -989,15 +1011,10 @@ export function SaveStatusPill({
         </span>
         {/* Two lines before it clips: a partial save names the card that did
             not go through, and that sentence is the point of the state. */}
-        <span className="line-clamp-2 min-w-0 leading-snug">{text}</span>
+        <span className={cn('line-clamp-2 min-w-0 leading-snug', folded && 'sr-only')}>{text}</span>
       </div>
-    </div>
-  );
-  return (
-    <>
-      {pill(false)}
-      {mounted ? createPortal(pill(true), document.body) : null}
-    </>
+    </div>,
+    document.body,
   );
 }
 
