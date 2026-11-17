@@ -348,8 +348,8 @@ importers:
   packages/notifications:
     dependencies:
       nodemailer:
-        specifier: ^6.9.16
-        version: 6.10.1
+        specifier: ^10.6.0
+        version: 10.6.0
     devDependencies:
       '@quill/config':
         specifier: workspace:*
@@ -357,9 +357,6 @@ importers:
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.1
-      '@types/nodemailer':
-        specifier: ^6.4.17
-        version: 6.4.24
       eslint:
         specifier: ^9.17.0
         version: 9.39.5(jiti@2.7.0)
@@ -1623,9 +1620,6 @@ packages:
 
   '@types/node@26.1.1':
     resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
-
-  '@types/nodemailer@6.4.24':
-    resolution: {integrity: sha512-Ww4u0rT9wQNXh4JiQaIwx3QWdcOFXzOjQA2zc+jtFYNmQiT4mIUqcDin51bDFdkzKubFnQCZNK7FIHlPKQ/q9w==}
 
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
@@ -2903,9 +2897,9 @@ packages:
       encoding:
         optional: true
 
-  nodemailer@6.10.1:
-    resolution: {integrity: sha512-Z+iLaBGVaSjbIzQ4pX6XV41HrooLsQ10ZWPUehGmuantvzWoDVBnmsdUcOIDM1t+yPor5pDhVlDESgOMEGxhHA==}
-    engines: {node: '>=6.0.0'}
+  nodemailer@10.6.0:
+    resolution: {integrity: sha512-jWanL7D9GD3jvUDYKmoC5rWTiG8MnBgnN2yV68bgMKip1zUJhiSTyz7Eg+18y8sk5OvdVDzws5nZK5arSI4f5Q==}
+    engines: {node: '>=20.0.0'}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -4821,10 +4815,6 @@ snapshots:
     dependencies:
       undici-types: 8.3.0
 
-  '@types/nodemailer@6.4.24':
-    dependencies:
-      '@types/node': 22.20.1
-
   '@types/react-dom@19.2.3(@types/react@19.2.17)':
     dependencies:
       '@types/react': 19.2.17
@@ -6056,7 +6046,7 @@ snapshots:
     dependencies:
       whatwg-url: 5.0.0
 
-  nodemailer@6.10.1: {}
+  nodemailer@10.6.0: {}
 
   object-assign@4.1.1: {}
 
