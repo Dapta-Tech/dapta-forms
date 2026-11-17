@@ -363,6 +363,11 @@ export interface BuilderMessages {
     schedulerMapEmail: string;
     /** dCal's booking form asks for notes by itself, where Calendly's does not. */
     schedulerMapNotes: string;
+    /**
+     * Beside the Notes row while it is on Automatic: Automatic fills it only
+     * from an answer keyed `notes`, which nothing else on screen says.
+     */
+    schedulerMapNotesAuto: string;
     schedulerMapAuto: string;
     /**
      * dCal, the third provider. It needs no connected credential: the author's
@@ -393,8 +398,15 @@ export interface BuilderMessages {
     /** Re-reads the list, for when they come back from creating one. */
     schedulerDcalRefresh: string;
     schedulerDcalRefreshing: string;
-    /** dCal is not configured for this deployment, or there is no session to forward. */
+    /** dCal is not configured for this deployment. */
     schedulerDcalUnavailable: string;
+    /** dCal refused the author's session, or there was none to forward. */
+    schedulerDcalSignIn: string;
+    /** The author has no dCal booking page yet; the link below sets one up. */
+    schedulerDcalNoPage: string;
+    schedulerDcalNoPageLink: string;
+    /** dCal did not answer, or answered with an error. A retry follows. */
+    schedulerDcalError: string;
     /** A team event, so the author can tell it from their own: `{team}` is its name. */
     schedulerDcalTeam: string;
     /** V6 — where the form goes once the respondent books. */
@@ -928,6 +940,7 @@ const en: BuilderMessages = {
     schedulerMapName: 'Name',
     schedulerMapEmail: 'Email',
     schedulerMapNotes: 'Notes',
+    schedulerMapNotesAuto: 'Automatic fills this only when one of your questions has the key notes.',
     schedulerMapAuto: 'Automatic',
     schedulerAfter: 'After booking',
     schedulerAfterHint: 'What happens once the respondent picks a time.',
@@ -944,6 +957,10 @@ const en: BuilderMessages = {
     schedulerDcalRefresh: 'I created it, load the list',
     schedulerDcalRefreshing: 'Loading the list again…',
     schedulerDcalUnavailable: 'dCal is not available on this deployment.',
+    schedulerDcalSignIn: 'dCal did not accept your session. Sign in again, then come back to this question.',
+    schedulerDcalNoPage: 'You do not have a dCal booking page yet. Set it up in dCal, then refresh this list.',
+    schedulerDcalNoPageLink: 'Set up your booking page',
+    schedulerDcalError: 'dCal could not answer right now. Try again in a moment.',
     schedulerDcalTeam: 'Team: {team}',
     schedulerAfterSubmit: 'Submit the form and show the ending',
     scoring: 'Scoring',
@@ -1177,7 +1194,7 @@ const es: BuilderMessages = {
     conflict: 'Guardado en otro lado',
     conflictTitle: 'Este formulario se guardó desde otro lugar',
     conflictBody:
-      'Otra persona, u otra pestaña, guardó este formulario mientras lo editabas. Tus cambios de acá todavía no están guardados.',
+      'Otra persona, u otra pestaña, guardó este formulario mientras lo editabas. Tus cambios de aquí todavía no están guardados.',
     conflictReload: 'Ver la versión guardada',
     conflictOverwrite: 'Quedarme con lo mío',
     preview: 'Vista previa',
@@ -1430,6 +1447,7 @@ const es: BuilderMessages = {
     schedulerMapName: 'Nombre',
     schedulerMapEmail: 'Correo electrónico',
     schedulerMapNotes: 'Notas',
+    schedulerMapNotesAuto: 'Automático lo llena solo cuando una de tus preguntas tiene la clave notes.',
     schedulerMapAuto: 'Automático',
     schedulerAfter: 'Al agendar',
     schedulerAfterHint: 'Qué pasa cuando la persona elige un horario.',
@@ -1446,6 +1464,10 @@ const es: BuilderMessages = {
     schedulerDcalRefresh: 'Ya lo creé, cargar la lista',
     schedulerDcalRefreshing: 'Cargando la lista de nuevo…',
     schedulerDcalUnavailable: 'dCal no está disponible en esta instalación.',
+    schedulerDcalSignIn: 'dCal no aceptó tu sesión. Inicia sesión de nuevo y vuelve a esta pregunta.',
+    schedulerDcalNoPage: 'Todavía no tienes una página de agendamiento en dCal. Configúrala en dCal y luego actualiza esta lista.',
+    schedulerDcalNoPageLink: 'Configurar tu página de agendamiento',
+    schedulerDcalError: 'dCal no pudo responder ahora. Inténtalo de nuevo en un momento.',
     schedulerDcalTeam: 'Equipo: {team}',
     schedulerAfterSubmit: 'Enviar el formulario y mostrar el final',
     scoring: 'Puntaje',

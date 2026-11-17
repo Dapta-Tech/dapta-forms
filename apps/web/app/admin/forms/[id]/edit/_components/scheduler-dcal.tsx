@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormStep } from '@quill/engine';
-import type { DcalEventType, DcalEventTypesResponse, DcalWorkspace } from '@/lib/admin-api';
+import type {
+  DcalEventType,
+  DcalEventTypesResponse,
+  DcalUnavailableCode,
+  DcalWorkspace,
+} from '@/lib/admin-api';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Field } from './fields';
@@ -32,7 +37,7 @@ type Msgs = BuilderMessages['settings'];
 
 type LoadState =
   | { status: 'loading' }
-  | { status: 'unavailable'; reason: string }
+  | { status: 'unavailable'; code: DcalUnavailableCode; setupUrl: string | null }
   | { status: 'error' }
   | {
       status: 'ready';
@@ -100,7 +105,11 @@ export function SchedulerDcalPicker({
                 eventTypes: res.eventTypes,
                 createEventUrl: res.createEventUrl,
               }
-            : { status: 'unavailable', reason: res.reason },
+            : {
+                status: 'unavailable',
+                code: res.code ?? 'not_configured',
+                setupUrl: res.setupUrl ?? null,
+              },
         );
       } catch {
         if (requestRef.current === token) setState({ status: 'error' });
@@ -126,7 +135,15 @@ export function SchedulerDcalPicker({
     return <p className="text-xs text-muted-foreground">{s.schedulerLoading}</p>;
   }
   if (state.status === 'unavailable') {
-    return <p className="text-xs text-muted-foreground">{s.schedulerDcalUnavailable}</p>;
+    return (
+      <DcalUnavailable
+        code={state.code}
+        setupUrl={state.setupUrl}
+        refreshing={refreshing}
+        onRetry={() => void load(workspaceId, state.code === 'no_booking_page')}
+        s={s}
+      />
+    );
   }
   if (state.status === 'error') {
     return (
@@ -267,7 +284,16 @@ export function SchedulerDcalPicker({
           <p className="text-xs font-medium text-foreground">{s.schedulerMapTitle}</p>
           <p className="text-xs text-muted-foreground">{s.schedulerMapHint}</p>
           {mapRows.map((row) => (
-            <Field key={row.name} label={row.label}>
+            <Field
+              key={row.name}
+              label={row.label}
+              // Automatic means "an answer keyed like this field": for name and
+              // email that is the obvious question, for notes it is a key few
+              // forms have, so the row says so instead of looking broken.
+              hint={
+                row.name === 'notes' && !scheduler.prefillMap?.notes ? s.schedulerMapNotesAuto : undefined
+              }
+            >
               <div data-testid={`scheduler-dcal-map-${row.name}`}>
                 <Select
                   ariaLabel={row.label}
@@ -289,5 +315,80 @@ export function SchedulerDcalPicker({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Why there is no list, one sentence per cause. These used to share one line,
+ * "dCal is not available on this deployment", which was true of one of them
+ * and sent an author whose session had expired, or who simply had no booking
+ * page yet, looking for an operator.
+ *
+ * Only the causes the author can act on carry an action: a booking page to set
+ * up (in a new tab, with a refresh for when they come back) and a dCal that
+ * did not answer (try again). A deployment without dCal, or a session to sign
+ * in again, is said and left there.
+ */
+function DcalUnavailable({
+  code,
+  setupUrl,
+  refreshing,
+  onRetry,
+  s,
+}: {
+  code: DcalUnavailableCode;
+  setupUrl: string | null;
+  refreshing: boolean;
+  onRetry: () => void;
+  s: Msgs;
+}) {
+  if (code === 'session_rejected' || code === 'no_session') {
+    return (
+      <p data-testid="scheduler-dcal-unavailable" data-code={code} className="text-xs text-muted-foreground">
+        {s.schedulerDcalSignIn}
+      </p>
+    );
+  }
+  if (code === 'no_booking_page') {
+    return (
+      <div
+        data-testid="scheduler-dcal-unavailable"
+        data-code={code}
+        className="flex flex-col gap-2 rounded-md border border-dashed border-border bg-muted/40 p-3"
+      >
+        <p className="text-xs text-foreground">{s.schedulerDcalNoPage}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {setupUrl ? (
+            <a
+              data-testid="scheduler-dcal-setup"
+              href={setupUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-xs font-medium underline"
+            >
+              {s.schedulerDcalNoPageLink}
+            </a>
+          ) : null}
+          <Button type="button" size="sm" variant="outline" disabled={refreshing} onClick={onRetry}>
+            {refreshing ? s.schedulerDcalRefreshing : s.schedulerDcalRefresh}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (code === 'dcal_error') {
+    return (
+      <div data-testid="scheduler-dcal-unavailable" data-code={code} className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-destructive">{s.schedulerDcalError}</p>
+        <Button type="button" size="sm" variant="outline" disabled={refreshing} onClick={onRetry}>
+          {s.schedulerRetry}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <p data-testid="scheduler-dcal-unavailable" data-code={code} className="text-xs text-muted-foreground">
+      {s.schedulerDcalUnavailable}
+    </p>
   );
 }

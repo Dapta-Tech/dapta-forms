@@ -197,6 +197,67 @@ describe('the dCal picker when dCal is not there', () => {
     expect(el.querySelector('[data-testid="scheduler-dcal-empty"]')).toBeNull();
   });
 
+  it('words each refusal by its cause, not all of them as a missing dCal', async () => {
+    const cases = [
+      ['not_configured', s.schedulerDcalUnavailable],
+      ['session_rejected', s.schedulerDcalSignIn],
+      ['no_session', s.schedulerDcalSignIn],
+      ['no_booking_page', s.schedulerDcalNoPage],
+      ['dcal_error', s.schedulerDcalError],
+    ] as const;
+    for (const [code, sentence] of cases) {
+      answer({ enabled: false, code, reason: 'operator text' });
+      const el = await mount();
+      const box = el.querySelector('[data-testid="scheduler-dcal-unavailable"]')!;
+      expect(box.getAttribute('data-code'), code).toBe(code);
+      expect(box.textContent, code).toContain(sentence);
+      // "Not available on this deployment" is true of one cause only.
+      if (code !== 'not_configured') expect(box.textContent, code).not.toContain(s.schedulerDcalUnavailable);
+      await act(async () => root?.unmount());
+      container?.remove();
+    }
+  });
+
+  it('links to setting up a booking page, in a new tab, and re-reads past the cache', async () => {
+    answer({
+      enabled: false,
+      code: 'no_booking_page',
+      reason: 'dCal has no booking page for this user yet.',
+      setupUrl: 'https://cal.example.test/admin',
+    });
+    const el = await mount();
+    const link = el.querySelector<HTMLAnchorElement>('[data-testid="scheduler-dcal-setup"]')!;
+    expect(link.textContent).toContain(s.schedulerDcalNoPageLink);
+    expect(link.getAttribute('href')).toBe('https://cal.example.test/admin');
+    expect(link.getAttribute('target')).toBe('_blank');
+    answer(ready({ eventTypes: [EVENT] }));
+    await act(async () =>
+      [...el.querySelectorAll<HTMLButtonElement>('button')]
+        .find((b) => b.textContent?.includes(s.schedulerDcalRefresh))!
+        .click(),
+    );
+    expect(reads().at(-1)?.get('refresh')).toBe('1');
+    expect(el.querySelector('[data-testid="scheduler-dcal-event-type"]')).not.toBeNull();
+  });
+
+  it('offers a retry when dCal itself errored', async () => {
+    answer({ enabled: false, code: 'dcal_error', reason: 'dCal did not answer the session check.' });
+    const el = await mount();
+    answer(ready({ eventTypes: [EVENT] }));
+    await act(async () =>
+      [...el.querySelectorAll<HTMLButtonElement>('button')]
+        .find((b) => b.textContent?.includes(s.schedulerRetry))!
+        .click(),
+    );
+    expect(el.querySelector('[data-testid="scheduler-dcal-event-type"]')).not.toBeNull();
+  });
+
+  it('reads an answer with no code, from an older API, as not configured', async () => {
+    answer({ enabled: false, reason: 'whatever' });
+    const el = await mount();
+    expect(el.textContent).toContain(s.schedulerDcalUnavailable);
+  });
+
   it('offers a retry when the list request itself failed', async () => {
     fetchMock.mockImplementation(async () => ({ ok: false, status: 503 }));
     const el = await mount();
@@ -246,6 +307,22 @@ describe('the autofill mapping', () => {
       option!.click();
     });
     expect(seen.at(-1)?.prefillMap).toEqual({ company: 'company_1' });
+  });
+
+  it('says, beside Notes, what Automatic fills it from', async () => {
+    answer(ready({ eventTypes: [EVENT] }));
+    const auto = await mount({ provider: 'dcal', eventTypeUri: EVENT.id });
+    const notesRow = auto.querySelector('[data-testid="scheduler-dcal-map-notes"]')!.parentElement!;
+    expect(notesRow.textContent).toContain(s.schedulerMapNotesAuto);
+    // Only Notes: Automatic for name and email finds the obvious question.
+    const emailRow = auto.querySelector('[data-testid="scheduler-dcal-map-email"]')!.parentElement!;
+    expect(emailRow.textContent).not.toContain(s.schedulerMapNotesAuto);
+    await act(async () => root?.unmount());
+    container?.remove();
+
+    answer(ready({ eventTypes: [EVENT] }));
+    const mapped = await mount({ provider: 'dcal', eventTypeUri: EVENT.id, prefillMap: { notes: 'company_1' } });
+    expect(mapped.textContent).not.toContain(s.schedulerMapNotesAuto);
   });
 
   it('maps nothing for an event whose form asks nothing extra', async () => {

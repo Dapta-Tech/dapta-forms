@@ -10,6 +10,7 @@ import { callAction, isTransportError } from '@/lib/call-action';
 import { WEBHOOK_PING_ACTION } from '@quill/types';
 import type { DeliveryKind, DeliveryStatus, FormDelivery } from '@/lib/admin-api';
 import { loadDeliveryHistoryAction } from './actions';
+import { deliveryActionLabel, describeDeliveryReason } from './delivery-reason';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
@@ -22,8 +23,21 @@ export const notDelivered = (d: FormDelivery): boolean =>
   d.status === 'failed' || d.status === 'skipped';
 
 /**
+ * The kinds whose card has a "Send test" button, so a test delivery can show
+ * up in their log. Only the webhook has one: the note that explains test rows
+ * means nothing under Salesforce, Sheets, HubSpot or email.
+ */
+const KINDS_WITH_TEST_SENDS: ReadonlySet<DeliveryKind> = new Set(['webhook']);
+
+/** Whether a card responsible for `kinds` can show a test delivery. */
+export const hasTestSends = (kinds: readonly DeliveryKind[]): boolean =>
+  kinds.some((k) => KINDS_WITH_TEST_SENDS.has(k));
+
+/**
  * What the red summary chip counts: every row that did not land, except a
- * skipped PARTIAL save.
+ * skipped PARTIAL save. It is exactly the set of rows the dialog paints red,
+ * which is why the chip says "needs attention" rather than "failed": a row
+ * the provider refused reads "Not delivered", not "Failed", and both count.
  *
  * A skipped row is often a provider's permanent refusal, which is exactly what
  * the author must see. A partial is different: a HubSpot destination fires on
@@ -113,6 +127,7 @@ export function DeliveryHistory({
       locale={locale}
       m={m}
       testId={testId}
+      testSends={hasTestSends(kinds)}
     />
   );
 }
@@ -131,6 +146,7 @@ export function DeliveryHistoryView({
   locale,
   m,
   testId,
+  testSends = false,
 }: {
   state: HistoryState;
   open: boolean;
@@ -141,6 +157,8 @@ export function DeliveryHistoryView({
   locale: Locale;
   m: Msgs;
   testId: string;
+  /** This card can send a test, so its log can list one (see `hasTestSends`). */
+  testSends?: boolean;
 }) {
   const labelId = useId();
   const items = state.status === 'ready' ? state.items : [];
@@ -163,7 +181,7 @@ export function DeliveryHistoryView({
             className="inline-flex items-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"
           >
             <i aria-hidden className="pi pi-exclamation-triangle" style={{ fontSize: 11 }} />
-            {fill(m.historyFailedCount, { n: failures })}
+            {fill(m.historyAttentionCount, { n: failures })}
           </span>
         ) : items.length > 0 ? (
           <span
@@ -224,10 +242,12 @@ export function DeliveryHistoryView({
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} />{' '}
-            {m.historyPingNote}
-          </p>
+          {testSends ? (
+            <p className="text-xs text-muted-foreground" data-testid={`${testId}-ping-note`}>
+              <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} />{' '}
+              {m.historyPingNote}
+            </p>
+          ) : null}
 
           {/* Esc and the backdrop close it too; this is the discoverable way. */}
           <div className="flex justify-end">
@@ -339,10 +359,12 @@ function DeliveryRow({
               {m.historyTestBadge}
             </span>
           ) : (
-            /* The queue's own action name. It is a stable identifier rather than
-               copy, and inventing a label per action would go stale the moment a
-               new one is enqueued. */
-            <span className="truncate text-[11px] text-muted-foreground">{d.action}</span>
+            /* The lifecycle moment, in the author's language. An action this
+               screen has no label for (one enqueued after it was written) shows
+               the queue's own name rather than nothing. */
+            <span data-testid="delivery-action" className="truncate text-[11px] text-muted-foreground">
+              {deliveryActionLabel(d.action, m)}
+            </span>
           )}
           {d.responseStatus !== null ? (
             <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
@@ -360,12 +382,13 @@ function DeliveryRow({
         </span>
       </button>
 
-      {/* The worker's own reason, verbatim. Paraphrasing it here would lose the
-          one detail that says what to fix. Shown on every row that did not land,
-          including a skipped partial the chip leaves out. */}
+      {/* The worker's reason: dForms' own words translated, the provider's
+          kept verbatim (see `describeDeliveryReason`), since that part is the
+          one detail that says what to fix. Shown on every row that did not
+          land, including a skipped partial the chip leaves out. */}
       {missed ? (
-        <p className="px-3 pb-2 text-[11px] leading-relaxed text-muted-foreground">
-          {d.lastError ?? m.historyNoReason}
+        <p data-testid="delivery-reason" className="px-3 pb-2 text-[11px] leading-relaxed text-muted-foreground">
+          {d.lastError ? describeDeliveryReason(d.kind, d.lastError, m) : m.historyNoReason}
         </p>
       ) : null}
 

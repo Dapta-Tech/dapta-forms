@@ -79,8 +79,31 @@ export interface DcalWorkspaceDto {
   current: boolean;
 }
 
+/**
+ * Why the picker has no list, as a code the builder words in the author's
+ * language (the `reason` beside it is the operator's English, for the logs).
+ *
+ *   - `not_configured`: this deployment has no dCal;
+ *   - `no_session`: there is no session to forward (a fork on `local` auth);
+ *   - `session_rejected`: dCal refused the session (401/403 on `/v1/me`);
+ *   - `no_booking_page`: dCal knows the author, who has no booking page yet;
+ *   - `dcal_error`: dCal did not answer, or answered with anything else.
+ */
+export type DcalUnavailableCode =
+  | 'not_configured'
+  | 'no_session'
+  | 'session_rejected'
+  | 'no_booking_page'
+  | 'dcal_error';
+
 export type DcalEventTypesResponse =
-  | { enabled: false; reason: string }
+  | {
+      enabled: false;
+      reason: string;
+      code: DcalUnavailableCode;
+      /** Where `no_booking_page` sends the author to set one up; null elsewhere. */
+      setupUrl?: string | null;
+    }
   | {
       enabled: true;
       cached: boolean;
@@ -178,8 +201,21 @@ export class DcalService {
   }
 
   private async call<T>(bearer: string, path: string, workspaceId?: string): Promise<T | null> {
+    const res = await this.request<T>(bearer, path, workspaceId);
+    return res.ok ? res.data : null;
+  }
+
+  /**
+   * One dCal read, with the status kept: `status` is null when nothing
+   * answered (a timeout, DNS, a dead socket) or the deployment has no base URL.
+   */
+  private async request<T>(
+    bearer: string,
+    path: string,
+    workspaceId?: string,
+  ): Promise<{ ok: true; data: T } | { ok: false; status: number | null }> {
     const base = this.env.DCAL_API_BASE_URL?.trim().replace(/\/+$/, '');
-    if (!base) return null;
+    if (!base) return { ok: false, status: null };
     try {
       const res = await this.fetchImpl(`${base}${path}`, {
         headers: {
@@ -197,12 +233,12 @@ export class DcalService {
         // The status, never the body: dCal's own error text is not this app's
         // copy and must not reach the builder verbatim.
         this.logger.warn(`dcal ${path} answered HTTP ${res.status}`);
-        return null;
+        return { ok: false, status: res.status };
       }
-      return (await res.json()) as T;
+      return { ok: true, data: (await res.json()) as T };
     } catch (err) {
       this.logger.warn(`dcal ${path} did not answer: ${err instanceof Error ? err.message : String(err)}`);
-      return null;
+      return { ok: false, status: null };
     }
   }
 
@@ -225,13 +261,18 @@ export class DcalService {
     if (!this.configured()) {
       return {
         enabled: false,
+        code: 'not_configured',
         reason: 'This deployment has no dCal configured (DCAL_API_BASE_URL and DCAL_APP_URL).',
       };
     }
     if (!bearer) {
       // The `local` auth provider of a bare fork mints no bearer, so there is
       // no session to forward and nothing to ask dCal with.
-      return { enabled: false, reason: 'dCal needs a signed-in Dapta session; this deployment has none.' };
+      return {
+        enabled: false,
+        code: 'no_session',
+        reason: 'dCal needs a signed-in Dapta session; this deployment has none.',
+      };
     }
 
     const key = `${accountId}:${memberId}:${options.workspaceId ?? 'home'}`;
@@ -239,14 +280,30 @@ export class DcalService {
     const hit = this.cache.get(key);
     if (hit && hit.expires > now) return { ...hit.body, cached: true };
 
-    const me = await this.call<DcalMe>(bearer, '/v1/me', options.workspaceId);
-    if (!me) {
-      return { enabled: false, reason: 'dCal did not accept this session. Check that both apps share an identity service.' };
+    // Read with its status, unlike the calls below: "dCal refused you" and
+    // "dCal is down" ask the author for different things (sign in again, or
+    // wait), and both used to read as "not available on this deployment".
+    const meRes = await this.request<DcalMe>(bearer, '/v1/me', options.workspaceId);
+    if (!meRes.ok) {
+      return meRes.status === 401 || meRes.status === 403
+        ? {
+            enabled: false,
+            code: 'session_rejected',
+            reason: 'dCal did not accept this session. Check that both apps share an identity service.',
+          }
+        : { enabled: false, code: 'dcal_error', reason: 'dCal did not answer the session check.' };
     }
+    const me = meRes.data;
     const code = me.vanitySlug?.trim() || me.accountShortCode?.trim() || '';
     const handle = me.handle?.trim() ?? '';
     if (!code || !handle) {
-      return { enabled: false, reason: 'dCal has no booking page for this user yet.' };
+      const app = this.env.DCAL_APP_URL?.trim().replace(/\/+$/, '') ?? '';
+      return {
+        enabled: false,
+        code: 'no_booking_page',
+        reason: 'dCal has no booking page for this user yet.',
+        setupUrl: app ? `${app}/admin` : null,
+      };
     }
 
     const [mine, teams, workspaces] = await Promise.all([

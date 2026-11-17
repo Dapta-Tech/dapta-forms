@@ -14,16 +14,21 @@
  *      the only thing in the UI that says what to fix;
  *   4. a landed delivery is NOT dressed as a failure — the whole point of asking
  *      for `done` rows was to tell a working webhook from one that never fired;
- *   5. the ping note is always present, so "I sent a test and nothing showed up"
- *      reads as the truth rather than as a bug in this panel.
+ *   5. the ping note is present wherever a test can be sent (the webhook), so
+ *      "I sent a test and nothing showed up" reads as the truth rather than as
+ *      a bug in this panel, and absent where none can (Salesforce, Sheets);
+ *   6. the red chip says what it counts: failed AND refused rows;
+ *   7. dForms' own words are translated, the provider's are kept verbatim.
  */
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { getMessages } from '@quill/shared';
 import type { FormDelivery } from '@/lib/admin-api';
-import { DeliveryHistoryView, isFailure, notDelivered, type HistoryState } from './delivery-history';
+import { DeliveryHistoryView, hasTestSends, isFailure, notDelivered, type HistoryState } from './delivery-history';
+import { deliveryActionLabel, describeDeliveryReason } from './delivery-reason';
 
 const m = getMessages('en').admin.integrations;
+const es = getMessages('es').admin.integrations;
 
 const delivery = (over: Partial<FormDelivery> = {}): FormDelivery => ({
   id: 'row-1',
@@ -40,7 +45,11 @@ const delivery = (over: Partial<FormDelivery> = {}): FormDelivery => ({
   ...over,
 });
 
-const render = (state: HistoryState, open = true): string =>
+const render = (
+  state: HistoryState,
+  open = true,
+  opts: { testSends?: boolean; locale?: 'en' | 'es' } = { testSends: true },
+): string =>
   renderToStaticMarkup(
     <DeliveryHistoryView
       state={state}
@@ -49,9 +58,10 @@ const render = (state: HistoryState, open = true): string =>
       onClose={() => {}}
       onRefresh={() => {}}
       title={m.historyWebhookTitle}
-      locale="en"
-      m={m}
+      locale={opts.locale ?? 'en'}
+      m={opts.locale === 'es' ? es : m}
       testId="webhook-history"
+      testSends={opts.testSends}
     />,
   );
 
@@ -99,7 +109,10 @@ describe('a delivery the provider refused', () => {
 
   it('counts in the red chip on a complete', () => {
     const html = render(ready([refused(), delivery({ id: 'b', status: 'done' })]), false);
-    expect(html).toContain('1 failed');
+    // A refused row reads "Not delivered", so a chip saying "failed" would
+    // not describe it: the chip names both.
+    expect(html).toContain('Needs attention: 1');
+    expect(html).not.toContain('1 failed');
     expect(html).toContain('data-failures="1"');
   });
 
@@ -116,7 +129,7 @@ describe('a delivery the provider refused', () => {
 
     const open = render(ready([partial]));
     expect(open).toContain('>Not delivered<');
-    expect(open).toContain('no email in submission');
+    expect(open).toContain(m.historyReasons.noEmail);
     expect(open).not.toContain('bg-destructive/10');
   });
 
@@ -144,7 +157,7 @@ describe('DeliveryHistoryView — the card line', () => {
       false,
     );
     expect(html).toContain('webhook-history-failed-chip');
-    expect(html).toContain('1 failed');
+    expect(html).toContain('Needs attention: 1');
     // The neutral count is for a clean history; a failing one must not also
     // advertise a reassuring total next to the red chip.
     expect(html).not.toContain('webhook-history-count-chip');
@@ -175,12 +188,17 @@ describe('DeliveryHistoryView — the dialog', () => {
     expect(html).toContain('aria-modal="true"');
   });
 
-  it("shows a failure's reason verbatim", () => {
+  it("shows a failure's reason, with the provider's part verbatim", () => {
     const html = render(
       ready([delivery({ status: 'failed', lastError: 'webhook delivery failed: HTTP 400' })]),
     );
-    expect(html).toContain('webhook delivery failed: HTTP 400');
+    expect(html).toContain('Delivery to your endpoint failed: HTTP 400');
     expect(html).toContain('data-status="failed"');
+  });
+
+  it('shows a reason it does not know exactly as recorded', () => {
+    const html = render(ready([delivery({ status: 'failed', lastError: 'socket hang up' })]));
+    expect(html).toContain('socket hang up');
   });
 
   it('says so when the worker recorded no reason', () => {
@@ -204,8 +222,8 @@ describe('DeliveryHistoryView — the dialog', () => {
     const html = render(
       ready([delivery({ id: 'a', action: 'partial' }), delivery({ id: 'b', action: 'complete' })]),
     );
-    expect(html).toContain('partial');
-    expect(html).toContain('complete');
+    expect(html).toContain(m.historyActions.partial);
+    expect(html).toContain(m.historyActions.complete);
   });
 
   it('offers an empty state rather than an empty box', () => {
@@ -218,10 +236,16 @@ describe('DeliveryHistoryView — the dialog', () => {
     expect(html).toContain('role="alert"');
   });
 
-  it('always explains that a test delivery is not queued', () => {
+  it('explains test deliveries wherever a test can be sent', () => {
     // The question ("where is my ping?") arrives exactly when the list is empty.
     expect(render(ready([]))).toContain(m.historyPingNote);
     expect(render(ready([delivery()]))).toContain(m.historyPingNote);
+  });
+
+  it('says nothing about test deliveries where none can be sent', () => {
+    const html = render(ready([delivery({ kind: 'salesforce' })]), true, { testSends: false });
+    expect(html).not.toContain(m.historyPingNote);
+    expect(html).not.toContain('webhook-history-ping-note');
   });
 
   it('offers a visible way out, not just Esc', () => {
@@ -269,5 +293,77 @@ describe('DeliveryHistoryView — reading a delivery back', () => {
   it('does not badge a real delivery as a test', () => {
     const html = render(ready([delivery({ action: 'complete' })]));
     expect(html).not.toContain('delivery-test-badge');
+  });
+});
+
+describe('which cards can list a test delivery', () => {
+  it('is the webhook only', () => {
+    expect(hasTestSends(['webhook'])).toBe(true);
+    expect(hasTestSends(['salesforce'])).toBe(false);
+    expect(hasTestSends(['google-sheets'])).toBe(false);
+    expect(hasTestSends(['hubspot', 'booking_sync'])).toBe(false);
+    expect(hasTestSends(['email'])).toBe(false);
+  });
+});
+
+describe('a history read in Spanish', () => {
+  it('names the lifecycle moment instead of the queue identifier', () => {
+    const html = render(ready([delivery({ id: 'a', action: 'complete' }), delivery({ id: 'b', action: 'partial' })]), true, {
+      locale: 'es',
+    });
+    expect(html).toContain('Respuesta completa');
+    expect(html).toContain('Respuesta parcial');
+    expect(html).not.toMatch(/>complete</);
+    expect(html).not.toMatch(/>partial</);
+  });
+
+  it("translates dForms' half of a reason and keeps the provider's", () => {
+    const html = render(
+      ready([delivery({ kind: 'salesforce', status: 'failed', lastError: 'salesforce delivery failed: HTTP 503' })]),
+      true,
+      { locale: 'es' },
+    );
+    expect(html).toContain('Falló la entrega a Salesforce: HTTP 503');
+    expect(html).not.toContain('salesforce delivery failed');
+  });
+
+  it('counts the red chip under the same neutral label', () => {
+    const html = render(ready([delivery({ status: 'failed' })]), false, { locale: 'es' });
+    expect(html).toContain('Para revisar: 1');
+  });
+});
+
+describe('describeDeliveryReason', () => {
+  it("keeps a provider's refusal text verbatim behind dForms' own words", () => {
+    expect(
+      describeDeliveryReason('google-sheets', 'HTTP 404: Requested entity was not found.', es),
+    ).toBe('Rechazada por Google Sheets con HTTP 404: Requested entity was not found.');
+    expect(describeDeliveryReason('salesforce', 'HTTP 400', m)).toBe('Refused by Salesforce with HTTP 400.');
+  });
+
+  it('words a revoked Google connection, which is how a lost spreadsheet access surfaces', () => {
+    expect(describeDeliveryReason('google-sheets', 'google sheets destination has no usable access token', es)).toBe(
+      es.historyReasons.sheetsNotConnected,
+    );
+  });
+
+  it('translates HubSpot and network failures, keeping the detail', () => {
+    expect(describeDeliveryReason('hubspot', 'hubspot upsert failed: HTTP 429 {"x":1}', es)).toBe(
+      'Falló la entrega a HubSpot: HTTP 429 {"x":1}',
+    );
+    expect(describeDeliveryReason('google-sheets', 'google sheets delivery failed: fetch failed', m)).toBe(
+      'Delivery to Google Sheets failed: fetch failed',
+    );
+  });
+
+  it('never rewrites a provider sentence that only contains a known phrase', () => {
+    const text = 'Contact has no email in submission field X';
+    expect(describeDeliveryReason('hubspot', text, es)).toBe(text);
+  });
+
+  it('labels an action it does not know with its own name', () => {
+    expect(deliveryActionLabel('complete', es)).toBe('Respuesta completa');
+    expect(deliveryActionLabel('something_new', es)).toBe('something_new');
+    expect(deliveryActionLabel('toString', es)).toBe('toString');
   });
 });

@@ -746,12 +746,24 @@ export interface DcalWorkspace {
 }
 
 /**
+ * Why the dCal picker has no list (mirrors `DcalUnavailableCode` in the API).
+ * Absent on an answer from an API older than the code: read as `not_configured`,
+ * which is what that API meant by every refusal.
+ */
+export type DcalUnavailableCode =
+  | 'not_configured'
+  | 'no_session'
+  | 'session_rejected'
+  | 'no_booking_page'
+  | 'dcal_error';
+
+/**
  * The dCal picker's response. Unlike the other two, "unavailable" here never
- * means "connect something": there is no credential to connect, so it means
- * this deployment has no dCal, or there is no session to forward to it.
+ * means "connect something": there is no credential to connect. `code` says
+ * which of the reasons it is, so each gets its own sentence.
  */
 export type DcalEventTypesResponse =
-  | { enabled: false; reason: string }
+  | { enabled: false; reason: string; code?: DcalUnavailableCode; setupUrl?: string | null }
   | {
       enabled: true;
       cached: boolean;

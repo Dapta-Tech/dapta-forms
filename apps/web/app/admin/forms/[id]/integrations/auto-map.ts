@@ -2,7 +2,7 @@
  * Smart auto-map heuristic for the HubSpot mapping UI. Pure + framework-free so
  * the "Auto-map" action is instant and unit-testable (no React/server imports).
  */
-import { nameFields, stepQuestionText, type FormStep } from '@quill/engine';
+import { interpolate, isInputlessStep, nameFields, stepQuestionText, type FormStep } from '@quill/engine';
 
 /**
  * One mappable answer key, surfaced from the form's steps by
@@ -28,8 +28,20 @@ export interface NamePartLabels {
 }
 
 /**
+ * A question's text as a picker or a column heading shows it: its `[key]`
+ * recall tokens removed the way the engine removes a token with no answer
+ * (`interpolate` with no answers), so "Nice to meet you, [firstname]!" reads
+ * "Nice to meet you!" rather than as raw markup. That is the sentence a
+ * respondent who skipped the name would see, so it is the form's own wording.
+ */
+export function questionDisplayText(step: FormStep): string {
+  return interpolate(stepQuestionText(step), {}).trim();
+}
+
+/**
  * The answer keys the destination pickers (HubSpot, Google Sheets, Salesforce)
- * offer, in the form's order. `message` steps collect nothing and are left out.
+ * offer, in the form's order. Steps that collect nothing (`message`, `reveal`)
+ * are left out: a column or a mapping for them could only ever be empty.
  *
  * A `name` step never stores an answer under its own key: it writes each
  * sub-field flat (`firstname`, `lastname`, or its custom `fields`), which is
@@ -50,8 +62,8 @@ export function mappableQuestions(steps: readonly FormStep[], parts: NamePartLab
     out.push(q);
   };
   for (const s of steps) {
-    if (s.type === 'message') continue;
-    const title = stepQuestionText(s).trim() || s.key;
+    if (isInputlessStep(s)) continue;
+    const title = questionDisplayText(s) || s.key;
     if (s.type !== 'name') {
       push({ key: s.key, label: title, type: s.type });
       continue;

@@ -279,6 +279,15 @@ export function OutcomesDialog({
                         onCommit={(url) => update(index, { redirectUrl: url })}
                       />
                       <p className="text-xs text-muted-foreground">{rm.redirectHelp}</p>
+                      {/* The UTM switch is form-wide and lives in "When the form
+                          ends", where it only appears once a redirect exists, so
+                          a range's own redirect says where to find it. */}
+                      {o.redirectUrl?.trim() ? (
+                        <p className="text-xs text-muted-foreground" data-testid="outcome-redirect-utm">
+                          <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} />{' '}
+                          {config.ending?.forwardUtm === true ? rm.redirectUtmOn : rm.redirectUtmOff}
+                        </p>
+                      ) : null}
                     </div>
                     {/* How long the thank-you shows before the redirect. Stored
                         with no control anywhere for a release, so a form could
