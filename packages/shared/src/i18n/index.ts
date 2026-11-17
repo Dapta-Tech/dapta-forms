@@ -2596,6 +2596,21 @@ export interface FormsMessages {
       saveFirst: string;
       unpublishedChanges: string;
       noChanges: string;
+      /** The pill's label while an edit is on its way to the server (not pressable yet). */
+      saving: string;
+      /**
+       * Why Publish cannot be pressed, one per blocked state. Read out as the
+       * button's description and shown as its tooltip, so each is a full
+       * sentence that stands on its own.
+       */
+      blockedSaving: string;
+      /** The save failed for now and is being retried on its own. */
+      blockedRetrying: string;
+      blockedSaveFailed: string;
+      /** Someone else saved the form; the editor's banner offers the two ways out. */
+      blockedConflict: string;
+      /** The form has no questions yet. */
+      blockedEmpty: string;
       /** The publish menu (the chevron beside Publish), and what it holds: revert. */
       moreOptions: string;
       revert: string;
@@ -5376,6 +5391,12 @@ export const en: FormsMessages = {
       saveFirst: 'Your latest changes could not be saved, so nothing was published. Try again once they save.',
       unpublishedChanges: 'Unpublished changes',
       noChanges: 'All changes are published',
+      saving: 'Saving…',
+      blockedSaving: 'Saving your changes. You can publish as soon as they are saved.',
+      blockedRetrying: 'Your changes are not saved yet. Trying again.',
+      blockedSaveFailed: 'Your changes could not be saved. You can publish once they are saved.',
+      blockedConflict: 'This form was saved from somewhere else. Choose which version to keep before you publish.',
+      blockedEmpty: 'Add a question first. Then you can publish.',
       moreOptions: 'Publish options',
       revert: 'Revert to the previous published version',
       revertAvailable: 'Published on {date}',
@@ -8161,6 +8182,12 @@ export const es: FormsMessages = {
       saveFirst: 'Tus últimos cambios no se pudieron guardar, así que no se publicó nada. Inténtalo cuando se guarden.',
       unpublishedChanges: 'Cambios sin publicar',
       noChanges: 'Todos los cambios están publicados',
+      saving: 'Guardando…',
+      blockedSaving: 'Guardando tus cambios. Podrás publicar en cuanto se guarden.',
+      blockedRetrying: 'Tus cambios aún no se guardan. Reintentando.',
+      blockedSaveFailed: 'No se pudieron guardar tus cambios. Podrás publicar cuando se guarden.',
+      blockedConflict: 'Este formulario se guardó desde otro lugar. Elige con qué versión te quedas antes de publicar.',
+      blockedEmpty: 'Agrega una pregunta primero. Después podrás publicar.',
       moreOptions: 'Opciones de publicación',
       revert: 'Volver a la versión publicada anterior',
       revertAvailable: 'Publicada el {date}',

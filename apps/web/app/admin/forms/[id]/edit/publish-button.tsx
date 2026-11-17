@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { getMessages, t } from '@quill/shared';
 import {
   publishFormAction,
@@ -13,8 +13,7 @@ import { AnchoredMenu } from '@/components/ui/anchored-menu';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
-import type { CombinedSaveState } from '@/lib/integrations-save-status';
-import type { FlushResult } from '@/lib/use-autosave';
+import type { AutosaveStatus, FlushResult } from '@/lib/use-autosave';
 
 /**
  * What both halves of the Publish pill share. They are transparent: the pill's
@@ -31,7 +30,7 @@ import type { FlushResult } from '@/lib/use-autosave';
 const SEGMENT =
   "relative inline-flex shrink-0 items-center justify-center text-inherit transition-colors focus-visible:!outline-hidden after:pointer-events-none after:absolute after:inset-[3px] after:rounded-full after:content-[''] focus-visible:after:shadow-[inset_0_0_0_2px_currentColor]";
 
-type LabelKey = 'publish' | 'published' | 'publishing' | 'reverting';
+type LabelKey = 'publish' | 'published' | 'saving' | 'publishing' | 'reverting';
 
 /**
  * The editor's explicit Publish control for the draft→publish flow. Autosave
@@ -50,12 +49,16 @@ type LabelKey = 'publish' | 'published' | 'publishing' | 'reverting';
  *   API: the API publishes the draft the SERVER holds, so a debounced edit
  *   (typed a redirect, pressed Publish in the same gesture) would otherwise be
  *   left out of the published config and land as a fresh draft right after.
- * - `saveStatus` is the editor's combined save state, the same snapshot the top
- *   bar's indicator renders (the form's autosave plus the Connect tab's queue).
- *   A draft only exists once a save LANDS, so between an edit and its save the
- *   server has no draft yet: without this the pill went on saying "Published"
- *   over unsaved edits, indefinitely with the API down, and below 1280px (where
- *   the indicator is hidden) that was the only signal on screen.
+ * - `saveStatus` is the save state of the form's DRAFT: the builder's own
+ *   autosave, nothing else. A draft only exists once a save LANDS, so between
+ *   an edit and its save the server has no draft yet: without this the pill
+ *   went on saying "Published" over unsaved edits, indefinitely with the API
+ *   down, and below 1280px (where the top bar's indicator is hidden) that was
+ *   the only signal on screen. It is deliberately NOT the combined state the
+ *   top bar shows: integrations are saved straight to the live form and are
+ *   never part of the draft Publish publishes, so a webhook left without a URL
+ *   (a standing `partial`) or a lost integrations save must not hold the pill
+ *   on "Publish" after a publish that did go through.
  * - `hasQuestions` is whether the form has anything to answer. A form with no
  *   questions is served by its link like any other, but there is nothing in it
  *   to call published, and the save indicator beside the pill reads "Draft".
@@ -63,10 +66,16 @@ type LabelKey = 'publish' | 'published' | 'publishing' | 'reverting';
  *
  * What the main half says, in order:
  *   publishing / reverting   in flight
- *   "Publish", enabled       a draft is pending (pressing it flushes first)
- *   "Publish", disabled      no draft yet, and edits are unsaved, saving,
- *                            retrying or failed; or the form has no questions
- *   "Published"              no draft, everything saved, and there is a form
+ *   "Publish", pressable     a draft is pending (pressing it flushes first)
+ *   "Saving…", spinner       no draft yet and an edit is on its way
+ *   "Publish", blocked       no draft yet and the save is being retried, has
+ *                            failed or hit a conflict; or no questions
+ *   "Published"              no draft, the draft's save is clean, and there
+ *                            is a form
+ * A blocked main half is `aria-disabled`, never natively `disabled`: it stays
+ * focusable and hoverable, so the reason it carries (its accessible
+ * description, and the tooltip under it) can be reached with a keyboard, a
+ * pointer or a tap. This is how the builder's other blocked controls do it.
  * "Published" does not wait for a first press of Publish: a form's config is
  * live from the moment it is created (the public link serves it, and a revert
  * dates that first version by its creation), so a form that was never published
@@ -102,8 +111,8 @@ export function PublishButton({
   formId: string;
   initialHasDraft?: boolean;
   saveCount?: number;
-  /** The editor's combined save state (`useCombinedSave`); anything but `saved` is not clean. */
-  saveStatus?: CombinedSaveState['status'];
+  /** The form draft's own save state (the builder's autosave); anything but `saved` is not clean. */
+  saveStatus?: AutosaveStatus;
   /** Whether the form has at least one question. */
   hasQuestions?: boolean;
   locale: string;
@@ -134,6 +143,9 @@ export function PublishButton({
   /** When the version a revert would bring back went live; null = nothing to revert to. */
   const [previousAt, setPreviousAt] = useState<number | null>(initialPreviousPublishedAt);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const reasonId = useId();
+  /** Whether the reason under a blocked Publish is showing (hover, keyboard focus, or a press). */
+  const [reasonOpen, setReasonOpen] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
   const busy = publishing || reverting;
   /** `saveCount` at the moment of the last successful publish; -1 = none yet. */
@@ -236,23 +248,49 @@ export function PublishButton({
 
   const canRevert = previousAt != null && !busy;
   /**
-   * What the pill is saying. `unsaved`: no draft on the server yet and the
-   * editor is not clean. `empty`: nothing unsaved, but no questions either.
+   * What the pill is saying. With no draft on the server yet: `saving` while
+   * an edit is on its way, `unsaved` when that save is being retried, failed
+   * or hit a conflict. `empty`: nothing unsaved, but no questions either.
    * `idle`: the only state that reads "Published".
    */
-  const state: 'busy' | 'pending' | 'unsaved' | 'empty' | 'idle' = busy
+  const state: 'busy' | 'pending' | 'saving' | 'unsaved' | 'empty' | 'idle' = busy
     ? 'busy'
     : hasDraft
       ? 'pending'
-      : saveStatus !== 'saved'
-        ? 'unsaved'
-        : hasQuestions
-          ? 'idle'
-          : 'empty';
+      : saveStatus === 'saving'
+        ? 'saving'
+        : saveStatus !== 'saved'
+          ? 'unsaved'
+          : hasQuestions
+            ? 'idle'
+            : 'empty';
   const idle = state === 'idle';
-  /** The save is on its way (or being retried), as opposed to stopped on a failure. */
-  const saveInFlight = saveStatus === 'saving' || saveStatus === 'retrying';
-  const current: LabelKey = publishing ? 'publishing' : reverting ? 'reverting' : idle ? 'published' : 'publish';
+  /** Pressing the main half does nothing in every state but `pending`. */
+  const blocked = state !== 'pending';
+  /** Why, as a sentence: the main half's description and its tooltip. None while publishing (the label says it). */
+  const reason =
+    state === 'idle'
+      ? m.noChanges
+      : state === 'saving'
+        ? m.blockedSaving
+        : state === 'empty'
+          ? m.blockedEmpty
+          : state === 'unsaved'
+            ? saveStatus === 'conflict'
+              ? m.blockedConflict
+              : saveStatus === 'retrying'
+                ? m.blockedRetrying
+                : m.blockedSaveFailed
+            : null;
+  const current: LabelKey = publishing
+    ? 'publishing'
+    : reverting
+      ? 'reverting'
+      : idle
+        ? 'published'
+        : state === 'saving'
+          ? 'saving'
+          : 'publish';
   // Every label the main half can show, stacked in one grid cell so the half is
   // always as wide as the widest of them: the pill never resizes (and shifts the
   // topbar) when it flips between states. Only the current one is visible, and
@@ -261,6 +299,7 @@ export function PublishButton({
   const labels: { key: LabelKey; text: string; icon?: string }[] = [
     { key: 'publish', text: m.publish },
     { key: 'published', text: messages.admin.forms.statusLive, icon: 'pi pi-check' },
+    { key: 'saving', text: m.saving, icon: 'pi pi-spinner' },
     { key: 'publishing', text: m.publishing, icon: 'pi pi-spinner' },
     { key: 'reverting', text: m.reverting, icon: 'pi pi-spinner' },
   ];
@@ -282,7 +321,7 @@ export function PublishButton({
         data-testid="publish-control"
         data-state={state}
         className={cn(
-          'inline-flex h-9 shrink-0 items-stretch rounded-full text-sm font-semibold',
+          'relative inline-flex h-9 shrink-0 items-stretch rounded-full text-sm font-semibold',
           idle
             ? 'bg-card text-foreground shadow-[inset_0_0_0_1px_var(--signal-edge)]'
             : 'bg-signal text-signal-foreground',
@@ -290,15 +329,34 @@ export function PublishButton({
       >
         <button
           type="button"
-          onClick={publish}
-          disabled={!hasDraft || busy}
+          // Pressing a blocked Publish shows why instead of doing nothing: on a
+          // touch screen there is no hover and no keyboard focus to do it.
+          onClick={() => {
+            if (blocked) {
+              setReasonOpen(reason != null);
+              return;
+            }
+            setReasonOpen(false);
+            void publish();
+          }}
+          aria-disabled={blocked || undefined}
           aria-busy={busy || undefined}
-          title={idle ? m.noChanges : undefined}
+          aria-describedby={reason ? reasonId : undefined}
+          onMouseEnter={() => setReasonOpen(true)}
+          onMouseLeave={() => setReasonOpen(false)}
+          onFocus={(e) => {
+            // Keyboard focus only: a click focuses too, and has its own branch above.
+            if (e.currentTarget.matches(':focus-visible')) setReasonOpen(true);
+          }}
+          onBlur={() => setReasonOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setReasonOpen(false);
+          }}
           data-testid="publish-button"
           className={cn(
             SEGMENT,
             'whitespace-nowrap rounded-l-full pl-4 pr-3',
-            state === 'busy' || (state === 'unsaved' && saveInFlight)
+            state === 'busy' || state === 'saving'
               ? 'cursor-progress'
               : state === 'idle'
                 ? 'cursor-default'
@@ -399,6 +457,26 @@ export function PublishButton({
             </span>
           </button>
         </AnchoredMenu>
+        {/* Why the main half cannot be pressed. ALWAYS in the tree while there
+            is a reason, so a screen reader has the description the moment the
+            button takes focus; drawn as a tooltip only on hover, keyboard
+            focus or a press. Its own weight and colours: it sits inside the
+            pill, which is semibold and may be green. */}
+        {reason ? (
+          <span
+            id={reasonId}
+            role="tooltip"
+            data-testid="publish-reason"
+            data-open={reasonOpen || undefined}
+            className={
+              reasonOpen
+                ? 'absolute right-0 top-full z-50 mt-1.5 w-56 cursor-default whitespace-normal rounded-md border border-border bg-popover px-2.5 py-2 text-left text-xs font-normal leading-relaxed text-popover-foreground shadow-lg'
+                : 'sr-only'
+            }
+          >
+            {reason}
+          </span>
+        ) : null}
       </div>
       {dialog}
     </>

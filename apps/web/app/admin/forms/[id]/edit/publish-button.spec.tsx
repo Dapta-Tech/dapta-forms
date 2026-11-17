@@ -28,6 +28,11 @@ vi.mock('@/app/admin/actions', () => actions);
 const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), toast: vi.fn() }));
 vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
 
+import {
+  publishFormSave,
+  publishIntegrationsSave,
+  readCombinedSave,
+} from '@/lib/integrations-save-status';
 import { PublishButton } from './publish-button';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -39,16 +44,30 @@ let root: Root;
 let host: HTMLDivElement;
 const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelector<T>(sel);
 const click = (el: Element | null) => act(async () => (el as HTMLElement).click());
+/**
+ * Not pressable. The main half is `aria-disabled`, never natively `disabled`:
+ * it has to stay focusable and hoverable so its reason can be reached.
+ */
+const isBlocked = (el: Element | null) => el!.getAttribute('aria-disabled') === 'true';
+/** The accessible description: the text of whatever `aria-describedby` points at. */
+const describedBy = (el: Element) =>
+  (el.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => document.getElementById(id)?.textContent ?? '')
+    .join(' ')
+    .trim();
 
 const flush = vi.fn();
 const onReverted = vi.fn();
 
-type SaveStatus = 'saved' | 'saving' | 'partial' | 'retrying' | 'error' | 'conflict';
+/** The form DRAFT's save states (the builder's autosave). No `partial`: that one is the integrations'. */
+type SaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'conflict';
 interface MountOpts {
   previousAt?: number | null;
   hasDraft?: boolean;
   locale?: Locale;
-  /** The editor's combined save state; `saved` (clean) unless a test says otherwise. */
+  /** The draft's own save state; `saved` (clean) unless a test says otherwise. */
   saveStatus?: SaveStatus;
   hasQuestions?: boolean;
   /** Successful autosaves so far: each one writes a draft. */
@@ -124,7 +143,7 @@ afterEach(async () => {
 describe('the publish menu', () => {
   it('sits beside Publish and opens even with nothing to publish', async () => {
     await mount({ hasDraft: false });
-    expect($<HTMLButtonElement>('[data-testid="publish-button"]')!.disabled).toBe(true);
+    expect(isBlocked($('[data-testid="publish-button"]'))).toBe(true);
     const trigger = $<HTMLButtonElement>('[data-testid="publish-menu-button"]')!;
     expect(trigger.disabled).toBe(false);
     expect(trigger.getAttribute('aria-label')).toBe(m.moreOptions);
@@ -194,6 +213,7 @@ describe('the Publish pill', () => {
     expect(stacked.map((el) => (el as HTMLElement).dataset.label)).toEqual([
       'publish',
       'published',
+      'saving',
       'publishing',
       'reverting',
     ]);
@@ -213,7 +233,7 @@ describe('the Publish pill', () => {
     expect(classes(control())).toEqual(
       expect.arrayContaining(['bg-signal', 'text-signal-foreground']),
     );
-    expect(main().disabled).toBe(false);
+    expect(isBlocked(main())).toBe(false);
     expect(main().className).not.toMatch(/cursor-not-allowed/);
     expect(label()).toBe(m.publish);
     expectOnePill();
@@ -231,8 +251,8 @@ describe('the Publish pill', () => {
     expect(classes(control()).some((c) => /muted/.test(c))).toBe(false);
     expect(label()).toBe(getMessages('en').admin.forms.statusLive);
     expect($('[data-current] .pi-check')).not.toBeNull();
-    expect(main().disabled).toBe(true);
-    expect(main().getAttribute('title')).toBe(m.noChanges);
+    expect(isBlocked(main())).toBe(true);
+    expect(describedBy(main())).toBe(m.noChanges);
     // The menu half stays usable: revert is useful exactly now.
     expect(chevron().disabled).toBe(false);
     expectOnePill();
@@ -245,7 +265,7 @@ describe('the Publish pill', () => {
     await click(main());
     expect(control().dataset.state).toBe('busy');
     expect(classes(control())).toContain('bg-signal');
-    expect(main().disabled).toBe(true);
+    expect(isBlocked(main())).toBe(true);
     expect(main().getAttribute('aria-busy')).toBe('true');
     expect(label()).toBe(m.publishing);
     expect($('[data-current] .pi-spin')).not.toBeNull();
@@ -277,14 +297,15 @@ describe('the Publish pill', () => {
 });
 
 /**
- * What the main half is CALLED, state by state. Eight e2e specs located this
- * button by the name "Publish"; when the idle label became "Published" they
- * found nothing, and one of them was missed for a release. Pinned here by the
- * accessible name, so a renamed label fails a unit test before it reaches a
- * locator, and so the pill can never again claim "Published" over edits the
- * server does not hold.
+ * What the main half is CALLED, state by state, and what it says about why it
+ * cannot be pressed. Eight e2e specs located this button by the name
+ * "Publish"; when the idle label became "Published" they found nothing, and
+ * one of them was missed for a release. Pinned here by the accessible name and
+ * description, so a renamed label fails a unit test before it reaches a
+ * locator, the pill can never again claim "Published" over edits the server
+ * does not hold, and a blocked Publish is never silent about its cause.
  */
-describe('the accessible name of Publish, by state', () => {
+describe('the accessible name and description of Publish, by state', () => {
   const main = () => $<HTMLButtonElement>('[data-testid="publish-button"]')!;
   const state = () => $('[data-testid="publish-control"]')!.dataset.state;
   /**
@@ -306,117 +327,155 @@ describe('the accessible name of Publish, by state', () => {
   const es = getMessages('es');
   const PUBLISH = en.admin.publish.publish;
   const PUBLISHED = en.admin.forms.statusLive;
+  const SAVING = en.admin.publish.saving;
 
-  it('keeps the two words apart, in both languages', () => {
+  it('keeps the words apart, in both languages', () => {
     // If these ever collapse into one word the states stop being tellable apart.
     expect(PUBLISH).toBe('Publish');
     expect(PUBLISHED).toBe('Published');
+    expect(SAVING).toBe('Saving…');
     expect(es.admin.publish.publish).toBe('Publicar');
     expect(es.admin.forms.statusLive).toBe('Publicado');
+    expect(es.admin.publish.saving).toBe('Guardando…');
   });
 
-  const cases: { name: string; opts: MountOpts; expected: string; disabled: boolean; state: string }[] = [
+  interface Case {
+    name: string;
+    opts: MountOpts;
+    expected: string;
+    blocked: boolean;
+    state: string;
+    /** The accessible description; '' = none (the button can be pressed). */
+    reason: string;
+  }
+  const cases: Case[] = [
     {
       // Its config is live from creation (the link serves it), with or without
       // a first press of Publish. `previousAt: null` = no earlier version.
       name: 'never published through the draft flow, clean, with questions',
       opts: { hasDraft: false, previousAt: null },
       expected: PUBLISHED,
-      disabled: true,
+      blocked: true,
       state: 'idle',
+      reason: m.noChanges,
     },
     {
       name: 'never published and with no questions yet',
       opts: { hasDraft: false, previousAt: null, hasQuestions: false },
       expected: PUBLISH,
-      disabled: true,
+      blocked: true,
       state: 'empty',
+      reason: m.blockedEmpty,
     },
     {
       name: 'published and clean',
       opts: { hasDraft: false, previousAt: PREVIOUS_AT },
       expected: PUBLISHED,
-      disabled: true,
+      blocked: true,
       state: 'idle',
+      reason: m.noChanges,
     },
     {
-      // `saving` is what the editor reports from the first keystroke on (the
+      // `saving` is what the autosave reports from the first keystroke on (the
       // debounce counts as saving), so this is "dirty" too.
       name: 'dirty or saving: an edit the server does not hold yet',
       opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'saving' },
-      expected: PUBLISH,
-      disabled: true,
-      state: 'unsaved',
+      expected: SAVING,
+      blocked: true,
+      state: 'saving',
+      reason: m.blockedSaving,
     },
     {
       name: 'retrying a save (the API is down)',
       opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'retrying' },
       expected: PUBLISH,
-      disabled: true,
+      blocked: true,
       state: 'unsaved',
+      reason: m.blockedRetrying,
     },
     {
       name: 'save failed',
       opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'error' },
       expected: PUBLISH,
-      disabled: true,
+      blocked: true,
       state: 'unsaved',
+      reason: m.blockedSaveFailed,
     },
     {
       name: 'save stopped on a conflict',
       opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'conflict' },
       expected: PUBLISH,
-      disabled: true,
+      blocked: true,
       state: 'unsaved',
-    },
-    {
-      name: 'saved except one integration card',
-      opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'partial' },
-      expected: PUBLISH,
-      disabled: true,
-      state: 'unsaved',
+      reason: m.blockedConflict,
     },
     {
       name: 'a draft is pending',
       opts: { hasDraft: true, previousAt: PREVIOUS_AT },
       expected: PUBLISH,
-      disabled: false,
+      blocked: false,
       state: 'pending',
+      reason: '',
     },
     {
       // Pressing it flushes the save first, so it does not wait for one.
       name: 'a draft is pending and a newer edit is still saving',
       opts: { hasDraft: true, previousAt: PREVIOUS_AT, saveStatus: 'saving' },
       expected: PUBLISH,
-      disabled: false,
+      blocked: false,
       state: 'pending',
+      reason: '',
     },
     {
       name: 'a draft is pending and the last save failed',
       opts: { hasDraft: true, previousAt: PREVIOUS_AT, saveStatus: 'error' },
       expected: PUBLISH,
-      disabled: false,
+      blocked: false,
       state: 'pending',
+      reason: '',
     },
   ];
 
   for (const c of cases) {
-    it(`${c.name}: "${c.expected}", ${c.disabled ? 'disabled' : 'enabled'}`, async () => {
+    it(`${c.name}: "${c.expected}", ${c.blocked ? 'blocked' : 'pressable'}`, async () => {
       await mount(c.opts);
       expect(accessibleName(main())).toBe(c.expected);
-      expect(main().disabled).toBe(c.disabled);
+      expect(isBlocked(main())).toBe(c.blocked);
       expect(state()).toBe(c.state);
-      // "All changes are published" is only ever the tooltip of "Published".
-      expect(main().getAttribute('title')).toBe(c.expected === PUBLISHED ? m.noChanges : null);
+      expect(describedBy(main())).toBe(c.reason);
+      // Never natively disabled: that would take it out of the tab order and
+      // put its reason out of a keyboard's reach.
+      expect(main().disabled).toBe(false);
+      expect(main().hasAttribute('disabled')).toBe(false);
+      // No native `title` beside the tooltip (two bubbles saying the same thing).
+      expect(main().hasAttribute('title')).toBe(false);
     });
   }
 
-  it('never reads "Published" unless the save state is clean, whatever else is true', async () => {
-    for (const saveStatus of ['saving', 'partial', 'retrying', 'error', 'conflict'] as const) {
+  it('gives every blocked state a reason of its own, in English and Spanish', () => {
+    for (const cat of [en.admin.publish, es.admin.publish]) {
+      const reasons = [
+        cat.noChanges,
+        cat.blockedSaving,
+        cat.blockedRetrying,
+        cat.blockedSaveFailed,
+        cat.blockedConflict,
+        cat.blockedEmpty,
+      ];
+      for (const r of reasons) expect(r.trim().length).toBeGreaterThan(10);
+      expect(new Set(reasons).size).toBe(reasons.length);
+    }
+    expect(es.admin.publish.blockedSaving).not.toBe(en.admin.publish.blockedSaving);
+  });
+
+  it('never reads "Published" unless the draft save is clean, whatever else is true', async () => {
+    for (const saveStatus of ['saving', 'retrying', 'error', 'conflict'] as const) {
       for (const hasDraft of [false, true]) {
         for (const hasQuestions of [false, true]) {
           await mount({ saveStatus, hasDraft, hasQuestions, previousAt: PREVIOUS_AT });
-          expect(accessibleName(main()), `${saveStatus} draft=${hasDraft} questions=${hasQuestions}`).toBe(PUBLISH);
+          const name = accessibleName(main());
+          expect(name, `${saveStatus} draft=${hasDraft} questions=${hasQuestions}`).not.toBe(PUBLISHED);
+          expect([PUBLISH, SAVING]).toContain(name);
           expect(document.querySelector('[data-current] .pi-check')).toBeNull();
           await act(async () => root.unmount());
           host.remove();
@@ -426,57 +485,62 @@ describe('the accessible name of Publish, by state', () => {
     await mount();
   });
 
-  it('while publishing: "Publishing…", disabled', async () => {
+  it('while publishing: "Publishing…", blocked, busy, with no reason to give', async () => {
     actions.publishFormAction.mockReturnValue(new Promise(() => {}));
     await mount({ hasDraft: true });
     await click(main());
     expect(accessibleName(main())).toBe(m.publishing);
-    expect(main().disabled).toBe(true);
+    expect(isBlocked(main())).toBe(true);
+    expect(main().getAttribute('aria-busy')).toBe('true');
+    expect(describedBy(main())).toBe('');
     expect(state()).toBe('busy');
   });
 
-  it('while reverting: "Reverting…", disabled', async () => {
+  it('while reverting: "Reverting…", blocked', async () => {
     actions.revertFormAction.mockReturnValue(new Promise(() => {}));
     await mount({ previousAt: PREVIOUS_AT });
     await openMenu();
     await click(revertItem());
     await click($('[data-testid="confirm-dialog-confirm"]'));
     expect(accessibleName(main())).toBe(m.reverting);
-    expect(main().disabled).toBe(true);
+    expect(isBlocked(main())).toBe(true);
     expect(state()).toBe('busy');
   });
 
-  it('follows an edit: Published, then Publish (disabled) at the first keystroke, then enabled when the save lands', async () => {
+  it('follows an edit: Published, Saving… with a spinner at the first keystroke, Publish when the save lands', async () => {
     await mount({ previousAt: PREVIOUS_AT });
     expect(accessibleName(main())).toBe(PUBLISHED);
 
     await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'saving' });
-    expect(accessibleName(main())).toBe(PUBLISH);
-    expect(main().disabled).toBe(true);
+    expect(accessibleName(main())).toBe(SAVING);
+    expect(isBlocked(main())).toBe(true);
+    // The transient state is the only blocked one that LOOKS not pressable.
+    expect($('[data-current] .pi-spinner.pi-spin')).not.toBeNull();
 
-    // The API is down: retrying, then failed. Still not "Published".
+    // The API is down: retrying, then failed. Not "Published", and no spinner:
+    // how the standing blocked states look is the product owner's call.
     await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'retrying' });
     expect(accessibleName(main())).toBe(PUBLISH);
+    expect($('[data-current] .pi-spin')).toBeNull();
+    expect(describedBy(main())).toBe(m.blockedRetrying);
     await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'error' });
     expect(accessibleName(main())).toBe(PUBLISH);
-    expect(main().disabled).toBe(true);
+    expect(isBlocked(main())).toBe(true);
+    expect(describedBy(main())).toBe(m.blockedSaveFailed);
 
-    // The save lands. The count moves one render before the combined status
-    // does (it is published from an effect): already a pending draft.
-    await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'saving', saveCount: 1 });
-    expect(accessibleName(main())).toBe(PUBLISH);
-    expect(main().disabled).toBe(false);
+    // The save lands: a draft is pending.
     await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'saved', saveCount: 1 });
     expect(accessibleName(main())).toBe(PUBLISH);
-    expect(main().disabled).toBe(false);
+    expect(isBlocked(main())).toBe(false);
+    expect(describedBy(main())).toBe('');
     expect(state()).toBe('pending');
   });
 
-  it('keeps the width reserved in the unsaved and empty states too', async () => {
-    for (const opts of [{ saveStatus: 'saving' as const }, { hasQuestions: false }]) {
+  it('keeps the width reserved in the saving, unsaved and empty states too', async () => {
+    for (const opts of [{ saveStatus: 'saving' as const }, { saveStatus: 'error' as const }, { hasQuestions: false }]) {
       await mount(opts);
       const stacked = [...main().querySelectorAll('[data-label]')].map((el) => (el as HTMLElement).dataset.label);
-      expect(stacked).toEqual(['publish', 'published', 'publishing', 'reverting']);
+      expect(stacked).toEqual(['publish', 'published', 'saving', 'publishing', 'reverting']);
       // They wear the pending look: solid green, never the Published surface.
       expect($('[data-testid="publish-control"]')!.className).toMatch(/\bbg-signal\b/);
       await act(async () => root.unmount());
@@ -485,16 +549,134 @@ describe('the accessible name of Publish, by state', () => {
     await mount();
   });
 
-  it('speaks Spanish: Publicado, Publicar, Publicando…', async () => {
+  it('speaks Spanish: Publicado, Guardando…, Publicar, Publicando…, with Spanish reasons', async () => {
+    const pm = es.admin.publish;
     await mount({ locale: 'es', previousAt: PREVIOUS_AT });
     expect(accessibleName(main())).toBe('Publicado');
+    expect(describedBy(main())).toBe(pm.noChanges);
     await rerender({ locale: 'es', previousAt: PREVIOUS_AT, saveStatus: 'saving' });
+    expect(accessibleName(main())).toBe('Guardando…');
+    expect(describedBy(main())).toBe(pm.blockedSaving);
+    await rerender({ locale: 'es', previousAt: PREVIOUS_AT, saveStatus: 'conflict' });
     expect(accessibleName(main())).toBe('Publicar');
+    expect(describedBy(main())).toBe(pm.blockedConflict);
+    await rerender({ locale: 'es', previousAt: PREVIOUS_AT, hasQuestions: false });
+    expect(describedBy(main())).toBe(pm.blockedEmpty);
     await rerender({ locale: 'es', previousAt: PREVIOUS_AT, saveStatus: 'saved', saveCount: 1 });
     expect(accessibleName(main())).toBe('Publicar');
     actions.publishFormAction.mockReturnValue(new Promise(() => {}));
     await click(main());
-    expect(accessibleName(main())).toBe(es.admin.publish.publishing);
+    expect(accessibleName(main())).toBe(pm.publishing);
+  });
+});
+
+/**
+ * The pill follows the form DRAFT's save, not the top bar's combined state.
+ * Integrations are saved straight to the live form and are never part of the
+ * draft Publish publishes. Fed the combined state, a webhook switched on with
+ * no URL (a standing `partial`) or a lost integrations save left the pill on a
+ * blocked "Publish" right after a publish that had gone through.
+ */
+describe('the pill and the integrations save', () => {
+  const main = () => $<HTMLButtonElement>('[data-testid="publish-button"]')!;
+  const label = () => main().querySelector('[data-current]')!.textContent;
+  const FORM = 'form-combined';
+
+  for (const integrations of ['partial', 'error', 'retrying', 'saving'] as const) {
+    it(`reads "Published" with a clean, published draft while the integrations are on ${integrations}`, async () => {
+      const draft = { status: 'saved', detail: null } as const;
+      publishFormSave(FORM, draft);
+      publishIntegrationsSave(FORM, { status: integrations, detail: 'webhook has no URL', lost: integrations === 'error' });
+      // The top bar goes on showing the worse of the two...
+      expect(readCombinedSave(FORM).status).toBe(integrations);
+      // ...and the pill, fed what the editor feeds it (the draft's own state), does not.
+      await mount({ previousAt: PREVIOUS_AT, saveStatus: draft.status });
+      expect(label()).toBe(getMessages('en').admin.forms.statusLive);
+      expect($('[data-testid="publish-control"]')!.dataset.state).toBe('idle');
+      publishIntegrationsSave(FORM, { status: 'saved', detail: null });
+    });
+  }
+
+  it('does not read "Published" when it is the DRAFT save that is dirty or failed, integrations clean', async () => {
+    publishIntegrationsSave(FORM, { status: 'saved', detail: null });
+    for (const status of ['saving', 'retrying', 'error', 'conflict'] as const) {
+      publishFormSave(FORM, { status, detail: null });
+      expect(readCombinedSave(FORM).status).toBe(status);
+      await mount({ previousAt: PREVIOUS_AT, saveStatus: status });
+      expect(label()).not.toBe(getMessages('en').admin.forms.statusLive);
+      await act(async () => root.unmount());
+      host.remove();
+    }
+    publishFormSave(FORM, { status: 'saved', detail: null });
+    await mount();
+  });
+
+  it('cannot be handed the combined state: `partial` is not a draft save state', () => {
+    // If this line ever compiles, the prop was widened back to the combined
+    // status and the editor can wire the wrong one without a type error.
+    // @ts-expect-error `CombinedSaveState['status']` includes `partial`
+    const wrong = <PublishButton formId={FORM} locale="en" saveStatus={readCombinedSave(FORM).status} />;
+    expect(wrong).toBeTruthy();
+  });
+});
+
+/**
+ * The reason, as a tooltip. Hidden from sight (not from the tree) until the
+ * main half is hovered, focused with the keyboard, or pressed while blocked.
+ */
+describe('the reason under a blocked Publish', () => {
+  const main = () => $<HTMLButtonElement>('[data-testid="publish-button"]')!;
+  const reason = () => $('[data-testid="publish-reason"]');
+  const hover = (type: 'mouseover' | 'mouseout') =>
+    act(async () => {
+      main().dispatchEvent(new MouseEvent(type, { bubbles: true }));
+    });
+
+  it('is in the tree but visually hidden, and wired as the description', async () => {
+    await mount({ hasQuestions: false });
+    expect(reason()!.textContent).toBe(m.blockedEmpty);
+    expect(reason()!.getAttribute('role')).toBe('tooltip');
+    expect(reason()!.className).toBe('sr-only');
+    expect(main().getAttribute('aria-describedby')).toBe(reason()!.id);
+    // A sibling of the button, not inside it: it must not leak into the name.
+    expect(main().contains(reason())).toBe(false);
+  });
+
+  it('shows on hover and hides on leave, at normal weight', async () => {
+    await mount({ saveStatus: 'error' });
+    await hover('mouseover');
+    expect(reason()!.dataset.open).toBe('true');
+    expect(reason()!.className).not.toMatch(/\bsr-only\b/);
+    expect(reason()!.className).toMatch(/\bfont-normal\b/);
+    await hover('mouseout');
+    expect(reason()!.className).toBe('sr-only');
+  });
+
+  it('shows on a press of the blocked button, publishes nothing, and Escape puts it away', async () => {
+    await mount({ saveStatus: 'conflict' });
+    await click(main());
+    expect(actions.publishFormAction).not.toHaveBeenCalled();
+    expect(flush).not.toHaveBeenCalled();
+    expect(reason()!.dataset.open).toBe('true');
+    expect(reason()!.textContent).toBe(m.blockedConflict);
+    await act(async () => {
+      main().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(reason()!.className).toBe('sr-only');
+  });
+
+  it('is absent when Publish can be pressed, and a press publishes', async () => {
+    actions.publishFormAction.mockResolvedValue({
+      ok: true,
+      updatedAt: 1_700_000_000_100,
+      saved: { name: 'Lead quiz', config: { version: 1, steps: [] } },
+      previousPublishedAt: PREVIOUS_AT,
+    });
+    await mount({ hasDraft: true });
+    expect(reason()).toBeNull();
+    expect(main().hasAttribute('aria-describedby')).toBe(false);
+    await click(main());
+    expect(actions.publishFormAction).toHaveBeenCalledTimes(1);
   });
 });
 
