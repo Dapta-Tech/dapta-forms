@@ -1,6 +1,6 @@
 import { unstable_rethrow } from 'next/navigation';
 import { getMessages } from '@quill/shared';
-import { adminApi, type AccountWebhook, type IntegrationsResponse } from '@/lib/admin-api';
+import { adminApi, isAdminRole, type AccountWebhook, type IntegrationsResponse } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { PageHeader } from '@/components/ui/page-header';
 import { ConnectionsPanel, type OauthOutcome } from './connections-panel';
@@ -45,7 +45,8 @@ export default async function ConnectionsPage({
   const oauthOutcome = oauthOutcomeOf(await searchParams);
   const locale = await getLocale();
   const c = getMessages(locale).admin.connections;
-  const timeZone = (await adminApi.me()).timezone ?? 'UTC';
+  const me = await adminApi.me();
+  const timeZone = me.timezone ?? 'UTC';
 
   let data: IntegrationsResponse = { encryptionAvailable: false, providers: [] };
   let loadError = false;
@@ -79,6 +80,7 @@ export default async function ConnectionsPage({
         dcal={data.dcal ?? null}
         loadError={loadError}
         oauthOutcome={oauthOutcome}
+        canManage={isAdminRole(me.role)}
         messages={c}
         locale={locale}
       />

@@ -9,7 +9,13 @@ import {
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
-import { WEBHOOK_SECRET_MASK, type DestinationEvent, type FormDestination } from '@quill/types';
+import {
+  sheetCells,
+  WEBHOOK_SECRET_MASK,
+  sheetBaselineHeaders,
+  type DestinationEvent,
+  type FormDestination,
+} from '@quill/types';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -17,7 +23,7 @@ import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { ProviderLogo } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
-import { callAction, isTransportError } from '@/lib/call-action';
+import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { browserTimezones, isKnownTimezone } from '@/lib/timezones';
 import { useAutosave } from '@/lib/use-autosave';
 import { cn } from '@/lib/cn';
@@ -32,8 +38,16 @@ import type {
 } from '@/lib/admin-api';
 import { TokenConnectForm } from '@/app/admin/integrations/connect-forms';
 import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
-import { publishIntegrationsSave, readIntegrationsSave, useCombinedSave } from '@/lib/integrations-save-status';
-import { enqueueIntegrationsSave, subscribeIntegrationsSave } from '@/lib/integrations-save-queue';
+import {
+  acknowledgeLostIntegrationsSave,
+  markLostSaveAnnounced,
+  publishIntegrationsSave,
+  readIntegrationsSave,
+  setConnectTabOpen,
+  useCombinedSave,
+  useIntegrationsSave,
+} from '@/lib/integrations-save-status';
+import { enqueueIntegrationsSave, runDestinationWrite, subscribeIntegrationsSave } from '@/lib/integrations-save-queue';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
 import {
@@ -53,7 +67,12 @@ import {
   sharedOptionsFor,
   targetPropertiesFor,
 } from './property-options';
-import { hubspotPropertiesAction, pingWebhookAction, saveIntegrationsAction } from './actions';
+import {
+  hubspotPropertiesAction,
+  mergeIntegrationCardAction,
+  pingWebhookAction,
+  saveIntegrationsAction,
+} from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
@@ -262,6 +281,10 @@ export function initialGoogleSheets(destinations: FormDestination[]): GoogleShee
     spreadsheetId: stored.settings?.spreadsheetId ?? '',
     sheetTitle: stored.settings?.sheetTitle ?? '',
     columns: stored.columns ?? [],
+    // What the API will count the columns against on the next save: the row
+    // 1 it has on record, or for a config older than that, the stored
+    // columns' own headings.
+    writtenHeaders: sheetBaselineHeaders(stored),
   };
 }
 
@@ -541,6 +564,22 @@ export function IntegrationsEditor({
   // The form's save queue retries a failed save itself only while nobody is
   // on the tab; while this editor is mounted, its controller does.
   useEffect(() => subscribeIntegrationsSave(id), [id]);
+  // While this editor is on screen, a card left out of a save (`partial`) is
+  // the save state; elsewhere it is only marked on the Connect tab.
+  useEffect(() => {
+    setConnectTabOpen(id, true);
+    return () => setConnectTabOpen(id, false);
+  }, [id]);
+  // Whether this editor is still on screen. A card action can finish after
+  // the tab was left (a spreadsheet being created in Drive), and what it does
+  // then must neither claim a save that will never run nor be thrown away.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
@@ -821,6 +860,12 @@ export function IntegrationsEditor({
       // Only a save that touched the headings or the spreadsheet reports one;
       // any other save leaves the last outcome on the card.
       if (res.sheetHeaders) setSheetHeaderSync(res.sheetHeaders);
+      // What the API now has on record for row 1: not an edit (nothing is
+      // marked dirty), only what the card's letters are counted against.
+      if (res.sheetWritten !== undefined) {
+        const written = res.sheetWritten;
+        setSheets((prev) => ({ ...prev, writtenHeaders: written }));
+      }
       // This array is now the server truth — the malformed-URL fallback carries
       // it forward instead of the stale mount snapshot.
       savedDestinations.current = built.destinations;
@@ -850,24 +895,33 @@ export function IntegrationsEditor({
   // On mount the tab shows what the server holds (it waited for any write a
   // previous mount left in flight), so that is the truth to publish: never a
   // status inherited from an earlier visit. A change that was lost after the
-  // author left is said once, here, since it is not on the screen they see.
+  // author left is the exception: it is not on the screen they see, so the
+  // state STAYS an error (topbar, pill, and the notice below) until they
+  // dismiss the notice or a later save succeeds. It is said in a toast ONCE
+  // per lost change (`announced`), not on every visit to the tab.
   useEffect(() => {
     const previous = readIntegrationsSave(id);
     if (previous?.lost) {
-      // Said once, and the state STAYS an error (topbar and pill) until a
-      // later save succeeds: what was lost is not on this screen, and a green
-      // "saved" beside the notice would contradict it.
-      errorRef.current(m.saveLostAfterLeave);
+      if (!previous.announced) {
+        markLostSaveAnnounced(id);
+        errorRef.current(previous.detail ?? m.saveLostAfterLeave);
+      }
       return;
     }
     publishIntegrationsSave(id, { status: 'saved' });
   }, [id, m]);
+  const integrationsSave = useIntegrationsSave(id);
   // Whether the author has edited anything on this visit. The pill says
   // nothing before that: no "saved" (or any advisory) on a page just opened.
   const [saveTouched, setSaveTouched] = useState(false);
   // An edit makes the topbar and the pill say "Saving" at once, rather than
   // only when the debounced save starts.
   const markDirty = useCallback(() => {
+    // Nothing saves an edit made on an editor that is gone (its controller
+    // is disposed), so nothing may say "Saving" for it: the topbar would sit
+    // on it until the next visit to this tab. See `editSheets` for what a
+    // card action that finishes late does instead.
+    if (!mountedRef.current) return;
     setSaveTouched(true);
     publishIntegrationsSave(id, { status: 'saving' });
     markDirtyRaw();
@@ -900,10 +954,34 @@ export function IntegrationsEditor({
   );
   const editSheets = useCallback(
     (next: GoogleSheetsState) => {
+      if (!mountedRef.current) {
+        // The card's action finished after the tab was left: "Create sheet"
+        // was pressed, the author moved to Build, and the spreadsheet now
+        // exists in their Drive. It is attached to the form as an OUTSIDE
+        // write on the form's save lane (`runDestinationWrite`): one card,
+        // merged onto what the form stores at that moment.
+        //
+        // NOT as a snapshot. It was enqueued as one, and a snapshot replaces
+        // the save waiting behind it and cancels the retry of a failed one:
+        // with Salesforce switched on just before leaving and that last save
+        // failing once, only the spreadsheet was sent, the topbar said
+        // "saved" and the Salesforce change was gone. As an outside write it
+        // waits for that save (and its retries) and lands on top of it.
+        const card = builtGoogleSheets(next);
+        if (!card) return;
+        void runDestinationWrite(
+          id,
+          // The merge is idempotent (it sets this one card), so a dropped
+          // connection is retried in place before the change is called lost.
+          () => callActionWithRetry(() => mergeIntegrationCardAction(id, card), { attempts: 3, baseDelayMs: 1500 }),
+          { report: { lost: m.saveLostAfterLeave } },
+        );
+        return;
+      }
       setSheets(next);
       markDirty();
     },
-    [markDirty],
+    [id, m, markDirty],
   );
   const editSalesforce = useCallback(
     (next: SalesforceState) => {
@@ -915,6 +993,13 @@ export function IntegrationsEditor({
 
   return (
     <div className="flex flex-col gap-6">
+      {integrationsSave?.lost ? (
+        <LostChangeNotice
+          text={integrationsSave.detail ?? m.saveLostAfterLeave}
+          dismissLabel={m.saveLostDismiss}
+          onDismiss={() => acknowledgeLostIntegrationsSave(id)}
+        />
+      ) : null}
       <WebhookCard
         state={webhook}
         onChange={editWebhook}
@@ -925,6 +1010,7 @@ export function IntegrationsEditor({
         // refetches the live config every time it is opened, so this is as
         // fresh as the array the card was seeded from.
         carriedCount={carriedWebhooks(initialDestinations).length}
+        canTest={access.canConnect}
         partialsHeld={partialsHeld}
         locale={locale}
         m={m}
@@ -970,7 +1056,17 @@ export function IntegrationsEditor({
           formId={id}
           access={access}
           headerSync={sheetHeaderSync}
-          onHeaderSync={setSheetHeaderSync}
+          onHeaderSync={(sync) => {
+            setSheetHeaderSync(sync);
+            // The button (or the confirmed replace) left row 1 equal to the
+            // stored columns: that is the row the card counts against now.
+            if (sync?.outcome === 'written' || sync?.outcome === 'unchanged') {
+              setSheets((prev) => ({
+                ...prev,
+                writtenHeaders: sheetCells(storedColumns(prev.columns), prev.writtenHeaders).map((c) => c.header),
+              }));
+            }
+          }}
           beforeHeaderSync={autosave.flush}
           locale={locale}
           m={m}
@@ -998,6 +1094,50 @@ export function IntegrationsEditor({
         touched={saveTouched || shared.lost}
         m={m}
       />
+    </div>
+  );
+}
+
+/**
+ * "Your last change here was not saved", on the page, with a way to put it
+ * down. The tab under it already shows what the server holds, so once the
+ * author has read it there is nothing left to warn about: dismissing it
+ * clears the error from the topbar and the pill. Until then it stays.
+ */
+function LostChangeNotice({
+  text,
+  dismissLabel,
+  onDismiss,
+}: {
+  text: string;
+  dismissLabel: string;
+  onDismiss: () => void;
+}) {
+  // Brought into view once: the tab can open scrolled down to the card the
+  // author was last on, and the way to dismiss this must not be off screen.
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: 'center' });
+  }, []);
+  return (
+    <div
+      ref={ref}
+      role="alert"
+      data-testid="integrations-lost-notice"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+    >
+      <i aria-hidden className="pi pi-exclamation-triangle shrink-0" style={{ fontSize: 14 }} />
+      <p className="min-w-0 flex-1 basis-56 leading-snug">{text}</p>
+      <Button
+        variant="outline"
+        size="sm"
+        // On the card surface, in ink: a button, not more red text in a red box.
+        className="border-destructive/40 bg-card text-foreground hover:bg-muted"
+        onClick={onDismiss}
+        data-testid="integrations-lost-dismiss"
+      >
+        {dismissLabel}
+      </Button>
     </div>
   );
 }
@@ -1778,11 +1918,14 @@ export function WebhookCard({
   formId,
   carriedCount,
   partialsHeld = false,
+  canTest = true,
   locale,
   m,
 }: {
   state: WebhookState;
   onChange: (s: WebhookState) => void;
+  /** Owners and admins: the API refuses a test delivery from anyone else. */
+  canTest?: boolean;
   urlError: string | null;
   clearUrlError: () => void;
   /** Spam protection holds partials: the Partial trigger is paused, not fired. */
@@ -1887,13 +2030,16 @@ export function WebhookCard({
             variant="outline"
             size="sm"
             onClick={ping}
-            disabled={pinging || !state.url.trim()}
+            // The API sends a test for owners and admins only.
+            disabled={pinging || !state.url.trim() || !canTest}
             data-testid="webhook-ping"
           >
             <i aria-hidden className="pi pi-send" style={{ fontSize: 12 }} />
             {pinging ? m.pingSending : m.pingWebhook}
           </Button>
-          <span className="text-xs text-muted-foreground">{m.pingHelp}</span>
+          <span className="text-xs text-muted-foreground" data-testid={canTest ? undefined : 'webhook-ping-admin-only'}>
+            {canTest ? m.pingHelp : m.pingAdminOnly}
+          </span>
         </div>
       </Field>
       <Field label={m.webhookSecret} help={m.webhookSecretHelp}>

@@ -1802,6 +1802,8 @@ export interface FormsMessages {
        * said once when they come back, since the screen shows what is stored.
        */
       saveLostAfterLeave: string;
+      /** Dismisses the "your last change was not saved" notice once it has been read. */
+      saveLostDismiss: string;
       /** V5-QA — saved, except one card that has a problem of its own. */
       autosavedPartial: string;
       saveError: string;
@@ -1939,6 +1941,8 @@ export interface FormsMessages {
       pingOk: string;
       pingFailed: string;
       pingNeedsUrl: string;
+      /** The test delivery is admin-only at the API: said to a member instead of a button that fails. */
+      pingAdminOnly: string;
       pingHelp: string;
       /**
        * Why a test delivery failed. One line per reason the API can name — a
@@ -2115,6 +2119,8 @@ export interface FormsMessages {
         sheetHelpCreateOnly: string;
         createSheet: string;
         chooseSheet: string;
+        /** Google's Picker is admin-only at the API: said to a member instead of the button. */
+        chooseAdminOnly: string;
         sheetCreated: string;
         createFailed: string;
         pickerFailed: string;
@@ -2155,6 +2161,8 @@ export interface FormsMessages {
         rowNeedsAnswer: string;
         rowNeedsUtm: string;
         rowNeedsHeader: string;
+        /** A column whose heading was cleared, still holding its place in the sheet. `{header}` is what row 1 says. */
+        rowHeldHeader: string;
         /** Row 1 does not match the columns, so nothing was overwritten on its own. */
         headersNotEmpty: string;
         /** Row 1 is dForms' own but out of date with the columns (it can be updated). */
@@ -2249,6 +2257,10 @@ export interface FormsMessages {
       connect: string;
       connecting: string;
       disconnect: string;
+      /** Connecting and disconnecting are admin-only at the API: said to a member instead of the buttons. `{provider}`. */
+      manageAdminOnly: string;
+      /** A connect attempt failed for a reason with no sentence of its own. */
+      connectFailedGeneric: string;
       disconnecting: string;
       cancel: string;
       tokenLabel: string;
@@ -4320,6 +4332,7 @@ export const en: FormsMessages = {
       saved: 'Integrations saved.',
       autosaved: 'Changes saved automatically',
       autosavedShort: 'Saved',
+      saveLostDismiss: 'Got it',
       saveLostAfterLeave:
         'Your last change on this tab could not be saved after you left it, so it is not in the integrations below.',
       autosavedPartial: 'Saved everything except the webhook.',
@@ -4447,6 +4460,7 @@ export const en: FormsMessages = {
       pingOk: 'Test delivered. Your endpoint accepted it.',
       pingFailed: 'Test failed: {reason}',
       pingNeedsUrl: 'Save a webhook URL first.',
+      pingAdminOnly: 'Only an owner or admin can send a test delivery. Ask one to send it.',
       pingHelp:
         'Posts one sample body in the real shape, signed the same way, so you can check what your endpoint receives. The answers are made up and marked as a test.',
       pingStatus: 'Your endpoint answered HTTP {status}.',
@@ -4591,6 +4605,8 @@ export const en: FormsMessages = {
         sheetHelpCreateOnly: 'Create a new spreadsheet for this form in your Google Drive.',
         createSheet: 'Create a new spreadsheet',
         chooseSheet: 'Choose from Google Drive',
+        chooseAdminOnly:
+          'Only an owner or admin can choose a spreadsheet that already exists in Google Drive. You can create a new one here.',
         sheetCreated: 'The spreadsheet was created in your Google Drive.',
         createFailed: 'The spreadsheet could not be created. Try again.',
         pickerFailed: 'Google Drive could not be opened. Try again.',
@@ -4624,6 +4640,8 @@ export const en: FormsMessages = {
         rowNeedsAnswer: 'Choose which answer fills this column. Until then its cells stay empty.',
         rowNeedsUtm: 'Choose which campaign tag fills this column. Until then its cells stay empty.',
         rowNeedsHeader: 'Give it a heading to write it to the sheet.',
+        rowHeldHeader:
+          'Give it a heading. Until then the sheet keeps "{header}" above this column and its cells stay empty, so the columns after it do not move.',
         headersNotEmpty: 'Row 1 of the sheet does not match these columns, so it was not changed on its own.',
         headersFailed: 'The header row could not be updated. Your columns are saved.',
         headersStale:
@@ -4720,6 +4738,8 @@ export const en: FormsMessages = {
       connect: 'Connect',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
+      manageAdminOnly: 'Only an owner or admin can connect or disconnect {provider}. Ask one to do it.',
+      connectFailedGeneric: 'Could not connect. Check the values and try again.',
       disconnecting: 'Disconnecting…',
       cancel: 'Cancel',
       tokenLabel: 'Paste your {provider} token',
@@ -7105,6 +7125,7 @@ export const es: FormsMessages = {
       saved: 'Integraciones guardadas.',
       autosaved: 'Cambios guardados automáticamente',
       autosavedShort: 'Guardado',
+      saveLostDismiss: 'Entendido',
       saveLostAfterLeave:
         'Tu último cambio en esta pestaña no se pudo guardar después de que saliste, así que no está en las integraciones de abajo.',
       autosavedPartial: 'Se guardó todo menos el webhook.',
@@ -7234,6 +7255,7 @@ export const es: FormsMessages = {
       pingOk: 'Prueba entregada: tu endpoint la aceptó.',
       pingFailed: 'La prueba falló: {reason}',
       pingNeedsUrl: 'Primero guarda una URL de webhook.',
+      pingAdminOnly: 'Solo un propietario o un administrador puede enviar una entrega de prueba. Pídele a uno que la envíe.',
       pingHelp:
         'Manda un cuerpo de ejemplo con la forma real, firmado igual, para que veas qué recibe tu endpoint. Las respuestas son inventadas y van marcadas como prueba.',
       pingStatus: 'Tu endpoint respondió HTTP {status}.',
@@ -7379,6 +7401,8 @@ export const es: FormsMessages = {
         sheetHelpCreateOnly: 'Crea una hoja nueva para este formulario en tu Google Drive.',
         createSheet: 'Crear una hoja nueva',
         chooseSheet: 'Elegir de Google Drive',
+        chooseAdminOnly:
+          'Solo un propietario o un administrador puede elegir una hoja que ya existe en Google Drive. Tú puedes crear una nueva aquí.',
         sheetCreated: 'La hoja se creó en tu Google Drive.',
         createFailed: 'No se pudo crear la hoja. Inténtalo de nuevo.',
         pickerFailed: 'No se pudo abrir Google Drive. Inténtalo de nuevo.',
@@ -7412,6 +7436,8 @@ export const es: FormsMessages = {
         rowNeedsAnswer: 'Elige qué respuesta llena esta columna. Mientras tanto, sus celdas quedan vacías.',
         rowNeedsUtm: 'Elige qué etiqueta de campaña llena esta columna. Mientras tanto, sus celdas quedan vacías.',
         rowNeedsHeader: 'Ponle un encabezado para escribirla en la hoja.',
+        rowHeldHeader:
+          'Ponle un encabezado. Mientras tanto la hoja conserva «{header}» sobre esta columna y sus celdas quedan vacías, así las columnas siguientes no se mueven.',
         headersNotEmpty: 'La fila 1 de la hoja no coincide con estas columnas, así que no se cambió sola.',
         headersFailed: 'No se pudo actualizar la fila de encabezados. Tus columnas sí quedaron guardadas.',
         headersStale:
@@ -7508,6 +7534,8 @@ export const es: FormsMessages = {
       connect: 'Conectar',
       connecting: 'Conectando…',
       disconnect: 'Desconectar',
+      manageAdminOnly: 'Solo un propietario o un administrador puede conectar o desconectar {provider}. Pídele a uno que lo haga.',
+      connectFailedGeneric: 'No se pudo conectar. Revisa los valores e inténtalo de nuevo.',
       disconnecting: 'Desconectando…',
       cancel: 'Cancelar',
       tokenLabel: 'Pega tu token de {provider}',

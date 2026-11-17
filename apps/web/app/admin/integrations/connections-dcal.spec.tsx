@@ -131,9 +131,16 @@ describe('why a Salesforce connection failed', () => {
     expect(salesforceProblem({ ok: false, status: 403, message: 'Forbidden' }, m)).toBe(m.salesforceErrors.forbidden);
   });
 
-  it("otherwise shows the API's own message beside the generic line", () => {
-    expect(salesforceProblem({ ok: false, status: 400, message: 'server encryption key not configured' }, m)).toBe(
-      `${m.connectError} (server encryption key not configured)`,
+  it("never shows the API's own English message: a known code gets its sentence, the rest a generic one", () => {
+    const es = getMessages('es').admin.connections;
+    const encryption = salesforceProblem(
+      { ok: false, status: 400, code: 'ENCRYPTION_UNAVAILABLE', message: 'server encryption key not configured' },
+      es,
     );
+    expect(encryption).toBe(`${es.encryptionOff}. ${es.encryptionOffBody}`);
+    expect(encryption).not.toContain('server encryption key');
+    const unknown = salesforceProblem({ ok: false, status: 400, message: 'something internal' }, es);
+    expect(unknown).toBe(es.connectFailedGeneric);
+    expect(unknown).not.toContain('something internal');
   });
 });

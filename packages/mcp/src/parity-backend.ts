@@ -121,7 +121,20 @@ export interface DestinationsResult {
   destinations: unknown[];
   /** Why the HubSpot form activity could not be synced; the save itself went through. */
   formActivityError: string | null;
+  /**
+   * What the save did to row 1 of the Google Sheets destination's spreadsheet,
+   * exactly as the REST route reports it (`sheetHeaders`), or null when the
+   * save had no reason to look at row 1. The save itself went through either way.
+   */
+  sheetHeaders: SheetHeaderRowResult | null;
 }
+
+/** The header-row outcome of a destinations save. See the REST route's `sheetHeaders`. */
+export type SheetHeaderRowResult =
+  | { outcome: 'written' | 'unchanged' | 'stale' }
+  /** Row 1 holds something else and was left alone: what it holds, and what the columns would write. */
+  | { outcome: 'foreign'; current: string[]; headers: string[] }
+  | { outcome: 'failed'; reason: string };
 
 /** The answer of a test delivery to the form's webhook. */
 export interface WebhookPing {

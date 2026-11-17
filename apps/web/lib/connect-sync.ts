@@ -10,32 +10,50 @@
  * (V4-05 race). Nothing serialised the two calls.
  *
  * This module is that serialisation point. A write registers its promise here;
- * the loader awaits any pending write for the same form before it reads. It is a
- * plain client-side singleton (module scope survives the panel unmount/remount),
- * keyed by form id, holding only the latest in-flight write per form.
+ * the loader awaits every pending write for the same form before it reads. It
+ * is a plain client-side singleton (module scope survives the panel
+ * unmount/remount), keyed by form id.
+ *
+ * EVERY pending write is held, not only the latest. An action a card started
+ * (creating a spreadsheet) can outlive the tab and finish after the save the
+ * tab flushed on its way out; with one slot per form, that flush replaced the
+ * action's entry and a remount read the form before the sheet was attached.
  */
 
-const inflight = new Map<string, Promise<unknown>>();
+const inflight = new Map<string, Set<Promise<unknown>>>();
 
 /**
  * Record an in-flight destinations write so a subsequent read can wait for it.
- * The stored promise never rejects (failures are swallowed here — the caller
- * owns error reporting) and clears itself once settled, but only if it is still
- * the latest write for that id, so a newer write is never erased by an older
- * one resolving.
+ * The stored promise never rejects (failures are swallowed here: the caller
+ * owns error reporting) and removes itself once settled.
  */
 export function trackDestinationWrite(id: string, write: Promise<unknown>): void {
-  const settled = write.catch(() => {}).then(() => {
-    if (inflight.get(id) === settled) inflight.delete(id);
-  });
-  inflight.set(id, settled);
+  let set = inflight.get(id);
+  if (!set) {
+    set = new Set();
+    inflight.set(id, set);
+  }
+  const mine = set;
+  const settled: Promise<unknown> = write
+    .catch(() => {})
+    .then(() => {
+      mine.delete(settled);
+      if (mine.size === 0 && inflight.get(id) === mine) inflight.delete(id);
+    });
+  mine.add(settled);
 }
 
 /**
- * Resolve once the latest tracked write for this form has landed (immediately if
- * none is pending). Call this before reading destinations back so a read never
- * overtakes the write that was meant to precede it.
+ * Resolve once every tracked write for this form has landed (immediately if
+ * none is pending), including one registered while waiting: a late action's
+ * result is saved through the form's queue, which registers itself as the
+ * action settles. Call this before reading destinations back so a read never
+ * overtakes a write that was meant to precede it.
  */
-export function awaitPendingDestinationWrite(id: string): Promise<unknown> {
-  return inflight.get(id) ?? Promise.resolve();
+export async function awaitPendingDestinationWrite(id: string): Promise<void> {
+  for (;;) {
+    const set = inflight.get(id);
+    if (!set || set.size === 0) return;
+    await Promise.all([...set]);
+  }
 }

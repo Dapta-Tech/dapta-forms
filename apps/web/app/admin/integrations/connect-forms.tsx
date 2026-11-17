@@ -32,6 +32,25 @@ const fill = (template: string, vars: Record<string, string>): string =>
   template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
 
 /**
+ * The sentence for a connect attempt the API refused, in the author's
+ * language, by the API's reason code. Never the API's own message: that is
+ * English written for a log ("server encryption key not configured"), and a
+ * toast is not where anyone should meet it.
+ */
+export function connectProblem(
+  res: { code?: string; status?: number },
+  m: Msgs,
+  providerName: string,
+  /** What to say when the API gave no reason this screen knows. */
+  fallback: string = m.connectFailedGeneric,
+): string {
+  if (res.code === 'ENCRYPTION_UNAVAILABLE') return `${m.encryptionOff}. ${m.encryptionOffBody}`;
+  if (res.code === 'INTEGRATION_UNAVAILABLE') return fill(m.unavailableBody, { provider: providerName });
+  if (res.status === 403 || res.code === 'FORBIDDEN') return fill(m.manageAdminOnly, { provider: providerName });
+  return fallback;
+}
+
+/**
  * "Continue with Google": hand the browser to Google's consent screen.
  *
  * `window.location.assign` rather than the router: the destination is another
@@ -56,7 +75,7 @@ export function GoogleConnectButton({
     start(async () => {
       const res = await callAction(() => startGoogleSheetsAuthAction(returnTo));
       if (res.ok) window.location.assign(res.authUrl);
-      else error(res.message || m.connectError);
+      else error('transport' in res ? m.connectFailedGeneric : connectProblem(res, m, m.gsheetsName));
     });
   }
   return (
@@ -106,7 +125,10 @@ export function TokenConnectForm({
         setToken('');
         onConnected(res.status);
       } else {
-        setProblem(m.connectError);
+        // A pasted token that was refused is the usual case, and its own
+        // sentence says to check the token; a role or a server without an
+        // encryption key gets the sentence for that instead.
+        setProblem('transport' in res ? m.connectError : connectProblem(res, m, providerName, m.connectError));
       }
     });
   }
@@ -261,15 +283,15 @@ export function SalesforceConnectForm({
 }
 
 /**
- * The sentence for a refused Salesforce connection. Every path names a cause:
- * Salesforce's own refusal by reason, a role that may not connect, no answer
- * in time, and otherwise the API's message beside the generic line, so nobody
- * is left with "could not connect" and nothing to act on.
+ * The sentence for a refused Salesforce connection. Every path names a cause
+ * where one is known: Salesforce's own refusal by reason, a role that may not
+ * connect, no answer in time, a server that cannot store credentials. What is
+ * left gets a generic sentence in the author's language (`connectProblem`).
  */
 export function salesforceProblem(
   res:
     | { ok: false; transport: true; message: string }
-    | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string; cause?: string },
+    | { ok: false; reason?: SalesforceConnectError; status?: number; code?: string; message?: string; cause?: string },
   m: Msgs,
 ): string {
   if ('transport' in res) return m.salesforceErrors.timeout;
@@ -278,5 +300,7 @@ export function salesforceProblem(
   if (res.reason === 'unreachable' && res.cause) return `${m.salesforceErrors.unreachable} (${res.cause})`;
   if (res.reason) return m.salesforceErrors[res.reason];
   if (res.status === 403) return m.salesforceErrors.forbidden;
-  return res.message ? `${m.connectError} (${res.message})` : m.connectError;
+  // No reason this form knows: a localized sentence by the API's code, never
+  // the API's own English message.
+  return connectProblem(res, m, m.salesforceName);
 }

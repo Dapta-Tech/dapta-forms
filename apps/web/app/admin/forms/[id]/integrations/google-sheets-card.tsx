@@ -23,7 +23,8 @@ import {
   syncSheetHeadersAction,
 } from './actions';
 import { pickSpreadsheet } from './google-picker';
-import { columnMissing, defaultColumns, isCompleteColumn, moveColumn, sheetLetters } from './sheet-columns';
+import { trackDestinationWrite } from '@/lib/connect-sync';
+import { columnMissing, defaultColumns, isCompleteColumn, moveColumn, sheetPositions } from './sheet-columns';
 import { sheetUrlFor } from './sheet-url';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -34,6 +35,12 @@ export interface GoogleSheetsState {
   spreadsheetId: string;
   sheetTitle: string;
   columns: SheetColumn[];
+  /**
+   * The row 1 dForms last wrote to this sheet, as the API recorded it. Never
+   * sent back (the API owns it): the card only reads it, to give a column
+   * whose heading was cleared the letter it still holds in the sheet.
+   */
+  writtenHeaders?: string[] | null;
 }
 
 /** The five `utm_*` keys, the only keys a `utm` column may name. */
@@ -272,7 +279,7 @@ export function GoogleSheetsCard({
     const columns = state.columns.some(isCompleteColumn) ? state.columns : defaults();
     const headers = columns.filter(isCompleteColumn).map((c) => c.header.trim());
     const title = m.gsheets.newSheetTitle.replace('{form}', formName.trim() || m.gsheets.title);
-    start(async () => {
+    const work = async () => {
       const res = await callAction(() =>
         googleSheetsCreateAction({ title, sheetTitle: m.gsheets.defaultTab, headers }),
       );
@@ -285,8 +292,17 @@ export function GoogleSheetsCard({
         return;
       }
       setSheetName(res.data.spreadsheetTitle);
-      patch({ spreadsheetId: res.data.spreadsheetId, sheetTitle: res.data.sheetTitle, columns });
+      patch({ spreadsheetId: res.data.spreadsheetId, sheetTitle: res.data.sheetTitle, columns, writtenHeaders: null });
       success(m.gsheets.sheetCreated);
+    };
+    start(async () => {
+      // Registered as a write to this form: the spreadsheet is created in the
+      // author's Drive whether or not they are still on this tab, and a
+      // Connect tab opened again before Google answers must wait for it (and
+      // for the save that attaches it) instead of loading a form without it.
+      const run = work();
+      if (formId) trackDestinationWrite(formId, run);
+      await run;
     });
   }
 
@@ -316,7 +332,7 @@ export function GoogleSheetsCard({
       // The tab is cleared, not kept: it named a tab of the PREVIOUS
       // spreadsheet, and a stale name would be matched against this one's tabs
       // at delivery time and miss.
-      patch({ spreadsheetId: picked.id, sheetTitle: '' });
+      patch({ spreadsheetId: picked.id, sheetTitle: '', writtenHeaders: null });
     });
   }
 
@@ -382,7 +398,8 @@ export function GoogleSheetsCard({
   ];
   // Each column's letter in the sheet: written columns only, so the card,
   // the mismatch table, row 1 and every delivered row count the same way.
-  const letters = sheetLetters(state.columns, sheetColumnLetter);
+  const positions = sheetPositions(state.columns, state.writtenHeaders);
+  const letters = positions.map((p) => (p.index === null ? null : sheetColumnLetter(p.index)));
   // Columns with no heading are saved but not in the sheet. While any exist,
   // a green "row 1 matches" alone would be a claim about the columns on
   // screen that is not true: say how many are waiting for a heading.
@@ -441,7 +458,7 @@ export function GoogleSheetsCard({
               <>
                 {/* Only promise Google Drive where the Picker button is really there. */}
                 <p className="text-sm text-muted-foreground">
-                  {pickerAvailable ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
+                  {pickerAvailable && access.canConnect ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
                 </p>
                 {/* The switch is on and stored, but nothing can be sent yet.
                     Said here, on the card, not in the floating save pill. */}
@@ -459,13 +476,21 @@ export function GoogleSheetsCard({
                 <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
                 {m.gsheets.createSheet}
               </Button>
-              {pickerAvailable ? (
+              {/* Google's Picker needs an access token only an owner or admin
+                  may ask the API for: a member gets the sentence below, not a
+                  button that could only fail. */}
+              {pickerAvailable && access.canConnect ? (
                 <Button variant="soft" size="sm" className={SOFT_DISABLED} onClick={chooseSheet} disabled={pending}>
                   <i aria-hidden className="pi pi-folder" style={{ fontSize: 11 }} />
                   {m.gsheets.chooseSheet}
                 </Button>
               ) : null}
             </div>
+            {pickerAvailable && !access.canConnect ? (
+              <p className="text-xs text-muted-foreground" data-testid="gsheets-choose-admin-only">
+                {m.gsheets.chooseAdminOnly}
+              </p>
+            ) : null}
           </section>
 
           {state.spreadsheetId ? (
@@ -473,7 +498,7 @@ export function GoogleSheetsCard({
               <h3 className="text-sm font-semibold">{m.gsheets.tabLabel}</h3>
               <Select
                 value={state.sheetTitle}
-                onChange={(sheetTitle) => patch({ sheetTitle })}
+                onChange={(sheetTitle) => patch({ sheetTitle, writtenHeaders: null })}
                 options={tabOptions}
                 ariaLabel={m.gsheets.tabLabel}
                 disabled={loadingTabs || !tabs}
@@ -668,11 +693,14 @@ export function GoogleSheetsCard({
                             <p
                               data-testid="gsheets-column-missing"
                               data-missing={missing}
+                              data-held={positions[index]?.heldHeader ? 'true' : undefined}
                               className="col-[1/-1] flex items-start gap-1.5 text-xs text-muted-foreground @2xl:col-[2/-1]"
                             >
                               <i aria-hidden className="pi pi-info-circle mt-px shrink-0" style={{ fontSize: 12 }} />
                               {missing === 'header'
-                                ? m.gsheets.rowNeedsHeader
+                                ? positions[index]?.heldHeader
+                                  ? m.gsheets.rowHeldHeader.replace('{header}', positions[index]!.heldHeader!)
+                                  : m.gsheets.rowNeedsHeader
                                 : column.source === 'utm'
                                   ? m.gsheets.rowNeedsUtm
                                   : m.gsheets.rowNeedsAnswer}

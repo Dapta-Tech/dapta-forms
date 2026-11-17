@@ -16,11 +16,19 @@ import { destinationIsDeliverable, formDestinationSchema, type FormDestination }
 import { builtGoogleSheets, initialGoogleSheets } from './integrations-editor';
 import type { GoogleSheetsState } from './google-sheets-card';
 
-/** Save (through the API's own schema), then reload. */
-function reload(state: GoogleSheetsState): GoogleSheetsState {
+/**
+ * Save (through the API's own schema), then reload.
+ *
+ * `writtenHeaders` is left out of the comparison: it is not something the
+ * author set or the card sends. It is what the API has on record for row 1
+ * (or, for a config with nothing recorded, the stored columns' own headings),
+ * read back for the card's letters.
+ */
+function reload(state: GoogleSheetsState): Omit<GoogleSheetsState, 'writtenHeaders'> {
   const sent = builtGoogleSheets(state);
   const stored = sent ? [formDestinationSchema.parse(JSON.parse(JSON.stringify(sent)))] : [];
-  return initialGoogleSheets(stored as FormDestination[]);
+  const { writtenHeaders: _derived, ...card } = initialGoogleSheets(stored as FormDestination[]);
+  return card;
 }
 
 const SHEET: GoogleSheetsState = {

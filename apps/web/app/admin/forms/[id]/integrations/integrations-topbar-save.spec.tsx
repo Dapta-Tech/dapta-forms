@@ -24,6 +24,7 @@ const actions = vi.hoisted(() => ({
   googleSheetsTabsAction: vi.fn(),
   syncSheetHeadersAction: vi.fn(),
   salesforceFieldsAction: vi.fn(),
+  mergeIntegrationCardAction: vi.fn(),
 }));
 vi.mock('./actions', () => actions);
 vi.mock('@/app/admin/integrations/actions', () => ({
@@ -36,6 +37,7 @@ vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
 
 import { IntegrationsEditor } from './integrations-editor';
 import { publishIntegrationsSave, readCombinedSave as readCombined, readIntegrationsSave } from '@/lib/integrations-save-status';
+import { awaitPendingDestinationWrite } from '@/lib/connect-sync';
 
 const m = getMessages('en').admin.integrations;
 let root: Root | null = null;
@@ -54,7 +56,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function mount(formId: string) {
+async function mount(formId: string, extra: Partial<React.ComponentProps<typeof IntegrationsEditor>> = {}) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -68,6 +70,7 @@ async function mount(formId: string) {
         questions={[{ key: 'email', label: 'Email', type: 'email' }]}
         messages={m}
         locale="en"
+        {...extra}
       />,
     );
   });
@@ -177,5 +180,186 @@ describe('a save that fails after the tab is left', () => {
     });
     expect(readIntegrationsSave('form-clear')).toMatchObject({ status: 'saved' });
     expect(readIntegrationsSave('form-clear')?.lost).toBeFalsy();
+  });
+});
+
+/**
+ * A card action that finishes after the tab was left.
+ *
+ * "Create sheet" is pressed, the author moves to Build, and Google answers a
+ * moment later: the spreadsheet now exists in their Drive. The card's result
+ * used to go to an editor whose autosave was already disposed: it published
+ * "Saving", nothing ever saved, the topbar sat on "Saving" until the next
+ * visit to Connect, and the new spreadsheet was never attached to the form.
+ */
+describe('an action that finishes after the tab is left', () => {
+  const sheetsOn = {
+    googleSheetsAvailable: true,
+    googleSheetsConnected: true,
+    initialDestinations: [{ type: 'google-sheets' as const, enabled: true, settings: {}, columns: [] }],
+  };
+  const createButton = (el: HTMLElement) =>
+    [...el.querySelectorAll('button')].find((b) => b.textContent?.includes(m.gsheets.createSheet))!;
+
+  it('attaches the created spreadsheet through the save queue, and the topbar ends on saved', async () => {
+    let answer!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    actions.mergeIntegrationCardAction.mockResolvedValue({ ok: true });
+    const el = await mount('form-late', sheetsOn);
+    await act(async () => createButton(el).click());
+    // Leave the tab before Google answers.
+    act(() => root!.unmount());
+    root = null;
+    await act(async () => {
+      answer({ ok: true, data: { ok: true, spreadsheetId: 'sheet-new', spreadsheetTitle: 'Leads', sheetTitle: 'Responses', gid: 0 } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // Saved: merged onto what the form stores now, not this editor's old snapshot.
+    expect(actions.mergeIntegrationCardAction).toHaveBeenCalledTimes(1);
+    const [formId, card] = actions.mergeIntegrationCardAction.mock.calls[0]!;
+    expect(formId).toBe('form-late');
+    expect(card).toMatchObject({ type: 'google-sheets', settings: { spreadsheetId: 'sheet-new', sheetTitle: 'Responses' } });
+    expect((card as { columns: unknown[] }).columns.length).toBeGreaterThan(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+    });
+    expect(readIntegrationsSave('form-late')?.status).toBe('saved');
+    expect(readCombined('form-late').status).toBe('saved');
+  });
+
+  it('a Connect tab opened again before Google answers waits for the sheet to be attached', async () => {
+    let answer!: (v: unknown) => void;
+    let landed!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    actions.mergeIntegrationCardAction.mockImplementation(() => new Promise((r) => (landed = r)));
+    const el = await mount('form-reopen', sheetsOn);
+    await act(async () => createButton(el).click());
+    act(() => root!.unmount());
+    root = null;
+    let mayRead = false;
+    void awaitPendingDestinationWrite('form-reopen').then(() => (mayRead = true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mayRead).toBe(false);
+    await act(async () => {
+      answer({ ok: true, data: { ok: true, spreadsheetId: 'sheet-new', spreadsheetTitle: 'Leads', sheetTitle: 'Responses', gid: 0 } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mayRead).toBe(false); // created, not yet attached
+    await act(async () => {
+      landed({ ok: true });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mayRead).toBe(true);
+  });
+
+  // The audit's scenario on the first fix. The late result was enqueued as if
+  // it were a full snapshot, but it is one card: it replaced the save waiting
+  // behind it and cancelled the retry of a failed one. Create a sheet, switch
+  // Salesforce on, leave; the tab's last save fails once. Only the sheet was
+  // sent, the topbar said "saved", and the Salesforce change was gone.
+  it('keeps the tab\'s last save when it failed once: the Salesforce change AND the sheet are both stored', async () => {
+    let answer!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    actions.saveIntegrationsAction.mockRejectedValueOnce(new Error('network blip')).mockResolvedValue({ ok: true });
+    actions.mergeIntegrationCardAction.mockResolvedValue({ ok: true });
+    const el = await mount('form-both', sheetsOn);
+    await act(async () => createButton(el).click());
+    await edit(el); // Salesforce on
+    act(() => root!.unmount()); // leave: the terminal save goes out, and fails
+    root = null;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      answer({ ok: true, data: { ok: true, spreadsheetId: 'sheet-new', spreadsheetTitle: 'Leads', sheetTitle: 'Responses', gid: 0 } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The sheet waits for the failed save's retry instead of taking its place.
+    expect(actions.mergeIntegrationCardAction).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    // The Salesforce save was retried and landed...
+    expect(actions.saveIntegrationsAction).toHaveBeenCalledTimes(2);
+    const retried = actions.saveIntegrationsAction.mock.calls[1]![1] as { type: string; enabled?: boolean }[];
+    expect(retried.find((d) => d.type === 'salesforce')?.enabled).toBe(true);
+    // ...and THEN the sheet was merged on top of it.
+    expect(actions.mergeIntegrationCardAction).toHaveBeenCalledTimes(1);
+    expect(actions.mergeIntegrationCardAction.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      actions.saveIntegrationsAction.mock.invocationCallOrder[1]!,
+    );
+    expect(actions.mergeIntegrationCardAction.mock.calls[0]![1]).toMatchObject({
+      type: 'google-sheets',
+      settings: { spreadsheetId: 'sheet-new' },
+    });
+    expect(readIntegrationsSave('form-both')).toMatchObject({ status: 'saved' });
+    expect(readIntegrationsSave('form-both')?.lost).toBeFalsy();
+  });
+
+  it('says the change was lost when the sheet cannot be attached, after retrying it', async () => {
+    let answer!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    actions.mergeIntegrationCardAction.mockRejectedValue(new Error('network down'));
+    const el = await mount('form-orphan', sheetsOn);
+    await act(async () => createButton(el).click());
+    act(() => root!.unmount());
+    root = null;
+    await act(async () => {
+      answer({ ok: true, data: { ok: true, spreadsheetId: 'sheet-new', spreadsheetTitle: 'Leads', sheetTitle: 'Responses', gid: 0 } });
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(actions.mergeIntegrationCardAction).toHaveBeenCalledTimes(3);
+    expect(readIntegrationsSave('form-orphan')).toMatchObject({ status: 'error', lost: true, detail: m.saveLostAfterLeave });
+  });
+
+  it('says nothing when the late action failed: there is nothing to save', async () => {
+    let answer!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    const el = await mount('form-nosave', sheetsOn);
+    await act(async () => createButton(el).click());
+    act(() => root!.unmount());
+    root = null;
+    await act(async () => {
+      answer({ ok: true, data: { ok: false, reason: 'unavailable' } });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+    });
+    expect(actions.mergeIntegrationCardAction).not.toHaveBeenCalled();
+    expect(actions.saveIntegrationsAction).not.toHaveBeenCalled();
+    expect(readIntegrationsSave('form-nosave')?.status).not.toBe('saving');
+  });
+});
+
+/**
+ * A lost change used to be said in a toast on EVERY visit to the tab, and the
+ * topbar and the pill stayed in error for the whole session with no way to
+ * put it down short of making another edit.
+ */
+describe('a lost change is said once and can be dismissed', () => {
+  it('toasts once across three visits to the tab', async () => {
+    publishIntegrationsSave('form-nag', { status: 'error', detail: m.saveLostAfterLeave, lost: true });
+    for (let visit = 0; visit < 3; visit++) {
+      await mount('form-nag');
+      act(() => root!.unmount());
+      container!.remove();
+      root = null;
+    }
+    expect(toasts.error).toHaveBeenCalledTimes(1);
+    // Unacknowledged: still an error, still visible.
+    expect(readCombined('form-nag')).toMatchObject({ status: 'error', lost: true });
+  });
+
+  it('shows a notice on the page that stays until dismissed, and dismissing it clears the error', async () => {
+    publishIntegrationsSave('form-ack', { status: 'error', detail: m.saveLostAfterLeave, lost: true });
+    const el = await mount('form-ack');
+    const notice = () => el.querySelector('[data-testid="integrations-lost-notice"]');
+    expect(notice()?.textContent).toContain(m.saveLostAfterLeave);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(notice()).not.toBeNull();
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="integrations-lost-dismiss"]')!.click());
+    expect(notice()).toBeNull();
+    expect(readIntegrationsSave('form-ack')).toEqual({ status: 'saved' });
+    expect(readCombined('form-ack')).toMatchObject({ status: 'saved', lost: false });
   });
 });

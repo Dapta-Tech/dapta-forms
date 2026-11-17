@@ -66,6 +66,8 @@ import { TEMPLATES } from './_components/templates';
 import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
 import { publishFormSave, useCombinedSave } from '@/lib/integrations-save-status';
+import { runDestinationWrite } from '@/lib/integrations-save-queue';
+import { ConnectTabMark } from './_components/connect-tab-mark';
 import './_components/builder.css';
 
 const AUTOSAVE_MS = 900;
@@ -608,7 +610,7 @@ export function FormEditor({
       const { [oldKey]: _moved, ...rest } = prev;
       return { ...rest, [nextKey]: held };
     });
-    void callAction(() => renameQuestionMappingAction(id, oldKey, nextKey)).then((res) => {
+    void runDestinationWrite(id, () => callAction(() => renameQuestionMappingAction(id, oldKey, nextKey))).then((res) => {
       if (isTransportError(res) || (!res.ok && res.code === 'error')) {
         // The config rename already applied and autosaved; only the CRM mapping
         // is behind. Say so rather than implying the whole rename failed.
@@ -978,6 +980,7 @@ export function FormEditor({
             >
               <i aria-hidden className={`pi ${t.icon} md:!hidden`} style={{ fontSize: 14 }} />
               <span className="sr-only md:not-sr-only">{t.label}</span>
+              {t.id === 'connect' ? <ConnectTabMark formId={id} /> : null}
             </button>
           ))}
           {/* The responses this form has collected. Not an editor section: it

@@ -41,7 +41,9 @@ import {
   MAX_SHEET_COLUMNS,
   hasExtraHubspotDestination,
   hasExtraSalesforceDestination,
-  isWritableSheetColumn,
+  sheetBaselineHeaders,
+  sheetCells,
+  writtenSheetHeaders,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
   ONE_SALESFORCE_DESTINATION_MESSAGE,
@@ -1367,18 +1369,24 @@ interface SheetHeaderSnapshot {
 const SHEETS_SAVE_TIMEOUT_MS = 4_000;
 
 /**
- * The headers a destination's columns put in row 1, in order: the written
- * columns only (`isWritableSheetColumn`: the ones with a heading), the same
- * ones every delivered row holds, so an unnamed column shifts nothing.
+ * The headers a destination's columns put in row 1, in order (`sheetCells`):
+ * the columns with a heading, plus the heading row 1 already holds at a
+ * position whose column had its heading cleared, so nothing after it shifts.
+ * The same cells every delivered row holds.
+ *
+ * `written` is the row 1 dForms last wrote for this target. Left out, it is
+ * read from the entry's own stored `headerSnapshot`; the save path passes the
+ * STORED one explicitly, since an incoming entry never carries it.
  */
-function sheetHeadersOf(entry: Record<string, unknown> | undefined): string[] {
+function sheetHeadersOf(
+  entry: Record<string, unknown> | undefined,
+  written: readonly string[] | null | undefined = writtenSheetHeaders(entry),
+): string[] {
   const columns = Array.isArray(entry?.columns) ? entry.columns : [];
-  return columns
-    .filter(
-      (c): c is { header: string; source: string; key?: string } =>
-        isRecord(c) && typeof c.header === 'string' && isWritableSheetColumn({ header: c.header }),
-    )
-    .map((c) => c.header.trim());
+  return sheetCells(
+    columns.filter((c): c is { header: string; source: string; key?: string } => isRecord(c) && typeof c.header === 'string'),
+    written,
+  ).map((cell) => cell.header);
 }
 
 /** Where a destination writes: its spreadsheet and tab (`''` is the first tab). */
@@ -1730,8 +1738,25 @@ export class FormDestinationsController {
       withState(storedSnapshot, storedForeign, { outcome: 'failed', reason }, brokenNow(reason));
 
     const target = sheetTargetOf({ settings });
-    const headers = sheetHeadersOf(raw);
-    if (!target || headers.length === 0) return keep();
+    // The row 1 dForms last wrote for THIS target, from what is stored: a
+    // column whose heading was just cleared keeps the position it holds there
+    // (`sheetCells`), so row 1 is not rewritten to close the gap and no
+    // response lands one cell to the left while the author types a new name.
+    //
+    // What is stored for that target is the baseline (`sheetBaselineHeaders`):
+    // the snapshot, else the headings a foreign row's columns stood for, else
+    // (a destination saved before any of that was recorded) the stored
+    // columns' own headings, which are what its row 1 was written from. So
+    // the very first edit to an old config is protected too.
+    const writtenRow =
+      target && storedEntry && sheetTargetOf(storedEntry)?.spreadsheetId === target.spreadsheetId &&
+      sheetTargetOf(storedEntry)?.sheetTitle === target.sheetTitle
+        ? sheetBaselineHeaders(storedEntry)
+        : null;
+    const headers = sheetHeadersOf(raw, writtenRow);
+    // Nothing to sync without a NAMED column: held positions alone are a row
+    // 1 dForms already wrote and is leaving as it is.
+    if (!target || sheetHeadersOf(raw, null).length === 0) return keep();
     const recentlyBroken =
       !!storedBroken &&
       storedBroken.spreadsheetId === target.spreadsheetId &&
@@ -1761,6 +1786,16 @@ export class FormDestinationsController {
 
     const owned: string[][] = [];
     if (forThis(storedSnapshot)) owned.push(storedSnapshot!.headers);
+    // THE RULE, stated plainly because it is a decision and not an accident:
+    // a row 1 that is exactly equal to the columns this form had stored for
+    // this same spreadsheet and tab FOLLOWS THE CONFIGURATION, whoever typed
+    // it. That includes a sheet picked under an earlier release (no snapshot
+    // recorded) whose row 1 the author wrote by hand to match the columns:
+    // the first rename in dForms rewrites that row, with no confirmation.
+    // dForms cannot tell that row from one its own create call wrote, and the
+    // two mean the same thing to the author (the headings of these columns),
+    // so both are kept in step. A row 1 that differs from the stored columns
+    // in any cell is never touched without the confirmed replace.
     if (sameTarget && storedHeaders.length > 0) owned.push(storedHeaders);
 
     let token = '';

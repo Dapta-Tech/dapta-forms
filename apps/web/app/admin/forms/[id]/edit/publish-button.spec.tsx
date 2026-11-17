@@ -32,6 +32,7 @@ import {
   publishFormSave,
   publishIntegrationsSave,
   readCombinedSave,
+  setConnectTabOpen,
 } from '@/lib/integrations-save-status';
 import { PublishButton } from './publish-button';
 
@@ -586,6 +587,10 @@ describe('the pill and the integrations save', () => {
     it(`reads "Published" with a clean, published draft while the integrations are on ${integrations}`, async () => {
       const draft = { status: 'saved', detail: null } as const;
       publishFormSave(FORM, draft);
+      // On the Connect tab, where a card left out of the save (`partial`) IS
+      // the top bar's state. Away from it the top bar speaks for the builder
+      // alone and the condition is marked on the tab's label instead.
+      setConnectTabOpen(FORM, true);
       publishIntegrationsSave(FORM, { status: integrations, detail: 'webhook has no URL', lost: integrations === 'error' });
       // The top bar goes on showing the worse of the two...
       expect(readCombinedSave(FORM).status).toBe(integrations);
@@ -594,6 +599,7 @@ describe('the pill and the integrations save', () => {
       expect(label()).toBe(getMessages('en').admin.forms.statusLive);
       expect($('[data-testid="publish-control"]')!.dataset.state).toBe('idle');
       publishIntegrationsSave(FORM, { status: 'saved', detail: null });
+      setConnectTabOpen(FORM, false);
     });
   }
 

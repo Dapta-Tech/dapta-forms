@@ -44,6 +44,12 @@ const QUESTIONS: QuestionMeta[] = [
   { key: 'company', label: 'Company', type: 'short_text' },
 ];
 const EMPTY: GoogleSheetsState = { enabled: true, spreadsheetId: '', sheetTitle: '', columns: [] };
+const STORED_FOR_MEMBER: GoogleSheetsState = {
+  enabled: true,
+  spreadsheetId: 'sheet-1',
+  sheetTitle: 'Responses',
+  columns: [{ header: 'Email', source: 'answer', key: 'email' }],
+};
 
 let root: Root | null = null;
 let container: HTMLElement | null = null;
@@ -332,6 +338,37 @@ describe('choosing a spreadsheet from Google Drive', () => {
   });
 });
 
+/**
+ * What a plain member is offered. Google's Picker needs an access token the
+ * API hands to owners and admins only, so "Choose from Google Drive" could
+ * only fail for a member (it answered with a generic toast). Creating a
+ * spreadsheet, the tab list and the header row are open to every role.
+ */
+describe('what a member is offered on the card', () => {
+  const MEMBER: ConnectAccess = { canConnect: false, encryptionAvailable: true };
+
+  it('has no "Choose from Google Drive" button, and says an owner or admin has to', async () => {
+    const { el } = await mount({ pickerAvailable: true, access: MEMBER });
+    expect(button(el, m.gsheets.chooseSheet)).toBeUndefined();
+    expect(el.querySelector('[data-testid="gsheets-choose-admin-only"]')?.textContent).toBe(m.gsheets.chooseAdminOnly);
+    // And the help line does not promise Drive either.
+    expect(el.textContent).toContain(m.gsheets.sheetHelpCreateOnly);
+    expect(el.textContent).not.toContain(m.gsheets.sheetHelp);
+  });
+
+  it('keeps what the API lets a member do: create a sheet and update the header row', async () => {
+    const { el } = await mount({ pickerAvailable: true, access: MEMBER, state: STORED_FOR_MEMBER, formId: 'form-1' });
+    expect(button(el, m.gsheets.createSheet)).toBeDefined();
+    expect(el.querySelector<HTMLButtonElement>('[data-testid="gsheets-sync-headers"]')?.disabled).toBe(false);
+  });
+
+  it('shows an owner or admin the button, and no such sentence', async () => {
+    const { el } = await mount({ pickerAvailable: true });
+    expect(button(el, m.gsheets.chooseSheet)).toBeDefined();
+    expect(el.querySelector('[data-testid="gsheets-choose-admin-only"]')).toBeNull();
+  });
+});
+
 describe('a form that already has its spreadsheet', () => {
   it('links to it by name once the tab list says what it is called', async () => {
     actions.googleSheetsTabsAction.mockResolvedValue({
@@ -546,6 +583,54 @@ describe('the header row', () => {
     expect(hint(2)).toBeNull();
     expect(hint(3)).toBe(m.gsheets.rowNeedsHeader);
     expect(hint(4)).toBe(m.gsheets.rowNeedsUtm);
+  });
+
+  // The author is renaming the middle column and has cleared its heading.
+  // dForms wrote "B" there before, so the sheet keeps that position (an empty
+  // cell under "B") and C stays under C. The card must count the same way:
+  // the cleared column keeps its letter, and its note says what the sheet is
+  // doing meanwhile. It used to lose its letter and C became "B" on the card,
+  // as it did in the sheet.
+  it('keeps the letter of a column whose heading was cleared, when the sheet still holds its place', async () => {
+    const { el } = await mount({
+      state: {
+        ...STORED,
+        writtenHeaders: ['A', 'B', 'C'],
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'C', source: 'score' },
+          { header: '', source: 'answer', key: 'email' },
+        ],
+      },
+      formId: 'form-1',
+    });
+    const letters = [...el.querySelectorAll('[data-testid="gsheets-column-letter"]')].map((l) => l.textContent);
+    // Held column: B. The never-named one at the end: no letter.
+    expect(letters).toEqual(['A', 'B', 'C', '']);
+    const rows = [...el.querySelectorAll('[data-testid="gsheets-column"]')];
+    const hint = (i: number) => rows[i]!.querySelector('[data-testid="gsheets-column-missing"]');
+    expect(hint(1)?.textContent).toBe(m.gsheets.rowHeldHeader.replace('{header}', 'B'));
+    expect(hint(1)?.getAttribute('data-held')).toBe('true');
+    expect(hint(3)?.textContent).toBe(m.gsheets.rowNeedsHeader);
+    expect(hint(3)?.getAttribute('data-held')).toBeNull();
+  });
+
+  it('gives that column no letter when dForms never wrote a row 1 for this sheet', async () => {
+    const { el } = await mount({
+      state: {
+        ...STORED,
+        writtenHeaders: null,
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'C', source: 'score' },
+        ],
+      },
+      formId: 'form-1',
+    });
+    const letters = [...el.querySelectorAll('[data-testid="gsheets-column-letter"]')].map((l) => l.textContent);
+    expect(letters).toEqual(['A', '', 'B']);
   });
 
   it('shows the row-1 mismatch above the column list', async () => {
