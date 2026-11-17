@@ -76,7 +76,7 @@ async function createForm(
 async function openEditor(page: Page, id: string) {
   await page.goto(`/admin/forms/${id}/edit`);
   // First hit may compile the route in dev — allow generous time for the shell.
-  await expect(page.getByRole('button', { name: 'Publish', exact: true })).toBeVisible({
+  await expect(page.getByTestId('publish-button')).toBeVisible({
     timeout: 30_000,
   });
 }
