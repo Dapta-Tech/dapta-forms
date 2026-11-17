@@ -286,6 +286,41 @@ describe('GET /v1/integrations/salesforce/fields', () => {
   });
 });
 
+describe('the token cache across API pods', () => {
+  // The cache is per pod. A reconnect or a disconnect handled by ANOTHER pod
+  // only clears that pod's entry, so this pod must notice by reading the store.
+  it('re-mints when the stored connection changed under it, and forgets a deleted one', async () => {
+    const org = fakeOrg();
+    build(org.fetchImpl);
+    await controller.connectSalesforce(asOwner(), connectBody());
+    const mints = () => org.calls.filter((c) => c.url.endsWith('/services/oauth2/token')).length;
+    // Connecting proves the values but does not warm the cache; the first
+    // resolve mints, the second is served from it.
+    await tokens.resolve(db, await accountId(), env(), org.fetchImpl);
+    const before = mints();
+    await tokens.resolve(db, await accountId(), env(), org.fetchImpl);
+    expect(mints()).toBe(before);
+
+    // Another pod reconnects with a different secret: this pod's cache is stale.
+    const { upsertIntegration, deleteIntegration } = await import('@quill/db');
+    await upsertIntegration(
+      db,
+      await accountId(),
+      'salesforce',
+      JSON.stringify({ domain: DOMAIN, consumerKey: PASTED_ONE, consumerSecret: 'rotated-rotated' }),
+      ENCRYPTION_KEY,
+      'Acme Inc',
+      'abcd',
+    );
+    await tokens.resolve(db, await accountId(), env(), org.fetchImpl);
+    expect(mints()).toBe(before + 1);
+
+    // Another pod disconnects: this pod must stop handing out the old token.
+    await deleteIntegration(db, await accountId(), 'salesforce');
+    await expect(tokens.resolve(db, await accountId(), env(), org.fetchImpl)).resolves.toBeNull();
+  });
+});
+
 describe('a Run As user limited to Leads', () => {
   it('still lists the Lead fields when the Contact describe is refused', async () => {
     const org = fakeOrg();

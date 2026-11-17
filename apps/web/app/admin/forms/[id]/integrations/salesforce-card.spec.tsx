@@ -161,6 +161,23 @@ describe('what the card warns about', () => {
     expect(w.fallbacks).toEqual(['Company']);
   });
 
+  it('names an org-required Lead field nothing fills, which no fallback covers', () => {
+    const lead = [
+      ...(FIELDS.enabled ? FIELDS.lead : []),
+      { name: 'Region__c', label: 'Region', type: 'picklist', required: true },
+    ];
+    const w = salesforceWarnings(base({ mappings: [{ key: 'work_email', field: 'Email' }] }), [], false, lead);
+    // LastName and Company are filled by the delivery; Region is not.
+    expect(w.unfilledRequired).toEqual(['Region']);
+    const mapped = salesforceWarnings(
+      base({ statics: [{ field: 'Region__c', value: 'LATAM' }] }),
+      [],
+      false,
+      lead,
+    );
+    expect(mapped.unfilledRequired).toEqual([]);
+  });
+
   it('lists the mapped fields a matched Contact does not have', () => {
     const w = salesforceWarnings(
       base({

@@ -18,6 +18,7 @@
  * Credentials only works on My Domain, so allowing it would only produce a
  * confusing "request not supported on this domain" later.
  */
+import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { resolveProviderToken, type Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
@@ -193,12 +194,22 @@ export interface SalesforceAccess {
 }
 
 /**
+ * Which stored connection a token was minted from, without keeping the secret
+ * in memory beside it: a SHA-256 over the three values.
+ */
+function credentialFingerprint(creds: SalesforceCredentials): string {
+  return createHash('sha256')
+    .update(`${creds.domain}\n${creds.consumerKey}\n${creds.consumerSecret}`)
+    .digest('hex');
+}
+
+/**
  * ONE instance app-wide, shared by the controller (probe, field picker) and
  * the delivery path, so a disconnect clears the one cache both of them read.
  */
 @Injectable()
 export class SalesforceAccessTokens {
-  private readonly cache = new Map<string, SalesforceAccess & { expires: number }>();
+  private readonly cache = new Map<string, SalesforceAccess & { expires: number; fingerprint: string }>();
 
   /** The account's stored connection, decrypted and parsed, or null. */
   async credentials(db: Db, accountId: string, env: ServerEnv | undefined): Promise<SalesforceCredentials | null> {
@@ -218,10 +229,23 @@ export class SalesforceAccessTokens {
     fetchImpl: typeof fetch = fetch,
     now: number = Date.now(),
   ): Promise<SalesforceAccess | null> {
-    const hit = this.cache.get(accountId);
-    if (hit && hit.expires > now) return { accessToken: hit.accessToken, instanceUrl: hit.instanceUrl };
+    // The stored connection is read FIRST, every time, and a cached token is
+    // served only while it was minted from that same connection. The cache is
+    // per pod: a reconnect to another org, or a disconnect, handled by a
+    // different pod invalidates only that pod's entry, so a cache consulted
+    // before the store kept delivering to the old org, or after a disconnect,
+    // for up to ten minutes. Reading the row is one indexed lookup; minting is
+    // the round trip worth saving.
     const creds = await this.credentials(db, accountId, env);
-    if (!creds) return null;
+    if (!creds) {
+      this.cache.delete(accountId);
+      return null;
+    }
+    const fingerprint = credentialFingerprint(creds);
+    const hit = this.cache.get(accountId);
+    if (hit && hit.expires > now && hit.fingerprint === fingerprint) {
+      return { accessToken: hit.accessToken, instanceUrl: hit.instanceUrl };
+    }
     const minted = await mintSalesforceToken(creds, fetchImpl);
     if (!minted.ok) {
       this.cache.delete(accountId);
@@ -231,6 +255,7 @@ export class SalesforceAccessTokens {
       accessToken: minted.accessToken,
       instanceUrl: minted.instanceUrl,
       expires: now + SALESFORCE_TOKEN_CACHE_MS,
+      fingerprint,
     });
     return { accessToken: minted.accessToken, instanceUrl: minted.instanceUrl };
   }

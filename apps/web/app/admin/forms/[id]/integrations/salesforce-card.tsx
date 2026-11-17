@@ -126,7 +126,9 @@ export function salesforceWarnings(
   contact: string[],
   /** The form has a question keyed `email`, which a delivery falls back to. */
   hasEmailQuestion = false,
-): { emailMissing: boolean; fallbacks: string[]; contactSkips: string[] } {
+  /** The org's Lead fields, to name the required ones nothing fills. */
+  lead: SalesforceField[] = [],
+): { emailMissing: boolean; fallbacks: string[]; contactSkips: string[]; unfilledRequired: string[] } {
   const mapped = new Set<string>();
   for (const row of state.mappings) if (row.key.trim() && row.field.trim()) mapped.add(row.field.trim());
   for (const v of Object.values(state.utm)) if (v?.trim()) mapped.add(v.trim());
@@ -138,14 +140,28 @@ export function salesforceWarnings(
   const emailMissing =
     !hasEmailQuestion &&
     !state.mappings.some((r) => r.key.trim() && r.field.trim().toLowerCase() === 'email');
-  // LastName and Company are filled by the delivery itself; any OTHER field the
-  // org requires on create has no fallback, and is the one worth naming.
-  const fallbacks = ['LastName', 'Company'].filter((f) => !has(f));
+  // LastName and Company are filled by the delivery itself when nothing maps
+  // them, so they are notes, not problems.
+  const SELF_FILLED = ['LastName', 'Company'];
+  const fallbacks = SELF_FILLED.filter((f) => !has(f));
+  // Any OTHER field the org requires on a new Lead has no fallback: with
+  // nothing mapped to it, every create is refused with REQUIRED_FIELD_MISSING.
+  // Those are the ones worth naming, because the card is the only place an
+  // author can learn about them before leads start bouncing.
+  const unfilledRequired = lead
+    .filter(
+      (f) =>
+        f.required &&
+        f.name.toLowerCase() !== 'email' &&
+        !SELF_FILLED.some((s) => s.toLowerCase() === f.name.toLowerCase()) &&
+        !has(f.name),
+    )
+    .map((f) => f.label || f.name);
   const contactSet = new Set(contact.map((c) => c.toLowerCase()));
   const contactSkips = contact.length
     ? [...mapped].filter((f) => f.toLowerCase() !== 'email' && !contactSet.has(f.toLowerCase()))
     : [];
-  return { emailMissing, fallbacks, contactSkips };
+  return { emailMissing, fallbacks, contactSkips, unfilledRequired };
 }
 
 export function SalesforceCard({
@@ -217,8 +233,8 @@ export function SalesforceCard({
       ? [{ value: current, label: current }, ...questionOptions]
       : questionOptions;
   const warnings = useMemo(
-    () => salesforceWarnings(state, contact, questions.some((q) => q.key === 'email')),
-    [state, contact, questions],
+    () => salesforceWarnings(state, contact, questions.some((q) => q.key === 'email'), lead),
+    [state, contact, questions, lead],
   );
   const dateType = lead.find((f) => f.name === state.dateField)?.type;
 
@@ -308,6 +324,11 @@ export function SalesforceCard({
             {warnings.emailMissing ? (
               <p role="alert" className="text-sm text-destructive" data-testid="salesforce-email-missing">
                 {sm.emailMissing}
+              </p>
+            ) : null}
+            {warnings.unfilledRequired.length ? (
+              <p role="alert" className="text-sm text-destructive" data-testid="salesforce-required-unfilled">
+                {fill(sm.requiredUnfilled, { fields: warnings.unfilledRequired.join(', ') })}
               </p>
             ) : null}
             {warnings.fallbacks.length ? (
