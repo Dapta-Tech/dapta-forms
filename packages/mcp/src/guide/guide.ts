@@ -87,6 +87,8 @@ export const GUIDE_LOGIC: readonly string[] = [
   '"@score" is the running score of the steps shown before this one, not counting the step itself. Only gt, lt, eq and between apply to it. Put a step gated by score after the last scored question.',
   'Scoring: each answer adds points and the total picks one of `outcomes` by minScore and maxScore (inclusive). Leave maxScore off the highest range so every score lands somewhere.',
   'Placeholders: [step_key] inserts an earlier answer into a question, helper, outcome label or message, ending texts, reveal texts and redirectUrl. A name step exposes [firstname], [lastname] and [name]. A placeholder with no answer disappears with the comma or space that joined it. A checkbox step does not take placeholders in its question.',
+  'An answer placed in redirectUrl (an email, say) ends up in the destination site\'s browser history and server logs, so prefer a non-identifying one. When the form runs embedded, redirectUrl never carries answers: every query parameter with a placeholder is dropped.',
+  'ending.forwardUtm true appends the visitor\'s utm_* parameters to every redirect (the ending one, an outcome\'s own redirectUrl and the one after a booking), embedded or not. It never overwrites a utm_* key already written in the URL. Absent or false forwards nothing.',
 ];
 
 export const GUIDE_EXAMPLES: ReadonlyArray<{ name: string; what: string; config: unknown }> = [

@@ -476,3 +476,27 @@ describe('branding.buttonTextColor (additive)', () => {
     expect(parse({ buttonTextColor: 'a'.repeat(33) }).success).toBe(false);
   });
 });
+
+describe('formConfigSchema: ending.forwardUtm (additive)', () => {
+  it('a legacy ending parses with forwardUtm unset, which means off', () => {
+    const parsed = formConfigSchema.parse({
+      ...baseConfig(),
+      ending: { redirectUrl: 'https://example.com/thanks' },
+    });
+    expect(parsed.ending?.forwardUtm).toBeUndefined();
+  });
+
+  it('keeps forwardUtm when the owner turns it on', () => {
+    const parsed = formConfigSchema.parse({
+      ...baseConfig(),
+      ending: { redirectUrl: 'https://example.com/thanks', forwardUtm: true },
+    });
+    expect(parsed.ending?.forwardUtm).toBe(true);
+  });
+
+  it('rejects a non-boolean forwardUtm', () => {
+    expect(() =>
+      formConfigSchema.parse({ ...baseConfig(), ending: { forwardUtm: 'yes' } }),
+    ).toThrow();
+  });
+});
