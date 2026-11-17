@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getMessages } from '@quill/shared';
 import { cn } from '@/lib/cn';
+import { fitMenu, type MenuFit, type Span } from './select-fit';
 
 /**
  * Select — a branded, token-styled combobox that replaces the OS-native
@@ -28,8 +29,45 @@ import { cn } from '@/lib/cn';
  * (up to a cap, past which an option WRAPS): an option is never ellipsized,
  * because a list of five that all read "Where should we send the..." gives the
  * person nothing to choose between. It opens leftward when growing rightward
- * would leave the window.
+ * would leave the visible area AND leftward fits; when neither side holds it,
+ * it narrows to the room there is and the options wrap. The width is settled
+ * once, as the menu opens, and filtering never changes it (see `select-fit.ts`).
  */
+
+/** Gutter kept between the menu and whatever would cut it off. */
+const EDGE = 8;
+
+/**
+ * The horizontal band of the viewport in which the menu can be seen: the window,
+ * narrowed by every ancestor that clips it.
+ *
+ * The menu is `absolute` inside the Select's own `relative` root, not portalled,
+ * so an ancestor with any `overflow` other than `visible` cuts it off exactly
+ * like the window does (and `overflow-y: auto` alone is enough: CSS computes
+ * `overflow-x` to `auto` along with it). The walk follows the containing-block
+ * chain, because that is what decides clipping: an `absolute` box ignores the
+ * static ancestors below its containing block, and a `fixed` one (a dialog
+ * overlay) ignores everything above it.
+ */
+function visibleBand(root: HTMLElement): Span {
+  let left = EDGE;
+  let right = document.documentElement.clientWidth - EDGE;
+  let absolute = false;
+  for (let node = root.parentElement; node && node !== document.body; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (absolute && style.position === 'static') continue;
+    // A box with no width of its own (`display: contents`, an inline wrapper)
+    // reports an overflow value it cannot apply; it clips nothing.
+    if (style.overflowX !== 'visible' && node.clientWidth > 0) {
+      const inner = node.getBoundingClientRect().left + node.clientLeft;
+      left = Math.max(left, inner + EDGE);
+      right = Math.min(right, inner + node.clientWidth - EDGE);
+    }
+    if (style.position === 'fixed') break;
+    absolute = style.position === 'absolute';
+  }
+  return { left, right };
+}
 
 export interface SelectOption {
   value: string;
@@ -80,8 +118,8 @@ export function Select({
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  /** Which edge of the trigger the panel hangs from (see the layout effect). */
-  const [alignEnd, setAlignEnd] = useState(false);
+  /** Side and width of the open panel; null until measured (see the layout effect). */
+  const [fit, setFit] = useState<MenuFit | null>(null);
 
   const filtered = useMemo(() => {
     if (!searchable) return options;
@@ -123,16 +161,35 @@ export function Select({
     return () => document.removeEventListener('mousedown', onDown);
   }, [open, searchable]);
 
-  // The panel grows to its content, so it can run past the window's right edge
-  // when the trigger sits near it. Measured before paint and flipped to hang
-  // from the trigger's right edge instead, so it never opens half off-screen.
+  // The panel grows to its content, so it can run past the window, or past a
+  // dialog or rail that clips it. Its first render carries no width: that is the
+  // one moment every option is in the list (the filter is empty), so what is
+  // measured here is the width the longest option asks for. It is then pinned,
+  // before paint, to that width or to the room there is. Pinned is the point:
+  // left to `w-max`, the panel re-fit itself to the surviving options on every
+  // keystroke in the search box and jumped under the pointer.
   useLayoutEffect(() => {
     if (!open) {
-      setAlignEnd(false);
+      setFit(null);
       return;
     }
-    const rect = panelRef.current?.getBoundingClientRect();
-    if (rect && rect.right > window.innerWidth - 8) setAlignEnd(true);
+    const root = rootRef.current;
+    const panel = panelRef.current;
+    if (!root || !panel) return;
+    // What the OPTIONS ask for, without the `min-w-full` floor: the floor is the
+    // trigger's width, and that one is read fresh on every placement, so a menu
+    // that was only as wide as its trigger still follows it through a resize.
+    panel.style.minWidth = '0';
+    const content = panel.getBoundingClientRect().width;
+    panel.style.minWidth = '';
+    const place = () => {
+      const trigger = root.getBoundingClientRect();
+      setFit(fitMenu(Math.max(content, trigger.width), trigger, visibleBand(root)));
+    };
+    place();
+    // A window resize moves the edges but not what the options ask for.
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
   }, [open]);
 
   // Keep the active option scrolled into view while arrowing through the list.
@@ -180,7 +237,12 @@ export function Select({
   };
 
   return (
-    <div ref={rootRef} className="relative">
+    // `min-w-0`: where a caller lays the Select out as a flex or grid item, its
+    // automatic minimum is the whole selected label on one line, so one long
+    // option pushed the trigger (and the menu, never narrower than it) out of a
+    // dialog. With it the trigger shrinks to its slot and the label truncates,
+    // which is what the label's `truncate` was always meant to do.
+    <div ref={rootRef} className="relative min-w-0">
       <button
         ref={triggerRef}
         type="button"
@@ -226,8 +288,10 @@ export function Select({
           ref={panelRef}
           className={cn(
             'absolute top-full z-50 mt-1 flex w-max min-w-full max-w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-md border border-border bg-popover shadow-lg',
-            alignEnd ? 'right-0' : 'left-0',
+            fit?.side === 'end' ? 'right-0' : 'left-0',
           )}
+          // Inline so it outranks `w-max`; `min-w-full` and the cap still apply.
+          style={fit ? { width: fit.width } : undefined}
           onKeyDown={onKeyDown}
         >
           {searchable ? (
