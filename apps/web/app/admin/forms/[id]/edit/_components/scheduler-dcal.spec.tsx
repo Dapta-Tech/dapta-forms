@@ -201,7 +201,8 @@ describe('the dCal picker when dCal is not there', () => {
     const cases = [
       ['not_configured', s.schedulerDcalUnavailable],
       ['session_rejected', s.schedulerDcalSignIn],
-      ['no_session', s.schedulerDcalSignIn],
+      // A fork on local auth forwards no session; signing in cannot fix it.
+      ['no_session', s.schedulerDcalUnavailable],
       ['no_booking_page', s.schedulerDcalNoPage],
       ['dcal_error', s.schedulerDcalError],
     ] as const;
@@ -212,7 +213,9 @@ describe('the dCal picker when dCal is not there', () => {
       expect(box.getAttribute('data-code'), code).toBe(code);
       expect(box.textContent, code).toContain(sentence);
       // "Not available on this deployment" is true of one cause only.
-      if (code !== 'not_configured') expect(box.textContent, code).not.toContain(s.schedulerDcalUnavailable);
+      if (code !== 'not_configured' && code !== 'no_session') {
+        expect(box.textContent, code).not.toContain(s.schedulerDcalUnavailable);
+      }
       await act(async () => root?.unmount());
       container?.remove();
     }

@@ -398,9 +398,9 @@ export interface BuilderMessages {
     /** Re-reads the list, for when they come back from creating one. */
     schedulerDcalRefresh: string;
     schedulerDcalRefreshing: string;
-    /** dCal is not configured for this deployment. */
+    /** dCal is not configured for this deployment, or it forwards no session to dCal. */
     schedulerDcalUnavailable: string;
-    /** dCal refused the author's session, or there was none to forward. */
+    /** dCal refused the author's session (401/403): signing in again is the fix. */
     schedulerDcalSignIn: string;
     /** The author has no dCal booking page yet; the link below sets one up. */
     schedulerDcalNoPage: string;
@@ -957,7 +957,7 @@ const en: BuilderMessages = {
     schedulerDcalRefresh: 'I created it, load the list',
     schedulerDcalRefreshing: 'Loading the list again…',
     schedulerDcalUnavailable: 'dCal is not available on this deployment.',
-    schedulerDcalSignIn: 'dCal did not accept your session. Sign in again, then come back to this question.',
+    schedulerDcalSignIn: 'dCal needs your Dapta sign-in. Sign in again, then come back to this question.',
     schedulerDcalNoPage: 'You do not have a dCal booking page yet. Set it up in dCal, then refresh this list.',
     schedulerDcalNoPageLink: 'Set up your booking page',
     schedulerDcalError: 'dCal could not answer right now. Try again in a moment.',
@@ -1464,7 +1464,7 @@ const es: BuilderMessages = {
     schedulerDcalRefresh: 'Ya lo creé, cargar la lista',
     schedulerDcalRefreshing: 'Cargando la lista de nuevo…',
     schedulerDcalUnavailable: 'dCal no está disponible en esta instalación.',
-    schedulerDcalSignIn: 'dCal no aceptó tu sesión. Inicia sesión de nuevo y vuelve a esta pregunta.',
+    schedulerDcalSignIn: 'dCal necesita tu sesión de Dapta. Inicia sesión de nuevo y vuelve a esta pregunta.',
     schedulerDcalNoPage: 'Todavía no tienes una página de agendamiento en dCal. Configúrala en dCal y luego actualiza esta lista.',
     schedulerDcalNoPageLink: 'Configurar tu página de agendamiento',
     schedulerDcalError: 'dCal no pudo responder ahora. Inténtalo de nuevo en un momento.',

@@ -80,7 +80,7 @@ import {
   useCaptchaGate,
   captchaAborted,
   submitFinal,
-  campaignUtm,
+  useCampaignUtm,
   captureUtm,
   captureDefaults,
   withAnswer,
@@ -238,6 +238,8 @@ export function VerticalFormRenderer({
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
   const resolveVisit = useHostVisit(visitCapture, name);
+  // The visitor's campaign for the booking page: the same set the submission carries.
+  const { utm: campaign, record: recordCampaign } = useCampaignUtm();
 
   /**
    * Authorize one upload for a `file` step.
@@ -324,8 +326,6 @@ export function VerticalFormRenderer({
   // The UTMs this run submitted (form's own, else the landing's), kept for the
   // redirects that fire after `finalize` (deferred, post-booking).
   const redirectUtm = useRef<Record<string, string>>({});
-  // The campaign the last save carried (see `withData`), for the booking page.
-  const submittedUtm = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const startTracked = useRef(false);
@@ -425,7 +425,7 @@ export function VerticalFormRenderer({
   function withData(a: Answers, resolved?: ResolvedVisit): Record<string, unknown> {
     // The landing's campaign stands in only when the form's own URL has none.
     const utm = mergeHostUtm(utmRef.current, resolved?.hostUtm);
-    submittedUtm.current = utm;
+    recordCampaign(utm);
     return Object.keys(utm).length > 0 ? { ...a, utm } : { ...a };
   }
 
@@ -904,7 +904,7 @@ export function VerticalFormRenderer({
           answers={answersRef.current}
           sessionId={sessionId}
           locale={locale}
-          utm={campaignUtm(submittedUtm.current, utmRef.current)}
+          utm={campaign}
           onBooked={(details) => void handleBooked(details)}
         />
       </PhaseShell>
@@ -985,7 +985,7 @@ export function VerticalFormRenderer({
           answers={answers}
           sessionId={sessionId}
           locale={locale}
-          utm={campaignUtm(submittedUtm.current, utmRef.current)}
+          utm={campaign}
           unconfiguredLabel={m.schedulerUnconfigured}
           onBooked={(details) => void handleSchedulerBooked(step, details)}
         />
@@ -1229,7 +1229,7 @@ function SchedulerQuestion({
   answers: Answers;
   sessionId: string;
   locale: string;
-  /** The visitor's campaign, for the booking page (see `campaignUtm`). */
+  /** The visitor's campaign, for the booking page (see `useCampaignUtm`). */
   utm: Record<string, string>;
   unconfiguredLabel: string;
   onBooked: (details: BookingScheduledDetails) => void;

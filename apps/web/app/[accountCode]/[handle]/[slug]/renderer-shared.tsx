@@ -143,17 +143,39 @@ export function mergeHostUtm(
   return host ? { ...host } : {};
 }
 
+/** Whether two campaigns are the same `utm_*` set (order does not matter). */
+export function sameCampaign(a: Record<string, string>, b: Record<string, string>): boolean {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
+}
+
 /**
- * The campaign a booking page is handed: what the last save carried (the
- * form's own UTMs, else the landing's, see `mergeHostUtm`), or, before any
- * save, the form's own. Read at render time, so the booking is credited to the
- * same campaign as the submission it belongs to.
+ * The campaign a booking page is handed, as STATE so the embed re-renders
+ * when it changes: the form's own `utm_*` at mount, then whatever each save
+ * resolved (`record`, called with the set `withData` sends: the form's own,
+ * else the landing's). It never asks the host page itself; the saves already
+ * do, and an extra ask would change what they wait for.
+ *
+ * `own` is the form URL's own set, which is all a preloaded Calendly widget
+ * can carry (its script forwards the page's `utm_*` by itself), so a caller
+ * can tell when a preload would lose the landing's campaign.
  */
-export function campaignUtm(
-  submitted: Record<string, string>,
-  own: Record<string, string>,
-): Record<string, string> {
-  return Object.keys(submitted).length > 0 ? submitted : own;
+export function useCampaignUtm(): {
+  utm: Record<string, string>;
+  own: Record<string, string>;
+  record: (utm: Record<string, string>) => void;
+} {
+  const [own, setOwn] = useState<Record<string, string>>({});
+  const [utm, setUtm] = useState<Record<string, string>>({});
+  const record = useCallback((next: Record<string, string>) => {
+    setUtm((prev) => (sameCampaign(prev, next) ? prev : next));
+  }, []);
+  useEffect(() => {
+    const mine = captureUtm();
+    setOwn(mine);
+    record(mine);
+  }, [record]);
+  return { utm, own, record };
 }
 
 /**

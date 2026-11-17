@@ -342,7 +342,10 @@ function DcalUnavailable({
   onRetry: () => void;
   s: Msgs;
 }) {
-  if (code === 'session_rejected' || code === 'no_session') {
+  // `no_session` is a deployment whose sign-in forwards no session (the
+  // `local` auth of a bare fork): signing in again cannot fix that, so it
+  // reads as not available, like a deployment without dCal.
+  if (code === 'session_rejected') {
     return (
       <p data-testid="scheduler-dcal-unavailable" data-code={code} className="text-xs text-muted-foreground">
         {s.schedulerDcalSignIn}

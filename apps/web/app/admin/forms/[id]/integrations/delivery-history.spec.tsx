@@ -356,6 +356,19 @@ describe('describeDeliveryReason', () => {
     );
   });
 
+  it('words the booking sync, which writes HubSpot too', () => {
+    expect(describeDeliveryReason('booking_sync', 'hubspot booking upsert failed: HTTP 502', es)).toBe(
+      'Falló la entrega a HubSpot: HTTP 502',
+    );
+    expect(
+      describeDeliveryReason(
+        'booking_sync',
+        'hubspot booking upsert rejected (HTTP 400). Check the configured booking properties',
+        es,
+      ),
+    ).toBe(es.historyReasons.bookingRejected.replace('{status}', '400'));
+  });
+
   it('never rewrites a provider sentence that only contains a known phrase', () => {
     const text = 'Contact has no email in submission field X';
     expect(describeDeliveryReason('hubspot', text, es)).toBe(text);

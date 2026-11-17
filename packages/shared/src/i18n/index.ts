@@ -2110,6 +2110,8 @@ export interface FormsMessages {
         salesforceNotConnected: string;
         hubspotNotConnected: string;
         webhookNoUrl: string;
+        /** HubSpot refused the booking properties a booking update wrote. `{status}`. */
+        bookingRejected: string;
       };
       salesforce: {
         title: string;
@@ -4666,6 +4668,7 @@ export const en: FormsMessages = {
         salesforceNotConnected: 'Salesforce is not connected. Connect it again to keep sending leads.',
         hubspotNotConnected: 'HubSpot is not connected.',
         webhookNoUrl: 'The webhook has no URL.',
+        bookingRejected: 'HubSpot refused the booking update with HTTP {status}. Check the booking properties.',
       },
       salesforce: {
         title: 'Salesforce',
@@ -4899,7 +4902,7 @@ export const en: FormsMessages = {
       perFormNote: 'Field mapping is configured per form, from each form’s Connect tab.',
       unavailableTitle: 'Not available on this deployment',
       unavailableBody:
-        '{provider} needs settings that only whoever runs this deployment can add. Once they are added, it can be connected here.',
+        '{provider} needs settings that only whoever runs this deployment can add. Once they are added, it can be used here.',
       serverProvided: 'Provided by the server',
       serverProvidedTitle: 'Already working, using the server’s token',
       serverProvidedBody:
@@ -7517,6 +7520,7 @@ export const es: FormsMessages = {
         salesforceNotConnected: 'Salesforce no está conectado. Conéctalo de nuevo para seguir enviando leads.',
         hubspotNotConnected: 'HubSpot no está conectado.',
         webhookNoUrl: 'El webhook no tiene URL.',
+        bookingRejected: 'HubSpot rechazó la actualización del agendamiento con HTTP {status}. Revisa las propiedades del agendamiento.',
       },
       salesforce: {
         title: 'Salesforce',
@@ -7750,7 +7754,7 @@ export const es: FormsMessages = {
       perFormNote: 'La asignación de campos se configura por formulario, desde la pestaña Conectar de cada uno.',
       unavailableTitle: 'No disponible en esta instalación',
       unavailableBody:
-        '{provider} necesita una configuración que solo puede agregar quien administra esta instalación. Cuando la agregue, se podrá conectar aquí.',
+        '{provider} necesita una configuración que solo puede agregar quien administra esta instalación. Cuando la agregue, se podrá usar aquí.',
       serverProvided: 'La da el servidor',
       serverProvidedTitle: 'Ya funciona, con el token del servidor',
       serverProvidedBody:

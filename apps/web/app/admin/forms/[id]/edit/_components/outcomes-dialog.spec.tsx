@@ -357,7 +357,7 @@ describe('OutcomesDialog — the fields the Playwright specs drive', () => {
   });
 });
 
-describe('OutcomesDialog — a range redirect and the form-wide UTM switch', () => {
+describe('OutcomesDialog: a range redirect and the form-wide UTM switch', () => {
   const text = (el: ReactElement | undefined): string => {
     const kids = (el?.props as AnyProps | undefined)?.children;
     return (Array.isArray(kids) ? kids : [kids]).filter((k) => typeof k === 'string').join('');

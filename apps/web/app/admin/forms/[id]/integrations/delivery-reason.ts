@@ -66,7 +66,7 @@ const FIXED: { pattern: RegExp; key: keyof Msgs['historyReasons'] }[] = [
  * Three shapes carry a provider's own words, and only dForms' half of each is
  * translated:
  *   - `<provider> delivery failed: <detail>` (a retryable failure);
- *   - `hubspot upsert failed: <detail>` (HubSpot's spelling of the same);
+ *   - `hubspot [booking ]upsert failed: <detail>` (HubSpot's spelling of the same);
  *   - `HTTP <status>[: <provider text>]` (a permanent refusal).
  */
 export function describeDeliveryReason(kind: DeliveryKind, reason: string, m: Msgs): string {
@@ -75,8 +75,12 @@ export function describeDeliveryReason(kind: DeliveryKind, reason: string, m: Ms
   for (const { pattern, key } of FIXED) if (pattern.test(raw)) return r[key];
 
   const failed = /^(?:webhook|salesforce|google sheets) delivery failed: ([\s\S]+)$/i.exec(raw) ??
-    /^hubspot upsert failed: ([\s\S]+)$/i.exec(raw);
+    /^hubspot (?:booking )?upsert failed: ([\s\S]+)$/i.exec(raw);
   if (failed) return fill(r.deliveryFailed, { provider: providerName(kind, m), detail: failed[1]!.trim() });
+
+  // The booking sync's refusal of the booking properties it was told to write.
+  const booking = /^hubspot booking upsert rejected \(HTTP (\d{3})\)/i.exec(raw);
+  if (booking) return fill(r.bookingRejected, { status: booking[1]! });
 
   const http = /^HTTP (\d{3})(?::\s*([\s\S]*))?$/.exec(raw);
   if (http) {

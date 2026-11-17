@@ -68,7 +68,8 @@ import {
   useCaptchaGate,
   captchaAborted,
   submitFinal,
-  campaignUtm,
+  useCampaignUtm,
+  sameCampaign,
   captureUtm,
   captureDefaults,
   withAnswer,
@@ -210,6 +211,8 @@ export function FormRenderer({
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
   const resolveVisit = useHostVisit(visitCapture, name);
+  // The visitor's campaign for the booking page: the same set the submission carries.
+  const { utm: campaign, own: ownUtm, record: recordCampaign } = useCampaignUtm();
 
   /**
    * Authorize one upload for a `file` step.
@@ -318,8 +321,6 @@ export function FormRenderer({
   // The UTMs this run submitted (form's own, else the landing's), kept for the
   // redirects that fire after `finalize` (deferred, post-booking).
   const redirectUtm = useRef<Record<string, string>>({});
-  // The campaign the last save carried (see `withData`), for the booking page.
-  const submittedUtm = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const startSent = useRef(false); // one `start` per session, whichever path emits it
@@ -583,7 +584,7 @@ export function FormRenderer({
   function withData(a: Answers, resolved?: ResolvedVisit): Record<string, unknown> {
     // The landing's campaign stands in only when the form's own URL has none.
     const utm = mergeHostUtm(utmRef.current, resolved?.hostUtm);
-    submittedUtm.current = utm;
+    recordCampaign(utm);
     return Object.keys(utm).length > 0 ? { ...a, utm } : { ...a };
   }
 
@@ -1139,8 +1140,10 @@ export function FormRenderer({
           answers={answersRef.current}
           sessionId={sessionId}
           locale={locale}
-          utm={campaignUtm(submittedUtm.current, utmRef.current)}
-          preloadKey={booking.outcome.booking.url}
+          utm={campaign}
+          // A preloaded widget carries only this page's own UTMs (Calendly's
+          // script forwards them), so it is used only when that IS the campaign.
+          preloadKey={sameCampaign(campaign, ownUtm) ? booking.outcome.booking.url : undefined}
           onBooked={(details) => void handleBooked(details)}
         />
       </PhaseShell>
@@ -1507,9 +1510,13 @@ export function FormRenderer({
                     extraCustomAnswers={schedPrefill.customAnswers}
                     sessionId={sessionId}
                     locale={locale}
-                    utm={campaignUtm(submittedUtm.current, utmRef.current)}
+                    utm={campaign}
                     hideHeader
-                    preloadKey={step.scheduler ? schedulerToBooking(step.scheduler)?.url : undefined}
+                    preloadKey={
+                      step.scheduler && sameCampaign(campaign, ownUtm)
+                        ? schedulerToBooking(step.scheduler)?.url
+                        : undefined
+                    }
                     onBooked={(details) => void handleSchedulerBooked(step, details)}
                   />
                 ) : (
