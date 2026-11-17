@@ -596,6 +596,8 @@ export type GoogleSheetsHeaderRowResponse =
  */
 export type SheetHeaderSync =
   | { outcome: 'written' | 'unchanged' }
+  /** A `check` found row 1 is dForms' own but out of date (nothing written). */
+  | { outcome: 'stale' }
   /** Row 1 does not match: what it holds, and what would be written instead. */
   | { outcome: 'foreign'; current: string[]; headers: string[] }
   | { outcome: 'failed'; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
@@ -985,11 +987,11 @@ export const adminApi = {
    * Bring the form's spreadsheet header row in line with its STORED columns.
    * The API reads everything it needs from the form, so this sends no body.
    */
-  syncFormSheetHeaders: (id: string, opts?: { replace?: boolean }) =>
+  syncFormSheetHeaders: (id: string, opts?: { replace?: boolean; check?: boolean }) =>
     req<FormSheetHeaderRowResponse>(
       'POST',
       `/v1/forms/${id}/destinations/google-sheets/header-row`,
-      opts?.replace ? { replace: true } : undefined,
+      opts?.replace ? { replace: true } : opts?.check ? { check: true } : undefined,
     ),
 
   // Account-level integration connections (paste-token model; admin/owner writes)

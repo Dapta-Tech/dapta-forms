@@ -7,7 +7,7 @@
  * incomplete, what moving a row means) are worth testing without mounting an
  * editor around them.
  */
-import type { SheetColumn, SheetColumnSource } from '@quill/types';
+import { isWritableSheetColumn, type SheetColumn, type SheetColumnSource } from '@quill/types';
 import type { QuestionMeta } from './auto-map';
 
 /** The headers of the columns that are not questions, in the author's language. */
@@ -51,25 +51,50 @@ export function defaultColumns(
   ];
 }
 
-/** Does this row say enough to write a cell? */
+/**
+ * Is this column in the sheet? The API's own rule (`isWritableSheetColumn`:
+ * it has a heading), so the card's letters, row 1 and every delivered row
+ * agree on which columns exist and in what order.
+ */
 export function isCompleteColumn(column: SheetColumn): boolean {
-  if (!column.header.trim()) return false;
-  // `answer` and `utm` name something; every other source is complete alone.
-  if (column.source === 'answer' || column.source === 'utm') return !!column.key?.trim();
-  return true;
+  return isWritableSheetColumn(column);
 }
 
 /**
- * The plan as it should be STORED: incomplete rows dropped, headers trimmed.
+ * What a column still needs, or null when it is done.
  *
- * Dropping rather than refusing the save is deliberate. The editor autosaves,
- * so a half-typed row exists on the way to every complete one; refusing would
- * mean an author cannot add a column without the screen complaining at them
- * mid-keystroke. A dropped row is still on screen, so nothing disappears from
- * under them: it simply does not reach the spreadsheet until it says something.
+ * `header`: no heading, so it is not in the sheet at all. `source`: it is in
+ * the sheet (heading in row 1), but nothing fills its cells yet, so they stay
+ * empty until an answer or a campaign tag is chosen.
+ */
+export function columnMissing(column: SheetColumn): 'header' | 'source' | null {
+  if (!column.header.trim()) return 'header';
+  if ((column.source === 'answer' || column.source === 'utm') && !column.key?.trim()) return 'source';
+  return null;
+}
+
+/**
+ * Each column's letter in the SHEET, or null for one that is not written.
+ * Letters count written columns only, so the card reads A, B, C, (none), D
+ * for a row where the fourth column has no heading, exactly as row 1 does.
+ */
+export function sheetLetters(columns: SheetColumn[], letter: (i: number) => string): (string | null)[] {
+  let n = 0;
+  return columns.map((c) => (isCompleteColumn(c) ? letter(n++) : null));
+}
+
+/**
+ * The plan as it should be STORED: every row, incomplete ones included,
+ * headers trimmed and empty keys left out.
+ *
+ * Incomplete rows used to be dropped here, which made the save pill's
+ * "saved" a lie about them: a column with a heading and no answer yet was on
+ * screen, called saved, and gone after a reload. Stored, it survives; the
+ * API leaves it out of the sheet (row 1 and every delivered row) until it is
+ * complete, so storing it changes nothing a respondent's row looks like.
  */
 export function storedColumns(columns: SheetColumn[]): SheetColumn[] {
-  return columns.filter(isCompleteColumn).map((c) => ({
+  return columns.map((c) => ({
     header: c.header.trim(),
     source: c.source,
     ...(c.key?.trim() ? { key: c.key.trim() } : {}),

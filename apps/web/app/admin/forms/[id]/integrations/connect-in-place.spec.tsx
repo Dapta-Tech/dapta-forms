@@ -146,22 +146,115 @@ describe('HubSpot connects in place', () => {
 describe('the autosave pill', () => {
   const fixed = () => document.body.querySelector<HTMLElement>('[data-testid="integrations-save-status"]')!;
 
-  it('is fixed to the bottom-right of the window on wide screens, outside the editor', async () => {
+  it('is fixed to the bottom-right of the window at every width, outside the editor', async () => {
     const el = await render(<SaveStatusPill status="saved" detail={null} m={m} />);
     // Portalled to body, so no ancestor's stacking context can pin it elsewhere.
     expect(el.contains(fixed())).toBe(false);
-    expect(fixed().className).toMatch(/\bfixed\b/);
-    expect(fixed().className).toContain('bottom-5');
-    expect(fixed().className).toContain('right-5');
-    expect(fixed().className).toContain('sm:block');
+    const cls = fixed().className;
+    expect(cls).toMatch(/\bfixed\b/);
+    expect(cls).not.toContain('hidden');
+    // On a phone too, lifted clear of the home indicator.
+    expect(cls).toContain('safe-area-inset-bottom');
+    expect(cls).toContain('right-4');
+    expect(cls).toContain('sm:right-5');
     expect(fixed().textContent).toBe(m.autosaved);
   });
 
-  it('sits in the flow on a phone, where a floating pill would cover controls', async () => {
-    const el = await render(<SaveStatusPill status="saved" detail={null} m={m} />);
-    const inline = el.querySelector<HTMLElement>('[data-testid="integrations-save-status-inline"]')!;
-    expect(inline.className).toContain('sm:hidden');
-    expect(inline.className).not.toMatch(/\bfixed\b/);
+  it('says nothing before the first save', async () => {
+    await render(<SaveStatusPill status="saved" detail={null} touched={false} m={m} />);
+    expect(document.body.querySelector('[data-testid="integrations-save-status"]')).toBeNull();
+    expect(document.documentElement.classList.contains('has-save-pill')).toBe(false);
+  });
+
+  it('never takes a tap, in any state', async () => {
+    for (const status of ['saving', 'saved', 'partial', 'retrying', 'error'] as const) {
+      act(() => root?.unmount());
+      await render(<SaveStatusPill status={status} detail="x" m={m} />);
+      expect(fixed().className).toContain('pointer-events-none');
+    }
+  });
+
+  it.each([
+    ['a phone', '(max-width: 639px)'],
+    ['1024 px, where the topbar status is hidden', '(never)'],
+  ])('at %s, a failed save stays on screen until it resolves, then settles', async (_label, narrowQuery) => {
+    const original = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q.includes(narrowQuery), media: q })) as never;
+    vi.useFakeTimers();
+    const pill = () => document.body.querySelector('[data-testid="integrations-save-status"]');
+    try {
+      await render(<SaveStatusPill status="error" detail="Could not save the integrations." m={m} />);
+      await act(async () => {
+        vi.advanceTimersByTime(20_000);
+      });
+      // Twenty seconds on, the failure is still said, in full, unfolded.
+      expect(pill()?.getAttribute('data-status')).toBe('error');
+      expect(pill()?.getAttribute('data-folded')).toBeNull();
+      expect(pill()?.textContent).toBe('Could not save the integrations.');
+      for (const status of ['partial', 'retrying', 'saving'] as const) {
+        await act(async () => root!.render(<SaveStatusPill status={status} detail="x" m={m} />));
+        await act(async () => {
+          vi.advanceTimersByTime(20_000);
+        });
+        expect(pill()?.getAttribute('data-status')).toBe(status);
+      }
+      // A later successful save settles it and it steps away.
+      await act(async () => root!.render(<SaveStatusPill status="saved" detail={null} m={m} />));
+      expect(pill()?.getAttribute('data-status')).toBe('saved');
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(pill()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      window.matchMedia = original;
+    }
+  });
+
+  it('folds a plain "saved" to a short, flat status after a moment', async () => {
+    vi.useFakeTimers();
+    try {
+      await render(<SaveStatusPill status="saved" detail={null} m={m} />);
+      expect(fixed().getAttribute('data-folded')).toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(1600);
+      });
+      expect(fixed().getAttribute('data-folded')).toBe('true');
+      // Its words are on screen (no hover or tap needed), and it is a status:
+      // no shadow, no button role, and taps pass through to what is under it.
+      expect(fixed().textContent).toBe(m.autosavedShort);
+      expect(fixed().getAttribute('role')).toBe('status');
+      expect(fixed().className).toContain('pointer-events-none');
+      expect(fixed().className).not.toContain('shadow');
+      expect(fixed().querySelector('button')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is short from the start on a phone, so it never sits on a row in view', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q.includes('max-width: 639px'), media: q })) as never;
+    try {
+      await render(<SaveStatusPill status="saved" detail={null} m={m} />);
+      expect(fixed().getAttribute('data-folded')).toBe('true');
+      expect(fixed().textContent).toBe(m.autosavedShort);
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it('never folds a state that needs reading', async () => {
+    vi.useFakeTimers();
+    try {
+      await render(<SaveStatusPill status="error" detail="Network down" m={m} />);
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(fixed().getAttribute('data-folded')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([
@@ -170,7 +263,6 @@ describe('the autosave pill', () => {
     ['retrying', 'bg-warning/10'],
     ['partial', 'bg-warning/10'],
     ['saving', 'bg-card'],
-    ['pending', 'pi-info-circle'],
   ] as const)('gives %s its own tone, from tokens', async (status, tone) => {
     await render(<SaveStatusPill status={status} detail={null} m={m} />);
     expect(fixed().getAttribute('data-status')).toBe(status);
@@ -178,10 +270,12 @@ describe('the autosave pill', () => {
     expect(fixed().innerHTML).not.toMatch(/#[0-9a-f]{3,6}\b/i);
   });
 
-  it('does not claim a switch-on it could not store as saved', async () => {
-    await render(<SaveStatusPill status="pending" detail={null} m={m} />);
-    expect(fixed().textContent).toBe(m.autosavedPendingSheet);
-    expect(fixed().innerHTML).not.toContain('bg-signal');
+  it('says nothing on load, whatever the state, until the author edits', async () => {
+    for (const status of ['saved', 'partial', 'error', 'retrying'] as const) {
+      act(() => root?.unmount());
+      await render(<SaveStatusPill status={status} detail="x" touched={false} m={m} />);
+      expect(document.body.querySelector('[data-testid="integrations-save-status"]')).toBeNull();
+    }
   });
 
   it('lifts the toasts above itself while it is on screen', async () => {

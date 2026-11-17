@@ -7,6 +7,7 @@ import {
   type GoogleSheetsDestinationOptions,
 } from './adapters/google-sheets';
 import { SalesforceDestination, type SalesforceDestinationOptions } from './adapters/salesforce';
+import { writableSheetColumns } from '@quill/types';
 
 /**
  * A fully-resolved destination spec: the form-config settings for the chosen
@@ -54,7 +55,7 @@ export function createDestination(
       if (!sheets.spreadsheetId) {
         return new LogOnlyDestination('google sheets destination missing a spreadsheet');
       }
-      if (!sheets.columns?.length) {
+      if (!writableSheetColumns(sheets.columns).length) {
         return new LogOnlyDestination('google sheets destination has no columns configured');
       }
       return new GoogleSheetsDestination(sheets, fetchImpl);

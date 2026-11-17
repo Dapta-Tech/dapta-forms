@@ -697,6 +697,29 @@ export const webhookDestinationSchema = z.object({
 });
 export type WebhookDestination = z.infer<typeof webhookDestinationSchema>;
 
+/**
+ * Whether a stored destination can deliver anything at all.
+ *
+ * A Google Sheets destination is stored while the author is still setting it
+ * up (switched on, no spreadsheet yet, or no complete column), so their work
+ * survives a reload. Such a destination is skipped at enqueue time rather
+ * than handed to an adapter that could only record a no-op for every
+ * submission. Every other type is deliverable as stored.
+ */
+export function destinationIsDeliverable(destination: {
+  type: string;
+  settings?: unknown;
+  columns?: unknown;
+}): boolean {
+  if (destination.type !== 'google-sheets') return true;
+  const settings = (destination.settings ?? {}) as { spreadsheetId?: unknown };
+  if (typeof settings.spreadsheetId !== 'string' || !settings.spreadsheetId.trim()) return false;
+  const columns = Array.isArray(destination.columns) ? destination.columns : [];
+  return columns.some(
+    (c) => typeof c === 'object' && c !== null && isWritableSheetColumn(c as { header?: string }),
+  );
+}
+
 /** Submission phases a destination can subscribe to. */
 export const destinationEvents = ['partial', 'complete'] as const;
 export type DestinationEvent = (typeof destinationEvents)[number];
@@ -735,6 +758,11 @@ export function destinationFiresForPhase(
  * attach a Note. The private-app token is a server-side env secret
  * (`HUBSPOT_PRIVATE_APP_TOKEN`), NOT stored in the form config.
  */
+/** Bounds for the unfinished rows a CRM destination keeps (`drafts`). */
+const DRAFT_ROWS = 200;
+const draftText = z.string().max(200);
+const draftValue = z.string().max(500);
+
 export const hubspotDestinationSchema = z.object({
   type: z.literal('hubspot'),
   enabled: z.boolean().default(false),
@@ -804,6 +832,27 @@ export const hubspotDestinationSchema = z.object({
   outcomeProperty: z.string().max(200).nullable().optional(),
   /** Fixed property values stamped on every synced contact. */
   staticProperties: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+  /**
+   * Rows the author started on the Connect tab and has not finished (a key
+   * with no property yet, a fixed value with no property, a value-map row with
+   * one side empty). Stored so they survive a reload; never read by a delivery
+   * or the mirror form, which see only the complete mappings above.
+   */
+  drafts: z
+    .object({
+      mappings: z.array(z.object({ key: draftText, property: draftText })).max(DRAFT_ROWS).optional(),
+      statics: z.array(z.object({ key: draftText, value: draftValue })).max(DRAFT_ROWS).optional(),
+      valueMaps: z
+        .array(
+          z.object({
+            stepKey: draftText,
+            rows: z.array(z.object({ from: draftValue, to: draftValue })).max(DRAFT_ROWS),
+          }),
+        )
+        .max(DRAFT_ROWS)
+        .optional(),
+    })
+    .optional(),
   /** Derive the company name from the respondent's email domain. */
   inferCompanyFromEmail: z.boolean().optional(),
   /**
@@ -861,8 +910,13 @@ export const sheetColumnSchema = z.object({
    * The text in the header row. Stored rather than derived, because the author
    * can rename a column without the question changing, and because a sheet that
    * already has data must keep the heading its existing rows were written under.
+   *
+   * May be empty: a column the author has added but not named yet is stored
+   * as it is, so it survives a reload, and is left out of the sheet (row 1 and
+   * every delivered row alike) until it has a heading. See
+   * `isWritableSheetColumn`.
    */
-  header: z.string().min(1).max(200),
+  header: z.string().max(200),
   source: z.enum(sheetColumnSource),
   /** The step key (`answer`) or the campaign key (`utm`). Unused by the rest. */
   key: z.string().min(1).max(64).optional(),
@@ -870,10 +924,42 @@ export const sheetColumnSchema = z.object({
 export type SheetColumn = z.infer<typeof sheetColumnSchema>;
 
 /**
+ * A column that goes into the sheet: one with a heading. Nothing else.
+ *
+ * The ONE rule for which columns exist in the sheet and in what order, used
+ * by the header row, every delivered row, the create call, the editor's
+ * column letters and `destinationIsDeliverable`, so all of them always agree.
+ * A heading with no answer chosen yet is written (its heading in row 1, an
+ * empty cell in every row) rather than skipped: skipping it would shift every
+ * column after it the moment the answer is picked. This is also what every
+ * config written before the rule existed meant by `{header, source:'answer'}`
+ * with no key. A column with no heading has nothing to put in row 1, so it is
+ * stored (the author's work survives a reload) and not written.
+ */
+export function isWritableSheetColumn(column: { header?: string; source?: string; key?: string }): boolean {
+  return !!column.header?.trim();
+}
+
+/** The columns that go into the sheet, in order. */
+export function writableSheetColumns<T extends { header?: string; source?: string; key?: string }>(
+  columns: readonly T[] | undefined,
+): T[] {
+  return (columns ?? []).filter(isWritableSheetColumn);
+}
+
+/**
  * At most this many columns in one row. Well under a sheet's own limit; it
  * exists so a crafted config cannot make one delivery build an enormous row.
  */
 export const MAX_SHEET_COLUMNS = 200;
+
+/** Where a spreadsheet destination writes, and a list of row-1 headings there. */
+const sheetHeaderStateSchema = z.object({
+  spreadsheetId: z.string().min(1).max(200),
+  /** `''` is the first tab, the same as an absent `sheetTitle`. */
+  sheetTitle: z.string().max(200),
+  headers: z.array(z.string().max(200)).max(MAX_SHEET_COLUMNS),
+});
 
 /**
  * Append every submission to a Google Sheet as a new row.
@@ -896,6 +982,9 @@ export const googleSheetsDestinationSchema = z.object({
       spreadsheetId: z.string().min(1).max(200).nullable().optional(),
       /** The tab written to, by its visible name. Absent writes to the first tab. */
       sheetTitle: z.string().max(200).nullable().optional(),
+      // An ABSENT spreadsheet is a destination the author switched on and has
+      // not finished: stored so the switch survives a reload, never delivered
+      // to (see `destinationIsDeliverable`).
       /**
        * The header row dForms last wrote (or found already in place), and
        * where. Bookkeeping the API owns, like HubSpot's `formSignature`: a
@@ -904,13 +993,21 @@ export const googleSheetsDestinationSchema = z.object({
        * to the columns rewrite row 1 while a row 1 that holds anything else
        * is never touched.
        */
-      headerSnapshot: z
-        .object({
-          spreadsheetId: z.string().min(1).max(200),
-          /** `''` is the first tab, the same as an absent `sheetTitle`. */
-          sheetTitle: z.string().max(200),
-          headers: z.array(z.string().max(200)).max(MAX_SHEET_COLUMNS),
-        })
+      headerSnapshot: sheetHeaderStateSchema.optional(),
+      /**
+       * The headings dForms last found it may NOT write to row 1 (row 1 held
+       * something else), and where. Owned by the API like `headerSnapshot`:
+       * it only spares a sheet a re-read on every unrelated save.
+       */
+      headerForeign: sheetHeaderStateSchema.optional(),
+      /**
+       * The headings whose sync last failed for a reason that will not fix
+       * itself (the spreadsheet is gone, access was revoked, Google is not
+       * connected), and when. API-owned: saves skip Google for these headings
+       * for a while instead of paying a failed call each time.
+       */
+      headerBroken: sheetHeaderStateSchema
+        .extend({ reason: z.string().max(40), at: z.number().int().nonnegative() })
         .optional(),
     })
     .default({}),
@@ -959,6 +1056,17 @@ export const salesforceDestinationSchema = z.object({
   dayTimezone: z.string().max(64).optional(),
   /** Fixed values stamped on every record written (e.g. `LeadSource`). */
   staticFields: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+  /**
+   * Rows the author started and has not finished (a question with no field
+   * yet, a fixed value with no field). Stored so they survive a reload; never
+   * read by a delivery, which sees only the complete mappings above.
+   */
+  drafts: z
+    .object({
+      mappings: z.array(z.object({ key: draftText, field: draftText })).max(DRAFT_ROWS).optional(),
+      statics: z.array(z.object({ field: draftText, value: draftValue })).max(DRAFT_ROWS).optional(),
+    })
+    .optional(),
 });
 export type SalesforceDestination = z.infer<typeof salesforceDestinationSchema>;
 

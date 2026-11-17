@@ -12,7 +12,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getMessages } from '@quill/shared';
-import type { FormDestination } from '@quill/types';
+import { formDestinationSchema, type FormDestination } from '@quill/types';
 import type { SalesforceFieldsResponse } from '@/lib/admin-api';
 import type { FormStep } from '@quill/engine';
 import { mappableQuestions, type QuestionMeta } from './auto-map';
@@ -163,14 +163,53 @@ describe('stored state', () => {
     expect(builtSalesforce(initialSalesforce([]))).toBeNull();
   });
 
-  it('drops half-filled rows instead of storing them', () => {
+  it('keeps half-filled rows as drafts, out of what a delivery reads', () => {
     const built = builtSalesforce(
       base({
         mappings: [{ key: 'email', field: 'Email' }, { key: 'last', field: '' }, { key: '', field: 'Company' }],
-        statics: [{ field: 'LeadSource', value: '' }],
+        statics: [{ field: 'LeadSource', value: '' }, { field: '', value: '' }],
       }),
     );
-    expect(built).toEqual({ type: 'salesforce', enabled: true, fieldMappings: { email: 'Email' }, utmMappings: {} });
+    expect(built).toEqual({
+      type: 'salesforce',
+      enabled: true,
+      fieldMappings: { email: 'Email' },
+      utmMappings: {},
+      drafts: {
+        mappings: [{ key: 'last', field: '' }, { key: '', field: 'Company' }],
+        // A row with nothing in it at all is nothing to keep.
+        statics: [{ field: 'LeadSource', value: '' }],
+      },
+    });
+  });
+
+  it('brings every half-filled row back after a reload, saying what it needs', async () => {
+    const state = base({
+      mappings: [{ key: 'email', field: 'Email' }, { key: 'last', field: '' }],
+      statics: [{ field: 'LeadSource', value: '' }],
+    });
+    // A reload: the stored destination, parsed by the API's own schema.
+    const stored = formDestinationSchema.parse(JSON.parse(JSON.stringify(builtSalesforce(state))));
+    expect(initialSalesforce([stored as FormDestination])).toEqual(state);
+    const el = await mount(initialSalesforce([stored as FormDestination]));
+    const hints = [...el.querySelectorAll('[data-testid="row-incomplete"]')].map((h) => h.textContent);
+    expect(hints).toEqual([m.salesforce.rowNeedsField, m.salesforce.rowNeedsValue]);
+  });
+
+  it('delivers exactly as before for a config stored with no drafts', () => {
+    const legacy = formDestinationSchema.parse({
+      type: 'salesforce',
+      enabled: true,
+      fieldMappings: { email: 'Email' },
+      utmMappings: {},
+    });
+    expect(legacy).not.toHaveProperty('drafts');
+    expect(builtSalesforce(initialSalesforce([legacy as FormDestination]))).toEqual({
+      type: 'salesforce',
+      enabled: true,
+      fieldMappings: { email: 'Email' },
+      utmMappings: {},
+    });
   });
 
   it('keeps a time zone only beside a date field', () => {

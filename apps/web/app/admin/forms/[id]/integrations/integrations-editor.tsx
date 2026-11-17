@@ -32,12 +32,14 @@ import type {
 } from '@/lib/admin-api';
 import { TokenConnectForm } from '@/app/admin/integrations/connect-forms';
 import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
-import { trackDestinationWrite } from '@/lib/connect-sync';
+import { publishIntegrationsSave, readIntegrationsSave, useCombinedSave } from '@/lib/integrations-save-status';
+import { enqueueIntegrationsSave, subscribeIntegrationsSave } from '@/lib/integrations-save-queue';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
 import {
   builtSalesforce,
   initialSalesforce,
+  RowHint,
   SalesforceCard,
   type SalesforceState,
 } from './salesforce-card';
@@ -57,6 +59,7 @@ type Msgs = FormsMessages['admin']['integrations'];
 
 /** Same debounce as the builder's autosave, so both tabs feel identical. */
 const AUTOSAVE_MS = 900;
+
 
 /** Module constants, not literals in JSX: the history's fetch keys off these. */
 const WEBHOOK_HISTORY_KINDS: DeliveryKind[] = ['webhook'];
@@ -281,21 +284,22 @@ export function showsGoogleSheetsCard(
 }
 
 /**
- * The destination to store, or null when there is nothing worth storing.
+ * The destination to store, or null only when the card holds nothing at all.
  *
- * Null covers the two ways this card can be incomplete: no spreadsheet, or no
- * column that says anything. Storing either would put a destination in the
- * config that the factory degrades to a no-op on every submission, which the
- * author would only discover by looking at a delivery history full of them.
+ * A card the author has started (switched on, a spreadsheet, any column, even
+ * a half-filled one) is stored as it stands, so everything the save pill calls
+ * saved survives a reload. An unfinished destination is never delivered to:
+ * the API skips it at enqueue time (`destinationIsDeliverable`) and leaves
+ * incomplete columns out of the sheet, so storing it costs a respondent nothing.
  */
 export function builtGoogleSheets(state: GoogleSheetsState): FormDestination | null {
   const columns = storedColumns(state.columns);
-  if (!state.spreadsheetId || columns.length === 0) return null;
+  if (!state.enabled && !state.spreadsheetId && columns.length === 0) return null;
   return {
     type: 'google-sheets',
     enabled: state.enabled,
     settings: {
-      spreadsheetId: state.spreadsheetId,
+      ...(state.spreadsheetId ? { spreadsheetId: state.spreadsheetId } : {}),
       ...(state.sheetTitle.trim() ? { sheetTitle: state.sheetTitle.trim() } : {}),
     },
     columns,
@@ -331,10 +335,65 @@ function initialWebhook(destinations: FormDestination[]): WebhookState {
   };
 }
 
-function initialHubspot(destinations: FormDestination[]): HubspotState {
+/** A row with something in it, but not everything it needs to be sent. */
+const halfRow = (a: string, b: string): boolean => (!!a.trim() || !!b.trim()) && !(a.trim() && b.trim());
+
+type HubspotDrafts = NonNullable<Extract<FormDestination, { type: 'hubspot' }>['drafts']>;
+
+/**
+ * The HubSpot rows the author started and has not finished, to store beside
+ * the complete mappings (`drafts`), or undefined when there are none. Stored so
+ * everything the save pill calls saved survives a reload; a delivery and the
+ * mirror form read only the complete mappings. A row with nothing in it is
+ * nothing to keep.
+ */
+export function hubspotDrafts(hs: HubspotState): HubspotDrafts | undefined {
+  const mappings = hs.fieldMappings
+    .filter((p) => halfRow(p.key, p.property))
+    .map((p) => ({ key: p.key.trim(), property: p.property.trim() }));
+  const statics = hs.staticProperties
+    .filter((p) => halfRow(p.key, p.value))
+    .map((p) => ({ key: p.key.trim(), value: p.value.trim() }));
+  const valueMaps: { stepKey: string; rows: { from: string; to: string }[] }[] = [];
+  for (const group of hs.valueMaps) {
+    const stepKey = group.stepKey.trim();
+    const unfinished = group.rows
+      .filter((r) => (stepKey ? halfRow(r.from, r.to) : r.from.trim() || r.to.trim()))
+      .map((r) => ({ from: r.from.trim(), to: r.to.trim() }));
+    const anyComplete = !!stepKey && group.rows.some((r) => r.from.trim() && r.to.trim());
+    // A question chosen with no complete row yet is kept too, so the choice
+    // itself survives; a group with only complete rows lives in `valueMaps`.
+    if (unfinished.length || (stepKey && !anyComplete)) valueMaps.push({ stepKey, rows: unfinished });
+  }
+  const out: HubspotDrafts = {
+    ...(mappings.length ? { mappings } : {}),
+    ...(statics.length ? { statics } : {}),
+    ...(valueMaps.length ? { valueMaps } : {}),
+  };
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Put stored unfinished rows back on the card, after the complete ones. */
+function withHubspotDrafts(state: HubspotState, drafts: HubspotDrafts | undefined): HubspotState {
+  if (!drafts) return state;
+  const valueMaps = state.valueMaps.map((g) => ({ ...g, rows: [...g.rows] }));
+  for (const draft of drafts.valueMaps ?? []) {
+    const existing = draft.stepKey ? valueMaps.find((g) => g.stepKey === draft.stepKey) : undefined;
+    if (existing) existing.rows.push(...draft.rows);
+    else valueMaps.push({ stepKey: draft.stepKey, rows: draft.rows.length ? draft.rows : [{ from: '', to: '' }] });
+  }
+  return {
+    ...state,
+    fieldMappings: [...state.fieldMappings, ...(drafts.mappings ?? [])],
+    staticProperties: [...state.staticProperties, ...(drafts.statics ?? [])],
+    valueMaps,
+  };
+}
+
+export function initialHubspot(destinations: FormDestination[]): HubspotState {
   const h = destinations.find((d) => d.type === 'hubspot');
   if (h && h.type === 'hubspot') {
-    return {
+    return withHubspotDrafts({
       enabled: h.enabled,
       // One ROW per target property: a mapping that fans out to several shows
       // as several rows with the same key, which is the shape the editor can
@@ -369,7 +428,7 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
       // The old per-bookingSync zone is the fallback so a config saved before
       // the shared field keeps the zone it was saved with.
       dayTimezone: h.dayTimezone ?? h.bookingSync?.dateTimezone ?? '',
-    };
+    }, h.drafts);
   }
   return {
     enabled: false,
@@ -479,6 +538,9 @@ export function IntegrationsEditor({
 }) {
   const { error } = useToast();
   const errorRef = useRef(error);
+  // The form's save queue retries a failed save itself only while nobody is
+  // on the tab; while this editor is mounted, its controller does.
+  useEffect(() => subscribeIntegrationsSave(id), [id]);
   errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
@@ -541,6 +603,8 @@ export function IntegrationsEditor({
   function buildDestinations(): {
     destinations: FormDestination[];
     webhookError: string | null;
+    /** The webhook is switched on with no URL: not stored, so not "saved". */
+    webhookNeedsUrl: boolean;
   } {
     const out: FormDestination[] = [];
     let webhookError: string | null = null;
@@ -633,8 +697,11 @@ export function IntegrationsEditor({
     if (dayTimezone && Object.keys(bookingSync).length > 0) {
       bookingSync.dateTimezone = dayTimezone;
     }
+    // Half-filled rows, kept so a reload brings them back (never delivered).
+    const drafts = hubspotDrafts(hs);
     const hasHubspotConfig =
       hs.enabled ||
+      drafts !== undefined ||
       Object.keys(fieldMappings).length > 0 ||
       Object.keys(utmMappings).length > 0 ||
       Object.keys(valueMaps).length > 0 ||
@@ -670,6 +737,9 @@ export function IntegrationsEditor({
         // All fields blank = booking sync off; undefined overrides the stored
         // spread above so clearing the fields actually removes the config.
         bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
+        // undefined overrides the stored spread, so finishing the last
+        // unfinished row clears them instead of resurrecting them.
+        drafts,
       });
     }
     // The spreadsheet destination, when the card says enough to store one.
@@ -684,7 +754,7 @@ export function IntegrationsEditor({
     // Last: every destination kind this screen does not edit (see
     // `carriedOthers`). Without this, saving here deletes them.
     out.push(...carriedOthers(savedDestinations.current));
-    return { destinations: out, webhookError };
+    return { destinations: out, webhookError, webhookNeedsUrl: webhook.enabled && !url };
   }
 
   // --- Autosave (V5-A4) ------------------------------------------------------
@@ -695,8 +765,6 @@ export function IntegrationsEditor({
   // and a status line that says which state you are in.
   const buildRef = useRef(buildDestinations);
   buildRef.current = buildDestinations;
-  /** Webhook half saved AROUND, not saved — renders as "partial" once saved. */
-  const [partialBlocked, setPartialBlocked] = useState<string | null>(null);
 
   // The debounce/serialize/retry machinery is `useAutosave`, shared with the
   // builder — including the beforeunload guard and the same-origin keepalive
@@ -705,6 +773,8 @@ export function IntegrationsEditor({
   const autosave = useAutosave<{
     destinations: FormDestination[];
     webhookError: string | null;
+    /** The webhook is switched on with no URL: not stored, so not "saved". */
+    webhookNeedsUrl: boolean;
   }>({
     getSnapshot: () => buildRef.current(),
     // `buildDestinations` already quarantines the only invalid input (a bad
@@ -714,11 +784,33 @@ export function IntegrationsEditor({
       // A bad webhook URL is reported on its own card and blocks only itself —
       // the rest of the tab still persists.
       setWebhookError(built.webhookError);
-      const write = callAction(() => saveIntegrationsAction(id, built.destinations));
-      // Register the write so a Connect-tab remount reads it back, not the state
-      // it is about to overwrite (V4-05 race).
-      trackDestinationWrite(id, write);
-      const res = await write;
+      // The editor's topbar shows this save too (see `integrations-save-status`).
+      // Published from HERE, the one function every save runs through, the
+      // terminal save the controller fires after the tab unmounts included:
+      // a component effect is gone by then, and the topbar would be left
+      // saying "Saving" (or "Not saved" after a retry that succeeded).
+      // Through the form's save queue (`integrations-save-queue`), not
+      // straight to the server: it serializes writes, only ever writes or
+      // retries the LATEST snapshot, keeps going after the tab unmounts, and
+      // is what the topbar and the pill both read.
+      const outcome = await enqueueIntegrationsSave(
+        id,
+        () => callAction(() => saveIntegrationsAction(id, built.destinations)),
+        {
+          // Partial, not saved: a webhook URL that is not valid, or a webhook
+          // switched on with no URL at all (a webhook cannot be stored without
+          // one, so "saved" would come back switched off after a reload).
+          partial: built.webhookError
+            ? `${m.autosavedPartial} ${built.webhookError}`.trim()
+            : built.webhookNeedsUrl
+              ? `${m.autosavedPartial} ${m.webhookNeedsUrl}`
+              : null,
+          messages: { saveOffline: m.saveOffline, saveError: m.saveError, lost: m.saveLostAfterLeave },
+        },
+      );
+      // A newer snapshot took this one's place: it decides what is stored.
+      if (outcome.kind === 'superseded') return { ok: true };
+      const res = outcome.result;
       if (isTransportError(res)) return res;
       if (!res.ok) return { ok: false, message: res.message ?? m.saveError };
       // HubSpot refused to build the mirror form. The save itself went through,
@@ -732,9 +824,8 @@ export function IntegrationsEditor({
       // This array is now the server truth — the malformed-URL fallback carries
       // it forward instead of the stale mount snapshot.
       savedDestinations.current = built.destinations;
-      // Saved, but one card was left out — say WHICH, instead of a green check
-      // that implies the webhook edit went through too.
-      setPartialBlocked(built.webhookError);
+      // A card left out (a webhook URL that is not valid) is reported by the
+      // queue as `partial`, to the pill AND the topbar: it is not saved.
       return { ok: true };
     },
     beacon: (built) => {
@@ -755,25 +846,37 @@ export function IntegrationsEditor({
     onFailure: (message, kind) => errorRef.current(kind === 'transport' ? m.saveOffline : message),
     debounceMs: AUTOSAVE_MS,
   });
-  const { markDirty } = autosave;
-  // This screen sends no lock stamp, so `conflict` cannot happen here; the
-  // union still has to be closed, and an error is the honest rendering of it.
-  // The spreadsheet card switched on with no spreadsheet stores nothing (see
-  // `builtGoogleSheets`), so "saved" would promise a switch that comes back
-  // off on reload. Said as what it is instead.
-  const sheetsPending = sheets.enabled && builtGoogleSheets(sheets) === null;
-  const status: SaveStatus =
-    autosave.status === 'saved' && partialBlocked
-      ? 'partial'
-      : autosave.status === 'saved' && sheetsPending
-        ? 'pending'
-        : autosave.status === 'conflict'
-          ? 'error'
-          : autosave.status;
-  const statusDetail =
-    autosave.status === 'error' || autosave.status === 'retrying'
-      ? autosave.detail
-      : partialBlocked;
+  const { markDirty: markDirtyRaw } = autosave;
+  // On mount the tab shows what the server holds (it waited for any write a
+  // previous mount left in flight), so that is the truth to publish: never a
+  // status inherited from an earlier visit. A change that was lost after the
+  // author left is said once, here, since it is not on the screen they see.
+  useEffect(() => {
+    const previous = readIntegrationsSave(id);
+    if (previous?.lost) {
+      // Said once, and the state STAYS an error (topbar and pill) until a
+      // later save succeeds: what was lost is not on this screen, and a green
+      // "saved" beside the notice would contradict it.
+      errorRef.current(m.saveLostAfterLeave);
+      return;
+    }
+    publishIntegrationsSave(id, { status: 'saved' });
+  }, [id, m]);
+  // Whether the author has edited anything on this visit. The pill says
+  // nothing before that: no "saved" (or any advisory) on a page just opened.
+  const [saveTouched, setSaveTouched] = useState(false);
+  // An edit makes the topbar and the pill say "Saving" at once, rather than
+  // only when the debounced save starts.
+  const markDirty = useCallback(() => {
+    setSaveTouched(true);
+    publishIntegrationsSave(id, { status: 'saving' });
+    markDirtyRaw();
+  }, [id, markDirtyRaw]);
+  // The pill reads the SAME state the topbar reads (the form's save queue
+  // publishes it), so the two can never disagree, not even for a frame.
+  const shared = useCombinedSave(id);
+  const status: SaveStatus = shared.status;
+  const statusDetail = shared.detail;
 
   /**
    * Every card edit funnels through these so an edit is marked dirty at the
@@ -889,12 +992,17 @@ export function IntegrationsEditor({
 
       {/* The Save button is gone (V5-A4): everything here autosaves, so what
           belongs on screen is the state of that save, not an action. */}
-      <SaveStatusPill status={status} detail={statusDetail} m={m} />
+      <SaveStatusPill
+        status={status}
+        detail={statusDetail}
+        touched={saveTouched || shared.lost}
+        m={m}
+      />
     </div>
   );
 }
 
-type SaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'partial' | 'pending';
+type SaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'partial' | 'conflict';
 
 /** The pill's look for each save state. Tokens only, so both themes follow. */
 const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> = {
@@ -907,97 +1015,158 @@ const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> 
   saving: { box: 'border-border bg-card text-muted-foreground', icon: 'pi-spinner pi-spin', dot: 'text-muted-foreground' },
   retrying: { box: 'border-warning/50 bg-warning/10 text-foreground', icon: 'pi-sync pi-spin', dot: 'text-warning-ink' },
   partial: { box: 'border-warning/50 bg-warning/10 text-foreground', icon: 'pi-exclamation-circle', dot: 'text-warning-ink' },
-  // Saved, with one card waiting on something only the author can give it.
-  pending: { box: 'border-border bg-card text-foreground', icon: 'pi-info-circle', dot: 'text-muted-foreground' },
   error: {
+    box: 'border-destructive/60 bg-destructive/10 text-destructive',
+    icon: 'pi-exclamation-triangle',
+    dot: 'text-destructive',
+  },
+  // The form's draft was saved elsewhere: the topbar's state, so the pill's too.
+  conflict: {
     box: 'border-destructive/60 bg-destructive/10 text-destructive',
     icon: 'pi-exclamation-triangle',
     dot: 'text-destructive',
   },
 };
 
+/** How long a "saved" pill stays spelled out before it folds to its short form. */
+const PILL_FOLD_MS = 1500;
+/**
+ * How long a "saved" pill stays before it steps out of the way. ONLY "saved"
+ * goes away on its own: saving, retrying, partial, error and a lost change
+ * stay on screen until they resolve, at every width. The topbar status is not
+ * a fallback for them, since it is hidden below 1280 px.
+ */
+const PILL_SAVED_HIDE_MS = 2500;
+
+/** Below `sm`, where any floating element sits on the controls being scrolled. */
+const NARROW_QUERY = '(max-width: 639px)';
+
 /**
  * The autosave state, as a pill fixed to the bottom-right corner of the window.
  *
- * Fixed, and portalled to `body`, because it is the one answer to "did that
- * stick?" for the whole tab: a pill at the end of a long list of cards was
- * found only by scrolling to it. `position: fixed` inside the editor would be
- * pinned to whichever ancestor opens a stacking context instead of the
- * window, so it is rendered outside them all.
+ * It shows the SAME state as the editor's topbar (both read what the form's
+ * save queue publishes), so the two never disagree. Fixed and portalled to
+ * `body`, because `position: fixed` inside the editor would be pinned to
+ * whichever ancestor opens a stacking context instead of the window.
  *
- * Below `sm` it is NOT fixed: on a phone a floating pill sits on top of the
- * controls it scrolls over. There it is the last thing in the tab, in the
- * flow, where it covers nothing.
+ * It is a status, never a control, and it never stands in the way:
+ *  - nothing before the author edits something on this visit: no "saved",
+ *    and no advisory either (those live in the cards themselves, inline);
+ *  - it never takes a tap: `pointer-events: none` in every state, so a button
+ *    under it is always pressable;
+ *  - a plain "saved" folds to a short, flat "Saved" after a moment;
+ *  - once settled it steps away after a few seconds, at every width (the
+ *    topbar keeps saying the state), so it never sits over content for long;
+ *  - it reads the same store snapshot as the topbar (`useCombinedSave`), so
+ *    the two never show different states.
  *
- * Its ground is solid card colour UNDER the tint, so whatever scrolls beneath
- * the fixed pill never shows through it.
+ * A lost change (failed after the tab was left) shows even before an edit:
+ * it is an error the author has to know about.
  */
 export function SaveStatusPill({
   status,
   detail,
+  touched = true,
   m,
 }: {
   status: SaveStatus;
   detail: string | null;
+  /** The author edited something on this visit. Before that the pill is absent. */
+  touched?: boolean;
   m: Msgs;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [folded, setFolded] = useState(false);
+  const [gone, setGone] = useState(false);
+  const visible = touched && !gone;
+  useEffect(() => setMounted(true), []);
   useEffect(() => {
-    setMounted(true);
+    if (!visible) return;
     // Lets the toast stack start above the pill (globals.css).
     document.documentElement.classList.add('has-save-pill');
     return () => document.documentElement.classList.remove('has-save-pill');
-  }, []);
+  }, [visible]);
+  // The pill wraps (a partial or failed save can take two or three lines), so
+  // the toast stack is lifted by the pill's real height, not a one-line guess:
+  // a toast never lands on top of the pill.
+  const [pillEl, setPillEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!pillEl || typeof ResizeObserver === 'undefined') return;
+    const root = document.documentElement;
+    const lift = () =>
+      root.style.setProperty(
+        '--toast-offset',
+        `calc(${Math.ceil(pillEl.getBoundingClientRect().height) + 12}px + env(safe-area-inset-bottom, 0px))`,
+      );
+    lift();
+    const observer = new ResizeObserver(lift);
+    observer.observe(pillEl);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty('--toast-offset');
+    };
+  }, [pillEl]);
+  useEffect(() => {
+    setGone(false);
+    setFolded(false);
+    // A state that is not "saved" stays until it resolves: no fold, no exit.
+    if (status !== 'saved') return;
+    const narrow = typeof window !== 'undefined' && window.matchMedia?.(NARROW_QUERY).matches;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (narrow) setFolded(true);
+    else timers.push(setTimeout(() => setFolded(true), PILL_FOLD_MS));
+    timers.push(setTimeout(() => setGone(true), PILL_SAVED_HIDE_MS));
+    return () => timers.forEach(clearTimeout);
+  }, [status, detail]);
   const tone = PILL_TONE[status];
   const text =
     status === 'saved'
       ? m.autosaved
-      : status === 'error'
+      : status === 'error' || status === 'conflict'
         ? (detail ?? m.saveError)
         : status === 'partial'
-          ? `${m.autosavedPartial} ${detail ?? ''}`.trim()
-          : status === 'pending'
-            ? m.autosavedPendingSheet
-            : status === 'retrying'
-              ? m.saveRetrying
-              : m.saving;
-  const pill = (fixed: boolean) => (
+          ? (detail ?? m.autosavedPartial)
+          : status === 'retrying'
+            ? m.saveRetrying
+            : m.saving;
+  if (!mounted || !visible) return null;
+  return createPortal(
     <div
-      data-testid={fixed ? 'integrations-save-status' : 'integrations-save-status-inline'}
+      ref={setPillEl}
+      data-testid="integrations-save-status"
       data-status={status}
-      // Both are live regions; only one is ever displayed (the other is
-      // `display: none` at that width), so a change is announced once.
+      data-folded={folded || undefined}
+      role="status"
       aria-live="polite"
       className={cn(
-        'rounded-[1.25rem] bg-card shadow-lg',
-        fixed
-          ? 'fixed bottom-5 right-5 z-40 hidden max-w-[min(28rem,calc(100vw-2.5rem))] sm:block'
-          : 'self-end sm:hidden',
+        // `pointer-events-none` in EVERY state: a status never takes a tap.
+        'pointer-events-none fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-40 max-w-[calc(100vw-2rem)] rounded-[1.25rem] bg-card sm:right-5 sm:bottom-5 sm:max-w-[28rem]',
+        folded ? '' : 'shadow-lg',
       )}
     >
       <div
         className={cn(
-          'flex items-center gap-2 rounded-[1.25rem] border py-1.5 pl-1.5 pr-4 text-sm font-medium',
+          'flex items-center gap-2 rounded-[1.25rem] border text-sm font-medium',
+          folded ? 'py-1 pl-1 pr-3 text-xs' : 'py-1.5 pl-1.5 pr-4',
           tone.box,
         )}
       >
         <span
           aria-hidden
-          className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full', tone.dot)}
+          className={cn(
+            'flex shrink-0 items-center justify-center rounded-full',
+            folded ? 'h-5 w-5' : 'h-6 w-6',
+            tone.dot,
+          )}
         >
-          <i className={cn('pi', tone.icon)} style={{ fontSize: 12 }} />
+          <i className={cn('pi', tone.icon)} style={{ fontSize: folded ? 10 : 12 }} />
         </span>
-        {/* Two lines before it clips: a partial save names the card that did
-            not go through, and that sentence is the point of the state. */}
-        <span className="line-clamp-2 min-w-0 leading-snug">{text}</span>
+        {/* Never clipped: a partial or failed save names what did not go
+            through, and that sentence is the point of the state. It wraps. */}
+        <span className="min-w-0 break-words leading-snug">{folded ? m.autosavedShort : text}</span>
       </div>
-    </div>
-  );
-  return (
-    <>
-      {pill(false)}
-      {mounted ? createPortal(pill(true), document.body) : null}
-    </>
+    </div>,
+    document.body,
   );
 }
 
@@ -1260,7 +1429,10 @@ function ValueMapGroupCard({
   // question — collapsing the rows out from under someone who just chose one
   // would be worse than the long scroll this is fixing.
   const filled = group.rows.filter((r) => r.from.trim() || r.to.trim()).length;
-  const [open, setOpen] = useState(filled === 0);
+  // A group with a half-filled row opens too: that row says what it still
+  // needs, and a collapsed header ("1 value(s)") would hide it after a reload.
+  const unfinished = group.rows.some((r) => halfRow(r.from, r.to)) || (!group.stepKey.trim() && filled > 0);
+  const [open, setOpen] = useState(filled === 0 || unfinished);
 
   // INTERSECTION, not union: the HubSpot adapter writes the one translated
   // value to every target property, so a value only one of them accepts is a
@@ -1317,7 +1489,8 @@ function ValueMapGroupCard({
             </p>
           ) : null}
           {group.rows.map((row, ri) => (
-            <div key={ri} className="flex items-center gap-2 pl-4">
+            <div key={ri} className="flex flex-col gap-1 pl-4">
+            <div className="flex items-center gap-2">
               {/* The LEFT side stays free text: it is the answer as the form
                   stores it, and `QuestionMeta` is built without the question's
                   own options — surfacing those is a separate change. */}
@@ -1362,6 +1535,16 @@ function ValueMapGroupCard({
               >
                 {m.remove}
               </Button>
+            </div>
+            <RowHint
+              text={
+                !group.stepKey.trim() && (row.from.trim() || row.to.trim())
+                  ? m.hubspotRowNeedsQuestion
+                  : halfRow(row.from, row.to)
+                    ? m.hubspotRowNeedsValue
+                    : null
+              }
+            />
             </div>
           ))}
           <div className="pl-4">
@@ -1693,6 +1876,9 @@ export function WebhookCard({
           <p id="webhook-url-error" role="alert" className="text-xs text-destructive">
             {urlError}
           </p>
+        ) : !state.url.trim() ? (
+          // Switched on, nothing to send to: said here, on the card.
+          <RowHint text={m.webhookNeedsUrl} />
         ) : null}
         {/* Test delivery: the fastest way to find out the far end is wrong is to
             send it something, rather than waiting for a real respondent. */}
@@ -1953,7 +2139,7 @@ export function HubspotCard({
 
   /** The property currently mapped for a question key (via the pairs array). */
   const questionProp = (key: string): string =>
-    state.fieldMappings.find((p) => p.key === key)?.property ?? '';
+    state.fieldMappings.find((p) => p.key === key && p.property.trim())?.property ?? '';
 
   /** Upsert/clear the mapping for a question key (empty value removes the row). */
   const setQuestionProp = (key: string, value: string) => {
@@ -1966,9 +2152,13 @@ export function HubspotCard({
 
   // Custom rows = mappings whose key is not one of the form's questions (hidden
   // fields / legacy keys). Tracked with their real index for stable editing.
+  // A row keyed on one of the form's questions but with no property yet is a
+  // half-filled row, stored as a draft: it is shown here, with its note, rather
+  // than folded into that question's own row, which would show nothing and so
+  // make a saved row look gone after a reload.
   const customRows = state.fieldMappings
     .map((pair, index) => ({ pair, index }))
-    .filter(({ pair }) => !questionKeys.has(pair.key));
+    .filter(({ pair }) => !questionKeys.has(pair.key) || !pair.property.trim());
 
   // Keys already used by ANY mapping row (main section or custom). Questions
   // already mapped drop out of a custom row's picker (no double-mapping); a
@@ -2134,7 +2324,8 @@ export function HubspotCard({
             <p className="text-xs text-muted-foreground">{m.emptyMappings}</p>
           ) : (
             customRows.map(({ pair, index }) => (
-              <div key={index} className="flex items-center gap-2">
+              <div key={index} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
                 <KeySelect
                   value={pair.key}
                   questionOptions={unmappedQuestions}
@@ -2180,6 +2371,16 @@ export function HubspotCard({
                 >
                   {m.remove}
                 </Button>
+              </div>
+              <RowHint
+                text={
+                  halfRow(pair.key, pair.property)
+                    ? pair.key.trim()
+                      ? m.hubspotRowNeedsProperty
+                      : m.hubspotRowNeedsKey
+                    : null
+                }
+              />
               </div>
             ))
           )}
@@ -2338,7 +2539,8 @@ export function HubspotCard({
             <p className="text-xs text-muted-foreground">{m.emptyStaticProperties}</p>
           ) : (
             state.staticProperties.map((row, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={i} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
                 <div className="flex-1">
                   <PropertyField
                     value={row.key}
@@ -2387,6 +2589,16 @@ export function HubspotCard({
                 >
                   {m.remove}
                 </Button>
+              </div>
+              <RowHint
+                text={
+                  halfRow(row.key, row.value)
+                    ? row.key.trim()
+                      ? m.hubspotRowNeedsValue
+                      : m.hubspotRowNeedsProperty
+                    : null
+                }
+              />
               </div>
             ))
           )}

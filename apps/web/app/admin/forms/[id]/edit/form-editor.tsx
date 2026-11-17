@@ -65,6 +65,7 @@ import { stepFromGalleryItem, stepListLabel, type GalleryItem } from './_compone
 import { TEMPLATES } from './_components/templates';
 import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
+import { publishFormSave, useCombinedSave } from '@/lib/integrations-save-status';
 import './_components/builder.css';
 
 const AUTOSAVE_MS = 900;
@@ -445,7 +446,18 @@ export function FormEditor({
     initiallyDirty: config !== initialConfig,
     debounceMs: AUTOSAVE_MS,
   });
-  const status = autosave.status;
+  // The topbar speaks for BOTH saves: the form's, and the Connect tab's
+  // integrations (a separate autosave). Whichever is worse wins, so it never
+  // says "Saved" while the integrations failed to save.
+  //
+  // Both saves feed ONE store snapshot, which the topbar and the Connect tab's
+  // save pill both render, so in any render they show the same state.
+  useEffect(() => {
+    publishFormSave(id, { status: autosave.status, detail: autosave.detail });
+  }, [id, autosave.status, autosave.detail]);
+  const shownSave = useCombinedSave(id);
+  const status = shownSave.status;
+  const statusDetailText = shownSave.detail;
 
   // --- Crash recovery: work the backup caught that never reached the server --
   const [recovery, setRecovery] = useState<EditorSnapshot | null>(null);
@@ -851,15 +863,19 @@ export function FormEditor({
           ? bm.shell.saveError
           : status === 'conflict'
             ? bm.shell.conflict
-            : hasQuestions
-              ? bm.shell.saved
-              : bm.shell.draft;
+            : status === 'partial'
+              ? bm.shell.savedPartial
+              : hasQuestions
+                ? bm.shell.saved
+                : bm.shell.draft;
   const statusDot =
     status === 'error' || status === 'conflict'
       ? 'bg-destructive'
-      : status === 'saving' || status === 'retrying'
-        ? 'bg-muted-foreground'
-        : 'bg-signal-edge';
+      : status === 'partial'
+        ? 'bg-warning'
+        : status === 'saving' || status === 'retrying'
+          ? 'bg-muted-foreground'
+          : 'bg-signal-edge';
   /** Kept for tests/tools reading `data-status`: an empty saved form is "draft". */
   const displayStatus = status === 'saved' && !hasQuestions ? 'draft' : status;
 
@@ -986,14 +1002,16 @@ export function FormEditor({
           <span
             className={cn(
               'hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground xl:inline-flex',
-              (status === 'error' || status === 'retrying') && autosave.detail ? 'cursor-help' : '',
+              (status === 'error' || status === 'retrying' || status === 'partial') && statusDetailText ? 'cursor-help' : '',
             )}
             data-testid="editor-save-status"
             data-status={displayStatus}
             // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
             title={
-              (status === 'error' || status === 'retrying') && autosave.detail
-                ? tb(m.saveErrorReason, { reason: autosave.detail })
+              (status === 'error' || status === 'retrying' || status === 'partial') && statusDetailText
+                ? status === 'partial'
+                  ? statusDetailText
+                  : tb(m.saveErrorReason, { reason: statusDetailText })
                 : undefined
             }
           >

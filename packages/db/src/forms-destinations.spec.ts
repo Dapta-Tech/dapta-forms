@@ -119,3 +119,32 @@ describe('updateFormDestinations — secret merge round-trip', () => {
     expect(await storedSecret()).toBeNull();
   });
 });
+
+describe('updateFormDestinations with a compare-and-swap stamp', () => {
+  // The API records a spreadsheet's header snapshot by rewriting the array it
+  // just read. A save landing between that read and the write must win, so
+  // the write carries the stamp it read and lands only if it still holds.
+  it('writes when the row still carries the stamp it was read with', async () => {
+    const before = (await getFormById(db, accountId, formId))!;
+    const out = await updateFormDestinations(db, accountId, formId, [webhook('a')], before.updatedAt);
+    expect(out.ok).toBe(true);
+    expect(out.ok && out.value.updatedAt).toBeGreaterThan(before.updatedAt);
+  });
+
+  it('refuses, and writes nothing, when another save landed in between', async () => {
+    const read = (await getFormById(db, accountId, formId))!;
+    // Someone else's save, in the same millisecond or not: the stamp moves.
+    await updateFormDestinations(db, accountId, formId, [webhook('theirs', 'https://acme.io/theirs')]);
+    const out = await updateFormDestinations(db, accountId, formId, [webhook('mine')], read.updatedAt);
+    expect(out).toMatchObject({ ok: false, reason: 'STALE' });
+    const now = (await getFormById(db, accountId, formId))!;
+    const dest = (now.config as { destinations: WebhookLike[] }).destinations[0]!;
+    expect(dest.settings.url).toBe('https://acme.io/theirs');
+  });
+
+  it('keeps the old last-writer-wins write for a caller that sends no stamp', async () => {
+    await updateFormDestinations(db, accountId, formId, [webhook('a')]);
+    const out = await updateFormDestinations(db, accountId, formId, [webhook('b')]);
+    expect(out.ok).toBe(true);
+  });
+});

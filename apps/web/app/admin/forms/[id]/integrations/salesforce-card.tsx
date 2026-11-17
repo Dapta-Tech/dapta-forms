@@ -62,6 +62,8 @@ export function initialSalesforce(destinations: FormDestination[]): SalesforceSt
   for (const [key, target] of Object.entries(stored.fieldMappings ?? {})) {
     for (const field of propertiesFor(target)) mappings.push({ key, field });
   }
+  // Unfinished rows come back after the complete ones (see `builtSalesforce`).
+  for (const row of stored.drafts?.mappings ?? []) mappings.push({ key: row.key, field: row.field });
   return {
     enabled: stored.enabled !== false,
     mappings,
@@ -69,14 +71,20 @@ export function initialSalesforce(destinations: FormDestination[]): SalesforceSt
     scoreField: stored.scoreField ?? '',
     dateField: stored.dateField ?? '',
     dayTimezone: stored.dayTimezone ?? '',
-    statics: Object.entries(stored.staticFields ?? {}).map(([field, value]) => ({ field, value })),
+    statics: [
+      ...Object.entries(stored.staticFields ?? {}).map(([field, value]) => ({ field, value })),
+      ...(stored.drafts?.statics ?? []).map((row) => ({ field: row.field, value: row.value })),
+    ],
   };
 }
+
+/** A row with something in it, but not everything it needs to be sent. */
+const half = (a: string, b: string): boolean => (!!a.trim() || !!b.trim()) && !(a.trim() && b.trim());
 
 /**
  * The destination to store, or null when the card holds nothing at all.
  *
- * Half-filled rows are dropped rather than stored, and a time zone is kept only
+ * Half-filled rows are kept as `drafts` (never delivered), and a time zone is kept only
  * beside a date field, the one place it means anything: a zone stored with no
  * date field would come back as a setting that silently does nothing.
  */
@@ -99,11 +107,25 @@ export function builtSalesforce(state: SalesforceState): FormDestination | null 
     if (row.field.trim() && row.value.trim()) staticFields[row.field.trim()] = row.value.trim();
   }
   const dateField = state.dateField.trim();
+  // Half-filled rows are kept as drafts, so the author's work survives a
+  // reload; a delivery reads only the complete mappings above. A row with
+  // nothing in it at all is nothing to keep.
+  const draftMappings = state.mappings
+    .filter((r) => half(r.key, r.field))
+    .map((r) => ({ key: r.key.trim(), field: r.field.trim() }));
+  const draftStatics = state.statics
+    .filter((r) => half(r.field, r.value))
+    .map((r) => ({ field: r.field.trim(), value: r.value.trim() }));
+  const drafts = {
+    ...(draftMappings.length ? { mappings: draftMappings } : {}),
+    ...(draftStatics.length ? { statics: draftStatics } : {}),
+  };
   const holds =
     state.enabled ||
     Object.keys(fieldMappings).length > 0 ||
     Object.keys(utmMappings).length > 0 ||
     Object.keys(staticFields).length > 0 ||
+    Object.keys(drafts).length > 0 ||
     state.scoreField.trim() ||
     dateField;
   if (!holds) return null;
@@ -116,6 +138,7 @@ export function builtSalesforce(state: SalesforceState): FormDestination | null 
     ...(dateField ? { dateField } : {}),
     ...(dateField && state.dayTimezone.trim() ? { dayTimezone: state.dayTimezone.trim() } : {}),
     ...(Object.keys(staticFields).length ? { staticFields } : {}),
+    ...(Object.keys(drafts).length ? { drafts } : {}),
   };
 }
 
@@ -165,6 +188,20 @@ export function salesforceWarnings(
     ? [...mapped].filter((f) => f.toLowerCase() !== 'email' && !contactSet.has(f.toLowerCase()))
     : [];
   return { emailMissing, fallbacks, contactSkips, unfilledRequired };
+}
+
+/**
+ * Under a half-filled row: it IS saved (as a draft, so it survives a reload),
+ * and this is exactly what it still needs before anything is sent.
+ */
+export function RowHint({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <p data-testid="row-incomplete" className="col-[1/-1] flex items-start gap-1.5 text-xs text-muted-foreground">
+      <i aria-hidden className="pi pi-info-circle mt-px shrink-0" style={{ fontSize: 12 }} />
+      {text}
+    </p>
+  );
 }
 
 export function SalesforceCard({
@@ -335,6 +372,11 @@ export function SalesforceCard({
                 >
                   {sm.remove}
                 </Button>
+                <RowHint
+                  text={
+                    half(row.key, row.field) ? (row.key.trim() ? sm.rowNeedsField : sm.rowNeedsQuestion) : null
+                  }
+                />
               </div>
             ))}
             <Button
@@ -477,6 +519,9 @@ export function SalesforceCard({
                   >
                     {sm.remove}
                   </Button>
+                  <RowHint
+                    text={half(row.field, row.value) ? (row.field.trim() ? sm.rowNeedsValue : sm.rowNeedsField) : null}
+                  />
                 </div>
               );
             })}

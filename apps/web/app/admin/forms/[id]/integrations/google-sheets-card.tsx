@@ -23,7 +23,7 @@ import {
   syncSheetHeadersAction,
 } from './actions';
 import { pickSpreadsheet } from './google-picker';
-import { defaultColumns, isCompleteColumn, moveColumn } from './sheet-columns';
+import { columnMissing, defaultColumns, isCompleteColumn, moveColumn, sheetLetters } from './sheet-columns';
 import { sheetUrlFor } from './sheet-url';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -61,6 +61,9 @@ function headerSyncLine(
       return { text: g.headersWritten, tone: 'ok' };
     case 'unchanged':
       return { text: g.headersUnchanged, tone: 'ok' };
+    case 'stale':
+      // Drawn by `StaleRowNotice` instead, with its action.
+      return null;
     case 'foreign':
       // Drawn by `HeaderMismatch` instead, with the side-by-side and the way out.
       return null;
@@ -219,6 +222,36 @@ export function GoogleSheetsCard({
     })();
   }, [connected, state.spreadsheetId, m]);
 
+  /**
+   * Look at row 1 once when the card opens on a spreadsheet, so a sheet that
+   * drifted (headings written before dForms recorded them, or edited in the
+   * sheet) shows its mismatch and the way out without anyone having to press
+   * a button first. Once per open: the ref survives re-renders, and a sheet
+   * picked later is checked by the save that stores it.
+   *
+   * A LOOK, not a sync: one read, nothing written to the sheet and nothing
+   * stored. It works from a copy of the config read before Google answers,
+   * and an edit autosaved in that window must win (a write from here could
+   * put stale headings back). A row 1 that does not match is reported with
+   * the way out; one that is dForms' own but out of date (a sync that failed
+   * while Google was down) is reported with a one-press update.
+   */
+  const checkedOnOpen = useRef(false);
+  useEffect(() => {
+    if (checkedOnOpen.current || !formId || !connected || !state.spreadsheetId) return;
+    if (!state.columns.some(isCompleteColumn)) return;
+    checkedOnOpen.current = true;
+    void (async () => {
+      const res = await callAction(() => syncSheetHeadersAction(formId, 'check'));
+      if (!res?.ok || !res.data?.ok) return;
+      if (res.data.outcome === 'foreign' || res.data.outcome === 'stale') {
+        const { ok: _ok, ...sync } = res.data;
+        onHeaderSync?.(sync as SheetHeaderSync);
+      }
+    })();
+    // Deliberately once per mount; the deps only gate when it may run.
+  }, [formId, connected, state.spreadsheetId, state.columns, onHeaderSync]);
+
   const defaults = () =>
     defaultColumns(questions, {
       submittedAt: m.gsheets.colSubmittedAt,
@@ -347,7 +380,21 @@ export function GoogleSheetsCard({
       : []),
     ...(tabs ?? []).map((t) => ({ value: t.title, label: t.title })),
   ];
-  const syncLine = headerSync ? headerSyncLine(headerSync, m.gsheets) : null;
+  // Each column's letter in the sheet: written columns only, so the card,
+  // the mismatch table, row 1 and every delivered row count the same way.
+  const letters = sheetLetters(state.columns, sheetColumnLetter);
+  // Columns with no heading are saved but not in the sheet. While any exist,
+  // a green "row 1 matches" alone would be a claim about the columns on
+  // screen that is not true: say how many are waiting for a heading.
+  const unnamed = letters.filter((l) => l === null).length;
+  const syncResult = headerSync ? headerSyncLine(headerSync, m.gsheets) : null;
+  const syncLine: { text: string; tone: 'ok' | 'warn' | 'error' | 'info' } | null =
+    unnamed && state.spreadsheetId && (!syncResult || syncResult.tone === 'ok')
+      ? {
+          text: unnamed === 1 ? m.gsheets.columnPendingOne : m.gsheets.columnPendingMany.replace('{n}', String(unnamed)),
+          tone: 'info',
+        }
+      : syncResult;
   const cm = getMessages(locale ?? 'en').admin.connections;
   const returnTo = formId ? `/admin/forms/${formId}/edit` : undefined;
 
@@ -391,10 +438,15 @@ export function GoogleSheetsCard({
                 <i aria-hidden className="pi pi-external-link text-muted-foreground" style={{ fontSize: 11 }} />
               </a>
             ) : (
-              // Only promise Google Drive where the Picker button is really there.
-              <p className="text-sm text-muted-foreground">
-                {pickerAvailable ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
-              </p>
+              <>
+                {/* Only promise Google Drive where the Picker button is really there. */}
+                <p className="text-sm text-muted-foreground">
+                  {pickerAvailable ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
+                </p>
+                {/* The switch is on and stored, but nothing can be sent yet.
+                    Said here, on the card, not in the floating save pill. */}
+                <CardAdvisory testId="gsheets-no-sheet-yet" text={m.gsheetsNoSheetYet} />
+              </>
             )}
             <div className="flex flex-wrap gap-2">
               <Button
@@ -450,7 +502,10 @@ export function GoogleSheetsCard({
                   <Button
                     variant="soft"
                     size="sm"
-                    onClick={() => void syncHeaders()}
+                    // On a row 1 already known not to match, the plain sync
+                    // can only find that again and write nothing: the button
+                    // goes to the confirmed replace instead of doing nothing.
+                    onClick={() => void syncHeaders(headerSync?.outcome === 'foreign')}
                     disabled={pending || !state.spreadsheetId || state.columns.length === 0}
                     className={SOFT_DISABLED}
                     data-testid="gsheets-sync-headers"
@@ -462,6 +517,23 @@ export function GoogleSheetsCard({
               </div>
             </div>
 
+            {/* ABOVE the column list: it is about the whole row 1, and on a
+                phone a list of stacked columns would push it out of sight. */}
+            {headerSync?.outcome === 'stale' ? (
+              <StaleRowNotice pending={pending} onUpdate={() => void syncHeaders()} m={m.gsheets} />
+            ) : null}
+            {headerSync?.outcome === 'foreign' ? (
+              <HeaderMismatch
+                sync={headerSync}
+                pending={pending}
+                onReplace={() => void syncHeaders(true)}
+                m={m.gsheets}
+              />
+            ) : null}
+
+            {state.spreadsheetId && state.columns.length > 0 && !state.columns.some(isCompleteColumn) ? (
+              <CardAdvisory testId="gsheets-no-named-column" text={m.gsheetsNoNamedColumn} />
+            ) : null}
             {state.columns.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
                 {m.gsheets.noColumns}
@@ -488,6 +560,7 @@ export function GoogleSheetsCard({
                   <ul className="divide-y divide-border">
                     {state.columns.map((column, index) => {
                       const takesKey = column.source === 'answer' || column.source === 'utm';
+                      const missing = columnMissing(column);
                       return (
                         <li
                           key={index}
@@ -495,12 +568,18 @@ export function GoogleSheetsCard({
                           className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-2 gap-y-2 px-3 py-2.5 @2xl:grid-cols-[1.75rem_minmax(0,1.15fr)_10rem_minmax(0,1fr)_6.5rem]"
                         >
                           {/* The sheet's own column letter: what the author
-                              will see above this heading in Google Sheets. */}
+                              will see above this heading in Google Sheets.
+                              A column with no heading is not in the sheet,
+                              so it gets an empty slot, not a letter. */}
                           <span
                             aria-hidden
-                            className="col-start-1 row-start-1 flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-semibold tabular-nums text-muted-foreground"
+                            data-testid="gsheets-column-letter"
+                            className={cn(
+                              'col-start-1 row-start-1 flex h-7 w-7 items-center justify-center rounded-md text-xs font-semibold tabular-nums',
+                              letters[index] ? 'bg-muted text-muted-foreground' : 'border border-dashed border-border',
+                            )}
                           >
-                            {sheetColumnLetter(index)}
+                            {letters[index] ?? ''}
                           </span>
                           <Input
                             value={column.header}
@@ -582,6 +661,23 @@ export function GoogleSheetsCard({
                               onClick={() => setColumns(state.columns.filter((_, i) => i !== index))}
                             />
                           </div>
+                          {/* What THIS row still needs, exactly. No heading:
+                              saved, not in the sheet. No answer: in the sheet,
+                              with empty cells until one is chosen. */}
+                          {missing ? (
+                            <p
+                              data-testid="gsheets-column-missing"
+                              data-missing={missing}
+                              className="col-[1/-1] flex items-start gap-1.5 text-xs text-muted-foreground @2xl:col-[2/-1]"
+                            >
+                              <i aria-hidden className="pi pi-info-circle mt-px shrink-0" style={{ fontSize: 12 }} />
+                              {missing === 'header'
+                                ? m.gsheets.rowNeedsHeader
+                                : column.source === 'utm'
+                                  ? m.gsheets.rowNeedsUtm
+                                  : m.gsheets.rowNeedsAnswer}
+                            </p>
+                          ) : null}
                         </li>
                       );
                     })}
@@ -589,15 +685,6 @@ export function GoogleSheetsCard({
                 </div>
               </div>
             )}
-
-            {headerSync?.outcome === 'foreign' ? (
-              <HeaderMismatch
-                sync={headerSync}
-                pending={pending}
-                onReplace={() => void syncHeaders(true)}
-                m={m.gsheets}
-              />
-            ) : null}
 
             {syncLine ? (
               <p
@@ -609,6 +696,7 @@ export function GoogleSheetsCard({
                   syncLine.tone === 'ok' && 'border-signal-edge/40 bg-signal/10 text-foreground',
                   syncLine.tone === 'warn' && 'border-warning/40 bg-warning/10 text-foreground',
                   syncLine.tone === 'error' && 'border-destructive/40 bg-destructive/10 text-destructive',
+                  syncLine.tone === 'info' && 'border-border bg-muted/40 text-foreground',
                 )}
               >
                 <i
@@ -618,6 +706,7 @@ export function GoogleSheetsCard({
                     syncLine.tone === 'ok' && 'pi-check-circle text-signal-ink',
                     syncLine.tone === 'warn' && 'pi-exclamation-circle text-warning-ink',
                     syncLine.tone === 'error' && 'pi-exclamation-triangle',
+                    syncLine.tone === 'info' && 'pi-info-circle text-muted-foreground',
                   )}
                   style={{ fontSize: 13 }}
                 />
@@ -647,6 +736,59 @@ export function GoogleSheetsCard({
  * so a disabled one looked exactly like an enabled one. Faded instead.
  */
 const SOFT_DISABLED = 'disabled:bg-muted disabled:opacity-45';
+
+/** A quiet, persistent note on the card about what is not being sent yet. */
+function CardAdvisory({ text, testId }: { text: string; testId: string }) {
+  return (
+    <p
+      data-testid={testId}
+      className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground"
+    >
+      <i aria-hidden className="pi pi-info-circle mt-px shrink-0 text-muted-foreground" style={{ fontSize: 13 }} />
+      <span>{text}</span>
+    </p>
+  );
+}
+
+/**
+ * Row 1 is dForms' own but out of date (a sync failed while Google was down,
+ * or an edit raced a write): responses would land under the wrong headings.
+ * dForms wrote that row, so the fix is offered directly, with no confirmation:
+ * it is the ordinary sync, which only ever rewrites a row it can prove is its own.
+ */
+function StaleRowNotice({
+  pending,
+  onUpdate,
+  m,
+}: {
+  pending: boolean;
+  onUpdate: () => void;
+  m: Msgs['gsheets'];
+}) {
+  return (
+    <div
+      role="status"
+      data-testid="gsheets-header-stale"
+      className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+    >
+      <p className="flex items-start gap-2 text-foreground">
+        <i aria-hidden className="pi pi-exclamation-circle mt-0.5 shrink-0 text-warning-ink" style={{ fontSize: 13 }} />
+        <span>{m.headersStale}</span>
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={onUpdate}
+        disabled={pending}
+        data-testid="gsheets-update-stale"
+      >
+        <i aria-hidden className="pi pi-refresh" style={{ fontSize: 11 }} />
+        {m.writeHeaders}
+      </Button>
+    </div>
+  );
+}
 
 /**
  * Row 1 does not match the columns: say so plainly, show what is in the sheet
