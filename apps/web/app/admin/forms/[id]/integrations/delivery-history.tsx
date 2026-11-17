@@ -17,9 +17,25 @@ type Msgs = FormsMessages['admin']['integrations'];
 const fill = (s: string, vars: Record<string, string | number>) =>
   s.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''));
 
-/** A delivery that ended without landing — what the summary chip counts. */
-export const isFailure = (d: FormDelivery): boolean =>
+/** Ended without landing: retries ran out, or it was refused or skipped for good. */
+export const notDelivered = (d: FormDelivery): boolean =>
   d.status === 'failed' || d.status === 'skipped';
+
+/**
+ * What the red summary chip counts: every row that did not land, except a
+ * skipped PARTIAL save.
+ *
+ * A skipped row is often a provider's permanent refusal, which is exactly what
+ * the author must see. A partial is different: a HubSpot destination fires on
+ * the partial too, and a respondent who has not reached the email question yet
+ * leaves a partial with "no email in submission" on every form whose email is
+ * not on the first step. Counting those would keep the card red on a form whose
+ * completes all arrive. The row is still listed as not delivered, with its
+ * reason; it just does not raise the alarm. A refusal that matters repeats on
+ * the complete, which counts.
+ */
+export const isFailure = (d: FormDelivery): boolean =>
+  d.status === 'failed' || (d.status === 'skipped' && d.action !== 'partial');
 
 export type HistoryState =
   | { status: 'loading' }
@@ -225,7 +241,11 @@ export function DeliveryHistoryView({
   );
 }
 
-/** Status pill styling. `pending` is progress, not a problem — never red. */
+/**
+ * Status pill styling. `pending` is progress, not a problem, so never red. The
+ * row around a `skipped` pill turns red through `isFailure`; the pill stays
+ * quiet so a skip reads differently from retries that ran out.
+ */
 const STATUS_CHIP: Record<DeliveryStatus, string> = {
   done: 'bg-primary/20 text-foreground',
   pending: 'bg-secondary/20 text-foreground',
@@ -267,6 +287,7 @@ function DeliveryRow({
   const timeZone = useWorkspaceTimeZone();
   const [open, setOpen] = useState(false);
   const failed = isFailure(d);
+  const missed = notDelivered(d);
   const isTest = d.action === WEBHOOK_PING_ACTION;
   // NULL is "not recorded", never "empty" — an older row, or a kind whose
   // adapter reports no single request. Saying so is the honest render; showing
@@ -340,8 +361,9 @@ function DeliveryRow({
       </button>
 
       {/* The worker's own reason, verbatim. Paraphrasing it here would lose the
-          one detail that says what to fix. */}
-      {failed ? (
+          one detail that says what to fix. Shown on every row that did not land,
+          including a skipped partial the chip leaves out. */}
+      {missed ? (
         <p className="px-3 pb-2 text-[11px] leading-relaxed text-muted-foreground">
           {d.lastError ?? m.historyNoReason}
         </p>

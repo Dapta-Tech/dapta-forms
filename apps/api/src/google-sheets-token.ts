@@ -14,7 +14,7 @@
  *   - Google REFUSED the refresh (the grant was revoked, the client rotated,
  *     the token went unused for months). That answer will not change, so this
  *     returns an empty token, the factory degrades to log-only, and the
- *     delivery is marked done with a reason the author can read. Retrying a
+ *     delivery is recorded as skipped with a reason the author can read. Retrying a
  *     refused grant is how an integration hammers a provider for a week.
  *   - Nothing ANSWERED (a dead socket, a timeout). That throws, so the delivery
  *     fails and the outbox's backoff gets its turn.

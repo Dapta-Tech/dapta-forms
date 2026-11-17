@@ -227,7 +227,7 @@ export class GoogleSheetsDestination implements SubmissionDestination {
       const parsed = await res.json().catch(() => null);
       const detail = errorDetail(parsed);
       if (isPermanent(res.status)) {
-        // Marked done, never retried, and the history says why. This is the
+        // Recorded as skipped, never retried, and the history says why. This is the
         // state an author has to be able to see: the sheet they picked is gone,
         // or they took our access away, and no amount of waiting changes it.
         return {

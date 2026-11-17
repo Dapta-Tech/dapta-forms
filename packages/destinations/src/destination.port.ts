@@ -11,7 +11,8 @@ import type { SubmissionVisit } from '@quill/types';
  * back or blocks a submission. `deliver` resolves for an outcome it can report;
  * it THROWS only for a transient/retryable failure the durable outbox should
  * retry. A permanent no-op (e.g. HubSpot with no email to key on) resolves with
- * `delivered:false` so the outbox row is marked done, not retried forever.
+ * `delivered:false`, and the outbox records the row as skipped with `detail` as
+ * its reason: never retried, and never shown as delivered.
  */
 
 /** Which integration actually handled (or would handle) the delivery. */
@@ -144,7 +145,7 @@ export interface SubmissionDestination {
   readonly type: DestinationType | 'log-only';
   /**
    * Deliver one submission to this destination. Resolves with `delivered:false`
-   * for a permanent no-op it can report (marked done, never retried); THROWS for
+   * for a permanent no-op it can report (recorded as skipped, never retried); THROWS for
    * a transient failure so the durable outbox worker retries with backoff.
    */
   deliver(ctx: DestinationContext): Promise<DestinationResult>;

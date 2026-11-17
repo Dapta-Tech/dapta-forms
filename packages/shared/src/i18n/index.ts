@@ -4443,7 +4443,7 @@ export const en: FormsMessages = {
       historyDelivered: 'Delivered',
       historyRetrying: 'In progress',
       historyFailed: 'Failed',
-      historySkipped: 'Skipped',
+      historySkipped: 'Not delivered',
       historyAttempts: '{n} attempts',
       historyNoReason: 'No reason was recorded.',
       salesforce: {
@@ -7166,7 +7166,7 @@ export const es: FormsMessages = {
       historySalesforceTitle: 'Historial de Salesforce',
       historyEmailTitle: 'Historial de correos',
       historyHelp:
-        'Las últimas entregas que hizo este formulario, de la más reciente a la más antigua. Abrí una para ver qué se envió.',
+        'Las últimas entregas que hizo este formulario, de la más reciente a la más antigua. Abre una para ver qué se envió.',
       historyPingNote:
         'Las entregas de prueba también aparecen, marcadas como tales: llegan de verdad a tu endpoint, pero llevan respuestas de ejemplo en lugar de las de una persona.',
       historyTestBadge: 'Prueba',
@@ -7184,7 +7184,7 @@ export const es: FormsMessages = {
       historyDelivered: 'Entregada',
       historyRetrying: 'En curso',
       historyFailed: 'Falló',
-      historySkipped: 'Omitida',
+      historySkipped: 'No entregada',
       historyAttempts: '{n} intentos',
       historyNoReason: 'No se registró un motivo.',
       salesforce: {

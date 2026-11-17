@@ -37,6 +37,9 @@ import { DB, ENV } from './tokens';
  * fire-and-forget side-effects into no-silent-loss delivery.
  *
  *   - Success → the row is marked `done`.
+ *   - A permanent refusal or a deliberate no-op (`OutboxSkipError`) → the row
+ *     is marked `skipped` once, with the reason and any transcript, and never
+ *     retried. A destination that resolved `delivered:false` lands here.
  *   - Failure → attempts++ and the row is rescheduled (backoff); once attempts
  *     reach `max_attempts` it is marked `failed` and logged (the row remains as
  *     the delivery-log record — nothing is silently dropped).
@@ -169,7 +172,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       return true;
     } catch (err) {
       if (err instanceof OutboxSkipError) {
-        if (await markOutboxSkipped(this.db, row.id, { reason: err.message, now: now() }, claim)) {
+        const skip = { reason: err.message, now: now(), transcript: err.transcript };
+        if (await markOutboxSkipped(this.db, row.id, skip, claim)) {
           this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) skipped: ${err.message}`);
         } else this.logLostLease(row);
         return true;
