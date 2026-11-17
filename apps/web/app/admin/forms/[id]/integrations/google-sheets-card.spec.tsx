@@ -11,6 +11,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getMessages } from '@quill/shared';
+import { GOOGLE_SHEETS_BUTTON } from '@/components/ui/provider-logo';
 import type { QuestionMeta } from './auto-map';
 
 const actions = vi.hoisted(() => ({
@@ -300,7 +301,9 @@ describe('choosing a spreadsheet from Google Drive', () => {
       pickerAvailable: true,
       state: { ...EMPTY, spreadsheetId: 'old-id', sheetTitle: 'Q3' },
     });
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-change"]')!.click());
     await act(async () => button(el, m.gsheets.chooseSheet)!.click());
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="confirm-dialog-confirm"]')!.click());
     expect(setState.mock.calls.at(-1)![0]).toMatchObject({
       spreadsheetId: 'picked-id',
       sheetTitle: '',
@@ -358,7 +361,11 @@ describe('what a member is offered on the card', () => {
 
   it('keeps what the API lets a member do: create a sheet and update the header row', async () => {
     const { el } = await mount({ pickerAvailable: true, access: MEMBER, state: STORED_FOR_MEMBER, formId: 'form-1' });
+    // With a sheet attached, creating another one sits behind "Change sheet".
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-change"]')!.click());
     expect(button(el, m.gsheets.createSheet)).toBeDefined();
+    expect(button(el, m.gsheets.chooseSheet)).toBeUndefined();
+    expect(el.querySelector('[data-testid="gsheets-choose-admin-only"]')?.textContent).toBe(m.gsheets.chooseAdminOnly);
     expect(el.querySelector<HTMLButtonElement>('[data-testid="gsheets-sync-headers"]')?.disabled).toBe(false);
   });
 
@@ -366,6 +373,272 @@ describe('what a member is offered on the card', () => {
     const { el } = await mount({ pickerAvailable: true });
     expect(button(el, m.gsheets.chooseSheet)).toBeDefined();
     expect(el.querySelector('[data-testid="gsheets-choose-admin-only"]')).toBeNull();
+  });
+});
+
+/**
+ * The attached state, and what it takes to change it.
+ *
+ * With a spreadsheet attached the card used to show a small chip with the
+ * sheet's name and, right under it, "Create a new spreadsheet": one click
+ * made a second spreadsheet and repointed the form, and nothing on the card
+ * said which sheet the responses were going to.
+ */
+describe('a spreadsheet is attached', () => {
+  const ATTACHED: GoogleSheetsState = {
+    enabled: true,
+    spreadsheetId: 'abc123',
+    sheetTitle: 'Responses',
+    columns: [{ header: 'Email', source: 'answer', key: 'email' }],
+  };
+  const created = {
+    ok: true as const,
+    data: { ok: true as const, spreadsheetId: 'new-id', spreadsheetTitle: 'Lead form (responses)', sheetTitle: 'Responses', gid: 0 },
+  };
+  const named = () =>
+    actions.googleSheetsTabsAction.mockResolvedValue({
+      ok: true,
+      data: { enabled: true, spreadsheetTitle: 'Leads 2026', tabs: [{ title: 'Sheet1', gid: 0 }, { title: 'Responses', gid: 7 }] },
+    });
+  const q = <T extends HTMLElement>(el: HTMLElement, id: string) => el.querySelector<T>(`[data-testid="${id}"]`);
+  const click = (el: HTMLElement, id: string) => act(async () => q<HTMLButtonElement>(el, id)!.click());
+
+  it('says where responses go in one block: the name, the tab in a sentence, and a Sheets-green button to open it', async () => {
+    named();
+    const { el } = await mount({ state: ATTACHED, pickerAvailable: true });
+    const block = q(el, 'gsheets-attached')!;
+    expect(q(block, 'gsheets-attached-name')?.textContent).toBe('Leads 2026');
+    expect(q(block, 'gsheets-attached-where')?.textContent).toBe(m.gsheets.attachedInTab.replace('{tab}', 'Responses'));
+    const open = q<HTMLAnchorElement>(block, 'gsheets-current')!;
+    expect(open.textContent).toBe(m.gsheets.openSheetButton);
+    // Google Sheets green with white text, from the one place it is defined:
+    // not the ink default, not Signal Green, not an outline chip.
+    for (const cls of GOOGLE_SHEETS_BUTTON.split(' ')) expect(open.className.split(' ')).toContain(cls);
+    expect(open.className).toContain('bg-[#188038]');
+    expect(open.className).toContain('text-white');
+    expect(open.className).not.toContain('bg-primary');
+    expect(open.className).not.toContain('bg-signal');
+    expect(open.querySelector('.pi-external-link')).not.toBeNull();
+    // The card's header already shows the Sheets logo: none in the block, none in the button.
+    expect(block.querySelector('[data-provider-logo]')).toBeNull();
+    expect(open.target).toBe('_blank');
+    expect(open.rel.split(' ').sort()).toEqual(['noopener', 'noreferrer']);
+    // No bare underlined link anywhere on the card.
+    for (const a of el.querySelectorAll('a')) expect(a.className).not.toContain('underline');
+  });
+
+  it('names the first tab by its own name when no tab is chosen, and says "first tab" until it knows it', async () => {
+    named();
+    const first = await mount({ state: { ...ATTACHED, sheetTitle: '' } });
+    expect(q(first.el, 'gsheets-attached-where')?.textContent).toBe(m.gsheets.attachedInTab.replace('{tab}', 'Sheet1'));
+    act(() => root!.unmount());
+    container!.remove();
+    actions.googleSheetsTabsAction.mockResolvedValue({ ok: false, transport: true, message: 'down' });
+    const unknown = await mount({ state: { ...ATTACHED, sheetTitle: '' } });
+    expect(q(unknown.el, 'gsheets-attached-where')?.textContent).toBe(m.gsheets.attachedFirstTab);
+    expect(q(unknown.el, 'gsheets-attached-name')?.textContent).toBe(m.gsheets.attachedUnnamed);
+  });
+
+  it('does not offer "create" or "choose" beside the attached sheet: one quiet "Change sheet" reveals them', async () => {
+    named();
+    const { el } = await mount({ state: ATTACHED, pickerAvailable: true });
+    expect(button(el, m.gsheets.createSheet)).toBeUndefined();
+    expect(button(el, m.gsheets.chooseSheet)).toBeUndefined();
+    expect(q(el, 'gsheets-change')?.textContent).toBe(m.gsheets.changeSheet);
+    await click(el, 'gsheets-change');
+    expect(q(el, 'gsheets-change-options')?.textContent).toContain(m.gsheets.changeHelp);
+    expect(button(el, m.gsheets.createSheet)).toBeDefined();
+    expect(button(el, m.gsheets.chooseSheet)).toBeDefined();
+    // "Keep this sheet" puts them away again, and nothing was asked of Google.
+    await act(async () => button(el, m.gsheets.changeKeep)!.click());
+    expect(q(el, 'gsheets-change-options')).toBeNull();
+    expect(actions.googleSheetsCreateAction).not.toHaveBeenCalled();
+  });
+
+  it('asks before creating another spreadsheet, and Cancel creates nothing and changes nothing', async () => {
+    named();
+    const { el, setState, onHeaderSync } = await mount({ state: ATTACHED, formId: 'form-1' });
+    onHeaderSync.mockClear();
+    await click(el, 'gsheets-change');
+    await click(el, 'gsheets-create');
+    expect(q(el, 'confirm-dialog')?.textContent).toContain(m.gsheets.changeTitle);
+    // In plain words, naming the sheet that stops receiving responses.
+    expect(q(el, 'confirm-dialog')?.textContent).toContain(m.gsheets.changeBodyCreate.replace('{name}', 'Leads 2026'));
+    expect(actions.googleSheetsCreateAction).not.toHaveBeenCalled();
+    await click(el, 'confirm-dialog-cancel');
+    expect(actions.googleSheetsCreateAction).toHaveBeenCalledTimes(0);
+    expect(setState).not.toHaveBeenCalled();
+    expect(onHeaderSync).not.toHaveBeenCalledWith(null);
+    expect(toasts.success).not.toHaveBeenCalled();
+  });
+
+  it('on confirm creates exactly one, attaches it, and forgets what it knew about the old sheet\'s row 1', async () => {
+    named();
+    actions.googleSheetsCreateAction.mockResolvedValueOnce(created);
+    const { el, setState, onHeaderSync } = await mount({
+      state: { ...ATTACHED, writtenHeaders: ['Email'] },
+      formId: 'form-1',
+      headerSync: { outcome: 'foreign', current: ['Name'], headers: ['Email'] },
+    });
+    await click(el, 'gsheets-change');
+    await click(el, 'gsheets-create');
+    await click(el, 'confirm-dialog-confirm');
+    expect(actions.googleSheetsCreateAction).toHaveBeenCalledTimes(1);
+    expect(setState.mock.calls.at(-1)![0]).toMatchObject({
+      spreadsheetId: 'new-id',
+      sheetTitle: 'Responses',
+      writtenHeaders: null,
+      // The columns the author arranged ride over to the new sheet.
+      columns: ATTACHED.columns,
+    });
+    expect(onHeaderSync).toHaveBeenCalledWith(null);
+  });
+
+  it('asks before the Picker opens, and Cancel never opens it', async () => {
+    named();
+    const { el, setState } = await mount({ state: ATTACHED, pickerAvailable: true });
+    await click(el, 'gsheets-change');
+    await click(el, 'gsheets-choose');
+    expect(q(el, 'confirm-dialog')?.textContent).toContain(m.gsheets.changeBodyChoose.replace('{name}', 'Leads 2026'));
+    await click(el, 'confirm-dialog-cancel');
+    expect(actions.googleSheetsPickerAction).not.toHaveBeenCalled();
+    expect(picker.pickSpreadsheet).not.toHaveBeenCalled();
+    expect(setState).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * One spreadsheet per press. A double click lands twice before React has
+ * rendered the disabled button, and a slow Google answer left the button
+ * looking ready: each extra click made another spreadsheet in the author's
+ * Drive.
+ */
+describe('creating a spreadsheet, once', () => {
+  const created = {
+    ok: true as const,
+    data: { ok: true as const, spreadsheetId: 'new-id', spreadsheetTitle: 'Lead form (responses)', sheetTitle: 'Responses', gid: 0 },
+  };
+  const createBtn = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-create"]')!;
+
+  it('a double click creates one spreadsheet', async () => {
+    let answer!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    const { el, setState } = await mount();
+    await act(async () => {
+      // Two clicks in the same tick, as a double click delivers them.
+      createBtn(el).click();
+      createBtn(el).click();
+    });
+    expect(actions.googleSheetsCreateAction).toHaveBeenCalledTimes(1);
+    await act(async () => answer(created));
+    expect(actions.googleSheetsCreateAction).toHaveBeenCalledTimes(1);
+    expect(setState).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a spinner and cannot be pressed while Google is answering, and neither can "choose"', async () => {
+    let answer!: (v: unknown) => void;
+    actions.googleSheetsCreateAction.mockImplementation(() => new Promise((r) => (answer = r)));
+    const { el } = await mount({ pickerAvailable: true });
+    await act(async () => createBtn(el).click());
+    const b = createBtn(el);
+    expect(b.disabled).toBe(true);
+    expect(b.getAttribute('aria-busy')).toBe('true');
+    expect(b.querySelector('.pi-spinner')).not.toBeNull();
+    expect(b.textContent).toBe(m.gsheets.creatingSheet);
+    expect(el.querySelector<HTMLButtonElement>('[data-testid="gsheets-choose"]')!.disabled).toBe(true);
+    // A click during the slow answer does nothing.
+    await act(async () => b.click());
+    expect(actions.googleSheetsCreateAction).toHaveBeenCalledTimes(1);
+    await act(async () => answer(created));
+    expect(createBtn(el).disabled).toBe(false);
+    expect(createBtn(el).getAttribute('aria-busy')).toBeNull();
+  });
+
+  it('can be pressed again after a failure', async () => {
+    actions.googleSheetsCreateAction
+      .mockResolvedValueOnce({ ok: true, data: { ok: false, reason: 'unavailable' } })
+      .mockResolvedValueOnce(created);
+    const { el, setState } = await mount();
+    await act(async () => createBtn(el).click());
+    expect(toasts.error).toHaveBeenCalledWith(m.gsheets.createFailed);
+    await act(async () => createBtn(el).click());
+    expect(actions.googleSheetsCreateAction).toHaveBeenCalledTimes(2);
+    expect(setState).toHaveBeenCalledTimes(1);
+  });
+
+  it('a double click in the change flow opens one confirmation and creates one spreadsheet', async () => {
+    actions.googleSheetsTabsAction.mockResolvedValue({
+      ok: true,
+      data: { enabled: true, spreadsheetTitle: 'Leads 2026', tabs: [] },
+    });
+    actions.googleSheetsCreateAction.mockResolvedValue(created);
+    const { el } = await mount({
+      state: { enabled: true, spreadsheetId: 'abc123', sheetTitle: '', columns: [] },
+    });
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-change"]')!.click());
+    await act(async () => {
+      createBtn(el).click();
+      createBtn(el).click();
+    });
+    expect(el.querySelectorAll('[data-testid="confirm-dialog"]').length).toBe(1);
+    await act(async () => {
+      const confirm = el.querySelector<HTMLButtonElement>('[data-testid="confirm-dialog-confirm"]')!;
+      confirm.click();
+      confirm.click();
+    });
+    expect(actions.googleSheetsCreateAction).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The buttons were grey pills (the `soft` variant): on a white card they read
+ * as disabled, or as an afterthought. The first step is the app's primary
+ * with an outlined alternative; everything else on the card is an outlined
+ * secondary, and a disabled one both greys and fades.
+ */
+describe('the card\'s buttons read as buttons', () => {
+  const classOf = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`[data-testid="${id}"]`)!.className;
+
+  it('with no sheet: "create" is the app\'s primary and "choose" the outlined secondary, both inline', async () => {
+    const { el } = await mount({ pickerAvailable: true });
+    // The app's own primary (the ink fill). Sheets green is kept for the one
+    // button that opens the spreadsheet.
+    expect(classOf(el, 'gsheets-create')).toContain('bg-primary');
+    expect(classOf(el, 'gsheets-create')).toContain('text-primary-foreground');
+    expect(classOf(el, 'gsheets-create')).not.toContain('#188038');
+    expect(classOf(el, 'gsheets-choose')).toContain('border-input');
+    expect(classOf(el, 'gsheets-choose')).toContain('bg-card');
+    expect(classOf(el, 'gsheets-choose')).not.toContain('bg-primary');
+    // The first step: no attached block, no "Change sheet".
+    expect(el.querySelector('[data-testid="gsheets-attached"]')).toBeNull();
+    expect(el.querySelector('[data-testid="gsheets-change"]')).toBeNull();
+  });
+
+  it('every other action is an outlined secondary, never the grey pill', async () => {
+    const state: GoogleSheetsState = {
+      enabled: true,
+      spreadsheetId: 'abc123',
+      sheetTitle: 'Responses',
+      columns: [{ header: 'Email', source: 'answer', key: 'email' }],
+    };
+    const { el } = await mount({ state, formId: 'form-1' });
+    for (const id of ['gsheets-change', 'gsheets-fill-from-form', 'gsheets-sync-headers', 'gsheets-add-column']) {
+      const cls = classOf(el, id);
+      expect(cls, id).toContain('border-input');
+      expect(cls, id).toContain('bg-card');
+      expect(cls, id).toContain('text-foreground');
+      // `bg-muted` only as the DISABLED fill, never as the resting one.
+      expect(cls.split(' ').includes('bg-muted'), id).toBe(false);
+      expect(el.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)!.disabled, id).toBe(false);
+    }
+  });
+
+  it('a disabled secondary greys AND fades, so it cannot pass for an enabled one', async () => {
+    const { el } = await mount({ state: { ...EMPTY, columns: [{ header: 'Email', source: 'answer', key: 'email' }] }, formId: 'form-1' });
+    const b = el.querySelector<HTMLButtonElement>('[data-testid="gsheets-sync-headers"]')!;
+    expect(b.disabled).toBe(true);
+    expect(b.className).toContain('disabled:bg-muted');
+    expect(b.className).toContain('disabled:opacity-50');
   });
 });
 
@@ -380,8 +653,10 @@ describe('a form that already has its spreadsheet', () => {
       },
     });
     const { el } = await mount({ state: { ...EMPTY, spreadsheetId: 'abc123', sheetTitle: 'Responses' } });
+    // The name is the strong element of the attached block, not the link's text.
+    expect(el.querySelector('[data-testid="gsheets-attached-name"]')?.textContent).toBe('Leads 2026');
     const link = el.querySelector<HTMLAnchorElement>('[data-testid="gsheets-current"]')!;
-    expect(link.textContent).toContain('Leads 2026');
+    expect(link.textContent).toContain(m.gsheets.openSheetButton);
     expect(link.href).toBe('https://docs.google.com/spreadsheets/d/abc123/edit');
     // A button, not a stray underlined link, and it never hands Google this tab.
     expect(link.className).toContain('rounded-full');
@@ -677,7 +952,7 @@ describe('the header row', () => {
     const { el } = await mount({ state: { ...EMPTY, columns: STORED.columns }, formId: 'form-1' });
     const b = el.querySelector<HTMLButtonElement>('[data-testid="gsheets-sync-headers"]')!;
     expect(b.disabled).toBe(true);
-    expect(b.className).toContain('disabled:opacity-45');
+    expect(b.className).toContain('disabled:opacity-50');
   });
 
   it('says so in the destructive tone when the update failed', async () => {

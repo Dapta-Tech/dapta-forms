@@ -2132,6 +2132,28 @@ export interface FormsMessages {
         /** The empty option: write to whichever tab is first. */
         tabFirst: string;
         openSheet: string;
+        /** The primary button on the attached block. */
+        openSheetButton: string;
+        /** The attached block's title while the spreadsheet's name is not known yet. */
+        attachedUnnamed: string;
+        /** Where responses go, under the spreadsheet's name. `{tab}` is the tab's name. */
+        attachedInTab: string;
+        /** The same sentence when no tab is chosen and its name is not known. */
+        attachedFirstTab: string;
+        /** The one quiet action that reveals "create" and "choose" once a sheet is attached. */
+        changeSheet: string;
+        /** Above the two options it reveals. */
+        changeHelp: string;
+        /** Closes the options without changing anything. */
+        changeKeep: string;
+        /** The confirm asked before another spreadsheet replaces the attached one. `{name}` is the current one. */
+        changeTitle: string;
+        changeBodyCreate: string;
+        changeBodyChoose: string;
+        changeConfirmCreate: string;
+        changeConfirmChoose: string;
+        /** On the create button while Google is creating the spreadsheet. */
+        creatingSheet: string;
         sheetNotFound: string;
         sheetForbidden: string;
         tabsUnavailable: string;
@@ -4615,6 +4637,21 @@ export const en: FormsMessages = {
         tabLabel: 'Tab',
         tabFirst: 'The first tab',
         openSheet: 'Open the spreadsheet',
+        openSheetButton: 'Open sheet',
+        attachedUnnamed: 'Google spreadsheet',
+        attachedInTab: 'Responses are added to this spreadsheet as new rows, in the "{tab}" tab.',
+        attachedFirstTab: 'Responses are added to this spreadsheet as new rows, in its first tab.',
+        changeSheet: 'Change sheet',
+        changeHelp: 'Send new responses to a different spreadsheet:',
+        changeKeep: 'Keep this sheet',
+        changeTitle: 'Change the spreadsheet?',
+        changeBodyCreate:
+          'A new spreadsheet will be created in your Google Drive, and new responses will go to it from now on. "{name}" keeps the rows it already has and stops receiving responses.',
+        changeBodyChoose:
+          'You will choose a spreadsheet from your Google Drive, and new responses will go to it from now on. "{name}" keeps the rows it already has and stops receiving responses.',
+        changeConfirmCreate: 'Create and switch',
+        changeConfirmChoose: 'Choose a sheet',
+        creatingSheet: 'Creating the sheet…',
         sheetNotFound:
           'dForms can no longer open this spreadsheet. Choose it again from Google Drive, or create a new one.',
         sheetForbidden:
@@ -7411,6 +7448,21 @@ export const es: FormsMessages = {
         tabLabel: 'Pestaña',
         tabFirst: 'La primera pestaña',
         openSheet: 'Abrir la hoja',
+        openSheetButton: 'Abrir hoja',
+        attachedUnnamed: 'Hoja de cálculo de Google',
+        attachedInTab: 'Las respuestas se agregan a esta hoja como filas nuevas, en la pestaña «{tab}».',
+        attachedFirstTab: 'Las respuestas se agregan a esta hoja como filas nuevas, en su primera pestaña.',
+        changeSheet: 'Cambiar de hoja',
+        changeHelp: 'Envía las respuestas nuevas a otra hoja:',
+        changeKeep: 'Conservar esta hoja',
+        changeTitle: '¿Cambiar de hoja?',
+        changeBodyCreate:
+          'Se va a crear una hoja nueva en tu Google Drive y las respuestas nuevas irán a ella a partir de ahora. «{name}» conserva las filas que ya tiene y deja de recibir respuestas.',
+        changeBodyChoose:
+          'Vas a elegir una hoja de tu Google Drive y las respuestas nuevas irán a ella a partir de ahora. «{name}» conserva las filas que ya tiene y deja de recibir respuestas.',
+        changeConfirmCreate: 'Crear y cambiar',
+        changeConfirmChoose: 'Elegir una hoja',
+        creatingSheet: 'Creando la hoja…',
         sheetNotFound:
           'dForms ya no puede abrir esta hoja. Elígela otra vez desde Google Drive o crea una nueva.',
         sheetForbidden:

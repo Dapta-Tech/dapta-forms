@@ -1729,15 +1729,28 @@ export class FormDestinationsController {
       };
       return { destinations: next, ...(result ? { result } : {}) };
     };
-    const keep = (result?: SheetHeaderSync) => withState(storedSnapshot, storedForeign, result, storedBroken);
+    // What is known about row 1 belongs to ONE spreadsheet and tab. Once the
+    // destination points somewhere else (another spreadsheet attached, another
+    // tab chosen, or none at all), what was recorded for the old one says
+    // nothing about the new one and must not ride along: a snapshot of the
+    // old sheet kept beside the new id is bookkeeping about a sheet this form
+    // no longer writes to. Carried only when it is for this target.
+    const target = sheetTargetOf({ settings });
+    const here = <T extends SheetHeaderSnapshot>(state: T | null): T | null =>
+      state && target && state.spreadsheetId === target.spreadsheetId && state.sheetTitle === target.sheetTitle
+        ? state
+        : null;
+    const keptSnapshot = here(storedSnapshot);
+    const keptForeign = here(storedForeign);
+    const keptBroken = here(storedBroken);
+    const keep = (result?: SheetHeaderSync) => withState(keptSnapshot, keptForeign, result, keptBroken);
     // A failure that will not fix itself is remembered for these headings, so
     // the saves after it do not each pay a Google call to fail again.
     const brokenNow = (reason: string): SheetHeaderBroken | null =>
       target && PERMANENT_SYNC_FAILURES.has(reason) ? { ...target, headers, reason, at: Date.now() } : null;
     const failedWith = (reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable') =>
-      withState(storedSnapshot, storedForeign, { outcome: 'failed', reason }, brokenNow(reason));
+      withState(keptSnapshot, keptForeign, { outcome: 'failed', reason }, brokenNow(reason));
 
-    const target = sheetTargetOf({ settings });
     // The row 1 dForms last wrote for THIS target, from what is stored: a
     // column whose heading was just cleared keeps the position it holds there
     // (`sheetCells`), so row 1 is not rewritten to close the gap and no
@@ -1820,7 +1833,7 @@ export class FormDestinationsController {
     // permanent one is remembered for a while (see `headerBroken`).
     if (!result.ok) return failedWith(result.reason);
     if (result.outcome === 'foreign') {
-      return withState(storedSnapshot, { ...target, headers }, {
+      return withState(keptSnapshot, { ...target, headers }, {
         outcome: 'foreign',
         current: result.current,
         headers,

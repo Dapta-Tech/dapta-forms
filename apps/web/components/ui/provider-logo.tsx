@@ -82,6 +82,26 @@ export function ProviderLogo({
 }
 
 /**
+ * Google Sheets green as a BUTTON fill: the one control that opens the
+ * author's spreadsheet, so it reads as "this goes to Google Sheets" without a
+ * second logo beside the one in the card's header.
+ *
+ * `#188038` is Google's current Sheets green. White text on it is 5.0:1 (AA);
+ * the older `#0F9D58` the mark below is drawn in is 3.4:1 with white, which
+ * is fine for a logo and not for a label. Hover and active go darker, never
+ * lighter, so the label's contrast only improves. The same values on both
+ * themes: it is a brand colour, not a surface, and against the dark card the
+ * fill is 3.4:1, enough for the button's shape without an edge.
+ *
+ * Defined ONCE, here beside the logo. A caller adds it to a `Button` (or to
+ * `buttonVariants` on a link); nothing else in the app spells these hexes.
+ * The focus ring is the app's own (`ring-ring`), set off from the fill by a
+ * gap in the surface colour so it does not merge into the green.
+ */
+export const GOOGLE_SHEETS_BUTTON =
+  'bg-[#188038] text-white hover:bg-[#146c2e] active:bg-[#115c27] focus-visible:ring-offset-2 focus-visible:ring-offset-card';
+
+/**
  * Google Sheets, deliberately OUTSIDE `LogoProvider`: the mark is several
  * stacked shapes (sheet, fold, grid), so it cannot ride the one-path-per-provider
  * Record above. Always decoration beside the product's own name, hence
