@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { sql, type SQL } from 'drizzle-orm';
+import { DrizzleQueryError, sql, type SQL } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { isPostgresUrl } from '@quill/config/env';
@@ -152,11 +152,33 @@ async function createSqliteDb(url: string): Promise<Db> {
 
 // --- Postgres -------------------------------------------------------------
 
+/**
+ * Since drizzle-orm 0.44 every failed Postgres query is rethrown as a
+ * `DrizzleQueryError` whose message is the SQL text followed by every bound
+ * parameter VALUE ("params: ..."), with the driver error (SQLSTATE `code`,
+ * `constraint_name`) moved to `cause`. Anything that logs `error.message` would
+ * then write answers, emails or token ciphertext to the logs. Rethrow the
+ * driver error itself, so a Postgres failure looks exactly as it did before:
+ * the same `code`, the driver's own message, no parameters.
+ */
+function rethrowDriverError(error: unknown): never {
+  throw error instanceof DrizzleQueryError && error.cause ? error.cause : error;
+}
+
 async function createPostgresDb(url: string): Promise<Db> {
   const { default: postgres } = await import('postgres');
   const { drizzle } = await import('drizzle-orm/postgres-js');
   const client = postgres(url, { max: 10 });
   const db = drizzle(client);
+  // Both entry points this package uses: `execute` behind all/get/run, and
+  // `transaction` for the native atomic paths (a failing `tx.execute` inside
+  // the callback propagates out of it). Patched on this one instance only.
+  const execute = db.execute.bind(db);
+  const transaction = db.transaction.bind(db);
+  db.execute = ((query: Parameters<typeof execute>[0]) =>
+    execute(query).catch(rethrowDriverError)) as typeof db.execute;
+  db.transaction = ((...args: Parameters<typeof transaction>) =>
+    transaction(...args).catch(rethrowDriverError)) as typeof db.transaction;
 
   return {
     dialect: 'postgres',
