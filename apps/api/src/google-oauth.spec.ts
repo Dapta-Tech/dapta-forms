@@ -16,6 +16,7 @@ import {
   googleStateKey,
   grantedSheetsAccess,
   refreshGoogleAccessToken,
+  safeGoogleReturnTo,
   signGoogleState,
   verifyGoogleState,
   GOOGLE_STATE_MAX_LENGTH,
@@ -124,6 +125,8 @@ describe('a state this deployment did not sign is refused', () => {
 
   it('refuses a version it does not know, so a v1 signature cannot be reused later', () => {
     const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    expect(verifyGoogleState(state.replace(/^v1\./, 'v3.'), KEY_A, NOW)).toBeNull();
+    // Relabelling a v1 state as v2 breaks its signature, and v2 wants four fields.
     expect(verifyGoogleState(state.replace(/^v1\./, 'v2.'), KEY_A, NOW)).toBeNull();
   });
 
@@ -332,5 +335,54 @@ describe('googlePickerConfig', () => {
     expect(
       googlePickerConfig({ GOOGLE_OAUTH_CLIENT_ID: 'not-a-google-id', GOOGLE_PICKER_API_KEY: 'k' }),
     ).toBeNull();
+  });
+});
+
+describe('the return path a state carries', () => {
+  const FORM = '/admin/forms/3f1c2a4e-0000-4000-8000-000000000001/edit';
+
+  it('round-trips a form editor path, signed inside the state', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW, FORM);
+    expect(state.startsWith('v2.')).toBe(true);
+    expect(verifyGoogleState(state, KEY_A, NOW)).toEqual({
+      accountId: ACCOUNT,
+      issuedAt: NOW,
+      returnTo: FORM,
+    });
+  });
+
+  it('mints the old v1 state when there is no path, so nothing else changes', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW);
+    expect(state.startsWith('v1.')).toBe(true);
+    expect(verifyGoogleState(state, KEY_A, NOW)).toEqual({ accountId: ACCOUNT, issuedAt: NOW });
+  });
+
+  it('refuses a swapped return path, the same way it refuses a swapped account', () => {
+    const state = signGoogleState(ACCOUNT, KEY_A, NOW, FORM);
+    const [version, payload, signature] = state.split('.');
+    const fields = Buffer.from(payload!, 'base64url').toString('utf8').split('\n');
+    fields[3] = '/admin/forms/someone-else/edit';
+    const forged = Buffer.from(fields.join('\n'), 'utf8').toString('base64url');
+    expect(verifyGoogleState(`${version}.${forged}.${signature}`, KEY_A, NOW)).toBeNull();
+  });
+
+  it('never signs anything but one of the two dashboard paths', () => {
+    for (const bad of [
+      'https://evil.example/admin/integrations',
+      '//evil.example/admin/integrations',
+      '/\\evil.example',
+      '/admin/forms/x/edit?next=https://evil.example',
+      '/admin/forms/x/edit#frag',
+      '/admin/forms/../../logout/edit',
+      '/admin/forms/x%2F..%2F/edit',
+      '/admin/integrations\n/evil',
+      '/login',
+      '',
+    ]) {
+      expect(safeGoogleReturnTo(bad)).toBeNull();
+      expect(signGoogleState(ACCOUNT, KEY_A, NOW, bad).startsWith('v1.')).toBe(true);
+    }
+    expect(safeGoogleReturnTo('/admin/integrations')).toBe('/admin/integrations');
+    expect(safeGoogleReturnTo(FORM)).toBe(FORM);
   });
 });

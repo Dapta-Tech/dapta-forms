@@ -122,6 +122,10 @@ const DENIED = new Set([
   // key-configurable through `PUT /v1/forms/:id/destinations`.
   'GET /v1/integrations/google-sheets/tabs',
   'POST /v1/integrations/google-sheets/header-row',
+  // The form-scoped header button, for the same contract reason. A key does
+  // not need it: a `PUT /v1/forms/:id/destinations` that changes the columns
+  // brings row 1 in line by itself.
+  'POST /v1/forms/:id/destinations/google-sheets/header-row',
   // Creating a spreadsheet for a form: denied for the same reversible reason as
   // the two above. It is the one of these an agent would miss most, because
   // under the `drive.file` scope a spreadsheet reaches a form only by being
