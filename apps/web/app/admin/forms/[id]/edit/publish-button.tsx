@@ -16,6 +16,18 @@ import { cn } from '@/lib/cn';
 import type { FlushResult } from '@/lib/use-autosave';
 
 /**
+ * What both halves of the Publish pill share. They are transparent: the pill's
+ * fill lives on the wrapper, so a half can only tint itself, never drift. Focus
+ * is an INSET ring in the label's colour (ink on the green, 9.7:1): the app's
+ * default ring sits 2px outside the element, where the other half paints over
+ * it and leaves it open at the seam. `!` because that default is an unlayered
+ * `:focus-visible` rule in globals.css, which outranks any layered utility
+ * (leading `!`: tailwind-merge v2 does not parse the trailing form).
+ */
+const SEGMENT =
+  'inline-flex shrink-0 items-center justify-center text-inherit transition-colors focus-visible:!outline-current focus-visible:!-outline-offset-4';
+
+/**
  * The editor's explicit Publish control for the draft→publish flow. Autosave
  * writes an unpublished draft; this button makes it live (POST
  * /v1/forms/:id/publish via `publishFormAction`) and reports, through
@@ -190,22 +202,49 @@ export function PublishButton({
   }
 
   const canRevert = previousAt != null && !busy;
+  /** Nothing to publish and nothing in flight: the whole pill goes quiet. */
+  const idle = !hasDraft && !busy;
 
   return (
-    <div className="flex shrink-0 items-center" data-tour="publish">
+    // ONE pill, two buttons. The fill, the rim (`.bg-signal` in globals.css)
+    // and the radius live on this wrapper only, so the halves can never
+    // disagree: before, each half carried its own fill, its own rim and its own
+    // disabled opacity, which drew a doubled rim plus a border at the seam and
+    // a pale Publish beside a solid chevron. The halves are transparent and
+    // only tint themselves on hover, press and open.
+    <div
+      data-tour="publish"
+      data-testid="publish-control"
+      data-state={busy ? 'busy' : idle ? 'idle' : 'pending'}
+      className={cn(
+        'inline-flex h-9 shrink-0 items-stretch rounded-full text-sm font-semibold',
+        idle
+          ? 'bg-muted text-muted-foreground shadow-[inset_0_0_0_1px_var(--input)]'
+          : 'bg-signal text-signal-foreground',
+      )}
+    >
       <button
         type="button"
         onClick={publish}
         disabled={!hasDraft || busy}
+        aria-busy={busy || undefined}
         title={hasDraft ? undefined : m.noChanges}
         data-testid="publish-button"
         className={cn(
-          'inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-l-full bg-signal pl-4 pr-3 text-sm font-semibold text-signal-foreground transition-transform hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          (!hasDraft || busy) && 'cursor-not-allowed opacity-50 hover:brightness-100 active:scale-100',
+          SEGMENT,
+          'gap-2 whitespace-nowrap rounded-l-full pl-4 pr-3',
+          busy
+            ? 'cursor-progress'
+            : idle
+              ? 'cursor-not-allowed'
+              : 'hover:bg-signal-foreground/10 active:bg-signal-foreground/20',
         )}
       >
+        {busy ? <i aria-hidden className="pi pi-spin pi-spinner" style={{ fontSize: 13 }} /> : null}
         {publishing ? m.publishing : reverting ? m.reverting : m.publish}
       </button>
+      {/* The seam: a hairline inset from the rim, in the label's own colour. */}
+      <span aria-hidden data-testid="publish-divider" className="my-2 w-px shrink-0 bg-current opacity-30" />
       {/* The publish menu. Its own half of the pill, never disabled: what it
           holds is useful exactly when there is nothing new to publish. */}
       <button
@@ -217,7 +256,13 @@ export function PublishButton({
         aria-label={m.moreOptions}
         title={m.moreOptions}
         data-testid="publish-menu-button"
-        className="inline-flex h-9 w-8 shrink-0 items-center justify-center rounded-r-full border-l border-signal-foreground/20 bg-signal text-signal-foreground transition-colors hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          SEGMENT,
+          'w-8 rounded-r-full',
+          idle
+            ? 'hover:bg-foreground/10 active:bg-foreground/15 aria-expanded:bg-foreground/15'
+            : 'hover:bg-signal-foreground/10 active:bg-signal-foreground/20 aria-expanded:bg-signal-foreground/15',
+        )}
       >
         <i aria-hidden className="pi pi-chevron-down" style={{ fontSize: 11 }} />
       </button>

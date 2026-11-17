@@ -118,6 +118,111 @@ describe('the publish menu', () => {
   });
 });
 
+/**
+ * The pill reads as ONE control in every state. The product owner saw a pale,
+ * washed-out Publish beside a solid chevron, with a notch at the seam: each half
+ * painted its own fill and rim, the main half alone took `opacity-50` whenever it
+ * was disabled (including while publishing), and the chevron added a border on
+ * top of both rims. What is pinned here is structural, so it holds in either
+ * theme: the fill lives on the wrapper only, the halves share their classes, no
+ * opacity anywhere, one divider.
+ */
+describe('the Publish pill', () => {
+  const control = () => $('[data-testid="publish-control"]')!;
+  const main = () => $<HTMLButtonElement>('[data-testid="publish-button"]')!;
+  const chevron = () => $<HTMLButtonElement>('[data-testid="publish-menu-button"]')!;
+  const classes = (el: Element) => el.className.split(/\s+/).filter(Boolean);
+  /** Classes that would make one half look unlike the other, or washed out. */
+  const forbidden = (el: Element) =>
+    classes(el).filter(
+      (c) =>
+        /^(bg-signal|bg-muted|rounded-full)$/.test(c) ||
+        /(^|:)(opacity-|border|ring-|brightness|scale-)/.test(c),
+    );
+
+  function expectOnePill() {
+    expect(control().contains(main())).toBe(true);
+    expect(control().contains(chevron())).toBe(true);
+    // The halves never paint a fill, a border, a ring or an opacity of their own.
+    expect(forbidden(main())).toEqual([]);
+    expect(forbidden(chevron())).toEqual([]);
+    expect(control().querySelectorAll('[class*="opacity-50"]')).toHaveLength(0);
+    // Matching outer radius: the wrapper is the pill, each half rounds its outer side.
+    expect(classes(control())).toContain('rounded-full');
+    expect(classes(main())).toContain('rounded-l-full');
+    expect(classes(chevron())).toContain('rounded-r-full');
+    // Same height for both halves: they stretch to the wrapper, which sets it.
+    expect(classes(control())).toEqual(expect.arrayContaining(['h-9', 'items-stretch']));
+    // Shared base classes, including the inset focus ring in the label colour.
+    const shared = classes(main()).filter((c) => classes(chevron()).includes(c));
+    expect(shared).toEqual(
+      expect.arrayContaining([
+        'text-inherit',
+        'focus-visible:!outline-current',
+        'focus-visible:!-outline-offset-4',
+      ]),
+    );
+    // One divider between them, nothing else.
+    expect(main().nextElementSibling).toBe($('[data-testid="publish-divider"]'));
+    expect($('[data-testid="publish-divider"]')!.nextElementSibling).toBe(chevron());
+  }
+
+  it('is solid Signal Green with changes to publish, with no disabled styling', async () => {
+    await mount({ hasDraft: true });
+    expect(control().dataset.state).toBe('pending');
+    expect(classes(control())).toEqual(
+      expect.arrayContaining(['bg-signal', 'text-signal-foreground']),
+    );
+    expect(main().disabled).toBe(false);
+    expect(main().className).not.toMatch(/cursor-not-allowed/);
+    expectOnePill();
+  });
+
+  it('goes quiet as a whole, not half pale, with nothing to publish', async () => {
+    await mount({ hasDraft: false });
+    expect(control().dataset.state).toBe('idle');
+    expect(classes(control())).toEqual(
+      expect.arrayContaining(['bg-muted', 'text-muted-foreground']),
+    );
+    expect(classes(control())).not.toContain('bg-signal');
+    expect(main().disabled).toBe(true);
+    // The menu half stays usable: revert is useful exactly now.
+    expect(chevron().disabled).toBe(false);
+    expectOnePill();
+  });
+
+  it('stays solid while publishing, says so, and marks itself busy', async () => {
+    let finish!: (v: unknown) => void;
+    actions.publishFormAction.mockReturnValue(new Promise((r) => (finish = r)));
+    await mount({ hasDraft: true });
+    await click(main());
+    expect(control().dataset.state).toBe('busy');
+    expect(classes(control())).toContain('bg-signal');
+    expect(main().disabled).toBe(true);
+    expect(main().getAttribute('aria-busy')).toBe('true');
+    expect(main().textContent).toBe(m.publishing);
+    expectOnePill();
+    await act(async () =>
+      finish({
+        ok: true,
+        updatedAt: 1_700_000_000_100,
+        saved: { name: 'Lead quiz', config: { version: 1, steps: [] } },
+        previousPublishedAt: PREVIOUS_AT,
+      }),
+    );
+    expect(control().dataset.state).toBe('idle');
+    expectOnePill();
+  });
+
+  it('marks the menu half as pressed while the menu is open', async () => {
+    await mount({ hasDraft: true });
+    await openMenu();
+    expect(chevron().getAttribute('aria-expanded')).toBe('true');
+    expect(classes(chevron()).some((c) => c.startsWith('aria-expanded:bg-'))).toBe(true);
+    expectOnePill();
+  });
+});
+
 describe('Revert to the previous published version', () => {
   it('is disabled with no earlier published version, says so, and does nothing on click', async () => {
     await mount({ previousAt: null });
