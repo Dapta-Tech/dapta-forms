@@ -3,6 +3,7 @@
  * Fully unit-tested; portable across SQLite and Postgres deployments.
  */
 export * from './form-logic';
+export * from './email-shape';
 export * from './answer-summary';
 export * from './form-config';
 export * from './form-design';

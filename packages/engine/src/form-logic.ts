@@ -24,6 +24,7 @@ import type {
   FormRadius,
   FormTransition,
 } from './form-design';
+import { isEmailAddressShape } from './email-shape';
 
 /**
  * The step kinds a form can contain. `message` is an info step with no input;
@@ -1349,7 +1350,6 @@ export function isPersonalEmail(value: AnswerValue): boolean {
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * A web address for a `url` step: optional http(s) scheme, a dotted host with a
  * TLD of two or more letters, optional port, optional path/query/fragment. A pure
@@ -1500,7 +1500,7 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
   switch (step.type) {
     case 'email': {
       const email = String(value).trim().toLowerCase();
-      if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
+      if (!isEmailAddressShape(email)) return { ok: false, error: 'Enter a valid email address.' };
       // Use the SAME personal-email test as validateAnswerCode (domain list +
       // free-mail bases) so both validators agree on any given address.
       if (step.corporateEmailOnly && isPersonalEmail(email))
@@ -2118,7 +2118,7 @@ export function validateAnswerCode(
   switch (step.type) {
     case 'email': {
       const email = String(value).trim().toLowerCase();
-      if (!EMAIL_RE.test(email)) return { ok: false, code: 'email' };
+      if (!isEmailAddressShape(email)) return { ok: false, code: 'email' };
       if (step.corporateEmailOnly && isPersonalEmail(email))
         return { ok: false, code: 'work_email' };
       return { ok: true };
