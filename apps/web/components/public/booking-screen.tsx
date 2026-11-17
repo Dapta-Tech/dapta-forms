@@ -9,6 +9,11 @@
  * - `hubspot_meetings` → an `<iframe>` on the prefilled meetings URL.
  * - `calendly`         → an inline widget via Calendly's script, with a plain
  *                        link fallback when the script cannot load.
+ * - `dcal`             → a declarative `<iframe>` on the prefilled booking URL,
+ *                        the way dCal's own snippet embeds it. No script to
+ *                        load: it reports its height by postMessage, which is
+ *                        what `/embed.js` does on a host page, and this screen
+ *                        does for itself.
  *
  * The provider's "booked" postMessage (origin-allowlisted, parsed in
  * lib/booking-embed) fires `onBooked` exactly once with the extracted details.
@@ -27,6 +32,7 @@ import {
 } from '@/lib/booking-prefill';
 import {
   attachBookingMessageListener,
+  dcalMessageOrigin,
   loadCalendlyScript,
   warmBookingEmbed,
   type BookingScheduledDetails,
@@ -45,6 +51,19 @@ type EmbedState = 'loading' | 'ready' | 'failed';
 // since we cannot read cross-origin iframe status; the link is the robust guard.
 const HUBSPOT_LOAD_TIMEOUT_MS = 8000;
 
+/**
+ * dCal's self-sizing channel, which its own `/embed.js` listens for on a host
+ * page. This screen is that host page, so it listens for itself rather than
+ * loading a script to do it.
+ */
+const DCAL_RESIZE_MESSAGE = 'dapta-calendars:resize';
+/** The floor dCal's own snippet gives the iframe before any measurement lands. */
+const DCAL_MIN_HEIGHT = 700;
+/** Below this a reading is noise, not a page (dCal's own `embed.js` rule). */
+const DCAL_MIN_TRUSTED_HEIGHT = 120;
+/** Above this it is a runaway measurement, not a booking page (dCal's cap). */
+const DCAL_MAX_HEIGHT = 20000;
+
 export function BookingScreen({
   booking,
   answers,
@@ -54,6 +73,7 @@ export function BookingScreen({
   hideHeader = false,
   extraCustomAnswers,
   preloadKey,
+  utm,
 }: {
   booking: OutcomeBooking;
   answers: Record<string, unknown>;
@@ -74,6 +94,12 @@ export function BookingScreen({
    * instead of a new one.
    */
   preloadKey?: string;
+  /**
+   * The visitor's campaign `utm_*` (the form's own, else the landing's), the
+   * same set the submission carries. Calendly and dCal record it on the
+   * booking, so the booking is credited to the campaign the visitor came from.
+   */
+  utm?: Record<string, string>;
 }) {
   const m = getMessages(locale).renderer.booking;
 
@@ -81,10 +107,24 @@ export function BookingScreen({
   const [embedDomain] = useState(() =>
     typeof window === 'undefined' ? '' : window.location.host,
   );
+  // Keyed by content: the callers hand a fresh object on every render.
+  const utmKey = JSON.stringify(utm ?? {});
   const embedUrl = useMemo(
-    () => buildBookingEmbedUrl(booking, answers, sessionId, embedDomain),
-    [booking, answers, sessionId, embedDomain],
+    () =>
+      buildBookingEmbedUrl(booking, answers, {
+        embedDomain,
+        customAnswers: extraCustomAnswers,
+        utm: JSON.parse(utmKey) as Record<string, string>,
+      }),
+    [booking, answers, embedDomain, extraCustomAnswers, utmKey],
   );
+  /**
+   * The one origin a dCal "booked" message may come from: the booking page this
+   * screen actually framed. dCal is self-hostable, so there is no origin to
+   * hardcode, and dCal posts with `targetOrigin: '*'`, so without this check any
+   * framed page could claim a booking for the session.
+   */
+  const dcalOrigin = useMemo(() => dcalMessageOrigin(booking.url), [booking.url]);
   const calendlyPrefill = useMemo(() => {
     // "Prefill: off" keeps the contact fields out, as the URL already does; the
     // mapped custom answers are the author's explicit mapping and always ride.
@@ -104,7 +144,7 @@ export function BookingScreen({
   const stablePrefill = useMemo(() => calendlyPrefill, [calendlyPrefillKey]);
 
   // Decided at mount; it only ever flips to the cold embed (the widget turned
-  // out to be held by another screen).
+  // out to be held by another screen, or the caller withdrew the key).
   const [preloaded, setPreloaded] = useState(
     () =>
       booking.provider === 'calendly' &&
@@ -116,7 +156,9 @@ export function BookingScreen({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [calendlyState, setCalendlyState] = useState<EmbedState>('loading');
-  const [hubspotState, setHubspotState] = useState<EmbedState>('loading');
+  // Shared by the two providers embedded as a plain iframe (HubSpot, dCal):
+  // neither exposes a ready/error callback, so both are watched the same way.
+  const [iframeState, setIframeState] = useState<EmbedState>('loading');
 
   // Latest onBooked via a ref so the message listener attaches once per provider.
   const onBookedRef = useRef(onBooked);
@@ -128,11 +170,45 @@ export function BookingScreen({
 
   useEffect(
     () =>
-      attachBookingMessageListener(booking.provider, (details) => {
-        onBookedRef.current(details);
-      }),
-    [booking.provider],
+      attachBookingMessageListener(
+        booking.provider,
+        (details) => {
+          onBookedRef.current(details);
+        },
+        dcalOrigin,
+      ),
+    [booking.provider, dcalOrigin],
   );
+
+  /**
+   * dCal's height, reported by the framed page the way `/embed.js` receives it.
+   * Same origin check as the booked signal, and the same reason: a number from
+   * anywhere else would let another frame resize this one. Bounded, because a
+   * runaway measurement is not a booking page (dCal caps it at 20000 too).
+   */
+  const [dcalHeight, setDcalHeight] = useState(DCAL_MIN_HEIGHT);
+  useEffect(() => {
+    if (booking.provider !== 'dcal' || !dcalOrigin) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== dcalOrigin) return;
+      const data = event.data as { type?: unknown; height?: unknown } | null;
+      if (!data || typeof data !== 'object' || data.type !== DCAL_RESIZE_MESSAGE) return;
+      const height = Number(data.height);
+      if (!Number.isFinite(height) || height < DCAL_MIN_TRUSTED_HEIGHT) return;
+      setDcalHeight(Math.min(Math.ceil(height), DCAL_MAX_HEIGHT));
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [booking.provider, dcalOrigin]);
+
+  // The caller withdrew (or changed) the key after mount, e.g. the landing's
+  // campaign arrived and a preloaded widget can no longer carry it. The adopted
+  // widget's effect lets it go; without this the cold embed would wait on
+  // `preloaded` forever and the screen would stay blank.
+  const [adoptedKey] = useState(preloadKey);
+  useEffect(() => {
+    if (preloaded && preloadKey !== adoptedKey) setPreloaded(false);
+  }, [preloaded, preloadKey, adoptedKey]);
 
   // Adopted widget: shown over the slot (and prefilled) while this screen lives.
   useEffect(() => {
@@ -185,10 +261,10 @@ export function BookingScreen({
   // fires within the timeout, flip to `failed` to reveal the load-error copy
   // above the always-present fallback link. `onLoad` clears it back to `ready`.
   useEffect(() => {
-    if (booking.provider !== 'hubspot_meetings') return;
-    setHubspotState('loading');
+    if (booking.provider !== 'hubspot_meetings' && booking.provider !== 'dcal') return;
+    setIframeState('loading');
     const timer = window.setTimeout(() => {
-      setHubspotState((prev) => (prev === 'loading' ? 'failed' : prev));
+      setIframeState((prev) => (prev === 'loading' ? 'failed' : prev));
     }, HUBSPOT_LOAD_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
   }, [booking.provider, embedUrl]);
@@ -202,7 +278,40 @@ export function BookingScreen({
       )}
 
       <div className="pf-booking__widget">
-        {booking.provider === 'hubspot_meetings' ? (
+        {booking.provider === 'dcal' ? (
+          <>
+            {/* Declarative, exactly as dCal's own snippet embeds it: with this
+                script-free it still renders and still takes bookings, and only
+                the self-sizing is lost. A widget a script has to hydrate
+                renders nothing at all in that case. */}
+            <iframe
+              data-testid="booking-iframe-dcal"
+              src={embedUrl}
+              title={m.iframeTitle}
+              className="pf-booking__iframe"
+              loading="lazy"
+              style={{ width: '100%', height: dcalHeight, border: 0 }}
+              allow="camera; microphone; geolocation; clipboard-write"
+              onLoad={() => setIframeState('ready')}
+            />
+            {iframeState === 'failed' ? (
+              <p className="pf__error" role="alert">
+                {m.loadError}
+              </p>
+            ) : null}
+            <p className="pf-booking__trouble">
+              {m.troublePrefix}{' '}
+              <a
+                data-testid="booking-dcal-fallback"
+                href={booking.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {m.fallbackCta}
+              </a>
+            </p>
+          </>
+        ) : booking.provider === 'hubspot_meetings' ? (
           <>
             <iframe
               data-testid="booking-iframe-hubspot"
@@ -211,9 +320,9 @@ export function BookingScreen({
               className="pf-booking__iframe"
               style={{ width: '100%', minHeight: 640, border: 0 }}
               allow="camera; microphone; geolocation; clipboard-write"
-              onLoad={() => setHubspotState('ready')}
+              onLoad={() => setIframeState('ready')}
             />
-            {hubspotState === 'failed' ? (
+            {iframeState === 'failed' ? (
               <p className="pf__error" role="alert">
                 {m.loadError}
               </p>

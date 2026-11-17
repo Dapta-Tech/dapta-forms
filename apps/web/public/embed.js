@@ -24,8 +24,11 @@
  *     Checkout pages (Stripe Payment Links above all) refuse to run framed by
  *     another site and hang on their own skeleton, so a form that redirects to
  *     one submits into nothing unless the host page navigates itself. The URL
- *     is the form's published `redirectUrl`, a static string, never built from
- *     what the visitor typed. It is allowlisted to http(s) before use, exactly
+ *     is the form's published `redirectUrl` with every answer token dropped, so
+ *     nothing the visitor typed is in it, plus, when the form turned on
+ *     `ending.forwardUtm`, the visitor's utm_* params. Those come from the
+ *     iframe src or this host page's own URL, so nothing crosses that the host
+ *     page does not already hold. It is allowlisted to http(s) before use, exactly
  *     as the renderer does before assigning `window.location`. This script
  *     replies `dapta-forms:redirect-ack` so the frame knows not to navigate
  *     the top as well: two navigations of one document race, and WebKit

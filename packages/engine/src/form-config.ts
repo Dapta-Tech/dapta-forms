@@ -17,6 +17,7 @@ import {
   MAX_SCREEN_SIZE,
   authoredScreens,
   canShareScreen,
+  isHiddenStep,
   freshScreenId,
   revealAfterKey,
 } from './form-logic';
@@ -110,10 +111,22 @@ export function createEmptyStep(
     base.reveal = { enabled: true, headline: '', subtitle: '', durationMs: 2200 };
   }
   // A scheduler embeds a booking page; it starts unconfigured (no event type
-  // picked yet) but with prefill on, so once the author picks a Calendly event
-  // type the visitor's name/email flow into the widget automatically (V6).
+  // picked yet) but with prefill on, so once the author picks an event type the
+  // visitor's name and email flow into the booking form automatically (V6).
+  //
+  // A NEW scheduler is dCal: it is Dapta's own, it needs no credential to
+  // connect (the author's session lists their event types), and the respondent
+  // never retypes what the form already asked. Calendly stays one pick away in
+  // the panel.
+  //
+  // Written EXPLICITLY, and the readers still resolve an absent provider to
+  // `calendly`. That split is load-bearing: a scheduler authored before dCal
+  // existed carries no provider, and reading the absent value as dCal would
+  // silently repoint every one of those steps at a booking page that is not
+  // theirs. New steps say what they are; stored ones keep meaning what they
+  // meant.
   if (type === 'scheduler') {
-    base.scheduler = { provider: 'calendly', prefill: true };
+    base.scheduler = { provider: 'dcal', prefill: true };
   }
   return base;
 }
@@ -550,7 +563,7 @@ export function setScreenBoundary(config: FormConfig, index: number, joined: boo
   const current = steps[index];
   if (!current || !canShareScreen(current)) return config;
   let above = index - 1;
-  while (above >= 0 && steps[above]?.hidden) above -= 1;
+  while (above >= 0 && steps[above] && isHiddenStep(steps[above]!)) above -= 1;
   const prev = above >= 0 ? steps[above] : undefined;
   if (!prev || !canShareScreen(prev)) return config;
 

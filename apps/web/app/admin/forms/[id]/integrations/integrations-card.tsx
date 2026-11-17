@@ -3,7 +3,7 @@
 import type React from 'react';
 import type { FormsMessages } from '@quill/shared';
 import { Switch } from '@/components/ui/switch';
-import { ProviderLogo, type LogoProvider } from '@/components/ui/provider-logo';
+import { IntegrationMark, type LogoProvider } from '@/components/ui/provider-logo';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
@@ -24,6 +24,7 @@ export function Card({
   badge,
   logo,
   notice,
+  id,
   children,
 }: {
   title: string;
@@ -33,7 +34,7 @@ export function Card({
   m: Msgs;
   badge?: string;
   /** The provider this card configures, when it is a named third party. */
-  logo?: LogoProvider;
+  logo?: LogoProvider | 'google-sheets';
   /**
    * Rendered under the header and OUTSIDE the `enabled` gate, unlike `children`.
    * For what is true of the STORED config whether or not the card is switched
@@ -42,14 +43,16 @@ export function Card({
    * itself an edit, and the autosave it triggers is what does the destroying.
    */
   notice?: React.ReactNode;
+  /** An anchor, for a caller that scrolls the card into view. */
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-5">
+    <section id={id} className="scroll-mt-24 rounded-xl border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            {logo ? <ProviderLogo provider={logo} size={20} /> : null}
+            {logo ? <IntegrationMark provider={logo} size={20} /> : null}
             <h2 className="text-lg font-semibold">{title}</h2>
             {badge ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-signal-edge/40 bg-signal/15 px-2 py-0.5 text-xs font-medium text-foreground">

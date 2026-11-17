@@ -53,6 +53,11 @@ export function formDesignProps(branding: FormBranding | null | undefined): Form
     vars['--pf-bg-overlay'] = `${design.backgroundOverlay}%`;
   }
 
+  // The author's own label colour for a solid button. Only emitted when it
+  // applies, so a form without it keeps exactly the style it always had.
+  const btnText = branding?.buttonTextColor?.trim();
+  if (design.buttonStyle === 'solid' && btnText) vars['--pf-btn-text'] = btnText;
+
   const style = vars as CSSProperties;
 
   const attrs = designAttributes(design);

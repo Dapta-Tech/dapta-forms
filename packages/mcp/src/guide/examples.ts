@@ -91,6 +91,10 @@ export const QUIZ_CONFIG: FormConfig = {
  * A scored booking form: two scored questions, name and email, then a booking
  * step that only a high score sees. Below 14 points the scheduler is skipped
  * and the form ends on the low outcome's text.
+ *
+ * The booking step names Calendly on purpose, although a step the editor adds
+ * is born with dCal: a Calendly link is one an agent can look up
+ * (list_event_types), while a dCal event is picked in the editor.
  */
 export const SCORE_GATE_CONFIG: FormConfig = {
   version: 1,

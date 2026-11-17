@@ -4,14 +4,19 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FormStep, FormLayout, FormRevealSize } from '@quill/engine';
 import {
   FORM_REVEAL_SIZES,
+  HALF_WIDTH_TYPES,
   clampSliderValue,
   defaultFlowGroup,
+  isHiddenStep,
+  isSafeHttpUrl,
   nameFields,
+  parseInlineLinks,
   resolveOptionLayout,
   sanitizeStepKey,
   sliderBounds,
   sliderHasNoTravel,
   screensActive,
+  stepQuestionText,
 } from '@quill/engine';
 import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
@@ -49,6 +54,7 @@ const PLACEHOLDER_TYPES: ReadonlySet<FormStep['type']> = new Set([
   'url',
   'textarea',
   'dropdown',
+  'phone',
 ]);
 
 /** The long-text length ceiling, mirroring `formStepSchema`'s cap on both fields. */
@@ -223,6 +229,10 @@ export function QuestionSettings({
     }
     // Leaving a choice type drops choice-only forward rules (nothing to match on).
     if (!hasOptions(item.type) && step.goto) patch.goto = undefined;
+    // One-page presentation the new type cannot use: half width is for short
+    // inputs only, field labels for the name step only.
+    if (!HALF_WIDTH_TYPES.has(item.type)) patch.width = undefined;
+    if (item.type !== 'name') patch.fieldLabels = undefined;
     onUpdate(patch);
   }
 
@@ -235,11 +245,14 @@ export function QuestionSettings({
   // while its badges describe what is INSIDE it — a badge for content that moved
   // out would send an author digging through the accordion for an editor that is
   // no longer there.
+  // A checkbox ignores variants, `terminal`, `hidden` and `defaultValue` (an
+  // API config may still carry them), so none of them is announced there.
+  const inert = step.type === 'checkbox';
   const advancedBadges = [
-    Object.keys(step.questionVariants ?? {}).length > 0 ? bm.settings.badgeDynamic : null,
-    step.terminal ? bm.settings.badgeEndsForm : null,
-    step.hidden ? bm.settings.badgeHidden : null,
-    step.defaultValue ? bm.settings.badgeDefault : null,
+    !inert && Object.keys(step.questionVariants ?? {}).length > 0 ? bm.settings.badgeDynamic : null,
+    !inert && step.terminal ? bm.settings.badgeEndsForm : null,
+    isHiddenStep(step) ? bm.settings.badgeHidden : null,
+    !inert && step.defaultValue ? bm.settings.badgeDefault : null,
     step.scoringEnabled && (step.sliderScoring?.length ?? 0) > 0 ? bm.settings.badgeScored : null,
   ].filter((b): b is string => !!b);
 
@@ -295,9 +308,18 @@ export function QuestionSettings({
         </InlineField>
       ) : null}
 
+      {step.type === 'checkbox' ? (
+        <CheckboxLinks
+          question={step.question ?? ''}
+          onChange={(question) => onUpdate({ question })}
+          m={bm.settings}
+        />
+      ) : null}
+
       {/* Only the types whose public input actually renders `step.placeholder`
-          (step-input.tsx) get the control — phone brings its own placeholder,
-          name edits per-field placeholders below, choices have none. The first
+          (step-input.tsx) get the control. A phone's placeholder replaces its
+          automatic number mask; name edits per-field placeholders below,
+          choices have none. The first
           builder had this field; the WYSIWYG rewrite dropped it silently, which
           left API-authored placeholders visible on the canvas but uneditable. */}
       {PLACEHOLDER_TYPES.has(step.type) ? (
@@ -313,6 +335,26 @@ export function QuestionSettings({
             }
           />
         </Field>
+      ) : null}
+
+      {/* One page only: half width puts two consecutive short questions on one
+          row. Shown on a hidden step too (where it has no effect) so the
+          control does not vanish while "hidden" is toggled. Switching to
+          slides keeps the value, like screens on one page. */}
+      {layout === 'vertical' && HALF_WIDTH_TYPES.has(step.type) ? (
+        <InlineField label={bm.settings.width} hint={bm.settings.widthHint}>
+          <div data-testid="step-width">
+            <SegmentedToggle
+              value={step.width === 'half' ? 'half' : 'full'}
+              onChange={(width) => onUpdate({ width: width === 'half' ? 'half' : undefined })}
+              options={[
+                { value: 'full' as const, label: bm.settings.widthFull },
+                { value: 'half' as const, label: bm.settings.widthHalf },
+              ]}
+              ariaLabel={bm.settings.width}
+            />
+          </div>
+        </InlineField>
       ) : null}
 
       {/* Type-specific: options, then the scoring switch that controls whether
@@ -726,6 +768,7 @@ export function QuestionSettings({
           <p className="text-xs text-muted-foreground">{em.nameStep.hint}</p>
           <NameFieldsEditor
             step={step}
+            layout={layout}
             onUpdate={onUpdate}
             m={em.nameStep}
             placeholderDefaults={[bm.canvas.nameFirstPlaceholder, bm.canvas.nameLastPlaceholder]}
@@ -766,7 +809,8 @@ export function QuestionSettings({
       <AdvancedSettings badges={advancedBadges} m={bm.settings}>
         {/* What parameter prefills this answer. The runtime already supports it;
             nothing ever said so, which is why it went unused. */}
-        {!isInputlessType(step.type) ? (
+        {/* A checkbox is never prefilled: consent comes from the person. */}
+        {!isInputlessType(step.type) && step.type !== 'checkbox' ? (
           <PrefillRow step={step} publicUrl={publicUrl ?? null} m={bm.settings} />
         ) : null}
 
@@ -774,7 +818,10 @@ export function QuestionSettings({
             anyone types, and seeing them together is what makes the precedence
             (default loses to the URL) legible. A scheduler's answer is a booking
             and a name step writes two subfields, so neither takes one. */}
-        {!isInputlessType(step.type) && step.type !== 'scheduler' && step.type !== 'name' ? (
+        {!isInputlessType(step.type) &&
+        step.type !== 'scheduler' &&
+        step.type !== 'name' &&
+        step.type !== 'checkbox' ? (
           <Field label={bm.settings.defaultAnswer} hint={bm.settings.defaultAnswerHint}>
             <TextField
               value={step.defaultValue ?? ''}
@@ -792,7 +839,8 @@ export function QuestionSettings({
           headline and subtitle, and BOTH already interpolate `[key]` tokens. So
           the section is dropped there rather than editing a field the respondent
           will never see. */}
-      {step.type === 'reveal' ? null : (
+      {/* A checkbox shows its text as written: no variants, no tokens. */}
+      {step.type === 'reveal' || step.type === 'checkbox' ? null : (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
           <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
             <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
@@ -812,7 +860,7 @@ export function QuestionSettings({
             scheduler routes from its own "After booking" picker instead. A
             reveal is a pause on the way somewhere, never a verdict, so it is
             excluded for the same reason. */}
-        {step.type !== 'scheduler' && step.type !== 'reveal' ? (
+        {step.type !== 'scheduler' && step.type !== 'reveal' && step.type !== 'checkbox' ? (
           <InlineField label={em.behavior.terminal} hint={em.behavior.terminalHint}>
             <Switch
               checked={!!step.terminal}
@@ -825,7 +873,9 @@ export function QuestionSettings({
             URL parameter and carried into the submission. Meaningless for a
             message step (it collects no answer) and for a scheduler (its answer
             is a booking, which no URL parameter can make), so hide it there. */}
-        {!isInputlessType(step.type) && step.type !== 'scheduler' ? (
+        {/* Nor for a checkbox: consent is given by a person, so the runtime
+            shows one even when it carries `hidden`. */}
+        {!isInputlessType(step.type) && step.type !== 'scheduler' && step.type !== 'checkbox' ? (
           <InlineField
             label={em.behavior.hidden}
             // On a screen of several questions hiding also takes it off the
@@ -872,7 +922,7 @@ export function QuestionSettings({
             (impossible-combination rule: don't offer a control that lies). */}
         {/* On a screen of several questions the reveal plays after the SCREEN
             (it is inserted after its last question), and the label says so. */}
-        {step.hidden || step.type === 'reveal' || layout === 'vertical' ? null : (
+        {isHiddenStep(step) || step.type === 'reveal' || layout === 'vertical' ? null : (
           <InlineField
             label={onSharedScreen ? bm.behavior.revealAfterScreen : em.behavior.reveal}
             hint={onSharedScreen ? bm.behavior.revealAfterScreenHint : em.behavior.revealHint}
@@ -991,7 +1041,7 @@ function LogicCard({
   // A catch-all that can never fire (a stale `*` on a message or a reveal) is
   // not logic: it is not counted, not bordered and not spelled out below.
   const count = liveRuleCount(step);
-  const titleOf = (s: FormStep, i: number): string => s.question?.trim() || tb(bm.canvas.questionN, { n: i + 1 });
+  const titleOf = (s: FormStep, i: number): string => stepQuestionText(s).trim() || tb(bm.canvas.questionN, { n: i + 1 });
   const targetLabel = (target: string): string => {
     const ti = steps.findIndex((s) => s.key === target);
     const t = ti >= 0 ? steps[ti] : undefined;
@@ -1365,11 +1415,14 @@ function FieldKeyEditor({
  */
 function NameFieldsEditor({
   step,
+  layout,
   onUpdate,
   m,
   placeholderDefaults,
 }: {
   step: FormStep;
+  /** Field labels exist only on one page; slides never shows them. */
+  layout: FormLayout;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: EditorMessages['nameStep'];
   /** Localized defaults ("First name"/"Last name") shown as the input
@@ -1379,6 +1432,8 @@ function NameFieldsEditor({
   const defaults = ['firstname', 'lastname'];
   const fields = [step.fields?.[0] ?? defaults[0]!, step.fields?.[1] ?? defaults[1]!];
   const placeholders = step.placeholders ?? {};
+  const labels = step.fieldLabels ?? {};
+  const onePage = layout === 'vertical';
 
   function setFieldKey(i: number, raw: string) {
     // Lighter than `slugify` (no trailing-underscore trim) so multi-word typing
@@ -1395,7 +1450,19 @@ function NameFieldsEditor({
       delete moved[old];
       patch.placeholders = Object.keys(moved).length ? moved : undefined;
     }
+    if (old !== key && labels[old] != null) {
+      const moved = { ...labels, [key]: labels[old]! };
+      delete moved[old];
+      patch.fieldLabels = Object.keys(moved).length ? moved : undefined;
+    }
     onUpdate(patch);
+  }
+
+  function setLabel(field: string, text: string) {
+    const next = { ...labels };
+    if (text) next[field] = text;
+    else delete next[field];
+    onUpdate({ fieldLabels: Object.keys(next).length ? next : undefined });
   }
 
   function setPlaceholder(field: string, text: string) {
@@ -1432,11 +1499,160 @@ function NameFieldsEditor({
               className="h-8 py-1 text-xs"
             />
           </label>
+          {onePage ? (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">{m.label}</span>
+              <TextField
+                value={labels[field] ?? ''}
+                onChange={(e) => setLabel(field, e.target.value)}
+                placeholder={placeholderDefaults[i]}
+                maxLength={200}
+                data-testid={`name-label-${i}`}
+                className="h-8 py-1 text-xs"
+              />
+            </label>
+          ) : null}
         </div>
       ))}
+      {onePage ? (
+        <p className="pt-3 text-2xs leading-relaxed text-faint" data-testid="name-label-hint">
+          {m.labelHint}
+        </p>
+      ) : null}
       <p className="pt-3 text-2xs leading-relaxed text-faint" data-testid="name-fieldkey-hint">
         {m.fieldKeyHint}
       </p>
     </div>
+  );
+}
+
+/** The `index`-th link of `question` (in `parseInlineLinks` order) back to its text. */
+function removeInlineLink(question: string, index: number): string {
+  let n = -1;
+  return parseInlineLinks(question)
+    .map((seg) => {
+      if (seg.kind === 'text') return seg.text;
+      n += 1;
+      return n === index ? seg.text : `[${seg.text}](${seg.href})`;
+    })
+    .join('');
+}
+
+/**
+ * Link `text` to `url` in `question`: the FIRST appearance of `text` outside an
+ * existing link is wrapped as `[text](url)`; when there is none, the link is
+ * appended after a space.
+ */
+function addInlineLink(question: string, text: string, url: string): string {
+  const link = `[${text}](${url})`;
+  let done = false;
+  const out = parseInlineLinks(question)
+    .map((seg) => {
+      if (seg.kind === 'link') return `[${seg.text}](${seg.href})`;
+      if (done) return seg.text;
+      const at = seg.text.indexOf(text);
+      if (at < 0) return seg.text;
+      done = true;
+      return seg.text.slice(0, at) + link + seg.text.slice(at + text.length);
+    })
+    .join('');
+  if (done) return out;
+  return question ? `${question} ${link}` : link;
+}
+
+/** True when `[text](url)` reads back as one http(s) link (the button's gate). */
+function linkIsAddable(text: string, url: string): boolean {
+  if (!text || !isSafeHttpUrl(url)) return false;
+  const segs = parseInlineLinks(`[${text}](${url})`);
+  return segs.length === 1 && segs[0]?.kind === 'link';
+}
+
+/**
+ * A checkbox step's links, so an author never has to type the markdown: the
+ * current ones with a remove button each, and a text + URL pair to add one.
+ */
+function CheckboxLinks({
+  question,
+  onChange,
+  m,
+}: {
+  question: string;
+  onChange: (question: string) => void;
+  m: BuilderMessages['settings'];
+}) {
+  const [text, setText] = useState('');
+  const [url, setUrl] = useState('');
+  const links = parseInlineLinks(question).filter(
+    (seg): seg is Extract<typeof seg, { kind: 'link' }> => seg.kind === 'link',
+  );
+  const trimmedText = text.trim();
+  const trimmedUrl = url.trim();
+  const canAdd = linkIsAddable(trimmedText, trimmedUrl);
+  const add = () => {
+    if (!canAdd) return;
+    onChange(addInlineLink(question, trimmedText, trimmedUrl));
+    setText('');
+    setUrl('');
+  };
+  return (
+    <section data-testid="checkbox-links" className="flex flex-col gap-3 border-t border-border pt-4">
+      <div className="flex flex-col gap-1">
+        <p className="text-2xs font-semibold uppercase tracking-wide text-faint">{m.checkboxLinks}</p>
+        <p className="text-xs text-muted-foreground">{m.checkboxLinksHint}</p>
+      </div>
+      {links.length > 0 ? (
+        <ul className="flex flex-col gap-1.5">
+          {links.map((link, i) => (
+            <li
+              key={`${i}-${link.href}`}
+              data-testid="checkbox-link"
+              className="flex items-center gap-2 rounded-lg bg-sidebar px-2.5 py-1.5"
+            >
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-medium text-foreground">{link.text}</span>
+                <span className="truncate text-xs text-muted-foreground">{link.href}</span>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={m.checkboxLinkRemove}
+                onClick={() => onChange(removeInlineLink(question, i))}
+              >
+                <i aria-hidden className="pi pi-times" style={{ fontSize: 11 }} />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <Field label={m.checkboxLinkText}>
+        <TextField
+          value={text}
+          maxLength={200}
+          aria-label={m.checkboxLinkText}
+          data-testid="checkbox-link-text"
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
+        />
+      </Field>
+      <Field label={m.checkboxLinkUrl}>
+        <TextField
+          value={url}
+          maxLength={2048}
+          inputMode="url"
+          placeholder="https://"
+          aria-label={m.checkboxLinkUrl}
+          data-testid="checkbox-link-url"
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value)}
+          onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+      </Field>
+      <Button variant="outline" size="sm" className="self-start" disabled={!canAdd} onClick={add} data-testid="checkbox-link-add">
+        <i aria-hidden className="pi pi-link" style={{ fontSize: 11 }} /> {m.checkboxLinkAdd}
+      </Button>
+    </section>
   );
 }

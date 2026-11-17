@@ -307,3 +307,18 @@ describe('defaultSubmissionTemplate (stays in sync with the code templates)', ()
     }
   });
 });
+
+describe('renderBodyLines keeps a link the owner wrote', () => {
+  const text = { respondentName: '', formName: 'Survey' };
+  const html = { respondentName: '', formName: 'Survey' };
+
+  it('keeps a line with an empty token when it carries an http(s) link', () => {
+    const out = renderBodyLines('Gracias {{respondentName}}. Agenda: https://calendly.com/x', text, html);
+    expect(out.text).toEqual(['Gracias . Agenda: https://calendly.com/x']);
+    expect(out.html[0]).toContain('href="https://calendly.com/x"');
+  });
+
+  it('still drops a token-only line with no link', () => {
+    expect(renderBodyLines('Hola {{respondentName}}', text, html).text).toEqual([]);
+  });
+});

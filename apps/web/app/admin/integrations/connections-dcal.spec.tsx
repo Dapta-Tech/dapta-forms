@@ -1,0 +1,167 @@
+// @vitest-environment happy-dom
+/**
+ * dCal on the Connections page, and why a Salesforce connection failed.
+ *
+ * dCal is not a connection (it uses the author's Dapta sign-in), so its card
+ * is about presence: it sits right above Calendly, shows only on a deployment
+ * that has dCal, and its "How it works" opens the steps to use it rather than
+ * a credential form. It never says "Connect" (there is nothing to connect) and
+ * it never says "Included" where the deployment has no dCal.
+ */
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { getMessages } from '@quill/shared';
+
+const actions = vi.hoisted(() => ({
+  startGoogleSheetsAuthAction: vi.fn(),
+  connectIntegrationAction: vi.fn(),
+  connectSalesforceAction: vi.fn(),
+  disconnectIntegrationAction: vi.fn(),
+}));
+vi.mock('./actions', () => actions);
+vi.mock('@/components/toast', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }) }));
+
+import { ConnectionsPanel, salesforceProblem } from './connections-panel';
+
+const m = getMessages('en').admin.connections;
+const URL_ = 'https://book.dcal.example/admin/event-types';
+
+let root: Root | null = null;
+let container: HTMLElement | null = null;
+
+beforeAll(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+afterEach(() => {
+  act(() => root?.unmount());
+  container?.remove();
+  root = null;
+  container = null;
+});
+
+async function mount(dcal: { createEventUrl: string } | null) {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root!.render(
+      <ConnectionsPanel initialProviders={[]} encryptionAvailable dcal={dcal} messages={m} locale="en" />,
+    );
+  });
+  return container;
+}
+
+const cardNames = (el: HTMLElement) => [...el.querySelectorAll('section h2')].map((h) => h.textContent);
+
+describe('the dCal card', () => {
+  it('sits right above Calendly', async () => {
+    const names = cardNames(await mount({ createEventUrl: URL_ }));
+    expect(names.indexOf(m.dcalName)).toBe(names.indexOf(m.calendlyName) - 1);
+  });
+
+  it('names what its button does, and never offers to connect', async () => {
+    const card = (await mount({ createEventUrl: URL_ })).querySelector('[data-testid="dcal-card"]')!;
+    const labels = [...card.querySelectorAll('button')].map((b) => b.textContent?.trim());
+    expect(labels).toContain(m.dcalHow);
+    expect(labels).not.toContain(m.connect);
+  });
+
+  it('says Included only where the deployment has dCal', async () => {
+    const withDcal = (await mount({ createEventUrl: URL_ })).querySelector('[data-testid="dcal-card"] [data-testid="connection-status"]')!;
+    expect(withDcal.getAttribute('data-state')).toBe('included');
+    expect(withDcal.textContent).toContain(m.dcalIncluded);
+    act(() => root?.unmount());
+    container?.remove();
+
+    const without = (await mount(null)).querySelector('[data-testid="dcal-card"] [data-testid="connection-status"]')!;
+    expect(without.getAttribute('data-state')).toBe('unavailable');
+    expect(without.textContent).toContain(m.dcalUnavailable);
+    expect(without.textContent).not.toContain(m.dcalIncluded);
+  });
+
+  it('still shows on a deployment without dCal, with the steps, a note and no link', async () => {
+    const el = await mount(null);
+    const names = cardNames(el);
+    expect(names.indexOf(m.dcalName)).toBe(names.indexOf(m.calendlyName) - 1);
+    const card = el.querySelector('[data-testid="dcal-card"]')!;
+    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.dcalHow))!;
+    await act(async () => connect.click());
+    const dialog = document.querySelector('[data-testid="dcal-steps"]')!;
+    expect(dialog).not.toBeNull();
+    expect(dialog.querySelector('[data-testid="provider-unavailable"]')?.textContent).toContain(m.unavailableTitle);
+    expect(dialog.querySelector('[data-testid="dcal-open"]')).toBeNull();
+  });
+
+  it('opens the steps and a link to dCal in a dialog, outside the card, instead of a credential form', async () => {
+    const el = await mount({ createEventUrl: URL_ });
+    const card = el.querySelector('[data-testid="dcal-card"]')!;
+    expect(card.querySelector('input')).toBeNull();
+    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.dcalHow))!;
+    await act(async () => connect.click());
+    // Outside the card: steps opened in place stretched the neighbouring card
+    // in the same grid row.
+    expect(card.querySelector('[data-testid="dcal-steps"]')).toBeNull();
+    const steps = document.querySelector('[data-testid="dcal-steps"]')!;
+    expect(steps.getAttribute('role')).toBe('dialog');
+    expect(steps.getAttribute('aria-modal')).toBe('true');
+    for (const step of m.dcalSteps) expect(steps.textContent).toContain(step);
+    const link = steps.querySelector<HTMLAnchorElement>('[data-testid="dcal-open"]')!;
+    expect(link.getAttribute('href')).toBe(URL_);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+  });
+});
+
+describe('closing the dCal steps', () => {
+  it('closes on Escape and gives focus back to the button that opened it', async () => {
+    const el = await mount({ createEventUrl: URL_ });
+    const card = el.querySelector('[data-testid="dcal-card"]')!;
+    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.dcalHow))!;
+    connect.focus();
+    await act(async () => connect.click());
+    expect(document.querySelector('[data-testid="dcal-steps"]')).not.toBeNull();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(document.querySelector('[data-testid="dcal-steps"]')).toBeNull();
+    expect(document.activeElement).toBe(connect);
+  });
+});
+
+describe('why a Salesforce connection failed', () => {
+  it('says the button gave up waiting when nothing came back', () => {
+    expect(salesforceProblem({ ok: false, transport: true, message: 'timed out after 30000ms' }, m)).toBe(
+      m.salesforceErrors.timeout,
+    );
+  });
+
+  it('names how the call died when Salesforce did not answer', () => {
+    expect(salesforceProblem({ ok: false, reason: 'unreachable', status: 400, cause: 'ECONNRESET' }, m)).toBe(
+      `${m.salesforceErrors.unreachable} (ECONNRESET)`,
+    );
+  });
+
+  it("names Salesforce's own refusal", () => {
+    expect(salesforceProblem({ ok: false, reason: 'no_run_as', status: 400 }, m)).toBe(m.salesforceErrors.no_run_as);
+  });
+
+  it('says a role that may not connect, on a 403', () => {
+    expect(salesforceProblem({ ok: false, status: 403, message: 'Forbidden' }, m)).toBe(m.salesforceErrors.forbidden);
+  });
+
+  it("never shows the API's own English message: a known code gets its sentence, the rest a generic one", () => {
+    const es = getMessages('es').admin.connections;
+    const encryption = salesforceProblem(
+      { ok: false, status: 400, code: 'ENCRYPTION_UNAVAILABLE', message: 'server encryption key not configured' },
+      es,
+    );
+    expect(encryption).toBe(`${es.encryptionOff}. ${es.encryptionOffBody}`);
+    expect(encryption).not.toContain('server encryption key');
+    const unknown = salesforceProblem({ ok: false, status: 400, message: 'something internal' }, es);
+    expect(unknown).toBe(es.connectFailedGeneric);
+    expect(unknown).not.toContain('something internal');
+  });
+});

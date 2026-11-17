@@ -57,6 +57,13 @@ export const serverEnvSchema = z.object({
   EMAIL_PROVIDER: z.enum(['log-only', 'noop', 'smtp', 'http']).default('log-only'),
   MAIL_FROM_EMAIL: z.string().default('forms@example.com'),
   MAIL_FROM_NAME: z.string().default('Forms'),
+  // Growth loop in the notification emails: the same three variables the web
+  // app reads for the "Made with" badge (see .env.example), read here too
+  // because the API renders the emails. Same contract: no signup URL, or the
+  // hide flag set, and the emails carry no dForms button.
+  NEXT_PUBLIC_SIGNUP_URL: z.string().optional(),
+  NEXT_PUBLIC_LANDING_URL: z.string().optional(),
+  NEXT_PUBLIC_HIDE_BADGE: z.string().optional(),
 
   // SMTP adapter
   SMTP_HOST: z.string().optional(),
@@ -108,11 +115,57 @@ export const serverEnvSchema = z.object({
   // from whatever the callback carried). Never sent to the browser.
   CALENDLY_API_TOKEN: z.string().optional(),
 
-  // Premium features (vanity slug + future perks). Forms is ALWAYS free —
-  // `locked` gates premium on the customer's Dapta AI subscription via the
-  // entitlement service below; `open` (default) unlocks everything, so a bare
-  // OSS fork gets every feature with no upstream wired.
-  PREMIUM_FEATURES: z.enum(['open', 'locked']).default('open'),
+  // Google Sheets destination (OAuth, per account). The OAuth CLIENT is the
+  // deployment's, not the end user's: every account that connects goes through
+  // this one client and stores only its own refresh token, so the client secret
+  // lives here and never in the database.
+  //
+  // The hosted deployment reuses the Dapta platform's existing Google client.
+  // The app asks it for `drive.file` only (the files dForms creates or is handed
+  // in the Picker), a scope Google classes as non-sensitive, so this feature
+  // needs no verification round. A fork points these at its own client.
+  //
+  // All three unset = the Google Sheets card stays off: `connect` reports the
+  // feature unavailable instead of starting a flow that could not finish.
+  // `GOOGLE_OAUTH_REDIRECT_URI` must match an authorized redirect URI on the
+  // client EXACTLY (Google compares the string, not the host), and must point at
+  // this API's own callback route, not at the web app. Server-only, all three.
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z
+    .string()
+    .refine((v) => v === '' || /^https?:\/\//.test(v), {
+      message: 'GOOGLE_OAUTH_REDIRECT_URI must be an http(s) URL.',
+    })
+    .optional(),
+  // Google Picker, how an EXISTING spreadsheet is chosen (the OAuth scope only
+  // reaches files the app created or the user picked). A browser API key from
+  // the same Cloud project as the OAuth client, restricted by HTTP referrer on
+  // Google's side: it is sent to the browser by design, so the restriction is
+  // what protects it, not secrecy. Unset = no Picker, and the spreadsheet card
+  // offers only "create a new spreadsheet". `GOOGLE_PICKER_APP_ID` is the Cloud
+  // project NUMBER; unset, it is read off the client id, which starts with it.
+  GOOGLE_PICKER_API_KEY: z.string().optional(),
+  GOOGLE_PICKER_APP_ID: z
+    .string()
+    .refine((v) => v === '' || /^\d+$/.test(v), {
+      message: 'GOOGLE_PICKER_APP_ID must be the numeric Cloud project number.',
+    })
+    .optional(),
+
+  // Premium features. Forms is ALWAYS free: `locked` gates premium on the
+  // customer's PAID Dapta AI subscription; `open` unlocks everything, so a bare
+  // OSS fork gets every feature with no upstream wired. OPTIONAL, and what
+  // "unset" means depends on the feature, so read it through the helpers:
+  //  - the vanity slug (`vanityPremiumMode`): unset = `open`, as it always was;
+  //    `locked` asks the entitlement service below.
+  //  - hiding the "Made with dForms" attribution (`attributionPremiumMode`):
+  //    unset = `locked` when IAM_BASE_URL is set AND AUTH_PROVIDER=workos (the
+  //    workspace projection runs, and the paid verdict comes from the identity
+  //    service's own workspace rows, read with the caller's token), else
+  //    `open`, so a fork or a local dev without it can hide it freely and the
+  //    switch is never a dead control.
+  PREMIUM_FEATURES: z.enum(['open', 'locked']).optional(),
   // Upstream entitlement service (cloud only): base URL + service key. Unset
   // selects the disabled provider (OSS default).
   ENTITLEMENTS_API_URL: z.string().url().optional(),
@@ -257,6 +310,12 @@ export const serverEnvSchema = z.object({
   WORKOS_AUTHKIT_DOMAIN: z.string().optional(),
   MCP_PUBLIC_URL: z.string().optional(),
 
+  // The domain-verification token OpenAI issues for an app (plugin) built on
+  // this MCP server, served as plain text at
+  // /.well-known/openai-apps-challenge on the MCP host. Public by design: it
+  // only proves control of the domain. Unset (the default): that path is 404.
+  OPENAI_APPS_CHALLENGE_TOKEN: z.string().optional(),
+
   // How long after the identity service last vouched for a member at a
   // verified web login (the issue time of that login's token, stamped on the
   // member) an MCP sign-in may still act as that member. dForms is not told
@@ -320,6 +379,22 @@ export const serverEnvSchema = z.object({
   IAM_API_KEY: z.string().optional(),
   DAPTA_SYNC_FLOW_URL: z.string().url().optional(),
   DAPTA_SYNC_FLOW_KEY: z.string().optional(),
+
+  // dCal, the scheduler a `scheduler` step can embed instead of Calendly.
+  //
+  // There is deliberately NO token here, and that is the whole point of this
+  // integration: dCal projects the same identity service this app does, so the
+  // author's own session is the credential. The API forwards their bearer to
+  // dCal's host API to list the workspaces and event types they can already
+  // reach; nothing is stored, nothing is encrypted, and a member can never see
+  // another member's events because dCal scopes the answer to the token.
+  //
+  // Both are absent in a bare fork, which simply reports dCal unavailable and
+  // offers Calendly (same graceful degradation as every other integration).
+  // They are two hosts because dCal is two apps: `API` serves `/v1`, `APP` is
+  // where a booking page and the event-type editor live.
+  DCAL_API_BASE_URL: z.string().url().optional(),
+  DCAL_APP_URL: z.string().url().optional(),
 
   // Object storage for the `file` question type. Uploads NEVER pass through
   // this process: the browser PUTs straight to the bucket with a short-lived
@@ -411,6 +486,34 @@ export const serverEnvSchema = z.object({
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+/** `PREMIUM_FEATURES` for the vanity slug: unset reads as `open`, the default it always had. */
+export function vanityPremiumMode(env: Pick<ServerEnv, 'PREMIUM_FEATURES'>): 'open' | 'locked' {
+  return env.PREMIUM_FEATURES ?? 'open';
+}
+
+/**
+ * Whether the identity service's workspaces are on: `IAM_BASE_URL` with the
+ * `workos` auth provider. The API builds its workspace projection exactly
+ * then, and the projection is what writes the Dapta AI paid verdict.
+ */
+export function iamWorkspacesEnabled(env: Pick<ServerEnv, 'IAM_BASE_URL' | 'AUTH_PROVIDER'>): boolean {
+  return env.AUTH_PROVIDER === 'workos' && !!env.IAM_BASE_URL;
+}
+
+/**
+ * `PREMIUM_FEATURES` for hiding the attribution. Explicit wins; unset is
+ * `locked` exactly when the workspace projection runs (`iamWorkspacesEnabled`,
+ * the only writer of the paid verdict), else `open`: without it no workspace
+ * could ever prove it pays, and the switch would be a control that can never
+ * move (a fork with IAM_BASE_URL but another auth provider included).
+ */
+export function attributionPremiumMode(
+  env: Pick<ServerEnv, 'PREMIUM_FEATURES' | 'IAM_BASE_URL' | 'AUTH_PROVIDER'>,
+): 'open' | 'locked' {
+  if (env.PREMIUM_FEATURES) return env.PREMIUM_FEATURES;
+  return iamWorkspacesEnabled(env) ? 'locked' : 'open';
+}
 
 /**
  * True when the `file` question type is available on this deployment.

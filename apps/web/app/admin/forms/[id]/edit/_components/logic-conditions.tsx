@@ -11,6 +11,7 @@ import {
   type ConditionOp,
   type FormStep,
   type StepCondition,
+  stepQuestionText,
 } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { SelectField, TextField } from './fields';
@@ -46,7 +47,8 @@ export function LogicConditions({
   onUpdate: (patch: Partial<FormStep>) => void;
   m: LogicMessages;
 }) {
-  const prior = steps.slice(0, index);
+  // A checkbox is never a source: consent does not drive logic or copy.
+  const prior = steps.slice(0, index).filter((s) => s.type !== 'checkbox');
 
   // The running score is only worth offering when something ahead can move it;
   // with no scoring question above, every gate would read a constant 0.
@@ -278,7 +280,7 @@ function ConditionEditor({
         {scoreSource || onScore ? <option value={SCORE_FIELD}>{m.scoreField}</option> : null}
         {prior.map((s, i) => (
           <option key={s.key} value={s.key}>
-            {s.question?.trim() || `${i + 1} · ${s.key}`}
+            {stepQuestionText(s).trim() || `${i + 1} · ${s.key}`}
           </option>
         ))}
       </SelectField>

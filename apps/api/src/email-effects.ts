@@ -1,5 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { enqueueOutbox, getNotificationSettings, recordSettledDelivery, sql, type Db } from '@quill/db';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  enqueueOutbox,
+  getNotificationSettings,
+  recordSettledDelivery,
+  sql,
+  type Db,
+  type DeliveryTranscript,
+} from '@quill/db';
 import {
   SubmissionNotifier,
   type EmailProvider,
@@ -7,14 +14,27 @@ import {
   type SubmissionNotification,
 } from '@quill/notifications';
 import type { ServerEnv } from '@quill/config/env';
+import { AttributionService } from './attribution.service';
 import { DB, EMAIL, ENV, NOTIFIER } from './tokens';
 
 /**
  * Thrown by `deliver` when a row must be deliberately NOT sent (e.g. tenant
- * context unrecoverable on a transport that requires it). The worker marks the
- * row `skipped` ONCE with this reason — it never burns the retry schedule.
+ * context unrecoverable on a transport that requires it), or when the receiver
+ * refused it for good. The worker marks the row `skipped` ONCE with this reason
+ * and never burns the retry schedule.
+ *
+ * `transcript` is what crossed the wire before the refusal, when there was a
+ * request at all: a destination that answered HTTP 400 is skipped, and its
+ * answer is stored on the row so the delivery history can show it.
  */
-export class OutboxSkipError extends Error {}
+export class OutboxSkipError extends Error {
+  constructor(
+    message: string,
+    readonly transcript?: DeliveryTranscript,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Trim, drop blanks, and keep the first spelling of each mailbox. The patch
@@ -77,6 +97,10 @@ export class EmailEffects {
     @Inject(DB) private readonly db: Db,
     @Inject(EMAIL) private readonly provider?: EmailProvider,
     @Inject(ENV) private readonly env?: ServerEnv,
+    // The workspace's "Made with dForms" attribution, read at SEND time (a
+    // queued row follows the setting as it stands when it is delivered).
+    // Optional and LAST: absent, the emails keep the deployment's rule alone.
+    @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
   ) {}
 
   /**
@@ -325,6 +349,17 @@ export class EmailEffects {
   }
 
   /**
+   * Whether this send carries the growth button: none for a workspace whose
+   * attribution is hidden. Read now, not at enqueue, so a row retried after
+   * the setting changed follows the setting. Never throws (`showFor` shows on
+   * a failed read).
+   */
+  private async sendOptions(accountId: string | null | undefined): Promise<{ growthCta?: boolean }> {
+    if (!this.attribution || !accountId) return {};
+    return (await this.attribution.showFor(accountId)) ? {} : { growthCta: false };
+  }
+
+  /**
    * The worker's executor for an `email` outbox row. Rebuilds the notification
    * from the payload and sends it; a THROWN transport error propagates so the
    * worker retries. A missing tenant on a transport that requires it is a
@@ -349,11 +384,11 @@ export class EmailEffects {
         return;
       case 'submission_received':
         this.assertRecipient(action, n);
-        await this.notifier.sendSubmissionReceived(n);
+        await this.notifier.sendSubmissionReceived(n, await this.sendOptions(n.accountId));
         return;
       case 'submission_confirmed':
         this.assertRecipient(action, n);
-        await this.notifier.sendSubmissionConfirmed(n);
+        await this.notifier.sendSubmissionConfirmed(n, await this.sendOptions(n.accountId));
         return;
       default:
         throw new Error(`unknown email action: ${action}`);

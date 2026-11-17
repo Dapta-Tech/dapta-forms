@@ -65,48 +65,63 @@ start of the text summary.
   [Staff](#staff).
 - A `workspace_id` the person cannot act in (never joined, removed, or one
   that does not exist) answers `NOT_FOUND` with the same message in every
-  case, so nothing about that workspace leaks.
+  case, so nothing about that workspace leaks. A person with no workspace at
+  all gets `NO_WORKSPACE` instead, also the same whatever the id names.
 - One visit to dForms on the web links every workspace of the person that the
   identity service confirms on that visit; with local workspaces only (no
   identity service), each workspace links when the person opens it. A sign-in
-  that reaches no workspace is refused at the door with a 403 that says to
-  open dForms with that account, then connect again.
+  that reaches no workspace still connects, and acts nowhere: every tool that
+  reads a workspace answers `NO_WORKSPACE` (whatever `workspace_id` it names),
+  and `whoami` and `list_my_workspaces` say to open dForms once with that
+  account. The first call after that visit already acts in the person's
+  workspaces, with no new login and no reconnect.
 - The role is the member's role in the workspace the call names, read live on
   every call.
 
 ### Staff
 
-An MCP sign-in never searches other workspaces, and never enters a new one
-(see [ADR 0003](adr/0003-mcp-sign-in-maps-through-web-logins.md), which
-supersedes the MCP part of [ADR 0002](adr/0002-staff-access-over-mcp.md)).
-Staff enter a customer's workspace in the web app's switcher
-(`IAM_STAFF_DOMAINS`), which holds them a staff access grant there. A web
-request that proves the person is staff (the email its session token carries
-is on those domains) and acts in that customer's workspace stamps that grant,
-and a sign-in then reaches it for about a day after that visit (a day from
-the issue time of that visit's session token), no longer, and only
-next to an active membership of the person's own: the workspace says
-`access: 'staff'`, is never used without being named in `workspace_id`, the
-text starts `In workspace "<name>" (staff access):`, and the audit line
-carries `via: 'staff_grant'`. A customer workspace staff have not opened on
-the web in the last day is not reachable over MCP, and a person who stops
-being staff (or leaves) loses those workspaces over MCP within a day.
-A workspace where the person is a real member is always entered as that
-member. Staff can also create an API key in a customer's workspace through
-the API (`/v1/api-keys`, with their session), which works over MCP like any
-key: in that workspace only, as the grant's `admin` row, until someone revokes
-it; the workspace's owners and admins see such keys marked as created by Dapta
-staff.
+Staff of the deployment reach any customer workspace over a sign-in when
+their access token carries a verified email on one of `IAM_STAFF_DOMAINS`
+([ADR 0004](adr/0004-staff-over-mcp-by-the-tokens-verified-email.md)). The
+email comes from AuthKit's JWT template, which the deployment configures with:
+
+```json
+{ "email": {{ user.email }}, "email_verified": {{ user.email_verified }} }
+```
+
+Only `email_verified: true` counts. Such a person, next to an active
+membership of their own, gets `staff: true`: `list_my_workspaces(search=...)`
+finds the workspaces dForms already knows (by name, a member's email or a
+form's name; at least 3 letters or digits, at most 20), and naming one in
+`workspace_id` acts there as an `admin` through a staff access grant, minted
+on first use exactly as the web switcher does. Staff name the workspace on
+every call. A membership of their own there that is not active is never
+replaced (`MEMBERSHIP_NOT_ACTIVE`), and only workspaces the identity service
+owns and dForms has synced are listed or entered. Every staff call says
+`access: 'staff'`, its text starts `In workspace "<name>" (staff access):`,
+and the audit line carries `via: 'staff_grant'`. A token without the verified
+email is not staff, and the grants entered this way are out of reach from
+that token on.
+
+Without the template, staff reach only what [ADR
+0003](adr/0003-mcp-sign-in-maps-through-web-logins.md) allows: a customer
+workspace they opened on the web as staff within the last day, as staff
+access, only next to an active membership of their own. A workspace where the
+person is a real member is always entered as that member. Staff can also
+create an API key in a customer's workspace through the API (`/v1/api-keys`,
+with their session), which works over MCP like any key: in that workspace
+only, as the grant's `admin` row, until someone revokes it; the workspace's
+owners and admins see such keys marked as created by Dapta staff.
 
 ## Tools
 
 | Tool | Kind | What it does |
 |---|---|---|
 | `whoami` | read | Who is connected (the key prefix, or the person signed in), every workspace it can act in with the role there, whether the person is `staff`, `next_step`, and, when a workspace applies, that workspace (with its `access`) and the member it acts as (every field `GET /v1/me` documents, `status` and `locale` included). |
-| `list_my_workspaces` | read | The workspaces this connection can act in: id, name, account name, role and access, plus what to do next. `search` filters them by name (an MCP sign-in never searches other workspaces; see [Staff](#staff)). `limit` caps the list (default: all); `truncated` says when more applied. With a key, the key's one workspace. |
+| `list_my_workspaces` | read | The workspaces this connection can act in: id, name, account name, role and access, plus what to do next. `search` filters them by name; for staff it searches every workspace dForms knows (see [Staff](#staff)). `limit` caps the list (default: all); `truncated` says when more applied. With a key, the key's one workspace. |
 | `list_forms` | read | Forms, most recently updated first, with id, `public_url`, whether edits are unpublished and `is_live` (false when the live version has no steps, so the link opens an empty form). Filter by name, ignoring case and accents; page with `limit`/`offset`. |
 | `get_form` | read | One form: `public_url`, publish state, `is_live` and the config to edit (the pending draft when there is one). `destinations` are left out of the config and listed apart (the live form's, with their ids, secrets masked): the list `set_destinations` starts from. |
-| `create_form` | write | Creates a form from a full config. It is live at once; the result carries its `public_url`, and a warning when dForms filled `branding` in. Not idempotent. |
+| `create_form` | write | Creates a form from a full config. It is live at once; the result carries its `public_url`, and a warning when dForms filled `branding` in. Not idempotent. An enabled Google Sheets or Salesforce destination whose provider is not connected is refused with `INTEGRATION_NOT_CONNECTED`, as on `set_destinations`. |
 | `update_form` | write | Saves a new config as an unpublished draft (and can rename). Requires `expected_updated_at`; a form saved elsewhere since answers `STALE`. |
 | `publish_form` | **destructive** | Makes the draft live, replacing what respondents see. The replaced version is kept for `revert_form`. A retry after the publish went through answers `nothing_published`, not `STALE`. |
 | `revert_form` | **destructive** | Puts the previously published version back live; a second revert undoes the first. It rolls back a publish, never unpublished edits. |
@@ -130,7 +145,7 @@ its REST route, with the same role rule and the same masking.
 | Folders | `POST /v1/folders` | `create_folder` | write |
 | Folders | `PATCH /v1/folders/:id` | `rename_folder` | write |
 | Folders | `DELETE /v1/folders/:id` | `delete_folder` | **destructive** (forms are unfiled, never deleted) |
-| Destinations | `PUT /v1/forms/:id/destinations` | `set_destinations` | **destructive** (replaces the list; secrets come back masked) |
+| Destinations | `PUT /v1/forms/:id/destinations` | `set_destinations` | **destructive** (replaces the list; secrets come back masked; `sheet_header_row` carries the route's `sheetHeaders`: what the save did to row 1 of a Google Sheets destination; a new or changed enabled Google Sheets or Salesforce entry whose provider is not connected is refused with `INTEGRATION_NOT_CONNECTED` and the integrations page, or, when the deployment cannot connect the provider at all (`unavailable: true` on the refusal), with a hint that there is nothing to connect and no retry; an entry kept as stored comes back in `warnings`) |
 | Destinations | `POST /v1/forms/:id/destinations/webhook/ping` | `ping_webhook` | write, owners and admins (the endpoint's status; sample answers for input steps, in the phase the webhook listens to, `test: true` at the top) |
 | Responses | `GET /v1/forms/:id/submissions/:submissionId` | `get_response` | read |
 | Responses | `GET /v1/forms/:id/submissions/:submissionId/files/:stepKey` | `get_response_file` | read (a short-lived link, never the bytes) |
@@ -145,18 +160,24 @@ its REST route, with the same role rule and the same masking.
 | Brand kit | `PUT /v1/branding` | `update_brand_kit` | write, owners and admins |
 | Brand kit | `POST /v1/branding/apply` | `apply_brand_kit` | **destructive**, owners and admins |
 | Brand kit | `POST /v1/branding/revert` | `revert_brand_kit` | **destructive**, owners and admins |
-| Link page | `GET /v1/link-page` | `get_link_page` | read (the stored page or null, the workspace's forms, the brand kit, `public_url` and `live`) |
-| Link page | `PUT /v1/link-page` | `update_link_page` | **destructive**, open world (replaces the whole page; `page: null` deletes it and the URL answers 404 again; any member) |
+| Link pages | `GET /v1/link-page` | `get_link_page` | read (the default page, or the one `page_id` names: the stored page or null, the workspace's forms, the brand kit, `public_url` and `live`) |
+| Link pages | `GET /v1/link-pages/:id` | `get_link_page` (with `page_id`) | read |
+| Link pages | `PUT /v1/link-page` | `update_link_page` | **destructive**, open world (replaces the whole default page; `page: null` deletes it when it is the only page; any member) |
+| Link pages | `PUT /v1/link-pages/:id` | `update_link_page` (with `page_id`) | **destructive**, open world (content, `name`, `slug` with a redirect from the old one, `make_default`) |
+| Link pages | `GET /v1/link-pages` | `list_link_pages` | read (every page, the default first, with `page_id`, `public_url` and `live`) |
+| Link pages | `POST /v1/link-pages` | `create_link_page` | write, open world (at most 20 pages; the first one becomes the default) |
+| Link pages | `POST /v1/link-pages/:id/duplicate` | `duplicate_link_page` | write (the copy is unpublished) |
+| Link pages | `DELETE /v1/link-pages/:id` | `delete_link_page` | **destructive**, open world (never the default page) |
 | Notifications | `GET /v1/notifications` | `list_notifications` | read, owners and admins |
 | Notifications | `PUT /v1/notifications/:emailKey` | `update_notification` | write, owners and admins |
 | Notifications | `POST /v1/notifications/:emailKey/reset` | `reset_notification` | **destructive**, owners and admins |
 | Notifications | `GET /v1/forms/:id/notifications` | `list_form_notifications` | read, owners and admins |
 | Notifications | `PUT /v1/forms/:id/notifications/:emailKey` | `update_form_notification` | write, owners and admins |
 | Notifications | `POST /v1/forms/:id/notifications/:emailKey/reset` | `reset_form_notification` | **destructive**, owners and admins |
-| Integrations | `GET /v1/integrations` | `list_integrations` | read |
+| Integrations | `GET /v1/integrations` | `list_integrations` | read (HubSpot, Calendly, Google Sheets and Salesforce, with `not_connected`, `unavailable` and whether the deployment has dCal; a provider in `unavailable` is reported there only) |
 | Integrations | `GET /v1/integrations/webhooks` | `list_webhooks` | read |
 | Integrations | `GET /v1/integrations/hubspot/properties` | `list_hubspot_properties` | read (calls HubSpot) |
-| Integrations | `GET /v1/integrations/calendly/event-types` | `list_calendly_event_types` | read (calls Calendly) |
+| Integrations | `GET /v1/integrations/calendly/event-types` | `list_event_types` (`provider: calendly`) | read (calls Calendly). `provider` is required, with no default: new scheduler steps default to dCal while a step with no provider reads as Calendly. `list_calendly_event_types` is the same tool under its first name, kept for clients that call it (`TOOL_ALIASES`). `provider: dcal` answers `enabled: false` with the reason: dCal reads the person's own Dapta session, which no MCP credential is, so a dCal event is picked in the editor |
 | Identity | `GET /v1/me` | `whoami` | read |
 | Identity | `GET /v1/me/profile` | `get_my_profile` | read |
 | Identity | `GET /v1/vanity` | `get_workspace_link_code` | read |
@@ -335,8 +356,9 @@ const forms = await client.callTool({ name: 'list_forms', arguments: {} });
   flag and lowercased error code, duration, protocol version, client name,
   version and user agent, `credential_type` (`api_key` or `oauth`) and
   `staff_access`, grouped by `forms_account` and sent under the member's email
-  (a connection with no workspace yet: under the person, with no person
-  profile). Never the arguments, the result, an error message, or a workspace
+  (a connection with no workspace yet: under its digest, `unlinked:<hex>`,
+  with no person profile, so it counts apart from the same person once
+  linked). Never the arguments, the result, an error message, or a workspace
   or form name. Reporting is never awaited by the tool call, and without the
   key nothing is enqueued.
 - **Error logs.** An unexpected failure is logged with its error class and
@@ -395,13 +417,23 @@ the login, registers the client and issues the token; dForms verifies it.
   when the web's would. Each call then acts as that person's member in the
   workspace it names (see [Choosing a workspace](#choosing-a-workspace)),
   with the member's live role, under every rule an API key gets.
-- **Refusals.** A sign-in that reaches no such member (never used the web
-  app, not seen there within the window, or no active membership) gets a 403
-  that says to open dForms with that account, then connect again; a `sub`
-  that two different people carry gets a 403 that says to contact support.
-  Never a 401, which would only loop the login. The API logs one line per
-  refusal (`mcp.oauth_refused` and the reason: `not_linked`,
-  `no_active_membership` or `ambiguous`), never the token or the `sub`.
+- **No workspace yet.** A sign-in that reaches no such member (never used
+  the web app, not seen there within the window, or no active membership)
+  connects with no workspace, and its tools say to open dForms with that
+  account (see [Choosing a workspace](#choosing-a-workspace)). It is never
+  refused at `initialize`: chat apps show a refused connect as their own
+  error ("Automatic client registration isn't supported"), never our words.
+  Its id and rate-limit bucket are a digest of the `sub` (a pseudonym: the
+  `sub` itself never reaches a log or analytics line). Unlike the old
+  refusal, it no longer charges the per-address bucket: each such sign-in
+  has its own bucket, as a linked one does.
+- **Refusals.** A `sub` that two different people carry gets a 403 that says
+  to contact support. Never a 401, which would only loop the login.
+- **Logs.** One line per request of a sign-in with no workspace
+  (`mcp.oauth_no_workspace`, the reason: `not_linked` or
+  `no_active_membership`, and `person`: the same digest the audit line
+  carries) and per refusal (`mcp.oauth_refused`, reason `ambiguous`), never
+  the token or the `sub`.
 - **Existing members.** A person links on their next visit to the web app,
   with no new login, when their session token carries their WorkOS id. A
   session whose token does not (it predates the claim, or came from an
@@ -429,7 +461,8 @@ All optional; unset (or blank) means the safe default. See
 | `MCP_OAUTH_PROVIDER` | API and web (runtime; the web shows the connector guide only with `MCP_PUBLIC_URL` set too) | unset (API keys only; the MCP page says the connector is not available here) |
 | `WORKOS_AUTHKIT_DOMAIN` | API | unset (required with `MCP_OAUTH_PROVIDER`) |
 | `OAUTH_LINK_MAX_AGE_DAYS` | API | `30` (days after a member's last verified web login that a sign-in may act as it) |
-| `IAM_STAFF_DOMAINS` | API (the web app's switcher; never an MCP sign-in) | unset (nobody is staff) |
+| `IAM_STAFF_DOMAINS` | API (the web app's switcher, and an MCP sign-in whose token carries a verified email) | unset (nobody is staff) |
+| `OPENAI_APPS_CHALLENGE_TOKEN` | API (served at `/.well-known/openai-apps-challenge`, OpenAI's domain check for a ChatGPT app) | unset (404) |
 
 ## Check it yourself
 

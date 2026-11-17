@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import type { FormBranding, FormConfig, FormCover, FormLabels, FormLanguage, FormLayout } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import {
@@ -32,6 +32,11 @@ import { FontPicker } from './font-picker';
 import { ThemePresets } from './theme-presets';
 import { PreviewFrame, type PreviewDevice } from './preview-frame';
 import { cn } from '@/lib/cn';
+import type { AttributionStatus } from '@/lib/admin-api';
+import { callAction, isTransportError } from '@/lib/call-action';
+import { saveAttributionAction } from '@/app/admin/account/brand-kit/actions';
+import { DAPTA_SUBSCRIPTION_REQUIRED } from '@/app/admin/account/brand-kit/attribution-codes';
+import { attributionMode } from '@/app/admin/account/brand-kit/attribution-setting';
 import type { EditorMessages } from './messages';
 
 /**
@@ -63,6 +68,8 @@ export function DesignPanel({
   onCoverChange,
   onBrandingChange,
   children,
+  showAttribution = true,
+  attribution = null,
   m,
 }: {
   config: FormConfig;
@@ -86,15 +93,35 @@ export function DesignPanel({
   onBrandingChange: (patch: Partial<FormBranding>) => void;
   /** Non-design panels that share this tab (flow note, ending) — rendered last. */
   children?: React.ReactNode;
+  /**
+   * The workspace's "Made with dForms" setting (`/v1/me`). False: the badge
+   * is absent on every public surface, so its size control is disabled with
+   * a pointer to Brand kit, and the preview renders without it.
+   */
+  showAttribution?: boolean;
+  /**
+   * The workspace attribution switch (the same setting as Brand kit), offered
+   * here as the badge control's third option, "Off", because this is where
+   * people look for it. Null when the deployment draws no attribution or the
+   * read failed: the control is then the size alone, as before.
+   */
+  attribution?: {
+    status: AttributionStatus;
+    canEdit: boolean;
+    daptaAiUrl: string | null;
+    onChange: (next: AttributionStatus) => void;
+  } | null;
   m: EditorMessages;
 }) {
   const [device, setDevice] = useState<PreviewDevice>('desktop');
-  // Four axes do nothing on one page, so they are not offered there: the form
+  // Three axes do nothing on one page, so they are not offered there: the form
   // never changes step (transition), the layout pins questions left
-  // (contentAlign), it draws its own answered-count progress bar
-  // (progressStyle), and the logo sits in a hero rather than a top bar
+  // (contentAlign), and the logo sits in a hero rather than a top bar
   // (logoSize/logoPosition). Offering a control that changes nothing is worse
-  // than not having it.
+  // than not having it. Progress DOES apply on one page, but only as the
+  // answered-count bar or nothing: dots and steps have no one-page version, so
+  // vertical offers just those two (any stored value but `none` shows as bar).
+  // The header switch and density are the reverse: they only exist on one page.
   const vertical = layout === 'vertical';
 
   const d = m.design;
@@ -123,6 +150,12 @@ export function DesignPanel({
   // matters for the large/decorative places it actually appears.
   const textSuggestion = branding.foreground ? suggestReadable(text, ground, AA_CONTRAST) : null;
   const accentSuggestion = branding.primaryColor ? suggestReadable(accent, ground) : null;
+  // The label a solid button actually wears: the author's own color, else the
+  // automatic one. Only an explicit color can be "too low", so the warning
+  // below measures that one; 0 is a color the ratio math cannot read.
+  const buttonText = branding.buttonTextColor?.trim() || '';
+  const buttonTextRatio = buttonText ? contrastRatio(buttonText, accent) : 0;
+  const buttonTextLow = buttonTextRatio > 0 && buttonTextRatio < AA_CONTRAST;
 
   return (
     // A narrow panel of settings and the form beside it, as large as the window
@@ -289,7 +322,7 @@ export function DesignPanel({
             {design.buttonStyle === 'solid' ? (
               <ContrastRow
                 label={d.contrastButton}
-                a={onAccent(accent)}
+                a={buttonText || onAccent(accent)}
                 b={accent}
                 failLabel={d.contrastFail}
               />
@@ -430,6 +463,35 @@ export function DesignPanel({
               ariaLabel={d.buttonStyle}
             />
           </InlineField>
+          {/* Only a solid button puts its label on the accent; outline and soft
+              paint it in the text color, so the control is not offered there
+              (a stored value is kept and comes back with solid). */}
+          {design.buttonStyle === 'solid' ? (
+            <>
+              <Field label={d.buttonTextColor}>
+                <ColorPicker
+                  value={branding.buttonTextColor}
+                  onChange={(buttonTextColor) => onBrandingChange({ buttonTextColor, themePreset: null })}
+                  label={d.buttonTextColor}
+                  allowEmpty
+                  emptyLabel={d.buttonTextAuto}
+                  against={accent}
+                  againstLabel={d.contrastButton}
+                  // The warning below already says it, with the fix.
+                  hideFailNote
+                  m={d}
+                />
+              </Field>
+              {buttonTextLow ? (
+                <Warning
+                  text={t(d.buttonTextLowContrast, { ratio: String(buttonTextRatio) })}
+                  suggestion={onAccent(accent)}
+                  applyLabel={t(d.suggestApply, { color: onAccent(accent) })}
+                  onApply={() => onBrandingChange({ buttonTextColor: null, themePreset: null })}
+                />
+              ) : null}
+            </>
+          ) : null}
           <InlineField label={d.buttonFullWidth}>
             <Switch
               checked={design.buttonFullWidth}
@@ -437,21 +499,31 @@ export function DesignPanel({
               aria-label={d.buttonFullWidth}
             />
           </InlineField>
-          {vertical ? null : (
           <InlineField label={d.progress}>
-            <SegmentedToggle
-              value={design.progressStyle}
-              onChange={(progressStyle) => onBrandingChange({ progressStyle })}
-              options={[
-                { value: 'bar' as const, label: d.progressBar },
-                { value: 'dots' as const, label: d.progressDots },
-                { value: 'steps' as const, label: d.progressSteps },
-                { value: 'none' as const, label: d.progressNone },
-              ]}
-              ariaLabel={d.progress}
-            />
+            {vertical ? (
+              <SegmentedToggle
+                value={design.progressStyle === 'none' ? 'none' : 'bar'}
+                onChange={(progressStyle) => onBrandingChange({ progressStyle })}
+                options={[
+                  { value: 'bar' as const, label: d.progressBar },
+                  { value: 'none' as const, label: d.progressNone },
+                ]}
+                ariaLabel={d.progress}
+              />
+            ) : (
+              <SegmentedToggle
+                value={design.progressStyle}
+                onChange={(progressStyle) => onBrandingChange({ progressStyle })}
+                options={[
+                  { value: 'bar' as const, label: d.progressBar },
+                  { value: 'dots' as const, label: d.progressDots },
+                  { value: 'steps' as const, label: d.progressSteps },
+                  { value: 'none' as const, label: d.progressNone },
+                ]}
+                ariaLabel={d.progress}
+              />
+            )}
           </InlineField>
-          )}
         </PanelSection>
 
         <PanelSection title={d.layoutTitle} subtitle={d.layoutSubtitle}>
@@ -499,8 +571,20 @@ export function DesignPanel({
             </>
           ) : null}
           {/* The one-page layout puts the logo in a hero, not a top bar, so
-              neither size nor placement applies there. */}
-          {vertical ? null : (
+              neither size nor placement applies there. What it has instead is
+              the choice to drop the header altogether, for a form embedded in a
+              page that already shows the brand. Slides ignores that field, so
+              the switch is not offered there. */}
+          {vertical ? (
+            <InlineField label={d.showHeader} hint={d.showHeaderHint}>
+              <Switch
+                checked={design.showHeader}
+                onCheckedChange={(on) => onBrandingChange({ showHeader: on })}
+                data-testid="design-show-header"
+                aria-label={d.showHeader}
+              />
+            </InlineField>
+          ) : (
             <>
               <InlineField label={d.logoSize}>
                 <SegmentedToggle
@@ -537,18 +621,36 @@ export function DesignPanel({
               exactly what the local QA harness does, so gating on it would make
               the control invisible on the only surface an author can check it
               on. A fork that sets `NEXT_PUBLIC_HIDE_BADGE` keeps hiding the
-              badge regardless of what is stored here. */}
-          <InlineField label={d.badgeSize} hint={d.badgeSizeHint}>
-            <SegmentedToggle
-              value={design.badgeSize}
-              onChange={(badgeSize) => onBrandingChange({ badgeSize })}
-              options={[
-                { value: 'sm' as const, label: d.sizeSm },
-                { value: 'md' as const, label: d.sizeMd },
-              ]}
-              ariaLabel={d.badgeSize}
+              badge regardless of what is stored here.
+
+              Disabled (not hidden) when the WORKSPACE turned the attribution
+              off in Brand kit: the badge is then absent everywhere, so a size
+              means nothing, and the hint says where the switch lives. The
+              stored size is kept for when it comes back. */}
+          {attribution ? (
+            <BadgeControl
+              size={design.badgeSize}
+              onSize={(badgeSize) => onBrandingChange({ badgeSize })}
+              attribution={attribution}
+              locale={locale}
+              d={d}
             />
-          </InlineField>
+          ) : (
+            <div data-testid="design-badge-size" data-disabled={showAttribution ? undefined : 'true'}>
+              <InlineField label={d.badgeSize} hint={showAttribution ? d.badgeSizeHint : d.badgeSizeHiddenHint}>
+                <SegmentedToggle
+                  value={design.badgeSize}
+                  onChange={(badgeSize) => onBrandingChange({ badgeSize })}
+                  options={[
+                    { value: 'sm' as const, label: d.sizeSm },
+                    { value: 'md' as const, label: d.sizeMd },
+                  ]}
+                  ariaLabel={d.badgeSize}
+                  disabled={!showAttribution}
+                />
+              </InlineField>
+            </div>
+          )}
           {vertical ? null : (
           <InlineField label={d.contentAlign}>
             <SegmentedToggle
@@ -573,6 +675,21 @@ export function DesignPanel({
               ariaLabel={d.contentWidth}
             />
           </InlineField>
+          {vertical ? (
+            <InlineField label={d.density} hint={d.densityHint}>
+              <div data-testid="design-density">
+                <SegmentedToggle
+                  value={design.density}
+                  onChange={(density) => onBrandingChange({ density })}
+                  options={[
+                    { value: 'comfortable' as const, label: d.densityComfortable },
+                    { value: 'compact' as const, label: d.densityCompact },
+                  ]}
+                  ariaLabel={d.density}
+                />
+              </div>
+            </InlineField>
+          ) : null}
           {vertical ? null : (
           <InlineField label={d.transition}>
             <SegmentedToggle
@@ -625,6 +742,7 @@ export function DesignPanel({
           locale={locale}
           formLocale={config.language ?? locale}
           layout={layout}
+          showAttribution={showAttribution}
           m={m.preview}
         />
       </div>
@@ -971,6 +1089,132 @@ function SharePreview({
           {publicPath.split('/')[1] ?? ''}
         </span>
         <span className="truncate text-xs font-medium">{headline}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The attribution badge control with the workspace switch built in:
+ * Small | Medium | Off.
+ *
+ *  - Small / Medium are this FORM's badge size (`branding.badgeSize`), as they
+ *    always were. Picking one while the workspace hides the attribution also
+ *    turns it back on, since that is the only way the size means anything.
+ *  - Off is the WORKSPACE setting (the same one as Brand kit): it hides the
+ *    attribution on every form, page and email of the workspace, at once,
+ *    with no "apply". The hint under the control says so.
+ *
+ * Who may pick Off: an owner or admin of a paying Dapta AI workspace. For
+ * everyone else Off stays visible but cannot be chosen, with "Only for
+ * Dapta AI subscribers." as its hover text and as a note with the link. A
+ * member sees the sizes only while the attribution shows (turning it back on
+ * is the workspace's call too). Lapsed (stored off, no longer paid): the
+ * attribution is showing again, so the size is selected, with the lapsed
+ * sentence; any size click shows it for good.
+ */
+function BadgeControl({
+  size,
+  onSize,
+  attribution,
+  locale,
+  d,
+}: {
+  size: 'sm' | 'md';
+  onSize: (size: 'sm' | 'md') => void;
+  attribution: {
+    status: AttributionStatus;
+    canEdit: boolean;
+    daptaAiUrl: string | null;
+    onChange: (next: AttributionStatus) => void;
+  };
+  locale: string;
+  d: EditorMessages['design'];
+}) {
+  const { status, canEdit, daptaAiUrl, onChange } = attribution;
+  const a = getMessages(locale === 'es' ? 'es' : 'en').admin.attributionSetting;
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<'failed' | 'notSubscribed' | null>(null);
+  const mode = attributionMode(status);
+  const off = mode === 'off';
+  const subscribersOnly = a.subscribersOnly.replace('{product}', a.product);
+  const [before, after = ''] = a.subscribersOnly.split('{product}');
+
+  const save = (hide: boolean, then?: () => void) =>
+    start(async () => {
+      setError(null);
+      const r = await callAction(() => saveAttributionAction(hide));
+      if (!isTransportError(r) && r.ok) {
+        onChange(r.value);
+        then?.();
+      } else if (!isTransportError(r) && r.code === DAPTA_SUBSCRIPTION_REQUIRED) {
+        onChange(r.status ?? { ...status, canHide: false });
+        setError('notSubscribed');
+      } else {
+        setError('failed');
+      }
+    });
+
+  const choose = (next: 'sm' | 'md' | 'off') => {
+    if (next === 'off') {
+      save(true);
+      return;
+    }
+    // A size while the workspace stores "hidden" (off, lapsed or unpaid) turns
+    // the attribution back on too; otherwise it is just this form's size.
+    if (status.hideAttribution) save(false, () => onSize(next));
+    else onSize(next);
+  };
+
+  const offBlocked = !canEdit || !status.canHide;
+  const offTitle = !status.canHide ? subscribersOnly : !canEdit ? a.readOnly : undefined;
+  // A member cannot change the workspace setting in either direction.
+  const sizesLocked = status.hideAttribution && !canEdit;
+
+  return (
+    <div data-testid="design-badge-size" data-disabled={off ? 'true' : undefined}>
+      <InlineField label={d.badgeSize} hint={off ? d.badgeOffHint : d.badgeSizeHint}>
+        <SegmentedToggle
+          value={off ? 'off' : size}
+          onChange={choose}
+          options={[
+            { value: 'sm' as const, label: d.sizeSm, disabled: sizesLocked },
+            { value: 'md' as const, label: d.sizeMd, disabled: sizesLocked },
+            { value: 'off' as const, label: d.badgeOff, disabled: offBlocked && !off, title: offTitle },
+          ]}
+          ariaLabel={d.badgeSize}
+          disabled={pending}
+        />
+      </InlineField>
+      <div className="mt-1.5 flex flex-col gap-1">
+        {mode === 'lapsed' ? (
+          <p data-testid="design-badge-lapsed" className="text-xs text-muted-foreground">
+            {a.lapsed}
+          </p>
+        ) : null}
+        {!status.canHide ? (
+          <p data-testid="design-badge-subscribers-only" className="text-xs text-muted-foreground">
+            {before}
+            {daptaAiUrl ? (
+              <a href={daptaAiUrl} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
+                {a.product}
+              </a>
+            ) : (
+              a.product
+            )}
+            {after}
+          </p>
+        ) : null}
+        {!canEdit && status.canHide ? (
+          <p data-testid="design-badge-read-only" className="text-xs text-muted-foreground">
+            {a.readOnly}
+          </p>
+        ) : null}
+        {error ? (
+          <p role="alert" data-testid="design-badge-error" className="text-xs text-destructive">
+            {error === 'notSubscribed' ? a.notSubscribed : a.saveFailed}
+          </p>
+        ) : null}
       </div>
     </div>
   );

@@ -15,13 +15,19 @@ import {
 } from '@quill/destinations';
 import {
   destinationFiresForPhase,
+  destinationIsDeliverable,
+  writtenSheetHeaders,
   formConfigSchema,
   formDestinationSchema,
   type FormDestination,
   type SubmissionVisit,
 } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
+import { OutboxSkipError } from './email-effects';
 import { fileLinksFor } from './file-link';
+import { GoogleSheetsAccessTokens } from './google-sheets-token';
+import { SalesforceAccessTokens } from './salesforce-auth';
+import { SalesforceFieldsService } from './salesforce-fields';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import { HubspotPropertiesService } from './integrations.controller';
 import { destinationUsesHutk, withoutHutk } from './submission-visit';
@@ -84,6 +90,23 @@ export class DestinationEffects {
     @Optional()
     @Inject(HubspotPropertiesService)
     private readonly hubspotProperties?: HubspotPropertiesService,
+    /**
+     * accountId -> a live Google access token, minted from its refresh token.
+     * Shared with the controller so a disconnect clears the one cache both
+     * sides read; optional because the specs build this class positionally,
+     * and a Google Sheets destination with no token degrades to log-only.
+     */
+    @Optional()
+    @Inject(GoogleSheetsAccessTokens)
+    private readonly googleTokens: GoogleSheetsAccessTokens = new GoogleSheetsAccessTokens(),
+    /** Shared with the controller for the same reason as `googleTokens`. */
+    @Optional()
+    @Inject(SalesforceAccessTokens)
+    private readonly salesforceTokens: SalesforceAccessTokens = new SalesforceAccessTokens(),
+    /** Field types per account (a number goes as a number, a date as a day). */
+    @Optional()
+    @Inject(SalesforceFieldsService)
+    private readonly salesforceFields?: SalesforceFieldsService,
   ) {}
 
   /**
@@ -97,6 +120,10 @@ export class DestinationEffects {
       const enabled = destinations
         .map((destination, index) => ({ destination, index }))
         .filter(({ destination }) => destination.enabled !== false)
+        // A destination stored mid-setup (a spreadsheet card switched on with
+        // no spreadsheet or no complete column yet) is skipped here, not
+        // handed to an adapter that could only log a no-op per submission.
+        .filter(({ destination }) => destinationIsDeliverable(destination))
         // Per-event trigger filter: a destination with an `events` list only fires
         // for the phases it names (webhook `events:['complete']` skips partials, and
         // vice versa). Absent/empty `events` fires on BOTH phases (back-compat), and
@@ -111,7 +138,7 @@ export class DestinationEffects {
       // type that was just enqueued (two webhooks are legal — only the last one
       // would ever deliver).
       const kinds = new Set<OutboxKind>(
-        enabled.map(({ destination }) => destination.type as OutboxKind),
+        enabled.map(({ destination }): OutboxKind => destination.type),
       );
       for (const kind of kinds) {
         await deletePendingOutbox(this.db, {
@@ -130,7 +157,11 @@ export class DestinationEffects {
         : undefined;
 
       for (const { destination, index } of enabled) {
-        const kind = destination.type as OutboxKind;
+        // No cast, on purpose: a destination type that is not an outbox kind
+        // must fail to COMPILE. With `as OutboxKind` here, Google Sheets was
+        // enqueued under a kind the worker did not know, and every delivery
+        // was retried five times and marked failed.
+        const kind: OutboxKind = destination.type;
         // Per-destination identity: the config-array index disambiguates two
         // destinations of the same type, so each delivery carries its own
         // idempotency key (receivers de-dup per destination, not per type).
@@ -174,13 +205,21 @@ export class DestinationEffects {
   }
 
   /**
-   * The worker's executor for a destination outbox row (kind webhook/hubspot).
-   * Rebuilds the destination (injecting the server-side HubSpot token at delivery
-   * time — it is never stored in the payload) and delivers. A THROWN transport
-   * error propagates so the worker retries; a permanent no-op (delivered:false)
-   * resolves so the row is marked done.
+   * The worker's executor for a destination outbox row (every destination kind).
+   * Rebuilds the destination (injecting the server-side token at delivery time,
+   * never stored in the payload) and delivers. Returns what crossed the wire,
+   * for the queue to record on the `done` row.
+   *
+   * Three outcomes, one per settlement:
+   *   - delivered: returns, and the row is marked `done`;
+   *   - THROWN transport error: propagates, and the worker retries;
+   *   - `delivered:false`, a permanent refusal or a no-op the adapter resolved
+   *     (Salesforce answering 400, a sheet that is gone, no email to key on, a
+   *     CRM that is not connected): throws `OutboxSkipError` with the adapter's
+   *     reason and transcript, so the row ends `skipped`, is never retried, and
+   *     is never shown as delivered. It used to return like a success, and the
+   *     history told the author a lead had arrived when the CRM had refused it.
    */
-  /** Returns what crossed the wire, for the queue to record. */
   async deliver(action: string, payloadJson: string): Promise<DeliveryTranscript> {
     const { destination, ctx } = JSON.parse(payloadJson) as DestinationOutboxPayload;
     // ctx.accountId is the form's account — resolve that account's HubSpot token
@@ -188,22 +227,23 @@ export class DestinationEffects {
     const spec = await this.toSpec(destination, ctx.accountId);
     const dest = createDestination(spec, this.fetchImpl);
     const result = await dest.deliver(ctx);
-    if (!result.delivered) {
-      this.log.warn(
-        `destination ${destination.type} (${ctx.submissionId}/${action}) no-op via ${result.driver}` +
-          (result.detail ? `: ${result.detail}` : ''),
-      );
-    } else {
-      this.log.log(
-        `destination ${destination.type} (${ctx.submissionId}/${action}) delivered` +
-          (result.detail ? `: ${result.detail}` : ''),
-      );
-    }
-    return {
+    const transcript: DeliveryTranscript = {
       requestBody: result.requestBody,
       responseStatus: result.responseStatus,
       responseBody: result.responseBody,
     };
+    if (!result.delivered) {
+      // Logged by the worker when it settles the row as skipped.
+      throw new OutboxSkipError(
+        result.detail?.trim() || `${destination.type} did not accept the delivery (${result.driver})`,
+        transcript,
+      );
+    }
+    this.log.log(
+      `destination ${destination.type} (${ctx.submissionId}/${action}) delivered` +
+        (result.detail ? `: ${result.detail}` : ''),
+    );
+    return transcript;
   }
 
   /**
@@ -229,8 +269,70 @@ export class DestinationEffects {
     }
   }
 
-  /** Resolve a stored destination config into a delivery spec (inject secrets). */
+  /**
+   * Resolve a stored destination config into a delivery spec (inject secrets).
+   *
+   * A switch rather than the if/else-with-a-tail this used to be: HubSpot was
+   * the tail, so a destination type added later would have been handed HubSpot's
+   * token and HubSpot's mappings and would have delivered somebody's submission
+   * to the wrong place entirely.
+   */
   private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
+    if (destination.type === 'salesforce') {
+      // Minted from the account's Client Credentials at DELIVERY time, cached
+      // per account. Null when not connected or the org refused, which the
+      // factory turns into a log-only no-op; a Salesforce that did not answer
+      // throws here and the outbox retries.
+      const access = await this.salesforceTokens.resolve(this.db, accountId, this.env, this.fetchImpl);
+      // Field types decide how a value is sent (`25` vs `"25"`, a day vs an
+      // instant) and which mappings reach a Contact. Unknown is tolerated (the
+      // adapter falls back to strings), but a describe that did not ANSWER
+      // throws, so a delivery waits instead of sending numbers as text.
+      const types = access ? await this.salesforceFields?.fieldTypes(accountId) : null;
+      return {
+        type: 'salesforce',
+        salesforce: {
+          accessToken: access?.accessToken ?? '',
+          instanceUrl: access?.instanceUrl ?? '',
+          fieldMappings: destination.fieldMappings ?? {},
+          utmMappings: destination.utmMappings ?? {},
+          scoreField: destination.scoreField ?? undefined,
+          dateField: destination.dateField ?? undefined,
+          dayTimezone: destination.dayTimezone,
+          staticFields: destination.staticFields,
+          leadFields: types?.lead,
+          contactFields: types?.contact,
+          // A 401 means the cached token outlived the org's session: drop it,
+          // so the retry the adapter's throw schedules mints a fresh one.
+          onUnauthorized: () => this.salesforceTokens.invalidate(accountId),
+        },
+      };
+    }
+    if (destination.type === 'google-sheets') {
+      // Minted from the account's refresh token at DELIVERY time, cached per
+      // account. Empty when the account is not connected or Google refused to
+      // renew, which the factory turns into a log-only no-op.
+      const accessToken = await this.googleTokens.resolve(
+        this.db,
+        accountId,
+        this.env,
+        this.fetchImpl,
+      );
+      return {
+        type: 'google-sheets',
+        googleSheets: {
+          accessToken,
+          spreadsheetId: destination.settings?.spreadsheetId ?? '',
+          sheetTitle: destination.settings?.sheetTitle ?? undefined,
+          // Every stored column, with the row 1 dForms last wrote: the
+          // adapter resolves the cells (`sheetCells`), the same ones the
+          // header row holds, so a column with a cleared heading keeps its
+          // position and one never named is left out.
+          columns: destination.columns ?? [],
+          writtenHeaders: writtenSheetHeaders(destination),
+        },
+      };
+    }
     if (destination.type === 'webhook') {
       return {
         type: 'webhook',

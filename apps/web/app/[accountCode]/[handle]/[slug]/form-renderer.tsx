@@ -21,6 +21,7 @@ import {
   resolveOutcome,
   resolveEnding,
   redirectUrlFor,
+  forwardedUtm,
   computeScore,
   partialSubmitKey,
   revealAfterKey,
@@ -67,8 +68,11 @@ import {
   useCaptchaGate,
   captchaAborted,
   submitFinal,
+  useCampaignUtm,
+  sameCampaign,
   captureUtm,
   captureDefaults,
+  withAnswer,
   capturePrefill,
   schedulerToBooking,
   preloadableCalendlyKeys,
@@ -145,6 +149,7 @@ export function FormRenderer({
   visitCapture,
   startAt,
   resume,
+  showAttribution = true,
 }: {
   accountCode: string;
   slug: string;
@@ -178,6 +183,13 @@ export function FormRenderer({
    * builder preview never does, so a preview neither keeps nor restores one.
    */
   resume?: boolean;
+  /**
+   * Whether this workspace's form carries the "Made with dForms" attribution
+   * (the badge and the thank-you CTA), exactly as the API answered it
+   * (`PublicForm.showAttribution`). Absent = true: today's behavior, and every
+   * legacy-markup snapshot. The deployment rule (`signupHref`) applies on top.
+   */
+  showAttribution?: boolean;
 }) {
   const m = getMessages(locale).renderer;
   // The form's button copy: author overrides, else the stock copy of `locale`.
@@ -198,7 +210,9 @@ export function FormRenderer({
   useCalendlyPreload(calendlyPreloadKeys, sessionId);
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
-  const resolveVisit = useHostVisit(visitCapture, name);
+  // The visitor's campaign for the booking page: the same set the submission carries.
+  const { utm: campaign, own: ownUtm, record: recordCampaign, learnHost } = useCampaignUtm();
+  const resolveVisit = useHostVisit(visitCapture, name, learnHost);
 
   /**
    * Authorize one upload for a `file` step.
@@ -304,6 +318,9 @@ export function FormRenderer({
   const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
 
   const utmRef = useRef<Record<string, string>>({});
+  // The UTMs this run submitted (form's own, else the landing's), kept for the
+  // redirects that fire after `finalize` (deferred, post-booking).
+  const redirectUtm = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const startSent = useRef(false); // one `start` per session, whichever path emits it
@@ -335,6 +352,7 @@ export function FormRenderer({
     const outcome = resolveOutcome(engineConfig, done.score, answers);
     const ending = resolveEnding(engineConfig, outcome, answers, {
       embedded: isEmbeddedRender(),
+      utm: redirectUtm.current,
     });
     if (!ending.redirectUrl || ending.redirectDelayMs <= 0) return;
     if (!isSafeHttpUrl(ending.redirectUrl)) return;
@@ -566,6 +584,7 @@ export function FormRenderer({
   function withData(a: Answers, resolved?: ResolvedVisit): Record<string, unknown> {
     // The landing's campaign stands in only when the form's own URL has none.
     const utm = mergeHostUtm(utmRef.current, resolved?.hostUtm);
+    recordCampaign(utm);
     return Object.keys(utm).length > 0 ? { ...a, utm } : { ...a };
   }
 
@@ -670,6 +689,9 @@ export function FormRenderer({
           }),
         );
       }
+      // The campaign the submit carried, for the redirect below and the ones
+      // that fire later (deferred, post-booking) when the form forwards UTMs.
+      redirectUtm.current = mergeHostUtm(utmRef.current, (await visitReady)?.hostUtm);
       const score = res.score ?? 0;
       const outcome = resolveOutcome(engineConfig, score, finalAnswers);
       // An outcome with a booking config shows the inline scheduling screen
@@ -685,6 +707,7 @@ export function FormRenderer({
       // repeating the URL on every range.
       const ending = resolveEnding(engineConfig, outcome, finalAnswers, {
         embedded: isEmbeddedRender(),
+        utm: redirectUtm.current,
       });
       if (ending.redirectUrl) {
         // Runtime XSS guard: only navigate to http(s). A non-http(s) protocol
@@ -726,12 +749,18 @@ export function FormRenderer({
           provider: details.provider,
           ...(details.eventUri ? { eventUri: details.eventUri } : {}),
           ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+          ...(details.bookingUid ? { bookingUid: details.bookingUid } : {}),
           ...(details.startTime ? { startTime: details.startTime } : {}),
         }),
       );
       if (isTransportError(rec)) console.warn('[forms] post-submit booking record failed');
       const redirectUrl = outcome?.redirectUrl
-        ? redirectUrlFor(outcome.redirectUrl, answers, isEmbeddedRender())
+        ? redirectUrlFor(
+            outcome.redirectUrl,
+            answers,
+            isEmbeddedRender(),
+            forwardedUtm(engineConfig, redirectUtm.current),
+          )
         : null;
       if (redirectUrl && isSafeHttpUrl(redirectUrl)) {
         navigateTop(redirectUrl);
@@ -739,7 +768,7 @@ export function FormRenderer({
       }
       setPhase('done'); // `done` state was set in finalize
     },
-    [accountCode, slug, sessionId, booking, answers],
+    [accountCode, slug, sessionId, booking, answers, engineConfig],
   );
 
   // Completes the current screen and moves on. `members` are the questions
@@ -877,6 +906,7 @@ export function FormRenderer({
           provider: details.provider,
           ...(details.eventUri ? { eventUri: details.eventUri } : {}),
           ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+          ...(details.bookingUid ? { bookingUid: details.bookingUid } : {}),
           ...(details.startTime ? { startTime: details.startTime } : {}),
         }),
       );
@@ -944,7 +974,7 @@ export function FormRenderer({
     // The first answer arms spam protection's check, which then loads once
     // the end of the form is on screen, as on the one-page layout.
     gateRef.current.arm();
-    setAnswers((a) => ({ ...a, [field]: value }));
+    setAnswers((a) => withAnswer(a, field, value));
     setError(null);
     setErrors((e) => {
       if (!(owner in e)) return e;
@@ -1097,6 +1127,7 @@ export function FormRenderer({
         accountCode={accountCode}
         cover={chrome}
         design={design}
+        showAttribution={showAttribution}
       />
     );
   }
@@ -1109,7 +1140,10 @@ export function FormRenderer({
           answers={answersRef.current}
           sessionId={sessionId}
           locale={locale}
-          preloadKey={booking.outcome.booking.url}
+          utm={campaign}
+          // A preloaded widget carries only this page's own UTMs (Calendly's
+          // script forwards them), so it is used only when that IS the campaign.
+          preloadKey={sameCampaign(campaign, ownUtm) ? booking.outcome.booking.url : undefined}
           onBooked={(details) => void handleBooked(details)}
         />
       </PhaseShell>
@@ -1218,7 +1252,7 @@ export function FormRenderer({
           </button>
           {/* Under the CTA: every respondent sees the cover, so this is the
               highest-value slot for the attribution and it displaces nothing. */}
-          <MadeWithBadge locale={locale} accountCode={accountCode} />
+          <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
         </div>
       </PhaseShell>
     );
@@ -1230,7 +1264,7 @@ export function FormRenderer({
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1254,7 +1288,7 @@ export function FormRenderer({
     }
     const several = screen.length > 1;
     return (
-      <PhaseShell className="pf" design={design} onKeyDown={onScreenKeyDown} cover={chrome}>
+      <PhaseShell className="pf pf--fit" design={design} onKeyDown={onScreenKeyDown} cover={chrome}>
         <header className="pf__topbar">
           <div className="pf__topbar-inner">
             {screenIdx > 0 || coverScreen ? (
@@ -1279,6 +1313,9 @@ export function FormRenderer({
         <div className="pf__body">
           <div className="pf__inner">
             <div className="pf__content pf-s pf-animate" key={animKey} data-pf-screen-size={screen.length}>
+              {/* The questions scroll inside the card; the footer below never
+                  leaves the screen (see `.pf--fit` in public-form.css). */}
+              <div className="pf-s__members">
               {screen.map((member, i) => {
                 const code = errors[member.key];
                 const classes = ['pf-s__member'];
@@ -1301,19 +1338,23 @@ export function FormRenderer({
                     aria-labelledby={memberId(member.key, 'q')}
                     aria-describedby={code ? memberId(member.key, 'e') : undefined}
                   >
-                    <div className="pf__question-wrap">
-                      <h2 className="pf__question" id={memberId(member.key, 'q')}>
-                        {member.question ?? member.key}
-                        {several && member.required && member.type !== 'message' ? (
-                          <span aria-hidden className="pf-v__required">
-                            *
-                          </span>
+                    {/* A checkbox's text sits beside its box and carries the
+                        `q` id the group is labelled by (StepInput paints it). */}
+                    {member.type === 'checkbox' ? null : (
+                      <div className="pf__question-wrap">
+                        <h2 className="pf__question" id={memberId(member.key, 'q')}>
+                          {member.question ?? member.key}
+                          {several && member.required && member.type !== 'message' ? (
+                            <span aria-hidden className="pf-v__required">
+                              *
+                            </span>
+                          ) : null}
+                        </h2>
+                        {member.helper && member.type !== 'message' ? (
+                          <p className="pf__helper">{member.helper}</p>
                         ) : null}
-                      </h2>
-                      {member.helper && member.type !== 'message' ? (
-                        <p className="pf__helper">{member.helper}</p>
-                      ) : null}
-                    </div>
+                      </div>
+                    )}
                     {member.type !== 'message' || member.helper ? (
                       <div className="pf__fields">
                         <StepInput
@@ -1334,6 +1375,9 @@ export function FormRenderer({
                           locale={locale}
                           onRequestUpload={requestUploadTicket}
                           uploadMaxMb={uploadMaxMb}
+                          labelId={memberId(member.key, 'q')}
+                          showRequiredMark={several && member.required === true}
+                          invalid={Boolean(code)}
                         />
                         {/* Quiet per question: the summary below is the one alert. */}
                         {code ? (
@@ -1346,6 +1390,7 @@ export function FormRenderer({
                   </section>
                 );
               })}
+              </div>
 
               <div className="pf-s__footer">
                 {error ? (
@@ -1372,7 +1417,7 @@ export function FormRenderer({
         </div>
         {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
         {gate.honeypot}
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1426,6 +1471,10 @@ export function FormRenderer({
       answers,
       step.scheduler?.prefillMap,
       config.steps as FormStep[],
+      // The map's keys are the PROVIDER's field ids, and the two providers name
+      // them differently (dCal by field name, Calendly positionally), so the
+      // resolver cannot tell a custom question from a built-in without this.
+      step.scheduler?.provider ?? 'calendly',
     );
     const booking = step.scheduler
       ? schedulerToBooking(step.scheduler, schedPrefill.customAnswers)
@@ -1461,8 +1510,13 @@ export function FormRenderer({
                     extraCustomAnswers={schedPrefill.customAnswers}
                     sessionId={sessionId}
                     locale={locale}
+                    utm={campaign}
                     hideHeader
-                    preloadKey={step.scheduler ? schedulerToBooking(step.scheduler)?.url : undefined}
+                    preloadKey={
+                      step.scheduler && sameCampaign(campaign, ownUtm)
+                        ? schedulerToBooking(step.scheduler)?.url
+                        : undefined
+                    }
                     onBooked={(details) => void handleSchedulerBooked(step, details)}
                   />
                 ) : (
@@ -1492,7 +1546,7 @@ export function FormRenderer({
         {/* Last child of `.pf__main`, in flow — one DOM position that lands
             correctly on all three bands: it ends the fluid column below 769px
             and rides the centered card group above it. */}
-        <MadeWithBadge locale={locale} accountCode={accountCode} />
+        <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
       </PhaseShell>
     );
   }
@@ -1506,7 +1560,7 @@ export function FormRenderer({
   // (see `finalize`, and `advance` for a legacy reveal played after it).
   const finishesHere = showContinue && (!!step.terminal || index + 1 === steps.length);
   return (
-    <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={chrome}>
+    <PhaseShell className="pf pf--fit" design={design} onKeyDown={onKeyDown} cover={chrome}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || coverScreen ? (
@@ -1531,12 +1585,15 @@ export function FormRenderer({
       <div className="pf__body">
         <div className="pf__inner">
           <div className="pf__content pf-animate" key={animKey}>
-            <div className="pf__question-wrap">
-              <h2 className="pf__question">{step.question ?? step.key}</h2>
-              {step.helper && step.type !== 'message' ? (
-                <p className="pf__helper">{step.helper}</p>
-              ) : null}
-            </div>
+            {/* A checkbox's text sits beside its box (StepInput paints it). */}
+            {step.type === 'checkbox' ? null : (
+              <div className="pf__question-wrap">
+                <h2 className="pf__question">{step.question ?? step.key}</h2>
+                {step.helper && step.type !== 'message' ? (
+                  <p className="pf__helper">{step.helper}</p>
+                ) : null}
+              </div>
+            )}
 
             <div className="pf__fields">
               <StepInput
@@ -1545,7 +1602,7 @@ export function FormRenderer({
                 answers={answers}
                 onChange={(v: AnswerValue) => {
                   if (sendingRef.current) return;
-                  setAnswers((a) => ({ ...a, [step.key]: v }));
+                  setAnswers((a) => withAnswer(a, step.key, v));
                   setError(null);
                 }}
                 onFieldChange={(field, v) => {
@@ -1559,6 +1616,7 @@ export function FormRenderer({
                 locale={locale}
                 onRequestUpload={requestUploadTicket}
                 uploadMaxMb={uploadMaxMb}
+                invalid={Boolean(error)}
               />
 
               {error ? (
@@ -1592,7 +1650,7 @@ export function FormRenderer({
       {/* See the scheduler screen above: in flow at the end of `.pf__main`,
           never fixed — a floating pill would fight the Continue button and the
           mobile keyboard. */}
-      <MadeWithBadge locale={locale} accountCode={accountCode} />
+      <MadeWithBadge locale={locale} accountCode={accountCode} show={showAttribution} />
     </PhaseShell>
   );
 }

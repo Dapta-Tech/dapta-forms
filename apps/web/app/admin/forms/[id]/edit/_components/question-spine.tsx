@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useId, useState, type HTMLAttributes, type ReactNode } from 'react';
 import { useDndContext } from '@dnd-kit/core';
 import type { FormLayout, FormStep } from '@quill/engine';
-import { authoredScreens, screensActive } from '@quill/engine';
+import { authoredScreens, isHiddenStep, screensActive } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { liveRuleCount } from './logic-util';
 import { screenBoundary, screenEnd, screenList, shownAbove, type ScreenBlock } from './screen-util';
@@ -292,7 +292,7 @@ export function QuestionSpine({
                                 marker behind several "why is this not working"
                                 traps (its points never score, a reveal pinned to it
                                 never plays, a partial point on it never fires). */}
-                            {step.hidden ? (
+                            {isHiddenStep(step) ? (
                               <span
                                 data-testid="spine-hidden-badge"
                                 className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint"

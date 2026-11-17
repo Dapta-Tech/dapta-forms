@@ -57,9 +57,20 @@ export const getPublicLinkPage = cache(
     getJson<PublicLinkPage>(`/v1/public/pages/${encodeURIComponent(accountCode)}`),
 );
 
+/**
+ * One of a workspace's other link pages (`/{accountCode}/p/{slug}`), or null
+ * when it is unknown or not published. A retired slug answers the page with
+ * its current `pageSlug`; the caller redirects.
+ */
+export const getPublicLinkPageBySlug = cache(
+  (accountCode: string, slug: string): Promise<PublicLinkPage | null> =>
+    getJson<PublicLinkPage>(`/v1/public/pages/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}`),
+);
+
 /** Report a link page view or click (best-effort analytics; the API validates the body). */
-export async function postLinkPageEvent(accountCode: string, event: LinkPageEvent): Promise<number> {
-  const res = await fetch(`${API_URL}/v1/public/pages/${encodeURIComponent(accountCode)}/events`, {
+export async function postLinkPageEvent(accountCode: string, event: LinkPageEvent, pageSlug?: string | null): Promise<number> {
+  const page = pageSlug ? `/${encodeURIComponent(pageSlug)}` : '';
+  const res = await fetch(`${API_URL}/v1/public/pages/${encodeURIComponent(accountCode)}${page}/events`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(await forwardedForHeader()) },
     body: JSON.stringify(event),

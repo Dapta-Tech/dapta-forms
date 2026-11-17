@@ -1,33 +1,32 @@
 import { getMessages } from '@quill/shared';
 import { adminApi } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
-import { LinkPageEditor } from './link-page-editor';
-import '../../../[accountCode]/[handle]/[slug]/public-form.css';
+import { LinkPagesList } from './link-pages-list';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Account settings, Public page: the WORKSPACE link page at `/{accountCode}`
- * (logo, name, bio, an ordered column of forms and links, social icons). It
- * replaced the per-member page that used to live here; those URLs redirect to
- * the workspace page now.
+ * Account settings, Public page: the WORKSPACE's link pages, up to 20. The
+ * default one answers at `/{accountCode}` (the address the single page always
+ * had), every other one at `/{accountCode}/p/{slug}`. Each row opens the
+ * editor at `./[pageId]`.
  *
- * Any member of the workspace edits it, so nothing here is admin-gated. The
- * public form stylesheet is loaded because the preview renders the public
- * page's own component.
+ * Any member of the workspace creates, edits and deletes pages, so nothing
+ * here is admin-gated.
  */
 export default async function PublicPagePage() {
   const locale = await getLocale();
   const messages = getMessages(locale);
-  const view = await adminApi.linkPage();
+  const [list, me] = await Promise.all([adminApi.linkPages(), adminApi.me()]);
 
   return (
     <div data-testid="account-public-page">
-      <LinkPageEditor
-        initial={view}
-        m={messages.admin.linkPage}
-        networks={messages.linkPage.social}
+      <LinkPagesList
+        initial={list}
+        m={messages.admin.linkPages}
+        qr={messages.admin.linkPage}
         locale={locale}
+        timeZone={me.timezone ?? 'UTC'}
       />
     </div>
   );

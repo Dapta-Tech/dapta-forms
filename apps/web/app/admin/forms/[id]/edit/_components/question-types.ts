@@ -6,7 +6,7 @@
  * "Dropdown" stays its own type. Icons are PrimeIcons (verified present).
  */
 import type { FormFieldType, FormStep } from '@quill/engine';
-import { createEmptyStep } from '@quill/engine';
+import { createEmptyStep, inlineLinksPlainText } from '@quill/engine';
 import type { BuilderMessages, GalleryItemId } from './builder-messages';
 
 export interface GalleryItem {
@@ -24,6 +24,7 @@ export const GALLERY: Record<GalleryGroup, GalleryItem[]> = {
     { id: 'name', type: 'name', icon: 'pi-user' },
     { id: 'email', type: 'email', icon: 'pi-envelope' },
     { id: 'phone', type: 'phone', icon: 'pi-phone' },
+    { id: 'checkbox', type: 'checkbox', icon: 'pi-verified' },
   ],
   choice: [
     { id: 'single', type: 'multiple_choice', selectionMode: 'single', icon: 'pi-circle' },
@@ -75,6 +76,8 @@ export function iconForStep(step: Pick<FormStep, 'type' | 'selectionMode'>): str
       return 'pi-sparkles';
     case 'scheduler':
       return 'pi-calendar-plus';
+    case 'checkbox':
+      return 'pi-verified';
     default:
       return 'pi-stop';
   }
@@ -89,7 +92,8 @@ export function iconForStep(step: Pick<FormStep, 'type' | 'selectionMode'>): str
  * Its headline is its identity; failing that, the type name.
  */
 export function stepListLabel(step: FormStep, m: BuilderMessages): string {
-  const question = step.question?.trim();
+  // A checkbox lists its text with each inline link as its visible text.
+  const question = (step.type === 'checkbox' ? inlineLinksPlainText(step.question ?? '') : step.question)?.trim();
   if (question) return question;
   if (step.type === 'reveal') {
     return step.reveal?.headline?.trim() || m.gallery.items.reveal.title;
@@ -166,6 +170,8 @@ export function galleryIdForStep(step: Pick<FormStep, 'type' | 'selectionMode'>)
       return 'reveal';
     case 'scheduler':
       return 'scheduler';
+    case 'checkbox':
+      return 'checkbox';
     case 'text':
     default:
       return 'short';

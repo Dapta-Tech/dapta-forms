@@ -136,6 +136,7 @@ export class HttpEmailProvider implements EmailProvider {
       businessContext: { accountId: message.accountId },
       attachments: message.attachments?.map(toTransactionalAttachment),
     };
+    if (message.locale) payload.locale = message.locale;
     if (hasHtml) payload.html = message.html;
     if (typeof message.text === 'string' && message.text.length > 0) payload.text = message.text;
 

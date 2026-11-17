@@ -14,6 +14,16 @@ const CAPTURE_PATH = '/capture/';
 /** Give up on a hung vendor rather than holding a worker slot indefinitely. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
+/** Loose on purpose: the id came from our own auth, this only tells an email from an `account:<id>`. */
+const EMAIL_SHAPE = /^[^\s@:]+@[^\s@]+\.[^\s@]+$/;
+
+/** The email to store on the person, or null when the event must not set one. */
+function personEmail(payload: AnalyticsEventPayload): string | null {
+  if (payload.properties?.$process_person_profile === false) return null;
+  const id = payload.distinctId;
+  return typeof id === 'string' && EMAIL_SHAPE.test(id) ? id : null;
+}
+
 /**
  * Worker-side delivery of a product-analytics event (`analytics` outbox rows).
  *
@@ -49,6 +59,7 @@ export class AnalyticsCapture {
       '',
     );
 
+    const email = personEmail(payload);
     const body = {
       api_key: key,
       event: payload.event,
@@ -69,6 +80,13 @@ export class AnalyticsCapture {
         // without deduplicating members by hand. `forms_account` (not `account`)
         // keeps our id space from colliding with another Dapta product's.
         ...(payload.accountId ? { $groups: { forms_account: payload.accountId } } : {}),
+        // When the distinct id IS an email, write it as the person's `email`
+        // property too. People who only ever reach Forms through the MCP, the API
+        // or a browser with the tracker blocked never run the browser identify,
+        // so this is the only place their person record learns its email. Skipped
+        // for profile-less events (they must not mint a person) and for
+        // `account:<id>` ids.
+        ...(email ? { $set: { email } } : {}),
       },
     };
 

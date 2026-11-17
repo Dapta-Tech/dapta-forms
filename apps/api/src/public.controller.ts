@@ -72,7 +72,7 @@ export class PublicController {
     return p;
   }
 
-  /** A workspace's link page, or 404 until someone in the workspace turns it on. */
+  /** A workspace's DEFAULT link page (`/{accountCode}`), or 404 until someone in the workspace turns it on. */
   @Get('pages/:accountCode')
   async linkPage(@Param('accountCode') accountCode: string) {
     const page = this.linkPages ? await this.linkPages.publicPage(accountCode) : null;
@@ -80,13 +80,42 @@ export class PublicController {
     return page;
   }
 
-  /** Record a view of a link page, or a click on one of its buttons or icons (analytics only). */
+  /**
+   * One of a workspace's other link pages (`/{accountCode}/p/{slug}`), or 404
+   * until it is turned on. A retired slug answers the page that used to have
+   * it, with its current `pageSlug`, so the web can redirect; the default
+   * page answers here too, with `isDefault: true`.
+   */
+  @Get('pages/:accountCode/:slug')
+  async linkPageBySlug(@Param('accountCode') accountCode: string, @Param('slug') slug: string) {
+    const page = this.linkPages ? await this.linkPages.publicPage(accountCode, slug) : null;
+    if (!page) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Page not found.' });
+    return page;
+  }
+
+  /** Record a view of the default link page, or a click on one of its buttons or icons (analytics only). */
   @Post('pages/:accountCode/events')
   @HttpCode(202)
   async linkPageEvent(@Param('accountCode') accountCode: string, @Body() body: unknown) {
     if (!this.linkPages) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Page not found.' });
     try {
       return unwrap(await this.linkPages.event(accountCode, body));
+    } catch (err) {
+      badReq(err);
+    }
+  }
+
+  /** The same, for one of the workspace's other pages. */
+  @Post('pages/:accountCode/:slug/events')
+  @HttpCode(202)
+  async linkPageSlugEvent(
+    @Param('accountCode') accountCode: string,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    if (!this.linkPages) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Page not found.' });
+    try {
+      return unwrap(await this.linkPages.event(accountCode, body, slug));
     } catch (err) {
       badReq(err);
     }

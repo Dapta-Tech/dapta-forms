@@ -74,8 +74,10 @@ import {
   publishFormInputSchema,
   formSlugInputSchema,
   hasExtraHubspotDestination,
+  hasExtraSalesforceDestination,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
+  ONE_SALESFORCE_DESTINATION_MESSAGE,
   memberInviteSchema,
   memberPatchSchema,
   notificationSettingPatchSchema,
@@ -95,6 +97,7 @@ import { AdminService } from './admin.service';
 import { SubmissionService } from './submission.service';
 import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
+import { isAgentPrincipal } from './auth.provider';
 import { createdVia } from './api-keys';
 import { WorkspaceService } from './workspace.service';
 import { EmailEffects } from './email-effects';
@@ -103,11 +106,19 @@ import { UploadService } from './upload.service';
 import { unwrap } from './http';
 import { parse } from './validation';
 import { keyFormBodyIssues, keyNormalizedConfig } from './strict-config';
+import {
+  connectedDestinationProviders,
+  unavailableDestinationProviders,
+  connectionVerdict,
+  INTEGRATION_NOT_CONNECTED,
+  integrationsPageUrl,
+} from './destination-connections';
 import type { ServerEnv } from '@quill/config/env';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
 import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } from './submission-filter';
 import type { CaptchaVerifier } from './captcha';
+import { AttributionService } from './attribution.service';
 import { CAPTCHA, DB, ENV } from './tokens';
 
 function unwrapCrud<T>(r: CrudResult<T>): T {
@@ -202,6 +213,10 @@ export class AdminCrudController {
     // run here. Last and optional for the positional-construction reason; absent
     // reads as "not available", which is the safe answer.
     @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
+    // Workspace setting reporting only (`me`): whether this workspace's public
+    // surfaces carry the "Made with dForms" attribution. Last and optional for
+    // the positional reason; absent reads as showing, as before the setting.
+    @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
   ) {}
 
   /**
@@ -258,7 +273,13 @@ export class AdminCrudController {
     // keys). The editor disables the switch without it, for the same reason the
     // file question hides without a bucket: the API is the one authority.
     const captcha = { available: this.captcha?.enabled === true };
-    return { ...view, staff, uploads, captcha };
+    // Whether this WORKSPACE's forms carry the attribution, by the same rule
+    // the public payload uses. The builder disables the badge size when it is
+    // hidden and shows the preview without it.
+    // `attributionBadge`, not `attribution`: that key is the signup's UTM
+    // record, already on `view`.
+    const attributionBadge = { showing: this.attribution ? await this.attribution.showFor(p.accountId) : true };
+    return { ...view, staff, uploads, captcha, attributionBadge };
   }
 
   /**
@@ -597,6 +618,44 @@ export class AdminCrudController {
         message: ONE_HUBSPOT_DESTINATION_MESSAGE,
       });
     }
+    // Same rule for Salesforce: two destinations draining in parallel would
+    // both look the email up, both find nothing, and both create a Lead.
+    if (hasExtraSalesforceDestination((input.config as { destinations?: unknown } | undefined)?.destinations)) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: ONE_SALESFORCE_DESTINATION_MESSAGE,
+      });
+    }
+    // A Sheets or Salesforce destination with no connection behind it would
+    // deliver into nothing, exactly as on PUT /forms/:id/destinations, so the
+    // same rule runs here with nothing stored to compare against: every
+    // enabled entry is new. An agent is refused, a session is warned.
+    // Duplicate is exempt on purpose: it copies a form of the SAME account,
+    // whose connections are the same ones, so the copy promises nothing the
+    // source does not, and the source's entries are stored state, which this
+    // rule never refuses.
+    const sentDestinations = (input.config as { destinations?: unknown } | undefined)?.destinations;
+    const verdict = Array.isArray(sentDestinations)
+      ? connectionVerdict({
+          incoming: sentDestinations,
+          stored: [],
+          connected: await connectedDestinationProviders(this.db, p.accountId, this.env),
+          unavailable: unavailableDestinationProviders(this.env),
+          agent: isAgentPrincipal(p),
+          integrationsUrl: integrationsPageUrl(this.env?.PUBLIC_APP_URL),
+          strip: (e) => e,
+        })
+      : { refusal: null, warnings: [] };
+    if (verdict.refusal) {
+      throw new BadRequestException({
+        error: INTEGRATION_NOT_CONNECTED,
+        message: verdict.refusal.message,
+        provider: verdict.refusal.type,
+        index: verdict.refusal.index,
+        integrationsUrl: verdict.refusal.integrationsUrl,
+        unavailable: verdict.refusal.unavailable,
+      });
+    }
     // New forms are born on-brand: snapshot the workspace brand kit into the
     // initial config's `branding`. Server-side so API-created forms inherit the
     // kit exactly like dashboard-created ones. Caller-supplied branding wins
@@ -627,7 +686,8 @@ export class AdminCrudController {
       await createForm(this.db, p.accountId, { ...input, config, createdVia: via }, p.memberId),
     );
     await this.productAnalytics?.captureForMember('form_created', p, { form_id: created.id, via });
-    return this.formView(p.accountId, created);
+    const view = await this.formView(p.accountId, created);
+    return verdict.warnings.length ? { ...view, warnings: verdict.warnings } : view;
   }
 
   /**

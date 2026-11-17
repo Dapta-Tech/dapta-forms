@@ -4,7 +4,7 @@
  * the declarative `showWhen`/`hideWhen` conditions still work (honored by the
  * engine, drawn on the map) and count toward a question's rule total.
  */
-import { SCORE_FIELD, authoredScreens, screensActive, type AuthoredScreen, type FormLayout, type FormStep } from '@quill/engine';
+import { SCORE_FIELD, authoredScreens, screensActive, type AuthoredScreen, type FormLayout, type FormStep, stepQuestionText } from '@quill/engine';
 import type { GotoRule } from '@quill/engine';
 import { isInputlessType } from './question-types';
 
@@ -39,8 +39,17 @@ export function stepRecordsAnswer(step: FormStep): boolean {
   return !isInputlessType(step.type);
 }
 
+/**
+ * Can a `goto` rule ever run here? Only on a step that records an answer, and
+ * never on a `checkbox`: the engine ignores its `goto` and `terminal` (consent
+ * routes nowhere), so the editor offers no jump there either.
+ */
+export function stepCanRoute(step: FormStep): boolean {
+  return stepRecordsAnswer(step) && step.type !== 'checkbox';
+}
+
 /** Can a catch-all ever fire here? Same question, narrower name. */
-export const catchAllFires = stepRecordsAnswer;
+export const catchAllFires = stepCanRoute;
 
 /**
  * The `goto` rules that can actually run. On a step that records no answer
@@ -52,7 +61,7 @@ export const catchAllFires = stepRecordsAnswer;
  * config on open is worse than declining to draw it.
  */
 export function liveGotoRules(step: FormStep): GotoRule[] {
-  return stepRecordsAnswer(step) ? (step.goto ?? []) : [];
+  return stepCanRoute(step) ? (step.goto ?? []) : [];
 }
 
 /** {@link ruleCount} minus the rules that can never fire. */
@@ -118,7 +127,7 @@ export function jumpTargetsAfter(
   return steps
     .map((s, i) => ({ s, i }))
     .filter(({ s, i }) => i > index && (offered(i) || keep.includes(s.key)))
-    .map(({ s, i }) => ({ key: s.key, label: s.question?.trim() || `${fallback} ${i + 1}` }));
+    .map(({ s, i }) => ({ key: s.key, label: stepQuestionText(s).trim() || `${fallback} ${i + 1}` }));
 }
 
 /** The human label for an option value on a choice/dropdown step (falls back to the raw value). */
@@ -174,7 +183,7 @@ export function describeCondition(
   const field = onScore
     ? labels.score
     : source
-      ? source.question?.trim() || labels.fallbackQuestion(sourceIndex)
+      ? stepQuestionText(source).trim() || labels.fallbackQuestion(sourceIndex)
       : cond.field;
   const dangling = !onScore && !source;
 

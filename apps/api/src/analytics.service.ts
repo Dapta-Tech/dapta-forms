@@ -13,6 +13,7 @@ import {
   type SubmissionsSummary,
   type SummaryAnswer,
   type SummaryRow,
+  stepQuestionText,
 } from '@quill/engine';
 import type { Db } from '@quill/db';
 import {
@@ -295,7 +296,7 @@ export class AnalyticsService {
       dropoff.push({
         stepIndex: i,
         key: steps[i]!.key,
-        question: steps[i]!.question?.trim() || steps[i]!.key,
+        question: stepQuestionText(steps[i]!).trim() || steps[i]!.key,
         isCover: false,
         views: viewsAtStep,
         dropoff: drop,

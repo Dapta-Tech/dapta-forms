@@ -87,4 +87,14 @@ describe('the link page body reader', () => {
     expect(isMcpPost({ method: 'GET', url: '/mcp', headers: h })).toBe(false);
     expect(isMcpPost({ method: 'POST', url: '/mcp/x', headers: h })).toBe(false);
   });
+
+  it('also reads the writes of several pages: a new page and one page by id, nothing else', () => {
+    const h = { 'content-type': 'application/json' };
+    expect(isLinkPageWrite({ method: 'POST', url: '/v1/link-pages', headers: h })).toBe(true);
+    expect(isLinkPageWrite({ method: 'PUT', url: '/v1/link-pages/abc-123', headers: h })).toBe(true);
+    expect(isLinkPageWrite({ method: 'PUT', url: '/v1/link-pages/abc-123/', headers: h })).toBe(true);
+    expect(isLinkPageWrite({ method: 'POST', url: '/v1/link-pages/abc/duplicate', headers: h })).toBe(false);
+    expect(isLinkPageWrite({ method: 'DELETE', url: '/v1/link-pages/abc', headers: h })).toBe(false);
+    expect(isLinkPageWrite({ method: 'PUT', url: '/v1/link-pages/a/b', headers: h })).toBe(false);
+  });
 });

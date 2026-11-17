@@ -1,7 +1,10 @@
 import { getMessages } from '@quill/shared';
-import { adminApi, isAdminRole } from '@/lib/admin-api';
+import { adminApi, isAdminRole, type AttributionStatus } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { signupHref } from '@/lib/growth';
+import { daptaAiUrl } from '@/lib/dapta-ai-url';
 import { BrandKitPanel } from './brand-kit-panel';
+import { AttributionSetting } from './attribution-setting';
 import { ManagingChip } from '../_components/managing-chip';
 
 export const dynamic = 'force-dynamic';
@@ -20,10 +23,17 @@ export default async function BrandKitPage() {
   const messages = getMessages(locale).admin;
   const bk = messages.brandKit;
 
-  const [me, branding, forms] = await Promise.all([
+  // The attribution row exists only where the deployment draws the
+  // attribution at all: with no signup URL (or NEXT_PUBLIC_HIDE_BADGE) nothing
+  // ever shows, and a switch for it would be a dead control.
+  const attributionOn = signupHref('form-button') !== null;
+  const [me, branding, forms, attribution] = await Promise.all([
     adminApi.me(),
     adminApi.getBranding(),
     adminApi.listForms(),
+    // An API older than the setting has no route: the row is left out rather
+    // than failing the whole page.
+    attributionOn ? adminApi.attributionStatus().catch((): AttributionStatus | null => null) : null,
   ]);
 
   return (
@@ -37,6 +47,20 @@ export default async function BrandKitPage() {
         design={messages.editor.design}
         locale={locale}
         workspaceName={me.accountName}
+        topRow={
+          attribution ? (
+            // Keyed: an element made here and placed by the client panel among
+            // its own rows reads to React as a list child, and warned without it.
+            <AttributionSetting
+              key="attribution"
+              first
+              initial={attribution}
+              canEdit={isAdminRole(me.role)}
+              daptaAiUrl={daptaAiUrl()}
+              m={messages.attributionSetting}
+            />
+          ) : null
+        }
         heading={
           <>
             <h2 className="text-xl font-semibold tracking-tight">{bk.title}</h2>

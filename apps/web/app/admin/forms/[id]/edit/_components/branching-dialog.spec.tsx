@@ -140,6 +140,16 @@ describe('BranchingDialog — every block is the editor (R7)', () => {
     expect(byTestId(els, 'branching-never-appears')).toBeUndefined();
   });
 
+  it('offers NO Always-go-to on a checkbox: the runtime ignores its goto (#128)', () => {
+    const els = render({
+      steps: [
+        choice('budget', 'Budget?'),
+        { key: 'consent', type: 'checkbox', question: 'Acepto', goto: [{ values: ['*'], target: null }] },
+      ],
+    });
+    expect(allByTestId(els, 'branching-always')).toHaveLength(1);
+  });
+
   it('reports a stale catch-all on a message card as no logic at all', () => {
     // Written before `*` was restricted, or by an older build. It stays in the
     // config — but it must not raise a badge, colour a border or count.

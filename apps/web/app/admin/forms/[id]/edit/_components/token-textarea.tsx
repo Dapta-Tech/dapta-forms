@@ -2,7 +2,7 @@
 
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { FormStep } from '@quill/engine';
-import { FULL_NAME_TOKEN, isInputlessStep, nameFields } from '@quill/engine';
+import { FULL_NAME_TOKEN, isInputlessStep, nameFields, stepQuestionText } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
 
@@ -74,7 +74,7 @@ export function tokenOptionsBefore(steps: FormStep[], index: number): TokenOptio
     for (const key of stepTokenKeys(s)) {
       if (seen.has(key)) continue; // duplicate keys: the earliest capture wins
       seen.add(key);
-      out.push({ key, label: s.question?.trim() || `${i + 1} · ${s.key}`, icon: iconForStep(s) });
+      out.push({ key, label: stepQuestionText(s).trim() || `${i + 1} · ${s.key}`, icon: iconForStep(s) });
     }
   });
   return out;
@@ -99,10 +99,12 @@ export function recallTokenOptionsBefore(steps: FormStep[], index: number): Toke
   const out: TokenOption[] = [];
   const seen = new Set<string>();
   steps.slice(0, Math.max(0, index)).forEach((s, i) => {
+    // A checkbox is consent, not copy: it is never offered as a token.
+    if (s.type === 'checkbox') return;
     for (const key of stepRecallKeys(s)) {
       if (seen.has(key)) continue; // duplicate keys: the earliest capture wins
       seen.add(key);
-      out.push({ key, label: s.question?.trim() || `${i + 1} · ${s.key}`, icon: iconForStep(s) });
+      out.push({ key, label: stepQuestionText(s).trim() || `${i + 1} · ${s.key}`, icon: iconForStep(s) });
     }
   });
   return out;

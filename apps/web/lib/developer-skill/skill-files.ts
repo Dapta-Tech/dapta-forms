@@ -76,7 +76,7 @@ Authorization: Bearer $DFORMS_API_KEY
 5. **On a 429, wait.** Sleep the number of seconds in the \`Retry-After\` header (also \`retryAfterSec\` in the body), then continue. The limit is 120 requests per minute per key.
 6. **Fix every issue at once.** A 400 lists all problems in \`issues[]\`. Each \`path\` is the field's dot path inside the request body, so it starts with the body's own key: \`config.steps.2.flowGroup\` on \`POST /v1/forms\` and \`PUT /v1/forms/{id}\`, \`destinations.0.settings.timeoutMs\` on \`PUT /v1/forms/{id}/destinations\`. Correct all of them before sending again.
 7. **Respect other people's edits.** A 409 \`STALE\` means someone saved the form since you read it. Take the form from \`current\` in the error body, apply your change again on top of it, and retry with its \`updatedAt\`. Never drop their changes.
-8. **Destinations have their own route.** Webhooks and HubSpot are set with \`PUT /v1/forms/{id}/destinations\`. \`PUT /v1/forms/{id}\` ignores \`destinations\` inside the config: they are not saved, and the live ones stay as they are.
+8. **Destinations have their own route.** Webhooks, HubSpot, Google Sheets and Salesforce are set with \`PUT /v1/forms/{id}/destinations\`. \`PUT /v1/forms/{id}\` ignores \`destinations\` inside the config: they are not saved, and the live ones stay as they are.
 
 ## Step types
 
@@ -86,7 +86,8 @@ Pick the \`type\` that matches what the step asks. \`name\`, \`email\` and \`pho
 |---|---|
 | \`name\` | The person's name. Always this type when the form asks for a name, never \`text\`. It collects first and last name by default. |
 | \`email\` | An email address. |
-| \`phone\` | A phone number. |
+| \`phone\` | A phone number. Its placeholder replaces the automatic number mask; leave it out to keep the mask. |
+| \`checkbox\` | One box to tick, such as consent to a privacy policy. \`question\` is the text beside the box and can carry links as \`[text](https://url)\`. Checked is stored as \`true\`; unchecked stores nothing. \`required: true\` blocks submit until it is checked. |
 | \`multiple_choice\` | Pick from a few options shown at once. Options score with \`points\`. |
 | \`dropdown\` | Pick from a long list. Options score with \`points\`. |
 | \`slider\` | A number on a range. Scores with \`sliderScoring\`. |
@@ -103,8 +104,11 @@ Pick the \`type\` that matches what the step asks. \`name\`, \`email\` and \`pho
 - **\`@score\`** is the running score: the points of the steps shown before this one, without counting the step itself. Only \`gt\`, \`lt\`, \`eq\` and \`between\` apply to it. Put a step gated by score after the last scored question, or the questions after it never count toward the gate. See \`recipes/gate-a-step-by-score.md\`.
 - **Placeholders:** \`[step_key]\` inserts an answer into a step's \`question\` and \`helper\`, an outcome's \`label\` and \`message\`, the \`ending\` texts, a reveal step's texts and a \`redirectUrl\` (percent-encoded there). A question can only use answers from steps before it.
   - When the form runs embedded (in an iframe or with \`?embed=1\`), a \`redirectUrl\` never carries answers: every query parameter with a placeholder is dropped and the rest of the URL is kept. Placeholders reach the redirect only on the form's own page.
+  - \`ending.forwardUtm: true\` appends the visitor's \`utm_*\` parameters to every redirect: the \`ending\` one, an outcome's own \`redirectUrl\` and the redirect after a booking. A \`utm_*\` key already written in the URL is kept and never overwritten. The UTMs are forwarded when the form is embedded too, because they are not answers. Absent or \`false\` forwards nothing.
+  - Answers placed in a \`redirectUrl\` (an email, say) end up in the destination site's browser history and server logs. Prefer a non-identifying answer, or none.
   - A \`name\` step stores \`firstname\` and \`lastname\`, never \`name\`. It exposes \`[firstname]\`, \`[lastname]\` and \`[name]\`, the full name. If a step's own \`key\` is \`name\` and it is not a \`name\` step, \`[name]\` is that step's answer.
   - A placeholder with no answer disappears with the comma or space that joined it: \`"Thanks, [name]!"\` reads \`"Thanks!"\`.
+  - A checkbox step does not take placeholders in its question.
 - **Notification emails** use \`{{token}}\` markers instead: \`{{formName}}\`, \`{{respondentName}}\` (the full name), \`{{respondentEmail}}\`, \`{{score}}\`, \`{{outcomeLabel}}\`, \`{{formLink}}\` and \`{{answers}}\`.
 
 ## Form lifecycle
@@ -217,13 +221,16 @@ Each item has \`id\`, \`data\` (answers keyed by step key), \`score\`, \`started
 
 ## Workspace settings a key can use
 
-Everything here except reading the brand kit, the link page and the integrations needs a key whose owner is an owner or admin of the workspace; a member's key gets 403 \`FORBIDDEN\`. Any member's key can also write the link page.
+Everything here except reading the brand kit, the link pages and the integrations needs a key whose owner is an owner or admin of the workspace; a member's key gets 403 \`FORBIDDEN\`. Any member's key can also write the link pages.
 
 | Method | Path | What it does |
 |---|---|---|
 | GET, PUT | \`/v1/branding\` | The workspace brand kit. Reading it works with any key. |
 | POST | \`/v1/branding/apply\`, \`/v1/branding/revert\` | Apply the kit to forms, or undo it. Body \`{ "formIds": [...] }\`. |
-| GET, PUT | \`/v1/link-page\` | The workspace's public page at \`/{accountCode}\`. \`PUT\` replaces the whole page: body \`{ "page": { "version": 1, "enabled", "name", "bio", "logo", "items", "socials" } }\`, or \`{ "page": null }\` to delete it. Read it first and send it back whole; a stored WhatsApp number comes back as digits, send it with a leading \`+\`. |
+| GET, PUT | \`/v1/link-page\` | The workspace's DEFAULT public page, at \`/{accountCode}\`. \`PUT\` replaces the whole page: body \`{ "page": { "version": 1, "enabled", "name", "bio", "logo", "items", "socials", "colors" } }\`, or \`{ "page": null }\` to delete it when it is the only page. Read it first and send it back whole; a stored WhatsApp number comes back as digits, send it with a leading \`+\`. |
+| GET, POST | \`/v1/link-pages\` | Every public page of the workspace (up to 20; the others live at \`/{accountCode}/p/{slug}\`), or add one: body \`{ "name"?, "slug"?, "page"? }\`. The first page becomes the default. |
+| GET, PUT, DELETE | \`/v1/link-pages/{id}\` | One page. \`PUT\` body \`{ "name"?, "slug"?, "isDefault"?: true, "page"? }\`: only the fields sent change, and a new slug keeps the old one redirecting. \`DELETE\` answers 409 \`DEFAULT_PAGE\` on the default page. |
+| POST | \`/v1/link-pages/{id}/duplicate\` | Copy a page, unpublished, under a new slug. Body \`{ "name"?, "slug"? }\`. |
 | GET | \`/v1/notifications\` | The workspace's email notifications. |
 | PUT | \`/v1/notifications/{emailKey}\` | Change one. Body \`{ "enabled"?, "subject"?, "body"?, "recipients"? }\`. |
 | POST | \`/v1/notifications/{emailKey}/reset\` | Back to the default. |
@@ -264,6 +271,7 @@ Every error is JSON with a stable \`error\` code and an English \`message\`:
 |---|---|---|
 | 400 | \`BAD_REQUEST\` | Read \`issues[]\`, fix every entry, send again. |
 | 400 | \`STEPS_REQUIRED\` | A \`PUT /v1/forms/{id}\` config without \`steps\`. Send the full \`steps\` array. |
+| 400 | \`INTEGRATION_NOT_CONNECTED\` | A new or changed Google Sheets or Salesforce destination, switched on, for a provider the workspace has not connected (on \`PUT /v1/forms/{id}/destinations\` or in the config of \`POST /v1/forms\`). An entry sent back exactly as stored is kept. Give the user \`integrationsUrl\`: connecting happens in their browser. Then send the destinations again. With \`unavailable: true\` this dForms deployment cannot connect the provider at all: there is nothing to connect and the same call is refused again, so leave that destination out or switched off and tell the user whoever runs the deployment has to set it up. |
 | 401 | \`INVALID_API_KEY\` | The key is unknown, revoked, or its owner is no longer in the workspace. Ask the user for a new key. |
 | 403 | \`KEY_NOT_ALLOWED\` | This route is dashboard only. Tell the user to do it in dForms. |
 | 403 | \`WORKSPACE_FORBIDDEN\` | You sent a workspace header for another workspace. Drop the header. |

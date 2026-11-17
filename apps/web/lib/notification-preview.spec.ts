@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasToken, interpolate, NOTIFICATION_SAMPLE } from './notification-preview';
+import { hasToken, interpolate, interpolateBody, mockBodyLines, notificationSampleFor, NOTIFICATION_SAMPLE } from './notification-preview';
 
 describe('notification preview interpolate', () => {
   it('substitutes known {{tokens}} from the sample and tolerates whitespace', () => {
@@ -54,5 +54,33 @@ describe('hasToken', () => {
     expect(hasToken('{{answers }}', 'answers')).toBe(true);
     expect(hasToken('{{formName}} answers', 'answers')).toBe(false);
     expect(hasToken('', 'answers')).toBe(false);
+  });
+});
+
+describe('preview of a form with no scoring', () => {
+  const body = 'Recibiste una nueva respuesta en "{{formName}}".\nDe: {{respondentEmail}}\nPuntuación: {{score}}\nResultado: {{outcomeLabel}}\n\n{{answers}}';
+
+  it('drops the score and outcome lines, as the email does', () => {
+    const text = interpolateBody(body, notificationSampleFor(false));
+    expect(text).not.toMatch(/Puntuación|Resultado/);
+    expect(text).toContain('De: lead@acme.io');
+    const lines = mockBodyLines(body, notificationSampleFor(false));
+    const flat = JSON.stringify(lines);
+    expect(flat).not.toMatch(/Puntuación|Resultado/);
+  });
+
+  it('keeps them with scoring, and keeps a line with no tokens or with other values', () => {
+    expect(interpolateBody(body, notificationSampleFor(true))).toContain('Puntuación: 15');
+    expect(interpolateBody('Gracias.\nPuntos: {{score}} de {{formName}}', notificationSampleFor(false))).toBe(
+      'Gracias.\nPuntos:  de Lead Qualifier',
+    );
+  });
+});
+
+describe('preview keeps a link the owner wrote', () => {
+  it('keeps a line with an empty token when it carries a link, as the server does', () => {
+    const lines = mockBodyLines('Hi {{score}}. Book: https://calendly.com/x', notificationSampleFor(false));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.some((s) => s.kind === 'link' && s.href === 'https://calendly.com/x')).toBe(true);
   });
 });

@@ -11,7 +11,7 @@
  * text bodies read naturally while the HTML path stays XSS-safe (E8).
  */
 
-import { answersTableHtml, type AnswerRow } from './render-html';
+import { answersTableHtml, autolinkEscaped, linkHtml, type AnswerRow } from './render-html';
 import { escapeHtml } from './util';
 
 /** The two supported notification languages. Mirrors @quill/shared `Locale`. */
@@ -204,7 +204,7 @@ export function htmlTokenValues(v: ReceivedCopyVars): Record<NotificationToken, 
     respondentEmail: escapeHtml(text.respondentEmail),
     score: escapeHtml(text.score),
     outcomeLabel: escapeHtml(text.outcomeLabel),
-    formLink: escapeHtml(text.formLink),
+    formLink: linkHtml(text.formLink),
     answers: answersTableHtml(v.answers ?? []),
   };
 }
@@ -244,6 +244,11 @@ export interface RenderedBodyLines {
  * token; `escapeHtml` never touches `{{`, so the markers survive the escape.
  * An unknown token stays literal on both sides and counts as visible content.
  */
+/** True when the template line itself (not a token value) carries an http(s) URL. */
+function hasOwnerLink(line: string): boolean {
+  return /https?:\/\/[^/?#\s]/i.test(line.replace(TOKEN_RE, ''));
+}
+
 export function renderBodyLines(
   template: string,
   textValues: Record<string, string>,
@@ -253,12 +258,22 @@ export function renderBodyLines(
   const html: string[] = [];
   for (const line of template.replace(/\r\n?/g, '\n').split('\n')) {
     const names = [...line.matchAll(TOKEN_RE)].map((m) => m[1]!);
-    if (names.length > 0 && names.every((name) => textValues[name] === '')) continue;
+    // A line whose tokens all came out empty is dropped (`Score: {{score}}` on a
+    // form with no scoring), unless the owner wrote a link on it: dropping
+    // "Gracias {{respondentName}}. Agenda: https://..." would lose the link.
+    if (
+      names.length > 0 &&
+      names.every((name) => textValues[name] === '') &&
+      !hasOwnerLink(line)
+    ) {
+      continue;
+    }
     const rendered = interpolateTokens(line, textValues);
     // A blank spacer stays; a run of blanks (from dropped lines) collapses.
     if (rendered.trim() === '' && (text.length === 0 || text[text.length - 1]!.trim() === '')) continue;
     text.push(rendered);
-    html.push(interpolateTokens(escapeHtml(line), htmlValues));
+    // URLs the owner wrote become links; token values (respondent input) never do.
+    html.push(interpolateTokens(autolinkEscaped(escapeHtml(line)), htmlValues));
   }
   while (text.length > 0 && text[text.length - 1]!.trim() === '') {
     text.pop();

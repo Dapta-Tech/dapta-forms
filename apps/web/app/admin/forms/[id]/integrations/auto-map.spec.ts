@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
+import type { FormStep } from '@quill/engine';
+import { getMessages } from '@quill/shared';
+import { mappableQuestions, propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 
 /** A representative slice of a real HubSpot contact-property list. */
 const HUBSPOT = propertyLookup([
@@ -91,5 +93,124 @@ describe('file questions', () => {
     expect(
       suggestProperty(q({ key: 'site', label: 'Attach your website export', type: 'file' }), HUBSPOT),
     ).toBeNull();
+  });
+});
+
+/**
+ * A `name` question stores its answer flat, under each sub-field (`firstname`,
+ * `lastname`), never under its own key. The pickers used to offer the step key,
+ * so mapping "Full name" to a CRM field wrote nothing on every delivery.
+ */
+describe('mappableQuestions', () => {
+  const en = getMessages('en').admin.integrations;
+  const es = getMessages('es').admin.integrations;
+  const PARTS_EN = { first: en.nameFirstPart, last: en.nameLastPart };
+  const PARTS_ES = { first: es.nameFirstPart, last: es.nameLastPart };
+  const step = (s: Partial<FormStep> & Pick<FormStep, 'key' | 'type'>): FormStep => s as FormStep;
+
+  it('offers a name question as its two stored answers, never its own key', () => {
+    const out = mappableQuestions([step({ key: 'nombre_completo', type: 'name', question: 'Nombre y Apellido' })], PARTS_ES);
+    expect(out).toEqual([
+      { key: 'firstname', label: 'Nombre y Apellido · Nombre', type: 'name', namePart: 'first' },
+      { key: 'lastname', label: 'Nombre y Apellido · Apellido', type: 'name', namePart: 'last' },
+    ]);
+    expect(out.map((q) => q.key)).not.toContain('nombre_completo');
+  });
+
+  it('uses the step’s own sub-field labels when it has them', () => {
+    const out = mappableQuestions(
+      [step({ key: 'name', type: 'name', question: 'Full name', fieldLabels: { firstname: 'Given', lastname: '  ' } })],
+      PARTS_EN,
+    );
+    // A blank label is no label: that half falls back to the catalog.
+    expect(out.map((q) => q.label)).toEqual(['Full name · Given', `Full name · ${en.nameLastPart}`]);
+  });
+
+  it('follows custom sub-field keys, which is where those answers are stored', () => {
+    const out = mappableQuestions([step({ key: 'who', type: 'name', question: 'Who', fields: ['nombre', 'apellidos'] })], PARTS_EN);
+    expect(out.map((q) => [q.key, q.namePart])).toEqual([
+      ['nombre', 'first'],
+      ['apellidos', 'last'],
+    ]);
+  });
+
+  it('keeps every other question as one entry, in form order, and leaves out messages', () => {
+    const out = mappableQuestions(
+      [
+        step({ key: 'intro', type: 'message', question: 'Welcome' }),
+        step({ key: 'email', type: 'email', question: 'Email' }),
+        step({ key: 'name', type: 'name', question: '' }),
+        step({ key: 'size', type: 'dropdown', question: '  ' }),
+      ],
+      PARTS_EN,
+    );
+    expect(out).toEqual([
+      { key: 'email', label: 'Email', type: 'email' },
+      // An untitled question is labelled by its key, as before.
+      { key: 'firstname', label: `name · ${en.nameFirstPart}`, type: 'name', namePart: 'first' },
+      { key: 'lastname', label: `name · ${en.nameLastPart}`, type: 'name', namePart: 'last' },
+      { key: 'size', label: 'size', type: 'dropdown' },
+    ]);
+  });
+
+  it('shows a question with recall tokens the way a respondent without that answer reads it', () => {
+    const qs = mappableQuestions(
+      [
+        { key: 'name_1', type: 'name', question: 'What is your name?' } as FormStep,
+        { key: 'email', type: 'email', question: 'Nice to meet you, [firstname]! What is your email?' } as FormStep,
+        { key: 'role', type: 'text', question: '[firstname], what is your role?' } as FormStep,
+        { key: 'only', type: 'text', question: '[firstname]' } as FormStep,
+      ],
+      PARTS_EN,
+    );
+    const label = (key: string) => qs.find((q) => q.key === key)?.label;
+    expect(label('email')).toBe('Nice to meet you! What is your email?');
+    expect(label('role')).toBe('What is your role?');
+    // Nothing left but the token: the key keeps the row named.
+    expect(label('only')).toBe('only');
+    for (const q of qs) expect(q.label).not.toMatch(/\[[a-z0-9_]+\]/i);
+  });
+
+  it('leaves out reveal screens, which collect nothing', () => {
+    const qs = mappableQuestions(
+      [
+        { key: 'email', type: 'email', question: 'Email' } as FormStep,
+        { key: 'reveal_1', type: 'reveal', question: 'Your score' } as FormStep,
+        { key: 'intro', type: 'message', question: 'Welcome' } as FormStep,
+      ],
+      PARTS_EN,
+    );
+    expect(qs.map((q) => q.key)).toEqual(['email']);
+  });
+
+  it('offers a key once when two questions store the same answer', () => {
+    const out = mappableQuestions(
+      [
+        step({ key: 'a', type: 'name', question: 'First ask' }),
+        step({ key: 'b', type: 'name', question: 'Second ask' }),
+      ],
+      PARTS_EN,
+    );
+    expect(out.map((q) => q.key)).toEqual(['firstname', 'lastname']);
+    expect(out[0]!.label).toContain('First ask');
+  });
+
+  it('auto-maps the two halves to first name and last name, whatever the question says', () => {
+    // "Apellido" is in both labels (the question names both halves), so a
+    // keyword sweep alone would send the first name to `lastname`.
+    const [first, last] = mappableQuestions([step({ key: 'n', type: 'name', question: 'Nombre y Apellido' })], PARTS_ES);
+    expect(suggestProperty(first!, HUBSPOT)).toBe('firstname');
+    expect(suggestProperty(last!, HUBSPOT)).toBe('lastname');
+    const [cFirst, cLast] = mappableQuestions(
+      [step({ key: 'n', type: 'name', question: 'Your company contact', fields: ['given', 'family'] })],
+      PARTS_EN,
+    );
+    expect(suggestProperty(cFirst!, HUBSPOT)).toBe('firstname');
+    expect(suggestProperty(cLast!, HUBSPOT)).toBe('lastname');
+  });
+
+  it('suggests nothing for a half the portal has no property for', () => {
+    const [, last] = mappableQuestions([step({ key: 'n', type: 'name', question: 'Name' })], PARTS_EN);
+    expect(suggestProperty(last!, propertyLookup([{ name: 'firstname' }]))).toBeNull();
   });
 });

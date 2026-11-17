@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  onePageRows,
+  nameFieldLabels,
+  HALF_WIDTH_TYPES,
+  canHalfWidth,
   visibleSteps,
   validateAnswer,
   validateAnswerCode,
@@ -49,6 +53,8 @@ import {
   interpolateUrl,
   stripUrlTokens,
   redirectUrlFor,
+  appendUtm,
+  forwardedUtm,
   resolveFormLayout,
   FORM_LAYOUTS,
   type FormConfig,
@@ -56,6 +62,7 @@ import {
   type FormOutcome,
   type StepCondition,
   type Answers,
+  contactKeyReadiness,
 } from './form-logic';
 
 const step = (partial: Partial<FormStep> & Pick<FormStep, 'key' | 'type'>): FormStep => partial;
@@ -1710,6 +1717,216 @@ describe('redirectUrlFor', () => {
   });
 });
 
+describe('appendUtm (forward the visitor UTM params to a redirect)', () => {
+  const utm = { utm_source: 'google', utm_campaign: 'spring sale' };
+
+  it('appends every utm_* entry, encoded, keeping the query and the hash', () => {
+    expect(appendUtm('https://example.com/thanks?ref=form#top', utm)).toBe(
+      'https://example.com/thanks?ref=form&utm_source=google&utm_campaign=spring%20sale#top',
+    );
+  });
+
+  it('leaves the existing query bytes exactly as they were', () => {
+    expect(appendUtm('https://example.com/w?who=Ana%20Ruiz&x=a+b', { utm_source: 'g' })).toBe(
+      'https://example.com/w?who=Ana%20Ruiz&x=a+b&utm_source=g',
+    );
+    expect(appendUtm('https://example.com/w?', { utm_source: 'g' })).toBe(
+      'https://example.com/w?utm_source=g',
+    );
+  });
+
+  it('never overwrites a utm_* key the owner already wrote, case-insensitively', () => {
+    expect(appendUtm('https://example.com/t?UTM_SOURCE=newsletter', utm)).toBe(
+      'https://example.com/t?UTM_SOURCE=newsletter&utm_campaign=spring%20sale',
+    );
+    expect(appendUtm('https://example.com/t?utm_source=newsletter&utm_campaign=x', utm)).toBe(
+      'https://example.com/t?utm_source=newsletter&utm_campaign=x',
+    );
+  });
+
+  it('ignores keys that are not utm_*', () => {
+    const mixed = { gclid: 'abc', email: 'a@b.co', utm_medium: 'cpc' };
+    expect(appendUtm('https://example.com/t', mixed)).toBe('https://example.com/t?utm_medium=cpc');
+  });
+
+  it('returns the url byte-identical when there is nothing to append', () => {
+    const url = 'https://example.com/w?who=Ana%20Ruiz&x=a+b#h';
+    expect(appendUtm(url, {})).toBe(url);
+    expect(appendUtm(url, { gclid: 'abc' })).toBe(url);
+    expect(appendUtm('https://example.com/t?utm_source=a', { utm_source: 'b' })).toBe(
+      'https://example.com/t?utm_source=a',
+    );
+  });
+
+  it('trims a stored url before appending, so no space lands before the ?', () => {
+    expect(appendUtm('https://x.com/p ', { utm_source: 'a' })).toBe('https://x.com/p?utm_source=a');
+  });
+
+  it('puts the UTMs before the # of a hash-routed destination, fragment untouched', () => {
+    expect(appendUtm('https://x.com/#/r?utm_source=a', { utm_source: 'b' })).toBe(
+      'https://x.com/?utm_source=b#/r?utm_source=a',
+    );
+  });
+
+  it('returns an unparseable url unchanged', () => {
+    expect(appendUtm('not a url', utm)).toBe('not a url');
+  });
+
+  it('forwards only plain utm_ keys, so a bracket key never shadows the owner one', () => {
+    // PHP reads `utm_source[]=x` as an array that wins over `utm_source`.
+    const hostile = {
+      'utm_source[]': 'x',
+      'utm_source[a]': 'x',
+      'utm_a.b': 'x',
+      'utm_a-b': 'x',
+      utm_: 'x',
+      utm_medium: 'cpc',
+    };
+    expect(appendUtm('https://example.com/t?utm_source=newsletter', hostile)).toBe(
+      'https://example.com/t?utm_source=newsletter&utm_medium=cpc',
+    );
+  });
+
+  it('encodes hostile values, so they never add a parameter or a fragment', () => {
+    const out = appendUtm('https://example.com/t?ref=a#top', {
+      utm_source: 'a&utm_medium=evil',
+      utm_campaign: 'x#frag',
+      utm_term: 'already%20encoded',
+    });
+    expect(out).toBe(
+      'https://example.com/t?ref=a&utm_source=a%26utm_medium%3Devil&utm_campaign=x%23frag&utm_term=already%2520encoded#top',
+    );
+    const params = new URL(out).searchParams;
+    expect(params.get('utm_source')).toBe('a&utm_medium=evil');
+    expect(params.get('utm_term')).toBe('already%20encoded');
+    expect(params.has('utm_medium')).toBe(false);
+    expect(new URL(out).hash).toBe('#top');
+  });
+
+  it('forwards at most 10 keys and skips a value longer than 200 characters', () => {
+    const many: Record<string, string> = {};
+    for (let i = 1; i <= 12; i++) many[`utm_k${i}`] = 'v';
+    const out = new URL(appendUtm('https://example.com/t', many));
+    expect([...out.searchParams.keys()]).toEqual(
+      Array.from({ length: 10 }, (_, i) => `utm_k${i + 1}`),
+    );
+    const long = appendUtm('https://example.com/t', {
+      utm_source: 'a'.repeat(201),
+      utm_medium: 'b'.repeat(200),
+    });
+    expect(long).toBe(`https://example.com/t?utm_medium=${'b'.repeat(200)}`);
+  });
+
+  it('counts the 10-key cap after dropping the keys the owner already wrote', () => {
+    // 11 visitor keys, one of them already in the URL: the other 10 all go.
+    const many: Record<string, string> = { utm_source: 'visitor' };
+    for (let i = 1; i <= 10; i++) many[`utm_k${i}`] = 'v';
+    const out = new URL(appendUtm('https://example.com/t?utm_source=newsletter', many));
+    expect(out.searchParams.get('utm_source')).toBe('newsletter');
+    expect([...out.searchParams.keys()]).toEqual([
+      'utm_source',
+      ...Array.from({ length: 10 }, (_, i) => `utm_k${i + 1}`),
+    ]);
+  });
+
+  it('skips a key longer than 64 characters', () => {
+    const longest = `utm_${'k'.repeat(60)}`;
+    const tooLong = `utm_${'k'.repeat(61)}`;
+    expect(longest).toHaveLength(64);
+    expect(appendUtm('https://example.com/t', { [tooLong]: 'x', [longest]: 'y' })).toBe(
+      `https://example.com/t?${longest}=y`,
+    );
+  });
+});
+
+describe('forwardedUtm', () => {
+  const utm = { utm_source: 'google' };
+  it('hands the UTMs through only when the form forwards them', () => {
+    const on: FormConfig = { version: 1, steps: [], ending: { forwardUtm: true } };
+    const off: FormConfig = { version: 1, steps: [], ending: { forwardUtm: false } };
+    expect(forwardedUtm(on, utm)).toEqual(utm);
+    expect(forwardedUtm(off, utm)).toBeUndefined();
+    expect(forwardedUtm({ version: 1, steps: [] }, utm)).toBeUndefined();
+    expect(forwardedUtm(on, undefined)).toBeUndefined();
+  });
+});
+
+describe('redirectUrlFor with forwarded UTMs', () => {
+  it('appends the UTMs after the tokens are filled or stripped', () => {
+    const url = 'https://example.com/w?who=[name]';
+    const answers = { name: 'Ana' };
+    expect(redirectUrlFor(url, answers, false, { utm_source: 'x' })).toBe(
+      'https://example.com/w?who=Ana&utm_source=x',
+    );
+    expect(redirectUrlFor(url, answers, true, { utm_source: 'x' })).toBe(
+      'https://example.com/w?utm_source=x',
+    );
+  });
+});
+
+describe('resolveEnding: forwardUtm', () => {
+  const utm = { utm_source: 'google', utm_medium: 'cpc' };
+  const base: FormConfig = {
+    version: 1,
+    steps: [],
+    ending: { redirectUrl: 'https://example.com/hi?n=[name]', forwardUtm: true },
+  };
+  const answers = { name: 'Ana' };
+
+  it('appends the UTMs to the form-level redirect when forwardUtm is on', () => {
+    expect(resolveEnding(base, null, answers, { utm }).redirectUrl).toBe(
+      'https://example.com/hi?n=Ana&utm_source=google&utm_medium=cpc',
+    );
+  });
+
+  it('leaves the redirect alone when forwardUtm is off or absent', () => {
+    const off: FormConfig = { ...base, ending: { ...base.ending, forwardUtm: false } };
+    expect(resolveEnding(off, null, answers, { utm }).redirectUrl).toBe(
+      'https://example.com/hi?n=Ana',
+    );
+    const absent: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com/hi' },
+    };
+    expect(resolveEnding(absent, null, answers, { utm }).redirectUrl).toBe(
+      'https://example.com/hi',
+    );
+  });
+
+  it('embedded: strips the answer tokens but still forwards the UTMs', () => {
+    const out = resolveEnding(base, null, answers, { embedded: true, utm }).redirectUrl;
+    expect(out).toBe('https://example.com/hi?utm_source=google&utm_medium=cpc');
+    expect(out).not.toContain('Ana');
+  });
+
+  it('forwards the UTMs to an outcome that brings its own URL', () => {
+    const own: FormOutcome = { id: 'o', label: '', redirectUrl: 'https://example.com/vip' };
+    expect(resolveEnding(base, own, answers, { utm }).redirectUrl).toBe(
+      'https://example.com/vip?utm_source=google&utm_medium=cpc',
+    );
+  });
+
+  it('an empty utm with no answers leaves the template untouched', () => {
+    expect(resolveEnding(base, null, undefined, { utm: {} }).redirectUrl).toBe(
+      'https://example.com/hi?n=[name]',
+    );
+  });
+
+  it('applies even without answers, and is a no-op with no redirect', () => {
+    const plain: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com/a', forwardUtm: true },
+    };
+    expect(resolveEnding(plain, null, undefined, { utm }).redirectUrl).toBe(
+      'https://example.com/a?utm_source=google&utm_medium=cpc',
+    );
+    const none: FormConfig = { version: 1, steps: [], ending: { forwardUtm: true } };
+    expect(resolveEnding(none, null, answers, { utm }).redirectUrl).toBeNull();
+  });
+});
+
 describe('resolveEnding (V5-B1 — outcome → form → built-in)', () => {
   const outcome = (over: Partial<FormOutcome> = {}): FormOutcome => ({ id: 'o', label: '', ...over });
 
@@ -2462,5 +2679,120 @@ describe('renameStepKey — logicLayout follows the key', () => {
     const { logicLayout: _dropped, ...bare } = cfg;
     const next = renameStepKey(bare, 'budget', 'annual_budget');
     expect('logicLayout' in next).toBe(false);
+  });
+});
+
+describe('onePageRows', () => {
+  type Row = Parameters<typeof onePageRows>[0][number];
+  const half = (type: Row['type'] = 'text', extra: Partial<Row> = {}): Row => ({ type, width: 'half', ...extra });
+  const full = (type: Row['type'] = 'text'): Row => ({ type });
+
+  it('an empty list has no rows; full steps get a row each', () => {
+    expect(onePageRows([])).toEqual([]);
+    expect(onePageRows([full(), full('email'), full('textarea')])).toEqual([[0], [1], [2]]);
+  });
+
+  it('pairs two consecutive half steps', () => {
+    expect(onePageRows([half(), half('email')])).toEqual([[0, 1]]);
+  });
+
+  it('a lone half between two full steps takes its own row', () => {
+    expect(onePageRows([full(), half('phone'), full()])).toEqual([[0], [1], [2]]);
+  });
+
+  it('three halves make a pair and a full row; four make two pairs; never three columns', () => {
+    expect(onePageRows([half(), half(), half()])).toEqual([[0, 1], [2]]);
+    expect(onePageRows([half(), half(), half(), half()])).toEqual([[0, 1], [2, 3]]);
+  });
+
+  it('a half on a type that cannot be half is a full row', () => {
+    for (const type of ['textarea', 'name', 'multiple_choice', 'slider', 'file', 'scheduler', 'message', 'reveal'] as const) {
+      expect(HALF_WIDTH_TYPES.has(type)).toBe(false);
+      expect(onePageRows([half(type), half('email')])).toEqual([[0], [1]]);
+      expect(onePageRows([half('email'), half(type)])).toEqual([[0], [1]]);
+    }
+    for (const type of ['text', 'email', 'phone', 'url', 'dropdown'] as const) expect(canHalfWidth({ type })).toBe(true);
+  });
+
+  it('a hidden half is a full row and does not pair with its neighbour', () => {
+    expect(canHalfWidth({ type: 'email', hidden: true })).toBe(false);
+    expect(onePageRows([half('text', { hidden: true }), half('email')])).toEqual([[0], [1]]);
+    expect(onePageRows([half(), half('email', { hidden: true }), half('phone')])).toEqual([[0], [1], [2]]);
+  });
+});
+
+describe('nameFieldLabels', () => {
+  const name = (extra: Record<string, unknown> = {}) =>
+    ({ key: 'name', type: 'name', question: 'Your name?', ...extra }) as Parameters<typeof nameFieldLabels>[0];
+
+  it('is null without labels, with blank labels, and on another step type', () => {
+    expect(nameFieldLabels(name())).toBeNull();
+    expect(nameFieldLabels(name({ fieldLabels: {} }))).toBeNull();
+    expect(nameFieldLabels(name({ fieldLabels: { firstname: '', lastname: '   ' } }))).toBeNull();
+    expect(
+      nameFieldLabels({ key: 'q', type: 'text', question: 'Q', fieldLabels: { firstname: 'Nombre' } } as Parameters<
+        typeof nameFieldLabels
+      >[0]),
+    ).toBeNull();
+  });
+
+  it('returns both labels, with an empty string where one is missing', () => {
+    expect(nameFieldLabels(name({ fieldLabels: { firstname: 'Nombre' } }))).toEqual(['Nombre', '']);
+    expect(nameFieldLabels(name({ fieldLabels: { firstname: 'Nombre', lastname: 'Apellido' } }))).toEqual([
+      'Nombre',
+      'Apellido',
+    ]);
+  });
+
+  it('reads the custom sub-field keys', () => {
+    expect(
+      nameFieldLabels(name({ fields: ['nombre', 'apellido'], fieldLabels: { firstname: 'x', apellido: 'Apellido' } })),
+    ).toEqual(['', 'Apellido']);
+  });
+});
+
+describe('emailSourceFor — a dCal scheduler supplies no address', () => {
+  const sched = (provider?: string): FormStep =>
+    ({
+      key: 'scheduler_1',
+      type: 'scheduler',
+      question: '',
+      required: true,
+      ...(provider ? { scheduler: { provider } } : {}),
+    }) as unknown as FormStep;
+
+  it('does not count a dCal scheduler, because nothing reads its invitee back', () => {
+    // Calendly is fetched after the booking; dCal is not, and its booked
+    // message carries no address on purpose. Counting it told an author their
+    // contact key was covered while every lead failed to sync.
+    expect(emailSourceFor({ version: 1, steps: [sched('dcal')] } as FormConfig)).toBeNull();
+  });
+
+  it('still counts a Calendly scheduler, and one that names no provider', () => {
+    expect(emailSourceFor({ version: 1, steps: [sched('calendly')] } as FormConfig)).toEqual({
+      kind: 'scheduler',
+      key: 'scheduler_1',
+    });
+    // Absent means Calendly, as everywhere else.
+    expect(emailSourceFor({ version: 1, steps: [sched()] } as FormConfig)).toEqual({
+      kind: 'scheduler',
+      key: 'scheduler_1',
+    });
+  });
+
+  it('prefers a real email question over any scheduler', () => {
+    const email = { key: 'email_1', type: 'email', question: '', required: true } as unknown as FormStep;
+    expect(emailSourceFor({ version: 1, steps: [sched('dcal'), email] } as FormConfig)).toEqual({
+      kind: 'question',
+      key: 'email_1',
+    });
+  });
+
+  it('reports no source at all for a form whose only scheduler is dCal', () => {
+    const readiness = contactKeyReadiness({ version: 1, steps: [sched('dcal')] } as FormConfig, {
+      scheduler: true,
+    });
+    // Not `scheduler_disconnected`: connecting Calendly would fix nothing here.
+    expect(readiness).toEqual({ ok: false, blocker: 'no_source', source: null });
   });
 });

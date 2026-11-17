@@ -25,6 +25,7 @@ import { callAction, isTransportError } from '@/lib/call-action';
 import { useAutosave } from '@/lib/use-autosave';
 import { clearDraftBackup, readDraftBackup, writeDraftBackup } from '@/lib/draft-backup';
 import { cn } from '@/lib/cn';
+import type { AttributionStatus } from '@/lib/admin-api';
 import { anchorRevealsLast } from './_components/logic-util';
 import {
   moveStep,
@@ -64,6 +65,9 @@ import { stepFromGalleryItem, stepListLabel, type GalleryItem } from './_compone
 import { TEMPLATES } from './_components/templates';
 import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
+import { publishFormSave, useCombinedSave } from '@/lib/integrations-save-status';
+import { runDestinationWrite } from '@/lib/integrations-save-queue';
+import { ConnectTabMark } from './_components/connect-tab-mark';
 import './_components/builder.css';
 
 const AUTOSAVE_MS = 900;
@@ -153,6 +157,8 @@ export function FormEditor({
   lockedValues = {},
   uploads,
   captcha,
+  showAttribution: showAttributionInitial = true,
+  attribution = null,
 }: {
   id: string;
   initialName: string;
@@ -184,8 +190,27 @@ export function FormEditor({
    * as before: the API holds nothing where it cannot check anything.
    */
   captcha?: { available: boolean };
+  /**
+   * Whether this workspace's forms carry the "Made with dForms" attribution
+   * (`/v1/me` `attribution.showing`, the API's answer). False disables the
+   * badge size in Design and drops the badge from both previews, so the
+   * builder shows what the public form will. Absent = true.
+   */
+  showAttribution?: boolean;
+  /**
+   * The workspace attribution switch, for the Design panel's "Off" option (the
+   * same setting as Brand kit). Null when the deployment draws no attribution
+   * or the read failed: the panel then offers the size alone.
+   */
+  attribution?: { initial: AttributionStatus; canEdit: boolean; daptaAiUrl: string | null } | null;
 }) {
   const bm = getBuilderMessages(locale);
+  // The switch's live state: turning it off from Design updates both previews
+  // at once, without a reload, because they read `showAttribution` from here.
+  const [attributionStatus, setAttributionStatus] = useState<AttributionStatus | null>(
+    attribution?.initial ?? null,
+  );
+  const showAttribution = attributionStatus ? attributionStatus.showing : showAttributionInitial;
   /** The publish copy, for the badge this component now draws (Publish itself reads its own). */
   const publishM = getMessages(locale).admin.publish;
   const searchParams = useSearchParams();
@@ -423,7 +448,18 @@ export function FormEditor({
     initiallyDirty: config !== initialConfig,
     debounceMs: AUTOSAVE_MS,
   });
-  const status = autosave.status;
+  // The topbar speaks for BOTH saves: the form's, and the Connect tab's
+  // integrations (a separate autosave). Whichever is worse wins, so it never
+  // says "Saved" while the integrations failed to save.
+  //
+  // Both saves feed ONE store snapshot, which the topbar and the Connect tab's
+  // save pill both render, so in any render they show the same state.
+  useEffect(() => {
+    publishFormSave(id, { status: autosave.status, detail: autosave.detail });
+  }, [id, autosave.status, autosave.detail]);
+  const shownSave = useCombinedSave(id);
+  const status = shownSave.status;
+  const statusDetailText = shownSave.detail;
 
   // --- Crash recovery: work the backup caught that never reached the server --
   const [recovery, setRecovery] = useState<EditorSnapshot | null>(null);
@@ -574,7 +610,7 @@ export function FormEditor({
       const { [oldKey]: _moved, ...rest } = prev;
       return { ...rest, [nextKey]: held };
     });
-    void callAction(() => renameQuestionMappingAction(id, oldKey, nextKey)).then((res) => {
+    void runDestinationWrite(id, () => callAction(() => renameQuestionMappingAction(id, oldKey, nextKey))).then((res) => {
       if (isTransportError(res) || (!res.ok && res.code === 'error')) {
         // The config rename already applied and autosaved; only the CRM mapping
         // is behind. Say so rather than implying the whole rename failed.
@@ -829,15 +865,19 @@ export function FormEditor({
           ? bm.shell.saveError
           : status === 'conflict'
             ? bm.shell.conflict
-            : hasQuestions
-              ? bm.shell.saved
-              : bm.shell.draft;
+            : status === 'partial'
+              ? bm.shell.savedPartial
+              : hasQuestions
+                ? bm.shell.saved
+                : bm.shell.draft;
   const statusDot =
     status === 'error' || status === 'conflict'
       ? 'bg-destructive'
-      : status === 'saving' || status === 'retrying'
-        ? 'bg-muted-foreground'
-        : 'bg-signal-edge';
+      : status === 'partial'
+        ? 'bg-warning'
+        : status === 'saving' || status === 'retrying'
+          ? 'bg-muted-foreground'
+          : 'bg-signal-edge';
   /** Kept for tests/tools reading `data-status`: an empty saved form is "draft". */
   const displayStatus = status === 'saved' && !hasQuestions ? 'draft' : status;
 
@@ -940,22 +980,41 @@ export function FormEditor({
             >
               <i aria-hidden className={`pi ${t.icon} md:!hidden`} style={{ fontSize: 14 }} />
               <span className="sr-only md:not-sr-only">{t.label}</span>
+              {t.id === 'connect' ? <ConnectTabMark formId={id} /> : null}
             </button>
           ))}
+          {/* The responses this form has collected. Not an editor section: it
+              opens the Submissions page (table, summary, CSV), which links back
+              here through its own tabs. A link rather than a `Tab`, so the old
+              `?tab=results` (now Logic → Scoring / Outcomes) keeps landing on
+              Build. */}
+          <Link
+            href={`/admin/forms/${id}/submissions`}
+            data-testid="editor-tab-results"
+            title={bm.shell.tabResults}
+            className={cn(
+              'relative inline-flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:px-3 lg:h-14',
+            )}
+          >
+            <i aria-hidden className="pi pi-inbox md:!hidden" style={{ fontSize: 14 }} />
+            <span className="sr-only md:not-sr-only">{bm.shell.tabResults}</span>
+          </Link>
         </nav>
 
         <div className="contents lg:col-start-3 lg:row-start-1 lg:flex lg:min-w-0 lg:items-center lg:justify-end lg:gap-2">
           <span
             className={cn(
               'hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground xl:inline-flex',
-              (status === 'error' || status === 'retrying') && autosave.detail ? 'cursor-help' : '',
+              (status === 'error' || status === 'retrying' || status === 'partial') && statusDetailText ? 'cursor-help' : '',
             )}
             data-testid="editor-save-status"
             data-status={displayStatus}
             // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
             title={
-              (status === 'error' || status === 'retrying') && autosave.detail
-                ? tb(m.saveErrorReason, { reason: autosave.detail })
+              (status === 'error' || status === 'retrying' || status === 'partial') && statusDetailText
+                ? status === 'partial'
+                  ? statusDetailText
+                  : tb(m.saveErrorReason, { reason: statusDetailText })
                 : undefined
             }
           >
@@ -1019,6 +1078,12 @@ export function FormEditor({
               formId={id}
               initialHasDraft={initialHasDraft}
               saveCount={saveCount}
+              // The DRAFT's own save state, not the combined one the indicator
+              // above shows: integrations save straight to the live form and are
+              // not part of what Publish publishes, so their state (a webhook
+              // with no URL is a standing `partial`) must not hold the pill.
+              saveStatus={autosave.status}
+              hasQuestions={hasQuestions}
               locale={locale}
               flush={autosave.flush}
               getSaveCount={() => saveCountRef.current}
@@ -1349,6 +1414,17 @@ export function FormEditor({
             onEndRevealChange={setEndReveal}
             onCoverChange={patchCover}
             onBrandingChange={patchBranding}
+            showAttribution={showAttribution}
+            attribution={
+              attribution && attributionStatus
+                ? {
+                    status: attributionStatus,
+                    canEdit: attribution.canEdit,
+                    daptaAiUrl: attribution.daptaAiUrl,
+                    onChange: setAttributionStatus,
+                  }
+                : null
+            }
             m={m}
           >
             <FlowPanel partialNote={bm.partial.designNote} m={m} />
@@ -1433,6 +1509,7 @@ export function FormEditor({
         name={name}
         locale={locale}
         layout={layout}
+        showAttribution={showAttribution}
         m={m.preview}
       />
     </div>

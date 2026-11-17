@@ -30,6 +30,7 @@ import {
   IamUnavailableError,
   IamWorkspacesClient,
   membershipOf,
+  paidVerdictOf,
   roleFromIam,
   type IamWorkspace,
 } from './iam-workspaces';
@@ -207,6 +208,9 @@ export class WorkspaceProjection {
         workspaceUserId: me?.id ?? null,
         role: me ? roleFromIam(me) : 'owner',
         active: me ? me.is_active !== false : true,
+        // The paid verdict this read carried, cached on the workspace for the
+        // attribution switch. Null (no field upstream) writes nothing.
+        paid: paidVerdictOf(ws),
       };
     });
     for (const wsId of revoked) {
@@ -326,6 +330,7 @@ export class WorkspaceProjection {
           workspaceUserId: me?.id ?? null,
           role: me ? roleFromIam(me) : 'owner',
           active: me ? me.is_active !== false : true,
+          paid: paidVerdictOf(ws),
         },
       ],
       { inheritOnboarding, now: this.now(), pruneMissing: false },

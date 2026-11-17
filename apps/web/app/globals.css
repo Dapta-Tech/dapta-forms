@@ -267,6 +267,13 @@ body {
   outline-offset: 2px;
 }
 
+/* The Connect tab's save pill is fixed to the bottom-right corner, which is
+   also where toasts stack (bottom-centre on a phone, under the same pill).
+   While it is on screen, toasts start above it instead of on top of it. */
+html.has-save-pill {
+  --toast-offset: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+}
+
 /* Themed scrollbars app-wide — a native white track on the dark theme is an
    automatic FAIL (Design Quality Bar §1). Thin, on-surface, transparent track;
    applies to the page and every overflow region (Firefox + WebKit). */

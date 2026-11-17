@@ -472,3 +472,43 @@ describe('POST /v1/forms drops the HubSpot mirror state', () => {
     });
   }
 });
+
+describe('POST /v1/forms drops the Google Sheets header bookkeeping', () => {
+  // A forged `headerSnapshot` would let the first heading change overwrite
+  // somebody's row 1; a forged `headerForeign` or `headerBroken` would stop
+  // the header row from ever syncing. Only the API writes these.
+  const state = { spreadsheetId: 'sheet-1', sheetTitle: '', headers: ['Name', 'Phone'] };
+  const withSheet = config([step()], {
+    destinations: [
+      {
+        type: 'google-sheets',
+        // Switched off: this account has no Google connection, and an agent's
+        // enabled Sheets entry would be refused before anything is stored
+        // (INTEGRATION_NOT_CONNECTED). The bookkeeping is dropped either way.
+        enabled: false,
+        settings: {
+          spreadsheetId: 'sheet-1',
+          headerSnapshot: state,
+          headerForeign: state,
+          headerBroken: { ...state, reason: 'forbidden', at: Date.now() },
+        },
+        columns: [{ header: 'Name', source: 'answer', key: 'name' }],
+      },
+    ],
+  });
+
+  for (const [who, get] of [
+    ['a session', () => session],
+    ['an API key', () => key],
+  ] as const) {
+    it(`for ${who}`, async () => {
+      const created = await get().forms.createForm(req(), { name: 'Forged', config: withSheet });
+      const stored = cfg((await getFormById(db, accountId, created.id))!.config);
+      const settings = (stored.destinations![0] as { settings: Record<string, unknown> }).settings;
+      expect(settings).not.toHaveProperty('headerSnapshot');
+      expect(settings).not.toHaveProperty('headerForeign');
+      expect(settings).not.toHaveProperty('headerBroken');
+      expect(settings.spreadsheetId).toBe('sheet-1');
+    });
+  }
+});

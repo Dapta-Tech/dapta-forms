@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormOption, FormStep } from '@quill/engine';
-import { isMultiSelect } from '@quill/engine';
+import { isMultiSelect, stepQuestionText } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -144,7 +144,8 @@ export function QuestionVariants({
   onUpdate: (patch: Partial<FormStep>) => void;
   m: EditorMessages['variants'];
 }) {
-  const prior = steps.slice(0, index);
+  // A checkbox is never a source: consent does not drive logic or copy.
+  const prior = steps.slice(0, index).filter((s) => s.type !== 'checkbox');
   const enabled = !!step.questionField;
   const source = prior.find((s) => s.key === step.questionField);
   const sourceOptions = source && hasOptions(source.type) ? (source.options ?? []) : null;
@@ -256,7 +257,7 @@ export function QuestionVariants({
             >
               {prior.map((s, i) => (
                 <option key={s.key} value={s.key}>
-                  {s.question?.trim() || `${i + 1} · ${s.key}`}
+                  {stepQuestionText(s).trim() || `${i + 1} · ${s.key}`}
                 </option>
               ))}
             </SelectField>

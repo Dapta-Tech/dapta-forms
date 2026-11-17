@@ -16,6 +16,7 @@ import type {
   FormContentAlign,
   FormContentWidth,
   FormCustomFont,
+  FormDensity,
   FormFont,
   FormLogoPosition,
   FormLogoSize,
@@ -23,6 +24,7 @@ import type {
   FormRadius,
   FormTransition,
 } from './form-design';
+import { isEmailAddressShape } from './email-shape';
 
 /**
  * The step kinds a form can contain. `message` is an info step with no input;
@@ -43,8 +45,13 @@ export const FORM_FIELD_TYPES = [
   'reveal',
   'scheduler',
   'file',
+  'checkbox',
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
+
+/** A step's column width on the one-page layout. Absent = `'full'`. */
+export const FORM_STEP_WIDTHS = ['full', 'half'] as const;
+export type FormStepWidth = (typeof FORM_STEP_WIDTHS)[number];
 
 /** How a choice step lays its options out. */
 export const FORM_OPTION_LAYOUTS = ['list', 'cards'] as const;
@@ -198,6 +205,12 @@ export interface FormStep {
   /** `name` step: per-field placeholders keyed by field name. */
   placeholders?: Record<string, string>;
   /**
+   * `name` step on the one-page (`vertical`) layout: a visible label above each
+   * input, keyed by field name like `placeholders`. See {@link nameFieldLabels}.
+   * `slides` ignores it.
+   */
+  fieldLabels?: Record<string, string>;
+  /**
    * Dynamic question variants: pick the question text from the answer to
    * `questionField`. `questionVariants[value]` overrides `question` when the
    * respondent's answer to that earlier field matches a key; a `*` key (or the
@@ -258,6 +271,13 @@ export interface FormStep {
    */
   screenGroup?: string;
   /**
+   * Column width on the one-page (`vertical`) layout (additive; back-compat).
+   * Two consecutive `half` steps share a row; see {@link onePageRows}. Absent =
+   * `'full'`. `slides` ignores it, and so does any type outside
+   * {@link HALF_WIDTH_TYPES}.
+   */
+  width?: FormStepWidth;
+  /**
    * Per-question scoring switch (additive; back-compat — V5-B2). `false` makes
    * THIS step contribute nothing to the score while the rest of the form keeps
    * scoring normally; absent/`true` scores as it always has, so every existing
@@ -311,7 +331,7 @@ export interface OutcomeOverrideRule {
 
 /** Scheduling handoff for an outcome (additive; mirrors the config schema). */
 export interface OutcomeBooking {
-  provider: 'hubspot_meetings' | 'calendly';
+  provider: 'hubspot_meetings' | 'calendly' | 'dcal';
   url: string;
   prefill?: boolean;
 }
@@ -460,6 +480,11 @@ export interface FormBranding {
   // --- Shape & controls --------------------------------------------------
   radius?: FormRadius;
   buttonStyle?: FormButtonStyle;
+  /**
+   * Label colour of a SOLID button. Absent / null / blank = the automatic
+   * contrast colour of the accent. Ignored for `outline` and `soft`.
+   */
+  buttonTextColor?: string | null;
   buttonFullWidth?: boolean;
   progressStyle?: FormProgressStyle;
 
@@ -471,6 +496,16 @@ export interface FormBranding {
   contentAlign?: FormContentAlign;
   contentWidth?: FormContentWidth;
   transition?: FormTransition;
+  /**
+   * Whether the one-page (`vertical`) form paints its header: the form logo, or
+   * the form name when there is no logo. Ignored by `slides`. Absent = `true`.
+   */
+  showHeader?: boolean;
+  /**
+   * How tightly the one-page (`vertical`) form packs its questions. Ignored by
+   * `slides`. Absent = `'comfortable'`.
+   */
+  density?: FormDensity;
 
   /**
    * Which preset was last applied — an editor affordance only. Nothing at
@@ -483,8 +518,12 @@ export interface FormBranding {
 
 /** A `scheduler` step's embedded booking config (Calendly in v1). */
 export interface FormScheduler {
-  /** Scheduling provider. v1 ships Calendly; the embed also supports HubSpot Meetings. */
-  provider?: 'calendly' | 'hubspot_meetings';
+  /**
+   * Scheduling provider. v1 shipped Calendly; the embed also supports HubSpot
+   * Meetings and dCal. Mirrors `formSchedulerSchema.provider` in @quill/types:
+   * the two unions must move together.
+   */
+  provider?: 'calendly' | 'hubspot_meetings' | 'dcal';
   /** The picked Calendly event type's stable URI (builder reference). */
   eventTypeUri?: string | null;
   /** Its display name, stored so the builder can label it without a lookup. */
@@ -587,6 +626,11 @@ export interface FormEnding {
    * alongside a redirect URL; 0/absent redirects immediately.
    */
   redirectDelayMs?: number;
+  /**
+   * Append the visitor's `utm_*` params to every redirect: this one, an
+   * outcome's own and the post-booking one. Absent = off. See {@link appendUtm}.
+   */
+  forwardUtm?: boolean;
 }
 
 /**
@@ -792,6 +836,14 @@ function conditionHolds(cond: StepCondition, answers: Answers, scoreSoFar = 0): 
  * contributed to a gate upstream of the jump — but only if it carries a STALE
  * answer, since a step the respondent never saw is unanswered and scores 0.
  */
+/**
+ * Whether `hidden` takes a step off the form. A `checkbox` ignores the flag:
+ * consent is given by the person on the page, never seeded behind their back.
+ */
+export function isHiddenStep(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
+  return !!step.hidden && step.type !== 'checkbox';
+}
+
 export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
   const scored = config.scoring?.enabled !== false;
   const out: FormStep[] = [];
@@ -800,7 +852,7 @@ export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
     // A hidden step is never rendered as a question — it is skipped in the walk
     // (and therefore never scored). Its answer can still be seeded (e.g. from a
     // URL parameter) and rides along into the submission via the answers map.
-    if (step.hidden) continue;
+    if (isHiddenStep(step)) continue;
     if (step.showWhen && !conditionHolds(step.showWhen, answers, scoreSoFar)) continue;
     if (step.hideWhen && conditionHolds(step.hideWhen, answers, scoreSoFar)) continue;
     if (step.showForPersonalEmailOnly) {
@@ -875,7 +927,18 @@ export function emailSourceFor(config: FormConfig): EmailSource {
   // answer from `?email=` and that answer reaches the submission.
   const question = config.steps.find((s) => s.type === 'email');
   if (question) return { kind: 'question', key: question.key };
-  const scheduler = config.steps.find((s) => s.type === 'scheduler');
+  // Only a scheduler whose invitee can actually be READ BACK counts. Calendly
+  // is fetched for it after the booking (`booking-sync`); dCal is not, and its
+  // booked message carries no name or address on purpose, because it is posted
+  // to any framing page. So a dCal scheduler supplies no address, and saying it
+  // did would tell an author their contact key was covered while every lead
+  // quietly failed to sync with "no respondent email resolvable".
+  //
+  // Absent means Calendly, as everywhere else: a scheduler authored before dCal
+  // existed is read exactly as it was.
+  const scheduler = config.steps.find(
+    (s) => s.type === 'scheduler' && s.scheduler?.provider !== 'dcal',
+  );
   if (scheduler) return { kind: 'scheduler', key: scheduler.key };
   return null;
 }
@@ -1191,6 +1254,8 @@ export function isMultiSelect(step: FormStep): boolean {
  * or `null` when none match. First match wins (rules run top to bottom).
  */
 function resolveGoto(step: FormStep, answers: Answers): GotoRule | null {
+  // A checkbox routes nowhere: consent never jumps or ends the form.
+  if (step.type === 'checkbox') return null;
   if (!step.goto || step.goto.length === 0) return null;
   const got = new Set(tokens(answers[step.key]));
   for (const rule of step.goto) {
@@ -1290,7 +1355,6 @@ export function isPersonalEmail(value: AnswerValue): boolean {
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * A web address for a `url` step: optional http(s) scheme, a dotted host with a
  * TLD of two or more letters, optional port, optional path/query/fragment. A pure
@@ -1323,6 +1387,7 @@ export function isValidWebUrl(raw: string): boolean {
  * type is returned untouched.
  */
 export function canonicalizeAnswer(step: FormStep, value: AnswerValue): AnswerValue {
+  if (step.type === 'checkbox' && value === 'true') return true;
   if (step.type === 'url' && typeof value === 'string' && isValidWebUrl(value)) {
     return normalizeUrl(value);
   }
@@ -1415,6 +1480,15 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
   // Info + reveal steps never carry input.
   if (isInputlessStep(step)) return { ok: true };
 
+  // A checkbox is checked (`true`/'true') or empty; `false` counts as empty,
+  // so this runs before the generic empty test below.
+  if (step.type === 'checkbox') {
+    if (isCheckboxChecked(value)) return { ok: true };
+    if (isCheckboxEmpty(value))
+      return step.required ? { ok: false, error: 'Check the box to continue.' } : { ok: true };
+    return { ok: false, error: 'Choose one of the available options.' };
+  }
+
   const empty =
     value == null ||
     value === '' ||
@@ -1433,7 +1507,7 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
   switch (step.type) {
     case 'email': {
       const email = String(value).trim().toLowerCase();
-      if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
+      if (!isEmailAddressShape(email)) return { ok: false, error: 'Enter a valid email address.' };
       // Use the SAME personal-email test as validateAnswerCode (domain list +
       // free-mail bases) so both validators agree on any given address.
       if (step.corporateEmailOnly && isPersonalEmail(email))
@@ -1921,7 +1995,9 @@ export interface ResolvedEnding {
    * Where to send the respondent, or `null` to show the thank-you screen. Its
    * `[key]` tokens are filled (and percent-encoded) when `resolveEnding` is
    * given the answers, and dropped when it is told the form is embedded;
-   * otherwise it is the URL exactly as configured.
+   * otherwise it is the URL exactly as configured. When the form forwards UTMs
+   * (`ending.forwardUtm`) and `resolveEnding` is given them, they are appended
+   * last, embedded or not.
    */
   redirectUrl: string | null;
   /** How long to show the thank-you screen first. 0 = redirect immediately. */
@@ -1949,12 +2025,17 @@ export interface ResolvedEnding {
  * (`interpolateUrl`), or `embedded: true` to get it with every token-bearing
  * parameter dropped (`stripUrlTokens`); the headline and body stay templates
  * either way, because the done screen interpolates them itself.
+ *
+ * Pass `utm` (the visitor's captured `utm_*` params) to have them appended to
+ * the redirect after the tokens are handled, but only when the form turned on
+ * `ending.forwardUtm`. They are forwarded on an embedded form too: they are
+ * campaign data the visitor arrived with, not answers.
  */
 export function resolveEnding(
   config: FormConfig,
   outcome: FormOutcome | null,
   answers?: Answers,
-  opts: { embedded?: boolean } = {},
+  opts: { embedded?: boolean; utm?: Record<string, string> } = {},
 ): ResolvedEnding {
   const e = config.ending ?? null;
   const pick = (a: string | null | undefined, b: string | null | undefined): string | null => {
@@ -1984,10 +2065,12 @@ export function resolveEnding(
   return {
     headline: pick(outcome?.label, e?.headline),
     body: pick(outcome?.message, e?.body),
-    redirectUrl:
-      redirectUrl && (answers || opts.embedded)
-        ? redirectUrlFor(redirectUrl, answers ?? {}, opts.embedded === true)
-        : redirectUrl,
+    redirectUrl: resolvedRedirect(
+      redirectUrl,
+      answers,
+      opts.embedded === true,
+      forwardedUtm(config, opts.utm),
+    ),
     redirectDelayMs: redirectUrl && Number.isFinite(delaySource) ? Math.max(0, delaySource) : 0,
   };
 }
@@ -2011,7 +2094,8 @@ export type ValidationCode =
   | 'too_short'
   | 'too_long'
   | 'option'
-  | 'file';
+  | 'file'
+  | 'consent';
 
 export type ValidationCodeResult = { ok: true } | { ok: false; code: ValidationCode };
 
@@ -2037,6 +2121,12 @@ export function validateAnswerCode(
     return { ok: true };
   }
 
+  if (step.type === 'checkbox') {
+    if (isCheckboxChecked(value)) return { ok: true };
+    if (isCheckboxEmpty(value)) return step.required ? { ok: false, code: 'consent' } : { ok: true };
+    return { ok: false, code: 'option' };
+  }
+
   const empty =
     value == null || value === '' || (Array.isArray(value) && value.length === 0);
   // Same rule as `validateAnswer`: a required answer of only spaces is missing.
@@ -2047,7 +2137,7 @@ export function validateAnswerCode(
   switch (step.type) {
     case 'email': {
       const email = String(value).trim().toLowerCase();
-      if (!EMAIL_RE.test(email)) return { ok: false, code: 'email' };
+      if (!isEmailAddressShape(email)) return { ok: false, code: 'email' };
       if (step.corporateEmailOnly && isPersonalEmail(email))
         return { ok: false, code: 'work_email' };
       return { ok: true };
@@ -2236,9 +2326,111 @@ export function stripUrlTokens(template: string): string {
  * The redirect URL to navigate to: `[key]` tokens filled from the answers on a
  * standalone form (`interpolateUrl`), or stripped on an embedded one
  * (`stripUrlTokens`), so an embedded form's redirect never carries an answer.
+ *
+ * `utm`, when given, is appended afterwards with {@link appendUtm}. This
+ * function does not read the form's `forwardUtm` switch: pass
+ * `forwardedUtm(config, utm)` so the UTMs arrive only when it is on.
  */
-export function redirectUrlFor(template: string, answers: Answers, embedded: boolean): string {
-  return embedded ? stripUrlTokens(template) : interpolateUrl(template, answers);
+export function redirectUrlFor(
+  template: string,
+  answers: Answers,
+  embedded: boolean,
+  utm?: Record<string, string>,
+): string {
+  const url = embedded ? stripUrlTokens(template) : interpolateUrl(template, answers);
+  return utm ? appendUtm(url, utm) : url;
+}
+
+/**
+ * `resolveEnding`'s redirect: the URL as configured unless there is something
+ * to do to it (answers to fill, an embed to strip, UTMs to forward).
+ */
+function resolvedRedirect(
+  url: string | null,
+  answers: Answers | undefined,
+  embedded: boolean,
+  utm: Record<string, string> | undefined,
+): string | null {
+  const hasUtm = !!utm && Object.keys(utm).length > 0;
+  if (!url || !(answers || embedded || hasUtm)) return url;
+  return redirectUrlFor(url, answers ?? {}, embedded, utm);
+}
+
+/**
+ * The UTMs to forward to a redirect: the given ones when the form turned on
+ * `ending.forwardUtm`, else `undefined` (nothing is appended).
+ */
+export function forwardedUtm(
+  config: Pick<FormConfig, 'ending'>,
+  utm: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  return config.ending?.forwardUtm === true && utm ? utm : undefined;
+}
+
+/**
+ * A key `appendUtm` forwards: `utm_` and then letters, digits or `_` only. A
+ * bracket key such as `utm_source[]` is left out, because PHP reads it as an
+ * array that wins over the owner's own `utm_source`.
+ */
+const FORWARDED_UTM_KEY = /^utm_[a-z0-9_]+$/i;
+/** A visitor UTM key longer than this, `utm_` included, is not forwarded. */
+const MAX_FORWARDED_UTM_KEY_LENGTH = 64;
+/**
+ * At most this many visitor UTMs are appended to one redirect, counted after
+ * the keys the owner already wrote in the URL are dropped.
+ */
+const MAX_FORWARDED_UTM_KEYS = 10;
+/** A visitor UTM value longer than this is not forwarded at all, never cut. */
+const MAX_FORWARDED_UTM_VALUE_LENGTH = 200;
+
+/**
+ * Append the visitor's `utm_*` params to a redirect URL. Only plain `utm_*`
+ * keys are taken from `utm` (see `FORWARDED_UTM_KEY`); any other key is
+ * ignored, as is a key over 64 characters or a value over 200, and at most 10
+ * are appended, in the order given. A `utm_*` key
+ * already in the URL wins over the visitor's (compared case-insensitively), so
+ * an owner who hardcoded `utm_source=newsletter` keeps it. The existing query
+ * and the `#hash` are preserved. When nothing would be appended, or the URL
+ * does not parse, the input comes back byte-identical; otherwise the URL is
+ * trimmed first, so a stored trailing space never lands before the `?`.
+ *
+ * Only the real query (before the `#`) is read and extended. A hash-routed
+ * destination such as `https://x.com/#/r?utm_source=a` keeps its fragment,
+ * query included, untouched, and the visitor's UTMs go before the `#`.
+ */
+export function appendUtm(url: string, utm: Record<string, string>): string {
+  const entries = Object.entries(utm)
+    .filter(
+      ([key, value]) =>
+        key.length <= MAX_FORWARDED_UTM_KEY_LENGTH &&
+        FORWARDED_UTM_KEY.test(key) &&
+        typeof value === 'string' &&
+        value.length <= MAX_FORWARDED_UTM_VALUE_LENGTH,
+    );
+  if (entries.length === 0) return url;
+  const trimmed = url.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return url;
+  }
+  const present = new Set([...parsed.searchParams.keys()].map((k) => k.toLowerCase()));
+  const pairs: string[] = [];
+  for (const [key, value] of entries) {
+    if (pairs.length === MAX_FORWARDED_UTM_KEYS) break;
+    if (present.has(key.toLowerCase())) continue;
+    pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+    present.add(key.toLowerCase());
+  }
+  if (pairs.length === 0) return url;
+  // Splice the new pairs in as text rather than re-serializing `searchParams`,
+  // which would re-encode the owner's query (an interpolated `%20` becomes `+`).
+  const hashAt = trimmed.indexOf('#');
+  const main = hashAt === -1 ? trimmed : trimmed.slice(0, hashAt);
+  const hash = hashAt === -1 ? '' : trimmed.slice(hashAt);
+  const joiner = !main.includes('?') ? '?' : main.endsWith('?') || main.endsWith('&') ? '' : '&';
+  return `${main}${joiner}${pairs.join('&')}${hash}`;
 }
 
 /**
@@ -2378,6 +2570,9 @@ function resolveVariant(variants: Record<string, string>, raw: AnswerValue): str
  */
 export function resolveQuestion(step: FormStep, answers: Answers): string {
   let text = step.question ?? '';
+  // A checkbox shows its text as written: no variants and no `[key]` tokens, so
+  // an inline link `[text](https://...)` is never read as a token.
+  if (step.type === 'checkbox') return text;
   if (step.questionField && step.questionVariants) {
     const fallback = step.questionVariants['*'];
     text =
@@ -2395,14 +2590,22 @@ export function resolveQuestion(step: FormStep, answers: Answers): string {
  * mutates the config. A null/undefined helper is left untouched.
  */
 export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
-  const question = resolveQuestion(step, answers);
+  const question = step.type === 'checkbox' ? step.question : resolveQuestion(step, answers);
   const helper = typeof step.helper === 'string' ? interpolate(step.helper, answers) : step.helper;
   let sliderUnitLabel = step.sliderUnitLabel ?? null;
   if (step.questionField && step.sliderLabelVariants) {
     const label = resolveVariant(step.sliderLabelVariants, answers[step.questionField]);
     if (label) sliderUnitLabel = label;
   }
-  return { ...step, question, helper, sliderUnitLabel };
+  const display = { ...step, question, helper, sliderUnitLabel };
+  // A checkbox ignores `goto` and `terminal` (an API config may carry them):
+  // the renderers read the resolved step, so dropping them here keeps every
+  // button and every cut in line with the engine.
+  if (step.type === 'checkbox') {
+    delete display.goto;
+    delete display.terminal;
+  }
+  return display;
 }
 
 /**
@@ -2438,6 +2641,66 @@ export const SOLO_SCREEN_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldTy
   'file',
 ]);
 
+/**
+ * The `name` step's per-field labels for the one-page layout, in
+ * {@link nameFields} order, or `null` when it shows none (not a `name` step, or
+ * no sub-field has a non-blank label). When at least one is set, the other
+ * comes back as `''` and the renderer puts its localized default there.
+ */
+export function nameFieldLabels(step: FormStep): [string, string] | null {
+  if (step.type !== 'name') return null;
+  const labels = step.fieldLabels ?? {};
+  const [first, last] = nameFields(step).map((field) => (labels[field] ?? '').trim());
+  if (!first && !last) return null;
+  return [first ?? '', last ?? ''];
+}
+
+/**
+ * The step types that can sit at half width on the one-page layout. Everything
+ * else (`name` already has two inputs, long and choice inputs need the room)
+ * always takes a full row.
+ */
+export const HALF_WIDTH_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldType>([
+  'text',
+  'email',
+  'phone',
+  'url',
+  'dropdown',
+]);
+
+/** Can this step take half a row on the one-page layout? Never a hidden step. */
+export function canHalfWidth(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
+  return HALF_WIDTH_TYPES.has(step.type) && !step.hidden;
+}
+
+/**
+ * The rows of the one-page layout, as indexes into `steps`. Two consecutive
+ * steps that are both `width: 'half'` and {@link canHalfWidth} share a row;
+ * every other step gets a row of its own, so a lone half step renders full
+ * width and three in a row make a pair plus a full row (never three columns).
+ * The public form passes its live walk (after logic), so a step that logic
+ * hides drops out and its neighbours re-pair; the builder passes the authored
+ * steps, where a hidden step is not eligible and breaks a pair.
+ */
+export function onePageRows(steps: readonly Pick<FormStep, 'type' | 'hidden' | 'width'>[]): number[][] {
+  const half = (i: number) => {
+    const step = steps[i];
+    return step !== undefined && step.width === 'half' && canHalfWidth(step);
+  };
+  const rows: number[][] = [];
+  let i = 0;
+  while (i < steps.length) {
+    if (half(i) && half(i + 1)) {
+      rows.push([i, i + 1]);
+      i += 2;
+    } else {
+      rows.push([i]);
+      i += 1;
+    }
+  }
+  return rows;
+}
+
 /** The most questions the builder puts on one screen. The engine does not cap. */
 export const MAX_SCREEN_SIZE = 10;
 
@@ -2452,7 +2715,7 @@ export function screensActive(config: Pick<FormConfig, 'layout'> | null | undefi
  * screen nor cuts one).
  */
 export function canShareScreen(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
-  return !SOLO_SCREEN_TYPES.has(step.type) && !step.hidden;
+  return !SOLO_SCREEN_TYPES.has(step.type) && !isHiddenStep(step);
 }
 
 /** One authored screen: its canonical id and its members' indexes in `steps`. */
@@ -2491,7 +2754,7 @@ export function authoredScreens(steps: readonly FormStep[]): AuthoredScreen[] {
     screens.push({ id, members: run.members });
   };
   steps.forEach((step, i) => {
-    if (step.hidden) return; // transparent
+    if (isHiddenStep(step)) return; // transparent
     const value = canShareScreen(step) ? step.screenGroup : undefined;
     if (!value) {
       close();
@@ -2554,7 +2817,7 @@ export function runtimeScreens(config: FormConfig, answers: Answers): FormStep[]
  */
 export function answeredPath(config: FormConfig, answers: Answers): FormStep[] {
   const path = runtimeSteps(config, answers);
-  const cut = path.findIndex((s) => s.terminal);
+  const cut = path.findIndex((s) => s.terminal && s.type !== 'checkbox');
   return cut >= 0 ? path.slice(0, cut + 1) : path;
 }
 
@@ -2828,4 +3091,92 @@ export function isSafeImageUrl(url: string): boolean {
   if (s.startsWith('javascript:') || s.startsWith('vbscript:')) return false;
   if (s.startsWith('data:') && !s.startsWith('data:image/')) return false;
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Checkbox: one native box whose text can carry inline links.
+// ---------------------------------------------------------------------------
+
+/** A piece of a checkbox's text: plain text or an http(s) link. */
+export type InlineSegment = { kind: 'text'; text: string } | { kind: 'link'; text: string; href: string };
+
+/** `[text](url)`, linear: no nesting, bounded lengths, no newline in the text. */
+const INLINE_LINK_RE = /\[([^\]\n]{1,200})\]\(([^\s)]{1,2048})\)/g;
+
+/**
+ * Split `[text](https://url)` links out of a string. A match whose URL is not
+ * http(s) (`javascript:`, `mailto:`, a relative path) stays as literal text,
+ * brackets included. Adjacent text pieces are merged. Never throws.
+ */
+export function parseInlineLinks(text: string): InlineSegment[] {
+  const out: InlineSegment[] = [];
+  const pushText = (t: string) => {
+    if (!t) return;
+    const last = out[out.length - 1];
+    if (last && last.kind === 'text') last.text += t;
+    else out.push({ kind: 'text', text: t });
+  };
+  const source = typeof text === 'string' ? text : '';
+  let at = 0;
+  for (const m of source.matchAll(INLINE_LINK_RE)) {
+    const start = m.index ?? 0;
+    pushText(source.slice(at, start));
+    const [whole, label, href] = m as unknown as [string, string, string];
+    if (isSafeHttpUrl(href)) out.push({ kind: 'link', text: label, href });
+    else pushText(whole);
+    at = start + whole.length;
+  }
+  pushText(source.slice(at));
+  return out;
+}
+
+/** The text with each link replaced by its visible text. */
+export function inlineLinksPlainText(text: string): string {
+  return parseInlineLinks(text)
+    .map((seg) => seg.text)
+    .join('');
+}
+
+/**
+ * What a checkbox shows beside its box, and what stays under it.
+ *
+ * The box's text is `question`. An author who leaves it empty and writes the
+ * consent sentence in the description (the editor offers both fields, and the
+ * text field's example reads like real text) must not ship a box labelled with
+ * the internal key: the description is promoted to the box's text and not
+ * repeated under it. With neither, `text` is null and the caller draws its own
+ * localized default. Never returns the step key.
+ */
+export function checkboxText(step: Pick<FormStep, 'question' | 'helper'>): {
+  text: string | null;
+  helper: string | null;
+} {
+  const question = typeof step.question === 'string' ? step.question : '';
+  const helper = typeof step.helper === 'string' ? step.helper : '';
+  if (question.trim()) return { text: question, helper: helper.trim() ? helper : null };
+  if (helper.trim()) return { text: helper, helper: null };
+  return { text: null, helper: null };
+}
+
+/**
+ * A step's question as plain text, for any admin surface that labels a step
+ * (response detail, analytics, logic, branching, mapping, pickers). A checkbox
+ * reads through `checkboxText` (an empty text takes the description) with its
+ * inline links flattened to their visible text, so no surface shows `[a](url)`
+ * syntax. Other steps return `question` as written. Empty when there is
+ * nothing, so callers keep their own fallback (a "Question N" label).
+ */
+export function stepQuestionText(step: Pick<FormStep, 'type' | 'question' | 'helper'>): string {
+  if (step.type === 'checkbox') return inlineLinksPlainText(checkboxText(step).text ?? '');
+  return typeof step.question === 'string' ? step.question : '';
+}
+
+/** True for a checked checkbox answer: `true` and the string `'true'`. */
+export function isCheckboxChecked(value: AnswerValue | undefined): boolean {
+  return value === true || value === 'true';
+}
+
+/** An unchecked checkbox answer. `false` counts, though it is never stored. */
+function isCheckboxEmpty(value: unknown): boolean {
+  return value == null || value === '' || value === false;
 }

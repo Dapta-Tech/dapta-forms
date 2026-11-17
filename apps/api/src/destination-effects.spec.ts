@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   createDb,
+  enqueueOutbox,
   migrate,
   seed,
   listOutbox,
@@ -22,6 +23,7 @@ import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects, type SubmissionDeliveryInput } from './destination-effects';
 import { OutboxWorker } from './outbox.worker';
+import type { SalesforceAccessTokens } from './salesforce-auth';
 
 let db: Db;
 let svc: SubmissionService;
@@ -230,6 +232,30 @@ describe('per-event trigger filter (enqueue-time)', () => {
       config: { version: 1, steps: [], destinations: destinationsConfig },
     };
   }
+
+  it('skips a Google Sheets destination stored mid-setup, and enqueues a finished one', async () => {
+    // Stored so the author's switch and half-typed columns survive a reload;
+    // never handed to an adapter that could only log a no-op per submission.
+    const noSheet = { type: 'google-sheets', enabled: true, settings: {}, columns: [] };
+    // Only an unnamed column: nothing would be written.
+    const unfinished = {
+      type: 'google-sheets',
+      enabled: true,
+      settings: { spreadsheetId: 'sheet-1' },
+      columns: [{ header: '', source: 'answer', key: 'email' }],
+    };
+    const ready = {
+      type: 'google-sheets',
+      enabled: true,
+      settings: { spreadsheetId: 'sheet-1' },
+      columns: [{ header: 'Email', source: 'answer', key: 'email' }, { header: '', source: 'score' }],
+    };
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-gs-1', [noSheet]));
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-gs-2', [unfinished]));
+    expect(await listOutbox(db, { kind: 'google-sheets' })).toHaveLength(0);
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-gs-3', [ready]));
+    expect(await listOutbox(db, { kind: 'google-sheets', subjectUid: 'sub-gs-3' })).toHaveLength(1);
+  });
 
   it("events:['complete'] enqueues on complete but NOT on partial", async () => {
     const dest = {
@@ -441,6 +467,144 @@ describe('the visit in the outbox', () => {
     const { bodies, worker } = drainingWorker([200]);
     await worker.drainOnce();
     expect(Object.keys(JSON.parse(bodies[0]!))).toEqual(['id', 'type', 'phase', 'submittedAt', 'form', 'submission', 'data', 'utm']);
+  });
+});
+
+/**
+ * A provider that answers with a refusal no retry can fix. The adapter resolves
+ * `delivered:false` (its contract: resolve for a permanent no-op, throw only for
+ * what a retry could fix), and that used to settle the row `done`: the history
+ * showed a green "Delivered · HTTP 400" for a lead Salesforce had refused.
+ */
+describe('a destination that does not deliver', () => {
+  const ACC = 'acc-refusal';
+  const INSTANCE = 'https://acme.my.salesforce.com';
+  const REFUSAL = [
+    {
+      errorCode: 'STRING_TOO_LONG',
+      message: 'Last Name: data value too large (max length=80)',
+      fields: ['LastName'],
+    },
+  ];
+
+  /** A connected org, or none, without the OAuth round trip. */
+  const tokens = (connected: boolean) =>
+    ({
+      resolve: async () => (connected ? { accessToken: 'sf-token', instanceUrl: INSTANCE } : null),
+      invalidate: () => {},
+    }) as unknown as SalesforceAccessTokens;
+
+  /** Lookups find nobody; the Lead create answers with `create`. */
+  function org(create: () => Response) {
+    const posts: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/query')) return new Response(JSON.stringify({ records: [] }), { status: 200 });
+      if (init?.method === 'POST' && String(url).endsWith('/sobjects/Lead')) {
+        posts.push(String(init.body));
+        return create();
+      }
+      return new Response('unexpected', { status: 500 });
+    }) as unknown as typeof fetch;
+    return { fetchImpl, posts };
+  }
+
+  async function enqueueSalesforce(subjectUid: string) {
+    const destination = {
+      type: 'salesforce',
+      enabled: true,
+      fieldMappings: { email: 'Email', name: 'LastName' },
+      utmMappings: {},
+    };
+    const ctx = {
+      idempotencyKey: `submission:${subjectUid}:complete:salesforce:0`,
+      submissionId: subjectUid,
+      formId: 'form-refusal',
+      formName: 'Demo',
+      accountId: ACC,
+      sessionId: 'sess',
+      score: 0,
+      outcomeLabel: null,
+      phase: 'complete',
+      submittedAt: 1_000,
+      data: { email: 'sam@acme.io', name: 'x'.repeat(120) },
+      utm: {},
+    };
+    await enqueueOutbox(db, {
+      kind: 'salesforce',
+      action: 'complete',
+      subjectUid,
+      accountId: ACC,
+      payload: JSON.stringify({ destination, ctx }),
+      now: 1_000,
+    });
+  }
+
+  function worker(connected: boolean, fetchImpl: typeof fetch) {
+    const effects = new DestinationEffects(db, undefined, undefined, undefined, tokens(connected));
+    effects.fetchImpl = fetchImpl;
+    const env = { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5000, NODE_ENV: 'test' } as never;
+    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
+    return new OutboxWorker(db, env, email, effects);
+  }
+
+  const rowOf = async (subjectUid: string) => (await listOutbox(db, { kind: 'salesforce', subjectUid }))[0]!;
+
+  it('ends a permanent refusal skipped, with the reason and what the provider answered', async () => {
+    await enqueueSalesforce('sub-refused');
+    const sf = org(() => new Response(JSON.stringify(REFUSAL), { status: 400 }));
+    const w = worker(true, sf.fetchImpl);
+    await w.drainOnce(2_000);
+
+    const row = await rowOf('sub-refused');
+    expect(row.status).toBe('skipped');
+    expect(row.lastError).toBe(
+      'HTTP 400: STRING_TOO_LONG: Last Name: data value too large (max length=80) [LastName]',
+    );
+    // The transcript survives the skip: what we sent, and what Salesforce said.
+    expect(JSON.parse(row.requestBody!)).toMatchObject({ Email: 'sam@acme.io', LastName: 'x'.repeat(120) });
+    expect(row.responseStatus).toBe(400);
+    expect(row.responseBody).toContain('STRING_TOO_LONG');
+
+    // Never retried: a later drain, well past any backoff, sends nothing.
+    await w.drainOnce(10 * 60_000);
+    expect(sf.posts).toHaveLength(1);
+    expect((await rowOf('sub-refused')).status).toBe('skipped');
+  });
+
+  it("ends the factory's log-only degradation skipped too, naming what to fix", async () => {
+    await enqueueSalesforce('sub-not-connected');
+    const sf = org(() => new Response('{}', { status: 201 }));
+    await worker(false, sf.fetchImpl).drainOnce(2_000);
+
+    const row = await rowOf('sub-not-connected');
+    expect(row.status).toBe('skipped');
+    expect(row.lastError).toBe('salesforce destination has no usable connection (reconnect Salesforce)');
+    expect(sf.posts).toHaveLength(0);
+    // Nothing crossed the wire, and the row says so rather than inventing a body.
+    expect(row).toMatchObject({ requestBody: null, responseStatus: null, responseBody: null });
+  });
+
+  it('still marks a real delivery done, with its transcript', async () => {
+    await enqueueSalesforce('sub-delivered');
+    const sf = org(() => new Response(JSON.stringify({ id: '00Q1' }), { status: 201 }));
+    await worker(true, sf.fetchImpl).drainOnce(2_000);
+
+    const row = await rowOf('sub-delivered');
+    expect(row.status).toBe('done');
+    expect(row.lastError).toBeNull();
+    expect(row.responseStatus).toBe(201);
+  });
+
+  it('still retries a transient failure instead of skipping it', async () => {
+    await enqueueSalesforce('sub-transient');
+    const sf = org(() => new Response('unavailable', { status: 503 }));
+    await worker(true, sf.fetchImpl).drainOnce(2_000);
+
+    const row = await rowOf('sub-transient');
+    expect(row.status).toBe('pending');
+    expect(row.attempts).toBe(1);
+    expect(row.nextAttemptAt).toBeGreaterThan(2_000);
+    expect(row.lastError).toContain('HTTP 503');
   });
 });
 

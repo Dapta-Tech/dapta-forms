@@ -282,7 +282,9 @@ function bootWidget(key: string, sessionId: string): PreloadedCalendly | null {
   document.body.appendChild(host);
   window.Calendly.initInlineWidget({
     // The same URL a cold BookingScreen builds, with no answers to prefill.
-    url: buildCalendlyEmbedUrl(key, {}, { sessionId, embedDomain: window.location.host }),
+    // No campaign either: Calendly's own widget forwards this page's `utm_*`
+    // by itself, which on a direct link is exactly the campaign the form keeps.
+    url: buildCalendlyEmbedUrl(key, {}, { embedDomain: window.location.host }),
     parentElement: host,
     resize: false,
   });

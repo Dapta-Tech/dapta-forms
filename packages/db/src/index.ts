@@ -11,6 +11,7 @@ export * from './folders';
 export * from './bookings';
 export * from './account-integrations';
 export * from './account-branding';
+export * from './attribution-switch';
 export * from './crypto';
 export * from './analytics';
 export * from './milestones';

@@ -2,7 +2,14 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { createDb } from '@quill/db';
 import { createEmailProvider, SubmissionNotifier, type EmailProvider } from '@quill/notifications';
-import { loadServerEnv, type ServerEnv } from '@quill/config/env';
+import {
+  attributionPremiumMode,
+  iamWorkspacesEnabled,
+  loadServerEnv,
+  vanityPremiumMode,
+  type ServerEnv,
+} from '@quill/config/env';
+import { emailGrowthCta } from './email-growth-cta';
 import {
   API_KEY_RATE_LIMITER,
   AUTH_PROVIDER,
@@ -15,6 +22,7 @@ import {
   NOTIFIER,
   ONBOARDING_ENABLED,
   PREMIUM_MODE,
+  ATTRIBUTION_MODE,
   RATE_LIMITER,
   STORAGE,
   WORKSPACE_PROJECTION,
@@ -24,6 +32,9 @@ import { AdminService } from './admin.service';
 import { AuthService } from './auth.service';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
+import { GoogleSheetsAccessTokens } from './google-sheets-token';
+import { SalesforceAccessTokens } from './salesforce-auth';
+import { SalesforceFieldsService } from './salesforce-fields';
 import { BookingEffects } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
 import { AnalyticsEffects } from './analytics-effects';
@@ -48,12 +59,15 @@ import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
 import { BrandingController } from './branding.controller';
+import { AttributionController } from './attribution.controller';
+import { AttributionService } from './attribution.service';
 import { LinkPageController } from './link-page.controller';
 import { LinkPageService } from './link-page.service';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { McpController } from './mcp.controller';
 import { McpOAuthMetadataController } from './mcp-oauth.controller';
+import { OpenAiAppsChallengeController } from './openai-apps-challenge.controller';
 import { createMcpOAuth, mcpOAuthSettings } from './mcp-oauth';
 import {
   CalendlyEventTypesService,
@@ -61,6 +75,7 @@ import {
   HubspotPropertiesService,
   IntegrationsController,
 } from './integrations.controller';
+import { DcalService } from './dcal.service';
 
 /** Product telemetry for "a person joined" — shared by the auth provider and the projection. */
 function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
@@ -87,6 +102,7 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     AdminCrudController,
     ApiKeysController,
     BrandingController,
+    AttributionController,
     LinkPageController,
     AnalyticsController,
     IntegrationsController,
@@ -97,6 +113,9 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // GET /.well-known/oauth-protected-resource/mcp: where an MCP client finds
     // the login (RFC 9728). 404 unless MCP_OAUTH_PROVIDER is set.
     McpOAuthMetadataController,
+    // GET /.well-known/openai-apps-challenge: OpenAI's domain-verification
+    // token for the ChatGPT app. 404 unless OPENAI_APPS_CHALLENGE_TOKEN is set.
+    OpenAiAppsChallengeController,
   ],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },
@@ -129,14 +148,22 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     },
     {
       provide: NOTIFIER,
-      useFactory: (email: EmailProvider) => new SubmissionNotifier(email),
-      inject: [EMAIL],
+      // The app URL is where the email header's dForms wordmark is served; the
+      // growth button follows the web badge's rule (see `emailGrowthCta`).
+      useFactory: (email: EmailProvider, env: ServerEnv) =>
+        new SubmissionNotifier(email, { appUrl: env.PUBLIC_APP_URL, cta: emailGrowthCta(env) }),
+      inject: [EMAIL, ENV],
     },
     // Premium entitlements (vanity slug…): Forms is always free — the gate is the
     // customer's Dapta AI subscription via the upstream service. OSS default:
     // disabled provider + PREMIUM_FEATURES=open (everything unlocked).
     { provide: ENTITLEMENTS, useFactory: (env: ServerEnv) => resolveEntitlementsProvider(env), inject: [ENV] },
-    { provide: PREMIUM_MODE, useFactory: (env: ServerEnv) => env.PREMIUM_FEATURES, inject: [ENV] },
+    { provide: PREMIUM_MODE, useFactory: (env: ServerEnv) => vanityPremiumMode(env), inject: [ENV] },
+    // Hiding the "Made with dForms" attribution: the same variable, but unset
+    // means locked whenever the identity service (the paid verdict's only
+    // source) is configured. See `attributionPremiumMode`.
+    { provide: ATTRIBUTION_MODE, useFactory: (env: ServerEnv) => attributionPremiumMode(env), inject: [ENV] },
+    AttributionService,
     // The first-run wizard's switch, resolved ONCE and injected, so the API is
     // the single authority on whether onboarding is required. The web app reads
     // the answer off `/v1/me` rather than keeping its own copy of the flag —
@@ -152,7 +179,7 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     {
       provide: WORKSPACE_PROJECTION,
       useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects) =>
-        env.AUTH_PROVIDER === 'workos' && env.IAM_BASE_URL
+        iamWorkspacesEnabled(env) && env.IAM_BASE_URL
           ? new WorkspaceProjection(db, new IamWorkspacesClient({ baseUrl: env.IAM_BASE_URL }), {
               seedEnv: env,
               onSignup: signupObserver(productAnalytics),
@@ -244,6 +271,24 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
       useFactory: (env: ServerEnv, db: Db) => new CalendlyEventTypesService(env, db),
       inject: [ENV, DB],
     },
+    // dCal's event-type picker. No DB: this one holds no credential at all and
+    // forwards the author's own session (see DcalService). Factory for the same
+    // reason as its two siblings: `fetch` must not be DI-reflected.
+    {
+      provide: DcalService,
+      useFactory: (env: ServerEnv) => new DcalService(env),
+      inject: [ENV],
+    },
+    // The access token a Google Sheets delivery writes with, minted per account
+    // from its stored refresh token and cached. ONE instance for the whole app
+    // on purpose: the controller mints with it (to list a spreadsheet's tabs)
+    // and the delivery path mints with it, and a second cache would let a
+    // disconnect clear one of them while the other kept writing.
+    GoogleSheetsAccessTokens,
+    // One token cache and one field cache app-wide, shared by the controller
+    // and the delivery path so a disconnect clears what both of them read.
+    SalesforceAccessTokens,
+    SalesforceFieldsService,
     // Drains the durable outbox (submission emails + destinations) with
     // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).
     OutboxWorker,

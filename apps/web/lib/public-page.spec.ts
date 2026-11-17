@@ -57,3 +57,28 @@ describe('initialsOf', () => {
     expect(initialsOf('  ')).toBe('');
   });
 });
+
+describe('several pages per workspace', () => {
+  it('puts the default page at the root and every other one under /p/', async () => {
+    const { linkPagePublicPath } = await import('./public-page');
+    expect(linkPagePublicPath('acme', { slug: 'main', isDefault: true })).toBe('/acme');
+    expect(linkPagePublicPath('acme', { slug: 'expo-2026', isDefault: false })).toBe('/acme/p/expo-2026');
+  });
+
+  it('points each page at its own share card and event route', async () => {
+    const { linkPageEventsPath } = await import('./public-page');
+    expect(linkPageOgPath('acme')).toBe('/api/public/pages/acme/og');
+    expect(linkPageOgPath('acme', 'expo')).toBe('/api/public/pages/acme/expo/og');
+    expect(linkPageEventsPath('acme')).toBe('/api/public/pages/acme/events');
+    expect(linkPageEventsPath('acme', 'expo')).toBe('/api/public/pages/acme/expo/events');
+  });
+
+  it('only asks the API about a slug of the vanity shape', async () => {
+    const { plausiblePageSlug } = await import('./public-page');
+    expect(plausiblePageSlug('expo-2026')).toBe(true);
+    expect(plausiblePageSlug('EXPO')).toBe(true);
+    for (const bad of ['ab', 'favicon.ico', '-x-', 'a'.repeat(31), '%2e%2e', 'expo 2026']) {
+      expect(plausiblePageSlug(bad), bad).toBe(false);
+    }
+  });
+});

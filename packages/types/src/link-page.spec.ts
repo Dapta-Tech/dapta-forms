@@ -258,3 +258,47 @@ describe('linkPageBranding', () => {
     expect(b.primaryColor).toBeTruthy();
   });
 });
+
+describe('several pages per workspace', () => {
+  it('takes a slug of the vanity shape, lowercased, and refuses a reserved one', async () => {
+    const { linkPageSlugSchema } = await import('./link-page');
+    expect(linkPageSlugSchema.parse(' Expo-2026 ')).toBe('expo-2026');
+    for (const bad of ['ab', 'expo--2026', '-expo', 'expo_2026', 'a'.repeat(31), 'admin', 'login']) {
+      expect(linkPageSlugSchema.safeParse(bad).success, bad).toBe(false);
+    }
+  });
+
+  it('makes a slug from a name, or none when the name gives nothing usable', async () => {
+    const { slugFromName } = await import('./link-page');
+    expect(slugFromName('Feria Ñandú 2026')).toBe('feria-nandu-2026');
+    expect(slugFromName('  Instagram bio!! ')).toBe('instagram-bio');
+    expect(slugFromName('a very long name that goes on and on past thirty')).toBe('a-very-long-name-that-goes-on');
+    expect(slugFromName('¡!')).toBeNull();
+    expect(slugFromName('Admin')).toBeNull();
+  });
+
+  it('finds the first free slug, within 30 characters', async () => {
+    const { uniqueLinkPageSlug } = await import('./link-page');
+    expect(uniqueLinkPageSlug('expo', new Set())).toBe('expo');
+    expect(uniqueLinkPageSlug('expo', new Set(['expo', 'expo-2']))).toBe('expo-3');
+    const long = 'a'.repeat(30);
+    const next = uniqueLinkPageSlug(long, new Set([long]));
+    expect(next).toBe(`${'a'.repeat(28)}-2`);
+  });
+
+  it('lets a page set its own colours over the brand kit, field by field; absent keeps the kit', async () => {
+    const { linkPageBranding, linkPageSchema } = await import('./link-page');
+    const kit = { primaryColor: '#000000', background: '#ffffff' };
+    expect(linkPageBranding(kit, { primaryColor: '#ff0000' })).toMatchObject({ primaryColor: '#ff0000', background: '#ffffff' });
+    expect(linkPageBranding(kit, undefined)).toMatchObject({ primaryColor: '#000000', background: '#ffffff' });
+    expect(linkPageBranding(kit, { primaryColor: null })).toMatchObject({ primaryColor: '#000000' });
+    expect(linkPageSchema.safeParse({ version: 1, colors: { primaryColor: 'red;}' } }).success).toBe(false);
+    expect(linkPageSchema.safeParse({ version: 1, colors: { background: '#abc' } }).success).toBe(true);
+  });
+
+  it('puts the default page at the root and the others under /p/', async () => {
+    const { linkPagePath } = await import('./link-page');
+    expect(linkPagePath('acme', { slug: 'main', isDefault: true })).toBe('/acme');
+    expect(linkPagePath('acme', { slug: 'expo', isDefault: false })).toBe('/acme/p/expo');
+  });
+});

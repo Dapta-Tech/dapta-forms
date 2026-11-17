@@ -80,8 +80,11 @@ export interface McpDoorOAuth {
   /**
    * Verify an access token and resolve the person it signs in, with every
    * workspace they may act in now, or null when the token does not verify.
-   * Throws `DoorRefusal` when it verifies but names nobody the host knows: a
-   * 403 a new login would not change; `DoorUnavailable` when it cannot be
+   * Throws `DoorRefusal` when it verifies but cannot be resolved (a subject
+   * two people carry, say): a 403 a new login would not change. Prefer a
+   * connection with no workspace to a refusal wherever the person can act on
+   * it: chat apps show a refused connect as their own error, never this
+   * message. `DoorUnavailable` when it cannot be
    * checked right now: a 503; and `DoorThrottled` when its lookups ran past
    * their budget: a 429. A person with no workspace yet is not refused
    * here: their tools answer NO_WORKSPACE, which a model can explain.

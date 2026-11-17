@@ -8,7 +8,7 @@
  * browser-only capture helpers; every flow decision stays in `@quill/engine`.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Answers, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
+import type { Answers, AnswerValue, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
 import { nameFields, isSafeHttpUrl, interpolate, showBanner } from '@quill/engine';
 import { captchaCData, type OutcomeBooking, type PublicCaptcha, type SubmissionVisit } from '@quill/types';
 import type { getMessages } from '@quill/shared';
@@ -19,6 +19,7 @@ import { createHostVisit, utmParams, type HostVisit, type ResolvedVisit } from '
 import { isTransportError, type TransportError } from '@/lib/call-action';
 import { CaptchaChallenge, type CaptchaWidgetEvent } from '@/components/public/captcha-challenge';
 import { isPreloadableCalendlyUrl } from '@/lib/calendly-preload';
+import { randomId } from '@/lib/random-id';
 
 type RendererMessages = ReturnType<typeof getMessages>['renderer'];
 
@@ -27,7 +28,8 @@ export function useSessionId(key: string): string {
     if (typeof window === 'undefined') return '';
     const existing = window.sessionStorage.getItem(key);
     if (existing) return existing;
-    const fresh = crypto.randomUUID();
+    // Not `crypto.randomUUID`: it throws on a non-secure (http://) embed host.
+    const fresh = randomId();
     window.sessionStorage.setItem(key, fresh);
     return fresh;
   });
@@ -141,6 +143,50 @@ export function mergeHostUtm(
   return host ? { ...host } : {};
 }
 
+/** Whether two campaigns are the same `utm_*` set (order does not matter). */
+export function sameCampaign(a: Record<string, string>, b: Record<string, string>): boolean {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
+}
+
+/**
+ * The campaign a booking page is handed, as STATE so the embed re-renders
+ * when it changes: the form's own `utm_*` at mount, the landing's as soon as
+ * the host page answers the visit's mount-time ask (`learnHost`, wired into
+ * `useHostVisit`), and whatever each save resolved (`record`, called with the
+ * set `withData` sends). So a scheduler with no save before it still gets the
+ * landing's campaign. It never asks the host page itself; the visit already
+ * does, and an extra ask would change what the saves wait for.
+ *
+ * `own` is the form URL's own set, which is all a preloaded Calendly widget
+ * can carry (its script forwards the page's `utm_*` by itself), so a caller
+ * can tell when a preload would lose the landing's campaign.
+ */
+export function useCampaignUtm(): {
+  utm: Record<string, string>;
+  own: Record<string, string>;
+  record: (utm: Record<string, string>) => void;
+  learnHost: (hostUtm: Record<string, string>) => void;
+} {
+  const [own, setOwn] = useState<Record<string, string>>({});
+  const [utm, setUtm] = useState<Record<string, string>>({});
+  const record = useCallback((next: Record<string, string>) => {
+    setUtm((prev) => (sameCampaign(prev, next) ? prev : next));
+  }, []);
+  // The landing's campaign stands in only when the form's own URL has none,
+  // exactly as `withData` merges it into a submission.
+  const learnHost = useCallback(
+    (hostUtm: Record<string, string>) => record(mergeHostUtm(captureUtm(), hostUtm)),
+    [record],
+  );
+  useEffect(() => {
+    const mine = captureUtm();
+    setOwn(mine);
+    record(mine);
+  }, [record]);
+  return { utm, own, record, learnHost };
+}
+
 /**
  * What the public page tells a renderer about the page it is answered on
  * (#199). Only the public page passes it: without it (the builder preview)
@@ -160,13 +206,22 @@ export interface VisitCapture {
 export function useHostVisit(
   capture: VisitCapture | undefined,
   formTitle: string,
+  /** The landing's campaign, whenever the host answers (see `useCampaignUtm`). */
+  onHostUtm?: (hostUtm: Record<string, string>) => void,
 ): () => Promise<ResolvedVisit | undefined> {
   const visit = useRef<HostVisit | null>(null);
+  // Through a ref: a new callback identity must not restart the visit.
+  const onHostUtmRef = useRef(onHostUtm);
+  onHostUtmRef.current = onHostUtm;
   const enabled = capture !== undefined;
   const hubspotTracking = capture?.hubspotTracking === true;
   useEffect(() => {
     if (!enabled) return;
-    const current = createHostVisit({ hubspotTracking, formTitle });
+    const current = createHostVisit({
+      hubspotTracking,
+      formTitle,
+      onHostUtm: (hostUtm) => onHostUtmRef.current?.(hostUtm),
+    });
     visit.current = current;
     const stop = current.start();
     return () => {
@@ -203,6 +258,8 @@ export function capturePrefill(steps: FormStep[]): Answers {
   const declared = new Set<string>();
   for (const step of steps) {
     if (step.type === 'message') continue; // message steps capture no answer
+    // Consent is given by the person on the page, never by a link.
+    if (step.type === 'checkbox') continue;
     for (const key of nameFields(step)) declared.add(key);
   }
   if (declared.size === 0) return {};
@@ -215,6 +272,20 @@ export function capturePrefill(steps: FormStep[]): Answers {
     seed[key] = value.slice(0, PREFILL_MAX_LEN);
   }
   return seed;
+}
+
+/**
+ * `answers` with `key` set to `value`, or without `key` when `value` is
+ * `undefined`: an unchecked checkbox leaves no key behind (never `false`).
+ */
+export function withAnswer(answers: Answers, key: string, value: AnswerValue): Answers {
+  if (value === undefined) {
+    if (!(key in answers)) return answers;
+    const rest = { ...answers };
+    delete rest[key];
+    return rest;
+  }
+  return { ...answers, [key]: value };
 }
 
 /**
@@ -232,6 +303,8 @@ export function captureDefaults(steps: FormStep[]): Answers {
   const seed: Answers = {};
   for (const step of steps) {
     if (step.type === 'message' || step.type === 'name') continue;
+    // A checkbox never starts checked: consent is given, not defaulted.
+    if (step.type === 'checkbox') continue;
     const value = step.defaultValue;
     if (typeof value === 'string' && value !== '') seed[step.key] = value;
   }
@@ -401,6 +474,7 @@ export function DoneScreen({
   accountCode,
   cover,
   design,
+  showAttribution = true,
 }: {
   ending: ResolvedEnding;
   answers: Answers;
@@ -408,8 +482,10 @@ export function DoneScreen({
   accountCode: string;
   cover?: FormCover | null;
   design?: FormDesignProps;
+  /** The workspace's attribution setting: false drops the growth CTA too. */
+  showAttribution?: boolean;
 }) {
-  const cta = signupHref('confirmation', accountCode);
+  const cta = showAttribution ? signupHref('confirmation', accountCode) : null;
   return (
     <PhaseShell className="pf pf--done" design={design} cover={cover}>
       <div className="pf-done__inner pf-animate">

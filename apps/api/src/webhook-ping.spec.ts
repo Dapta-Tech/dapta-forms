@@ -168,6 +168,18 @@ describe('webhook ping', () => {
     expect(Object.keys(body.data).sort()).toEqual(['email', 'test']);
   });
 
+  it('samples a checkbox as the JSON boolean true', async () => {
+    await setWebhook('http://localhost:4999/hook');
+    await reshape([
+      { key: 'email', type: 'email', question: 'Email?' },
+      { key: 'consent', type: 'checkbox', question: 'Acepto la [política](https://example.com/privacidad)' },
+    ]);
+    calls = [];
+    await controller.pingWebhook(asOwner(), formId);
+    const body = JSON.parse(String(calls[0]!.init.body)) as { data: Record<string, unknown> };
+    expect(body.data.consent).toBe(true);
+  });
+
   it('marks the test at the top of the payload, so a step keyed test keeps its sample answer', async () => {
     await setWebhook('http://localhost:4999/hook');
     await reshape([{ key: 'test', type: 'text', question: 'Which test?' }]);

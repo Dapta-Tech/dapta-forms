@@ -12,7 +12,7 @@ import {
   type NotificationEmailValue,
 } from '@/components/notification-email-fields';
 import type { DeliveryKind, FormNotificationView, NotificationEmailKey } from '@/lib/admin-api';
-import { hasToken, interpolate, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
+import { hasToken, interpolate, notificationSampleFor } from '@/lib/notification-preview';
 import { DeliveryHistory } from '../../integrations/delivery-history';
 import {
   loadFormNotificationsAction,
@@ -55,12 +55,17 @@ export function ConnectEmailsSection({
   formId,
   m,
   locale,
+  scored = true,
 }: {
   formId: string;
+  /** Whether the form has any scoring (`hasScoringSignal`): without it the preview shows no score, like the email. */
+  scored?: boolean;
   m: EditorMessages['connect'];
   locale: string;
 }) {
   const loc: Locale = locale === 'es' ? 'es' : 'en';
+  // The preview's token values: no score or outcome on a form with no scoring.
+  const sample = useMemo(() => notificationSampleFor(scored), [scored]);
   // The shared catalog is a plain typed object (same pattern as ConnectPanel's
   // integrations subtree) — safe to resolve in the browser.
   const nm = useMemo(() => getMessages(loc).admin.notifications, [loc]);
@@ -120,7 +125,7 @@ export function ConnectEmailsSection({
         </div>
       ) : (
         state.settings.map((s) => (
-          <FormEmailCard key={s.emailKey} formId={formId} setting={s} locale={loc} mc={m} nm={nm} />
+          <FormEmailCard key={s.emailKey} formId={formId} setting={s} locale={loc} mc={m} nm={nm} sample={sample} />
         ))
       )}
 
@@ -156,12 +161,14 @@ function FormEmailCard({
   locale,
   mc,
   nm,
+  sample,
 }: {
   formId: string;
   setting: FormNotificationView;
   locale: Locale;
   mc: EditorMessages['connect'];
   nm: ReturnType<typeof getMessages>['admin']['notifications'];
+  sample: Record<string, string>;
 }) {
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -320,7 +327,7 @@ function FormEmailCard({
             title={accountSubject}
           >
             <span className="font-medium">{nm.previewSubject}: </span>
-            {interpolate(accountSubject, SAMPLE)}
+            {interpolate(accountSubject, sample)}
           </p>
           <Button
             type="button"
@@ -338,6 +345,7 @@ function FormEmailCard({
           <NotificationEmailFields
             value={value}
             onChange={setValue}
+            sample={sample}
             tokens={visibleTokens(key, setting.tokens)}
             labels={{
               enabledLabel: nm.enabledLabel,

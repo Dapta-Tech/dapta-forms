@@ -131,7 +131,9 @@ function ConfirmDialog({
         aria-labelledby={titleId}
         aria-describedby={messageId}
         data-testid="confirm-dialog"
-        className="relative w-full max-w-sm rounded-xl border border-border bg-card p-5 text-card-foreground shadow-lg"
+        // `font-normal`: the dialog renders where its caller puts it, with no
+        // portal, so without this the body text takes the caller's weight.
+        className="relative w-full max-w-sm rounded-xl border border-border bg-card p-5 font-normal text-card-foreground shadow-lg"
       >
         <h2 id={titleId} className="text-base font-semibold tracking-tight">
           {options.title}

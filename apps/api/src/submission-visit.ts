@@ -15,8 +15,19 @@ import { mirrorGuidFor } from './hubspot-portal';
  */
 export function destinationUsesHutk(destination: FormDestination, phase: 'partial' | 'complete'): boolean {
   if (destination.enabled === false) return false;
-  if (destination.type === 'webhook') return destinationFiresForPhase(destination, phase);
-  return phase === 'complete' && mirrorGuidFor(destination.settings) != null;
+  switch (destination.type) {
+    case 'webhook':
+      return destinationFiresForPhase(destination, phase);
+    case 'hubspot':
+      return phase === 'complete' && mirrorGuidFor(destination.settings) != null;
+    default:
+      // Everything else, Google Sheets included. The cookie is an online
+      // identifier, so a destination has to EARN being handed it by having a
+      // use for it; the default is to strip it. This used to be an if/else with
+      // HubSpot as the tail, which would have asked a spreadsheet's settings
+      // for a mirror-form guid.
+      return false;
+  }
 }
 
 /** The visit without its cookie. */

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { enqueueOutbox, getMe, type Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 import { DB, ENV } from './tokens';
+import { currentAnalyticsSessionId } from './analytics-session';
 
 /**
  * The durable payload an `analytics` outbox row carries: one product-analytics
@@ -137,10 +138,18 @@ export class AnalyticsEffects {
   ): Promise<void> {
     if (!this.enabled) return;
     try {
+      // The browser session the request came from, when the web app forwarded
+      // it: the vendor links an event to its recording through `$session_id`,
+      // and without it a server-side event has no recording to open.
+      const sessionId = currentAnalyticsSessionId();
+      const properties =
+        sessionId && input.properties?.$session_id === undefined
+          ? { ...input.properties, $session_id: sessionId }
+          : input.properties;
       const payload: AnalyticsEventPayload = {
         event,
         distinctId: input.distinctId,
-        properties: input.properties,
+        properties,
         accountId: input.accountId,
         // Stamped at ENQUEUE time. The row may be drained seconds or minutes
         // later (or retried for much longer); sending the drain time would

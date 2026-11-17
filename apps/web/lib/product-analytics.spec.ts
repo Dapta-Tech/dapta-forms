@@ -120,15 +120,30 @@ describe('identifyMember — the landing-visit alias', () => {
     ...extra,
   });
 
-  it('aliases the landing id AFTER identify, so it lands on the person', () => {
-    // Before identify, the current distinct id is this origin's anonymous id —
-    // the landing visit would chain to a session instead of pinning to the
-    // person. The order is the contract.
+  it('stores the email as a person property, not only as the distinct id', () => {
+    // Person lists and recordings display the `email` property; without it a
+    // Forms-only user shows up as a bare id.
+    const calls = stubWindow();
+    identifyMember(identity());
+    const identify = calls.find(([n]) => n === 'identify');
+    expect(identify?.[1]).toBe('ana@example.com');
+    expect(identify?.[2]).toMatchObject({ email: 'ana@example.com', member_id: 'mem_1' });
+  });
+
+  it('aliases the landing id onto the email explicitly, so call order does not matter', () => {
+    // The vendor replays queued `alias` calls before `identify`. With no
+    // original, alias would resolve "the current id" to the landing id itself
+    // (shared apex cookie) and identify the browser as it, so the later
+    // identify(email) never merged. Naming the original removes that race.
     const calls = stubWindow();
     identifyMember(identity({ landingDistinctId: '0198a1b2-c3d4' }));
-    const names = calls.map(([n]) => n);
-    expect(names.indexOf('alias')).toBeGreaterThan(names.indexOf('identify'));
-    expect(calls.find(([n]) => n === 'alias')).toEqual(['alias', '0198a1b2-c3d4']);
+    expect(calls.find(([n]) => n === 'alias')).toEqual(['alias', '0198a1b2-c3d4', 'ana@example.com']);
+  });
+
+  it('never aliases the email to itself', () => {
+    const calls = stubWindow();
+    identifyMember(identity({ landingDistinctId: 'ana@example.com' }));
+    expect(calls.filter(([n]) => n === 'alias')).toHaveLength(0);
   });
 
   it('makes no alias call at all without a landing id', () => {

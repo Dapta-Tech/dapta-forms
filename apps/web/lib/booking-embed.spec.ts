@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   attachBookingMessageListener,
+  dcalMessageOrigin,
   parseBookingMessage,
   postBookingCallback,
   type BookingScheduledDetails,
@@ -233,5 +234,118 @@ describe('postBookingCallback', () => {
     await postBookingCallback('acme', 'lead-qualifier', { sessionId: 's', provider: 'calendly' });
     [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(init.headers).not.toHaveProperty('x-forwarded-for');
+  });
+});
+
+// --- dCal ------------------------------------------------------------------
+// Its booked signal is shaped like Calendly's on purpose (`event` keyed with a
+// dot, a `payload` beside it), but the origin it comes from is per-deployment,
+// so the allowlist is the booking page that was actually embedded rather than
+// a constant. These pin that: the right origin is believed, every other one is
+// not, and a screen with no configured origin believes nothing at all.
+
+const DCAL_ORIGIN = 'https://cal.example.test';
+const DCAL_URL = `${DCAL_ORIGIN}/acme/ana/intro-call?embed=1`;
+const START = '2026-12-01T15:00:00.000Z';
+
+function dcalScheduled(payload: Record<string, unknown>) {
+  return { event: 'dapta-calendars.booking_scheduled', payload };
+}
+
+describe('dcalMessageOrigin', () => {
+  it('is the origin of the booking URL that was embedded', () => {
+    expect(dcalMessageOrigin(DCAL_URL)).toBe(DCAL_ORIGIN);
+    expect(dcalMessageOrigin('http://localhost:3100/acme/ana/intro')).toBe('http://localhost:3100');
+  });
+
+  it('is null for a URL that is unusable or not http(s)', () => {
+    expect(dcalMessageOrigin(undefined)).toBeNull();
+    expect(dcalMessageOrigin('')).toBeNull();
+    expect(dcalMessageOrigin('not a url')).toBeNull();
+    expect(dcalMessageOrigin('javascript:alert(1)')).toBeNull();
+  });
+});
+
+describe('parseBookingMessage: dcal', () => {
+  it('reads the uid and the start from the embedded page’s own origin', () => {
+    expect(
+      parseBookingMessage(
+        'dcal',
+        { origin: DCAL_ORIGIN, data: dcalScheduled({ uid: 'bk_123', startUtc: START, eventTypeSlug: 'intro-call' }) },
+        DCAL_ORIGIN,
+      ),
+    ).toEqual({ provider: 'dcal', bookingUid: 'bk_123', startTime: START });
+  });
+
+  it('ignores the same message from any other origin', () => {
+    expect(
+      parseBookingMessage(
+        'dcal',
+        { origin: 'https://evil.example', data: dcalScheduled({ uid: 'bk_123', startUtc: START }) },
+        DCAL_ORIGIN,
+      ),
+    ).toBeNull();
+  });
+
+  it('believes nothing when no origin was configured', () => {
+    // dCal posts with `targetOrigin: "*"`, so with nothing to check against,
+    // any framed page could claim a booking for the session.
+    expect(
+      parseBookingMessage('dcal', { origin: DCAL_ORIGIN, data: dcalScheduled({ uid: 'bk_123' }) }, null),
+    ).toBeNull();
+    expect(
+      parseBookingMessage('dcal', { origin: DCAL_ORIGIN, data: dcalScheduled({ uid: 'bk_123' }) }),
+    ).toBeNull();
+  });
+
+  it('ignores dCal’s other messages, its resize chatter included', () => {
+    for (const data of [
+      { type: 'dapta-calendars:resize', height: 900 },
+      { event: 'dapta-calendars.time_selected', payload: { startUtc: START } },
+      { event: 'calendly.event_scheduled', payload: { event: { start_time: START } } },
+      null,
+      'booked',
+    ]) {
+      expect(parseBookingMessage('dcal', { origin: DCAL_ORIGIN, data }, DCAL_ORIGIN)).toBeNull();
+    }
+  });
+
+  it('reports a booking whose payload carries no uid or start, as booked', () => {
+    // The step is answered by the fact of a booking; the details are best-effort.
+    expect(
+      parseBookingMessage('dcal', { origin: DCAL_ORIGIN, data: dcalScheduled({}) }, DCAL_ORIGIN),
+    ).toEqual({ provider: 'dcal' });
+  });
+
+  it('drops a start that is not a date, and caps a runaway uid', () => {
+    const parsed = parseBookingMessage(
+      'dcal',
+      { origin: DCAL_ORIGIN, data: dcalScheduled({ uid: 'u'.repeat(500), startUtc: 'whenever' }) },
+      DCAL_ORIGIN,
+    );
+    expect(parsed?.startTime).toBeUndefined();
+    expect(parsed?.bookingUid).toHaveLength(200);
+  });
+
+  it('attaches a listener that fires once, and only for the right origin', () => {
+    // Same window stand-in as the suite above: this module is imported from
+    // the server too, so it is tested without a DOM.
+    const listeners = new Set<(event: MessageEvent) => void>();
+    const dispatch = (origin: string, data: unknown) => {
+      for (const fn of [...listeners]) fn({ origin, data } as MessageEvent);
+    };
+    vi.stubGlobal('window', {
+      addEventListener: (_t: string, fn: (event: MessageEvent) => void) => listeners.add(fn),
+      removeEventListener: (_t: string, fn: (event: MessageEvent) => void) => listeners.delete(fn),
+    });
+
+    const seen: BookingScheduledDetails[] = [];
+    const detach = attachBookingMessageListener('dcal', (d) => seen.push(d), DCAL_ORIGIN);
+    dispatch('https://evil.example', dcalScheduled({ uid: 'no' }));
+    dispatch(DCAL_ORIGIN, dcalScheduled({ uid: 'bk_1', startUtc: START }));
+    dispatch(DCAL_ORIGIN, dcalScheduled({ uid: 'bk_2', startUtc: START }));
+    detach();
+    expect(seen).toEqual([{ provider: 'dcal', bookingUid: 'bk_1', startTime: START }]);
+    expect(listeners.size).toBe(0);
   });
 });

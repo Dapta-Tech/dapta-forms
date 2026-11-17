@@ -328,3 +328,28 @@ describe('OutboxWorker claim fencing', () => {
     expect(deliveries).toBe(50);
   });
 });
+
+describe('OutboxWorker destination dispatch', () => {
+  // Every destination type is enqueued under its own type as the kind. A kind
+  // the worker does not dispatch is retried and then marked failed, with the
+  // respondent never delivered, which is what happened to Google Sheets.
+  it.each(['webhook', 'hubspot', 'google-sheets', 'salesforce'] as const)(
+    'drains a %s row through the destination handler',
+    async (kind) => {
+      const id = await enqueueOutbox(db, { kind, action: 'complete', now: 1_000, payload: '{"x":1}' });
+      const deliver = vi.fn(async () => ({ responseStatus: 200 }));
+      const worker = new OutboxWorker(
+        db,
+        { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+        {} as EmailEffects,
+        { deliver } as unknown as DestinationEffects,
+      );
+      replaceLog(worker);
+
+      await worker.drainOnce(1_000);
+
+      expect(deliver).toHaveBeenCalledWith('complete', '{"x":1}');
+      expect((await listOutbox(db)).find((r) => r.id === id)?.status).toBe('done');
+    },
+  );
+});

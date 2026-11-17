@@ -6,6 +6,8 @@ import { SESSION_COOKIE, WORKSPACE_COOKIE } from './session';
 import { signValue, unsignValue } from './signed-value';
 import { serverApiUrl } from './api-url';
 import { canonicalOriginElsewhere } from './request-origin';
+import { analyticsSessionHeaders } from './analytics-session';
+import { resolveProductAnalytics } from './product-analytics';
 
 const API_URL = serverApiUrl;
 
@@ -245,6 +247,8 @@ export async function hostHeaders(): Promise<Record<string, string>> {
   // resolves a developer who never signed in. It authorizes nothing on its own.
   const workspace = await getWorkspace();
   if (workspace) h['x-quill-workspace'] = workspace;
+  // Lets the events this call emits link to the session recording it came from.
+  Object.assign(h, analyticsSessionHeaders(await cookies(), resolveProductAnalytics()));
   return h;
 }
 

@@ -84,13 +84,18 @@ export const FORM_MISSING: Missing = {
  * hint of a code the call knows about. Everything else is left to the
  * server's error mapping (roles, rate limits, validation, internal errors).
  */
-export async function attempt<T>(work: Promise<T>, missing: Missing, hints: Record<string, string> = {}): Promise<T> {
+export async function attempt<T>(
+  work: Promise<T>,
+  missing: Missing,
+  hints: Record<string, string | ((error: BackendError) => string)> = {},
+): Promise<T> {
   try {
     return await work;
   } catch (error) {
     if (error instanceof BackendError) {
       if (error.status === 404) throw new ToolFailure('NOT_FOUND', `${missing.what} not found in this workspace.`, missing.hint);
-      const hint = hints[error.code];
+      const entry = hints[error.code];
+      const hint = typeof entry === 'function' ? entry(error) : entry;
       if (hint && error.issues.length === 0) throw new ToolFailure(error.code, error.message, hint);
     }
     throw error;

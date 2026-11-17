@@ -4,7 +4,7 @@ import { BackendError } from '../backend';
 import { CATALOG } from '../catalog';
 import { bootHarness, errorText, structured, type Harness } from '../__tests__/harness';
 import { TOOLS } from '../tools';
-import { API_ROUTE_EXCLUSIONS, API_ROUTE_TOOLS, PARITY_TOOLS } from './index';
+import { API_ROUTE_EXCLUSIONS, API_ROUTE_TOOLS, PARITY_TOOLS, TOOL_ALIASES } from './index';
 
 /**
  * The tools of the rest of the API reference over the package's fake
@@ -65,12 +65,28 @@ const CASES: Case[] = [
   { tool: 'apply_brand_kit', ok: { form_ids: ['form-1'] }, adminOnly: true, invalid: { form_ids: [] } },
   { tool: 'revert_brand_kit', ok: { form_ids: ['form-1'] }, adminOnly: true, invalid: { form_ids: [] } },
   { tool: 'get_link_page', ok: {}, invalid: { workspace_id: 3 } },
+  { tool: 'get_link_page', ok: { page_id: 'page-2' }, missing: { page_id: 'nope' }, invalid: { page_id: '' } },
   {
     tool: 'update_link_page',
     ok: { page: { enabled: true, items: [{ type: 'form', formId: 'form-1' }, { type: 'link', label: 'Site', url: 'https://example.test' }] } },
     missing: { page: { items: [{ type: 'form', formId: 'nope' }] } },
     invalid: { page: { items: [{ type: 'button' }] } },
   },
+  {
+    tool: 'update_link_page',
+    ok: { page_id: 'page-2', name: 'Expo', slug: 'expo-2027', page: { enabled: true, colors: { primaryColor: '#3DDC84' } } },
+    missing: { page_id: 'nope', name: 'Expo' },
+    invalid: { page_id: 'page-2', page: { colors: { primaryColor: 'red' } } },
+  },
+  { tool: 'list_link_pages', ok: {}, invalid: { workspace_id: 3 } },
+  {
+    tool: 'create_link_page',
+    ok: { name: 'Expo 2026', slug: 'expo-2026', page: { enabled: true, items: [{ type: 'form', formId: 'form-1' }] } },
+    missing: { name: 'Expo', page: { items: [{ type: 'form', formId: 'nope' }] } },
+    invalid: { slug: 'x' },
+  },
+  { tool: 'duplicate_link_page', ok: { page_id: 'page-2' }, missing: { page_id: 'nope' }, invalid: {} },
+  { tool: 'delete_link_page', ok: { page_id: 'page-2' }, missing: { page_id: 'nope' }, invalid: {} },
   { tool: 'list_notifications', ok: {}, adminOnly: true, invalid: { workspace_id: 3 } },
   { tool: 'update_notification', ok: { email_key: 'submission_received', enabled: false }, adminOnly: true, invalid: { email_key: 'digest' } },
   { tool: 'reset_notification', ok: { email_key: 'submission_received' }, adminOnly: true, invalid: {} },
@@ -92,6 +108,9 @@ const CASES: Case[] = [
   { tool: 'list_integrations', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'list_webhooks', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'list_hubspot_properties', ok: {}, invalid: { workspace_id: 3 } },
+  { tool: 'list_event_types', ok: { provider: 'calendly' }, invalid: { provider: 'outlook' } },
+  // provider has no default: leaving it out is refused, never read as calendly.
+  { tool: 'list_event_types', ok: { provider: 'dcal' }, invalid: {} },
   { tool: 'list_calendly_event_types', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'get_my_profile', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'get_workspace_link_code', ok: {}, invalid: { workspace_id: 3 } },
@@ -116,14 +135,18 @@ describe('the catalog', () => {
     expect(names).toEqual(CATALOG.map((t) => t.name));
     expect(names.slice(0, TOOLS.length)).toEqual(TOOLS.map((t) => t.name));
     expect(new Set(names).size).toBe(names.length);
-    expect(PARITY_TOOLS.map((t) => t.name).sort()).toEqual(CASES.map((c) => c.tool).sort());
+    expect(PARITY_TOOLS.map((t) => t.name).sort()).toEqual([...new Set(CASES.map((c) => c.tool))].sort());
   });
 
   it('maps every reference route to a registered tool, and every new tool to a route', () => {
     const names = new Set(CATALOG.map((t) => t.name));
     for (const [route, tool] of Object.entries(API_ROUTE_TOOLS)) expect(names.has(tool), route).toBe(true);
     const mapped = new Set(Object.values(API_ROUTE_TOOLS));
-    for (const t of PARITY_TOOLS) expect(mapped.has(t.name), t.name).toBe(true);
+    for (const t of PARITY_TOOLS) expect(mapped.has(t.name) || mapped.has(TOOL_ALIASES[t.name] ?? ''), t.name).toBe(true);
+    for (const [alias, tool] of Object.entries(TOOL_ALIASES)) {
+      expect(names.has(alias), alias).toBe(true);
+      expect(mapped.has(tool), `${alias} -> ${tool}`).toBe(true);
+    }
     for (const route of Object.keys(API_ROUTE_EXCLUSIONS)) expect(API_ROUTE_TOOLS[route], route).toBeUndefined();
   });
 
@@ -134,6 +157,7 @@ describe('the catalog', () => {
         'apply_brand_kit',
         'delete_folder',
         'delete_form',
+        'delete_link_page',
         'delete_response',
         'delete_responses',
         'reset_form_notification',
@@ -264,6 +288,43 @@ describe('what the tools carry back', () => {
       method: 'formSummary',
       args: ['form-1', { status: 'partial', from: '2026-10-01', scoreMin: 3, answers: { interest: ['demo'] }, search: 'acme' }],
     });
+  });
+
+  it('set_destinations reports what the save did to row 1 of the spreadsheet, the sheet\'s own cells kept apart', async () => {
+    const local = await bootHarness({
+      backend: {
+        setDestinations: async (_c, id, destinations) => ({
+          formId: id,
+          updatedAt: 2,
+          destinations,
+          formActivityError: null,
+          sheetHeaders: { outcome: 'foreign', current: ['Name', '<b>Phone</b>'], headers: ['Email', 'Company'] },
+        }),
+      },
+    });
+    try {
+      const c = await local.connect(local.key('owner'));
+      const res = await c.callTool({
+        name: 'set_destinations',
+        arguments: { form_id: 'form-1', destinations: [{ type: 'google-sheets', enabled: true, settings: {}, columns: [] }] },
+      });
+      expect(structured<{ sheet_header_row: unknown }>(res).sheet_header_row).toEqual({
+        outcome: 'foreign',
+        reason: null,
+        headers: ['Email', 'Company'],
+        // The spreadsheet's text is somebody else's: cleaned, and under its own key.
+        sheet_supplied: { row_1: ['Name', 'Phone'] },
+      });
+      expect(JSON.stringify(res)).toContain('left untouched');
+    } finally {
+      await local.close();
+    }
+    // No spreadsheet outcome: the field is there and null.
+    const plain = await owner.callTool({
+      name: 'set_destinations',
+      arguments: { form_id: 'form-1', destinations: [{ type: 'webhook', enabled: true, settings: { url: 'https://example.test/h' } }] },
+    });
+    expect(structured<{ sheet_header_row: unknown }>(plain).sheet_header_row).toBeNull();
   });
 
   it('names what was refused and how to fix it', async () => {

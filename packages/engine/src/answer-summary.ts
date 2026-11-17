@@ -8,6 +8,9 @@
  * escapes HTML: the email renderer owns that boundary.
  */
 import {
+  checkboxText,
+  inlineLinksPlainText,
+  isCheckboxChecked,
   isInputlessStep,
   nameAnswer,
   parseFileAnswer,
@@ -82,9 +85,16 @@ export interface AnswerFormatOptions {
  * The header a step carries in a table or a spreadsheet: its question as
  * configured (trimmed, markdown kept, `[field]` tokens left as written, since a
  * column serves every respondent), or the step key when the question is empty.
+ * A `checkbox` shows its inline links as their text: `Acepto la
+ * [política](https://x)` reads `Acepto la política`.
  */
-export function stepLabel(step: Pick<FormStep, "key" | "question">): string {
-  return (step.question ?? "").trim() || step.key;
+export function stepLabel(
+  step: Pick<FormStep, "key" | "question"> & { type?: FormStep["type"]; helper?: FormStep["helper"] },
+): string {
+  const question = step.question ?? "";
+  const text =
+    step.type === "checkbox" ? inlineLinksPlainText(checkboxText(step).text ?? "") : question;
+  return text.trim() || step.key;
 }
 
 /**
@@ -103,6 +113,8 @@ export function formatAnswerValue(
   opts: AnswerFormatOptions = {},
 ): string {
   const separator = opts.separator ?? "; ";
+  // A checkbox stores `true` when checked and nothing otherwise.
+  if (step.type === "checkbox") return isCheckboxChecked(value as AnswerValue) ? "\u2713" : "";
   if (value == null) return "";
   if (Array.isArray(value))
     return value
@@ -174,7 +186,11 @@ export function summarizeAnswersByStep(
       value = formatAnswerValue(step, raw, { separator: ", " });
       if (!value) continue;
     }
-    const question = resolveQuestion(step, answers).trim();
+    const question = (
+      step.type === "checkbox"
+        ? inlineLinksPlainText(checkboxText(step).text ?? "")
+        : resolveQuestion(step, answers)
+    ).trim();
     rows.push({
       label: question || step.key,
       value: value.slice(0, ANSWER_VALUE_MAX),

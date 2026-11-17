@@ -7,6 +7,7 @@ import { databaseLogLabel } from './database-log-label';
 import { configureCors } from './cors';
 import { configureDeprecatedHosts } from './deprecated-hosts';
 import { linkPageBodyParser } from './link-page-body';
+import { analyticsSessionMiddleware } from './analytics-session';
 
 async function bootstrap() {
   // Load .env (root + app-local) before reading env — a self-hoster's .env must
@@ -24,6 +25,9 @@ async function bootstrap() {
   if (deprecated) {
     console.log(`[api] deprecated hosts: ${deprecated.hosts.join(', ')} (successor ${deprecated.successorOrigin})`);
   }
+  // Mounted before every route so each request runs inside its own analytics
+  // session scope; server-side events then link to the browser's recording.
+  app.use(analyticsSessionMiddleware());
   // CORS (P1-4): an explicit allowlist, never a reflected origin; `/mcp` has
   // its own (MCP_ALLOWED_ORIGINS, no credentials). See cors.ts.
   const origins = configureCors(app, env);

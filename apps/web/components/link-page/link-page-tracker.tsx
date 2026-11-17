@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import type { LinkPageEvent } from '@quill/types';
+import { linkPageEventsPath } from '@/lib/public-page';
 import { linkPageEventFromElement } from './link-page-events';
 
 /**
@@ -9,16 +10,18 @@ import { linkPageEventFromElement } from './link-page-events';
  * button or icon, with its `link_type` (form, link or social).
  *
  * Same route as the public form's funnel events, a same-origin address that
- * never changes between deploys (`/api/public/pages/:accountCode/events`),
+ * never changes between deploys (`/api/public/pages/:accountCode/events`, or
+ * `/api/public/pages/:accountCode/:pageSlug/events` for a page other than the
+ * default, so the capture says which page it was),
  * relayed by the web server to the API, which enqueues the capture. Sent with
  * `sendBeacon` so a click that leaves the page still arrives. Best-effort:
  * nothing here can stop a visitor from following a link.
  *
  * Mounted only on the public page, never in the editor's preview.
  */
-export function LinkPageTracker({ accountCode }: { accountCode: string }) {
+export function LinkPageTracker({ accountCode, pageSlug = null }: { accountCode: string; pageSlug?: string | null }) {
   useEffect(() => {
-    const endpoint = `/api/public/pages/${encodeURIComponent(accountCode)}/events`;
+    const endpoint = linkPageEventsPath(accountCode, pageSlug);
     const send = (event: LinkPageEvent) => {
       try {
         const body = new Blob([JSON.stringify(event)], { type: 'application/json' });
@@ -46,7 +49,7 @@ export function LinkPageTracker({ accountCode }: { accountCode: string }) {
     // runs before the browser starts following the link.
     document.addEventListener('click', onClick, true);
     return () => document.removeEventListener('click', onClick, true);
-  }, [accountCode]);
+  }, [accountCode, pageSlug]);
 
   return null;
 }

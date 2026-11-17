@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { NotificationEmailMock, type NotificationMockLabels } from '@/components/notification-email-mock';
-import { interpolate, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
+import { interpolate, interpolateBody, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
 
 /**
  * The editable fields for ONE notification email — enable toggle, subject,
@@ -72,6 +72,7 @@ export function NotificationEmailFields({
   recipients,
   layout = 'stacked',
   footer,
+  sample: sampleIn = SAMPLE,
 }: {
   value: NotificationEmailValue;
   onChange: (next: NotificationEmailValue) => void;
@@ -79,6 +80,12 @@ export function NotificationEmailFields({
   labels: NotificationFieldsLabels;
   /** Optional data-testid prefix for the subject/body controls. */
   testIdPrefix?: string;
+  /**
+   * The values the preview gives the tokens (default: the shared sample). A
+   * form with no scoring passes `notificationSampleFor(false)`, so its
+   * preview drops the score line as the real email does.
+   */
+  sample?: Record<string, string>;
   /**
    * A permanent, non-blocking warning about the current draft (e.g. the owner
    * notice lacks `{{answers}}`), shown above the token chips. Null hides it.
@@ -99,12 +106,17 @@ export function NotificationEmailFields({
   /** Set under the fields, inside their column, so it stays with them in `split`. */
   footer?: ReactNode;
 }) {
+  // The respondent receipt (the email with no recipient list) never carries
+  // `{{formLink}}`: the server leaves it empty, so a line with it drops. Show
+  // the preview that way too, not an admin link the respondent never gets.
+  const isReceipt = !recipients;
+  const sample = useMemo(() => (isReceipt ? { ...sampleIn, formLink: '' } : sampleIn), [isReceipt, sampleIn]);
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const activeField = useRef<'subject' | 'body'>('body');
 
-  const previewSubject = useMemo(() => interpolate(value.subject, SAMPLE), [value.subject]);
-  const previewBody = useMemo(() => interpolate(value.body, SAMPLE), [value.body]);
+  const previewSubject = useMemo(() => interpolate(value.subject, sample), [value.subject, sample]);
+  const previewBody = useMemo(() => interpolateBody(value.body, sample), [value.body, sample]);
 
   /** Insert `{{token}}` at the caret of the last-focused field. */
   function insertToken(token: string) {
@@ -346,6 +358,7 @@ export function NotificationEmailFields({
       subject={value.subject}
       body={value.body}
       labels={labels.previewMock}
+      sample={sample}
     />
   );
 

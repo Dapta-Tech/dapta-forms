@@ -20,6 +20,26 @@ describe('formGuide', () => {
     expect(GUIDE_PARTS).toContain('all');
   });
 
+  it('tells an agent how to set up a one-page form embedded in a branded page', () => {
+    const rules = formGuide('rules').rules!;
+    expect(rules).toContain(
+      'A one-page form (layout "vertical") meant to be embedded in a page that already shows the brand usually takes branding.showHeader false and branding.progressStyle "none": no logo or form name on top and no answered counter.',
+    );
+  });
+
+  it('tells an agent how to forward the visitor UTMs to every redirect', () => {
+    const logic = formGuide('rules').logic!.join(' ');
+    expect(logic).toContain('ending.forwardUtm true');
+    expect(logic).toMatch(/never overwrites/);
+  });
+
+  it('tells an agent how to make a one-page form look like a regular web form', () => {
+    const rules = formGuide('rules').rules!;
+    expect(rules).toContain(
+      'To make a one page form look like a regular web form: layout "vertical", branding.density "compact", width "half" on pairs of short fields (first name and last name go in one name step with fieldLabels), and no cover.',
+    );
+  });
+
   it('tells an agent how to choose a workspace, for an API key and for a person signed in', () => {
     const text = formGuide('rules').workspaces!.join(' ');
     expect(text).toContain('list_my_workspaces');
@@ -48,5 +68,17 @@ describe('formGuide', () => {
     const sources = [...readdirSync(here).map((f) => join(here, f)), ...readdirSync(join(here, '..')).map((f) => join(here, '..', f))]
       .filter((f) => f.endsWith('.ts'));
     for (const file of sources) expect(readFileSync(file, 'utf8'), file).not.toMatch(/\.dapta\.(ai|dev|com)/i);
+  });
+
+  it('tells an agent that new scheduler steps default to dCal and where its event is picked', () => {
+    const scheduler = formGuide('rules').step_types?.find((t) => t.type === 'scheduler');
+    expect(scheduler?.use_for).toMatch(/default to provider dcal; absent means calendly/);
+    expect(scheduler?.use_for).toMatch(/list_event_types/);
+  });
+
+  it('tells an agent that a destination of a provider not connected is refused, with a page to connect it', () => {
+    const rules = formGuide('rules').rules!.join(' ');
+    expect(rules).toContain('INTEGRATION_NOT_CONNECTED');
+    expect(rules).toMatch(/Salesforce destination/);
   });
 });

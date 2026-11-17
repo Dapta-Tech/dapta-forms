@@ -15,11 +15,13 @@
  *
  * `form-button` is the attribution pill on the form itself; `confirmation` is
  * the "Want your own form?" CTA on the thank-you screen; `link-page` is the
- * pill at the foot of a workspace's link page (`/{accountCode}`). The pill's
+ * pill at the foot of a workspace's link page (`/{accountCode}`);
+ * `email-receipt` and `email-notice` are the button at the foot of the
+ * respondent's receipt and of the owner's new-submission email. The pill's
  * medium was `badge` until 2026-08, so any report filtering on it has to accept
  * BOTH values across that date, or the earlier days read as zero.
  */
-export type SignupMedium = 'form-button' | 'confirmation' | 'link-page';
+export type SignupMedium = 'form-button' | 'confirmation' | 'link-page' | 'email-receipt' | 'email-notice';
 
 export const UTM_SOURCE = 'dapta-forms';
 /**

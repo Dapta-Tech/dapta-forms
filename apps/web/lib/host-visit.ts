@@ -76,6 +76,12 @@ export interface HostVisitOptions {
   hubspotTracking: boolean;
   /** The form's public title: the page's name on a direct link, where the page IS the form. */
   formTitle: string;
+  /**
+   * Called with the landing's campaign each time the host answers, including
+   * the answer to the mount-time ask. Lets the renderer hand a booking page
+   * the landing's `utm_*` before any save, without asking the host again.
+   */
+  onHostUtm?: (hostUtm: Record<string, string>) => void;
 }
 
 export interface HostVisit {
@@ -115,6 +121,7 @@ export function createHostVisit(opts: HostVisitOptions): HostVisit {
     if (typeof id !== 'string' || !issued.has(id)) return;
     const reply = readReply(data);
     last = reply;
+    if (!reply.off) opts.onHostUtm?.(embeddedVisit(reply)?.hostUtm ?? {});
     const wake = waiting.get(id);
     waiting.delete(id);
     wake?.(reply);

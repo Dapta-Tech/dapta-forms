@@ -25,6 +25,7 @@ import {
 } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
+  cacheDaptaPaid,
   createLocalWorkspace,
   getAccountByExternalId,
   searchProjectedAccounts,
@@ -62,6 +63,7 @@ import {
   IAM_MEMBER_ROLE_NAME,
   IamHttpError,
   IamUnavailableError,
+  paidVerdictOf,
   roleFromIam,
   userEmailOf,
   userNameOf,
@@ -450,6 +452,7 @@ export class WorkspaceService {
             workspaceId: ws.id,
             workspaceName: ws.name,
             iamAccountId: ws.account_id ?? null,
+            paid: paidVerdictOf(ws),
           })
         ).accountId;
       } catch (err) {
@@ -494,6 +497,10 @@ export class WorkspaceService {
     if (up && this.projection && wsId) {
       try {
         const ws = await this.projection.iam.getWorkspace(up.bearer, wsId);
+        // The detail names the owning account's status: refresh the cached
+        // paid verdict while it is in hand (nothing when it carries none).
+        const paid = paidVerdictOf(ws);
+        if (paid !== null) await cacheDaptaPaid(this.db, p.accountId, paid);
         await projectRoster(
           this.db,
           p.accountId,

@@ -26,6 +26,12 @@ export const account = sqliteTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: integer('entitlement_checked_at'),
+  /** The workspace's choice to hide the attribution (0028), 0/1. See the Postgres twin. */
+  hideAttribution: integer('hide_attribution').notNull().default(0),
+  /** The cached Dapta AI paid verdict (0028), 1/0, NULL = never seen. */
+  daptaPaid: integer('dapta_paid'),
+  /** Epoch ms that verdict was written (0028). */
+  daptaPaidCheckedAt: integer('dapta_paid_checked_at'),
   /** First-touch acquisition context (TEXT JSON, see 0010). Written once by `claimAccountAttribution`. */
   attribution: text('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */
@@ -364,6 +370,41 @@ export const accountIntegration = sqliteTable(
   }),
 );
 
+/** A workspace link page (see 0027). Mirrors schema.pg.ts; config is TEXT JSON. */
+export const linkPage = sqliteTable(
+  'link_page',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    slug: text('slug').notNull(),
+    name: text('name').notNull().default(''),
+    config: text('config').notNull(),
+    isDefault: integer('is_default').notNull().default(0),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => ({
+    linkPageAccountSlugUq: uniqueIndex('link_page_account_slug_uq').on(t.accountId, t.slug),
+  }),
+);
+
+/** A renamed link page's old slug (see 0027). */
+export const linkPageAlias = sqliteTable(
+  'link_page_alias',
+  {
+    accountId: text('account_id').notNull(),
+    slug: text('slug').notNull(),
+    pageId: text('page_id')
+      .notNull()
+      .references(() => linkPage.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.accountId, t.slug] }),
+    linkPageAliasPageIdx: index('link_page_alias_page_idx').on(t.pageId),
+  }),
+);
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -378,4 +419,6 @@ export const sqliteSchema = {
   formEvent,
   bookingEvent,
   accountIntegration,
+  linkPage,
+  linkPageAlias,
 };
