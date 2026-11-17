@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { getMessages } from '@quill/shared';
 import type { FormDelivery } from '@/lib/admin-api';
-import { DeliveryHistoryView, isFailure, type HistoryState } from './delivery-history';
+import { DeliveryHistoryView, isFailure, notDelivered, type HistoryState } from './delivery-history';
 
 const m = getMessages('en').admin.integrations;
 
@@ -65,6 +65,63 @@ describe('isFailure', () => {
     // `pending` is progress, not a problem — a webhook mid-backoff must not
     // paint the card red.
     expect(isFailure(delivery({ status: 'pending' }))).toBe(false);
+  });
+});
+
+describe('a delivery the provider refused', () => {
+  // What the worker now records for an adapter that resolved `delivered:false`:
+  // skipped, the adapter's reason, and the provider's own answer. This row was
+  // `done` before, and rendered as a green "Delivered · HTTP 400".
+  const refused = (over: Partial<FormDelivery> = {}) =>
+    delivery({
+      kind: 'salesforce',
+      status: 'skipped',
+      lastError: 'HTTP 400: STRING_TOO_LONG: Last Name: data value too large (max length=80) [LastName]',
+      requestBody: '{"LastName":"x"}',
+      responseStatus: 400,
+      responseBody: 'STRING_TOO_LONG: Last Name: data value too large (max length=80) [LastName]',
+      ...over,
+    });
+
+  it('is labelled not delivered, with the reason, and never as delivered', () => {
+    const html = render(ready([refused()]));
+    expect(html).toContain('data-status="skipped"');
+    expect(html).toContain('>Not delivered<');
+    expect(html).not.toContain(m.historyDelivered);
+    expect(html).toContain('STRING_TOO_LONG: Last Name: data value too large');
+    expect(html).toContain('HTTP 400');
+    expect(html).toContain('bg-destructive/10');
+  });
+
+  it('says not delivered in Spanish too', () => {
+    expect(getMessages('es').admin.integrations.historySkipped).toBe('No entregada');
+  });
+
+  it('counts in the red chip on a complete', () => {
+    const html = render(ready([refused(), delivery({ id: 'b', status: 'done' })]), false);
+    expect(html).toContain('1 failed');
+    expect(html).toContain('data-failures="1"');
+  });
+
+  it('lists a skipped partial as not delivered, with its reason, without raising the alarm', () => {
+    // HubSpot fires on partials, and a respondent who has not reached the email
+    // question leaves one of these on most forms. The complete is what counts.
+    const partial = delivery({ id: 'p', kind: 'hubspot', status: 'skipped', action: 'partial', lastError: 'no email in submission' });
+    expect(notDelivered(partial)).toBe(true);
+    expect(isFailure(partial)).toBe(false);
+
+    const closed = render(ready([partial, delivery({ id: 'c', kind: 'hubspot' })]), false);
+    expect(closed).toContain('data-failures="0"');
+    expect(closed).not.toContain('webhook-history-failed-chip');
+
+    const open = render(ready([partial]));
+    expect(open).toContain('>Not delivered<');
+    expect(open).toContain('no email in submission');
+    expect(open).not.toContain('bg-destructive/10');
+  });
+
+  it('still counts a partial whose retries ran out', () => {
+    expect(isFailure(delivery({ status: 'failed', action: 'partial' }))).toBe(true);
   });
 });
 

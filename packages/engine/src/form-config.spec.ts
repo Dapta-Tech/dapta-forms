@@ -213,12 +213,23 @@ describe('resolveQuestion', () => {
 });
 
 describe('createEmptyStep — scheduler (V6)', () => {
-  it('seeds a Calendly scheduler that is required and prefilled, unconfigured until picked', () => {
+  it('seeds a dCal scheduler that is required and prefilled, unconfigured until picked', () => {
     const s = createEmptyStep('scheduler', new Set());
     expect(s.type).toBe('scheduler');
     expect(s.required).toBe(true); // a scheduler must be booked unless the author turns it off
-    expect(s.scheduler).toEqual({ provider: 'calendly', prefill: true });
+    expect(s.scheduler).toEqual({ provider: 'dcal', prefill: true });
     expect(s.scheduler?.url == null).toBe(true); // no event type picked yet
+  });
+
+  it('says dCal EXPLICITLY, so an absent provider can go on meaning Calendly', () => {
+    // The split this pins: a new step names its provider, and the readers go
+    // on resolving an absent one to Calendly. Without the explicit value, a
+    // changed default would silently repoint every scheduler authored before
+    // dCal existed at a booking page that is not theirs.
+    expect(createEmptyStep('scheduler', new Set()).scheduler?.provider).toBe('dcal');
+    expect(Object.prototype.hasOwnProperty.call(createEmptyStep('scheduler', new Set()).scheduler!, 'provider')).toBe(
+      true,
+    );
   });
 });
 

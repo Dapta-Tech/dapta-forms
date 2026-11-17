@@ -78,6 +78,61 @@ const DENIED = new Set([
   // Connecting or disconnecting an integration.
   'POST /v1/integrations/:provider/connect',
   'DELETE /v1/integrations/:provider',
+  // The dCal picker, which is the one integration read a key cannot do. It
+  // holds no stored credential: it forwards the CALLER'S session to dCal, and
+  // a key is not a session, so for a key it could only ever answer
+  // "unavailable". Its two siblings above are allowed because they read a
+  // token the account connected once, which a key can use.
+  'GET /v1/integrations/dcal/event-types',
+  // Salesforce, both routes. Connecting is the same admin action as
+  // `:provider/connect` (it takes a secret), only with three values instead of
+  // one. The field list is a key-readable integration read in principle, like
+  // HubSpot's property list, but opening it also opens the public API
+  // reference, the developer skill and an MCP tool with its own parity; that
+  // is its own change, so it stays shut until then rather than half-open.
+  'POST /v1/integrations/salesforce/connect',
+  'GET /v1/integrations/salesforce/fields',
+  // The Google Sheets consent flow, both halves. A key cannot start one (there
+  // is no browser to send anywhere and no human to consent), and cannot finish
+  // one either.
+  //
+  // The callback is additionally the one route on the admin surface that
+  // authenticates nobody: Google redirects a browser to it with no header and no
+  // cookie this host could read, and its signed `state` is what authorizes the
+  // write instead (see `google-oauth.ts`). `isAdminRoute` classes it as admin on
+  // its path alone, so if a blanket auth guard is ever put over the admin
+  // surface, this route has to be excluded from it or connecting Google Sheets
+  // breaks with no error anyone would connect to the cause.
+  'POST /v1/integrations/google-sheets/authorize',
+  'GET /v1/integrations/google-sheets/callback',
+  // The two helpers the Connect tab's Google Sheets card calls: the tab picker
+  // and the one-time header row.
+  //
+  // Denied for now as a DELIBERATE, reversible choice, not because a key could
+  // do harm with them. In this repo a key-allowed route is a route of the
+  // PUBLIC API contract: it has to appear in `API_REFERENCE` with prose in both
+  // locales, and its documented response has to match what the route really
+  // answers. Putting two Google-specific routes into that contract is a product
+  // decision about the public API, separate from shipping the editor, and it is
+  // far easier to add a route to the contract later than to take one out.
+  //
+  // What a key loses meanwhile: an agent configuring a Google Sheets
+  // destination has to be told the tab's name rather than discovering it, and
+  // writes its own header row. Everything else about the destination is already
+  // key-configurable through `PUT /v1/forms/:id/destinations`.
+  'GET /v1/integrations/google-sheets/tabs',
+  'POST /v1/integrations/google-sheets/header-row',
+  // Creating a spreadsheet for a form: denied for the same reversible reason as
+  // the two above. It is the one of these an agent would miss most, because
+  // under the `drive.file` scope a spreadsheet reaches a form only by being
+  // created here or chosen in the Picker, so a key cannot point a form at a
+  // spreadsheet the app was never handed. Opening it is the same contract
+  // decision.
+  'POST /v1/integrations/google-sheets/spreadsheets',
+  // The Picker's configuration. This one is denied on its merits, not pending a
+  // decision: its answer carries a Google access token for a browser to open a
+  // file chooser with, and a key has no browser and no chooser.
+  'GET /v1/integrations/google-sheets/picker',
 ]);
 
 /** Allowlisted ahead of the route landing in its own change (revert, #60). */

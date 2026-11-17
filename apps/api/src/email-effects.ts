@@ -1,5 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { enqueueOutbox, getNotificationSettings, recordSettledDelivery, sql, type Db } from '@quill/db';
+import {
+  enqueueOutbox,
+  getNotificationSettings,
+  recordSettledDelivery,
+  sql,
+  type Db,
+  type DeliveryTranscript,
+} from '@quill/db';
 import {
   SubmissionNotifier,
   type EmailProvider,
@@ -12,10 +19,22 @@ import { DB, EMAIL, ENV, NOTIFIER } from './tokens';
 
 /**
  * Thrown by `deliver` when a row must be deliberately NOT sent (e.g. tenant
- * context unrecoverable on a transport that requires it). The worker marks the
- * row `skipped` ONCE with this reason — it never burns the retry schedule.
+ * context unrecoverable on a transport that requires it), or when the receiver
+ * refused it for good. The worker marks the row `skipped` ONCE with this reason
+ * and never burns the retry schedule.
+ *
+ * `transcript` is what crossed the wire before the refusal, when there was a
+ * request at all: a destination that answered HTTP 400 is skipped, and its
+ * answer is stored on the row so the delivery history can show it.
  */
-export class OutboxSkipError extends Error {}
+export class OutboxSkipError extends Error {
+  constructor(
+    message: string,
+    readonly transcript?: DeliveryTranscript,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Trim, drop blanks, and keep the first spelling of each mailbox. The patch

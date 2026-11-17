@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
+import { ProviderLogo } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { browserTimezones, isKnownTimezone } from '@/lib/timezones';
@@ -31,6 +31,15 @@ import type {
 } from '@/lib/admin-api';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
+import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
+import {
+  builtSalesforce,
+  initialSalesforce,
+  SalesforceCard,
+  type SalesforceState,
+} from './salesforce-card';
+import type { SalesforceFieldsResponse } from '@/lib/admin-api';
+import { storedColumns } from './sheet-columns';
 import { DeliveryHistory } from './delivery-history';
 import { Card } from './integrations-card';
 import {
@@ -203,6 +212,93 @@ export function carriedWebhooks(destinations: FormDestination[]): FormDestinatio
   return destinations.filter((d) => d.type === 'webhook').slice(1);
 }
 
+/**
+ * Every destination this screen does not edit at all.
+ *
+ * `buildDestinations` assembles the array it saves from scratch, out of the two
+ * things this tab shows: the webhook and the HubSpot mapping. That was complete
+ * while those were the only kinds there were. It stopped being complete the
+ * moment a Google Sheets destination could exist, and the consequence is not a
+ * missing control but DATA LOSS: opening this tab and pressing save on an
+ * unrelated field would delete a spreadsheet sync configured through the API,
+ * silently, with the form still reporting a healthy save.
+ *
+ * So anything that is neither a webhook nor a HubSpot destination rides along
+ * untouched. Written as "not the two kinds this screen knows" rather than as a
+ * list of kinds to carry, so the next destination type is carried by default
+ * instead of being quietly dropped until somebody notices.
+ *
+ * They go at the END of the saved array. `enqueueSubmissionDeliveries` builds a
+ * delivery's idempotency key from its index, so a destination that changes
+ * position can have one in-flight retry re-keyed and delivered twice. Appending
+ * keeps the webhooks contiguous and in their stored order, which is what the
+ * key scheme is most sensitive to, and costs at most that one duplicate on a
+ * destination nobody is editing.
+ */
+export function carriedOthers(destinations: FormDestination[]): FormDestination[] {
+  return destinations.filter(
+    (d) =>
+      d.type !== 'webhook' &&
+      d.type !== 'hubspot' &&
+      d.type !== 'google-sheets' &&
+      d.type !== 'salesforce',
+  );
+}
+
+/** The card's state, read out of the stored destination (or its empty start). */
+export function initialGoogleSheets(destinations: FormDestination[]): GoogleSheetsState {
+  const stored = destinations.find((d) => d.type === 'google-sheets');
+  if (!stored || stored.type !== 'google-sheets') {
+    return { enabled: false, spreadsheetId: '', sheetTitle: '', columns: [] };
+  }
+  return {
+    enabled: stored.enabled !== false,
+    spreadsheetId: stored.settings?.spreadsheetId ?? '',
+    sheetTitle: stored.settings?.sheetTitle ?? '',
+    columns: stored.columns ?? [],
+  };
+}
+
+/**
+ * Whether the spreadsheet card is shown at all.
+ *
+ * A deployment with no Google OAuth client cannot connect Google Sheets, and a
+ * card there could only send the author to a page with nothing to click. The
+ * exception is a form that already stores a spreadsheet destination: its card
+ * stays, because a destination nobody can see is one nobody can switch off.
+ *
+ * Hiding the card never drops the destination. The state behind it is built
+ * from the form and written back on save either way.
+ */
+export function showsGoogleSheetsCard(
+  available: boolean,
+  destinations: FormDestination[],
+): boolean {
+  return available || destinations.some((d) => d.type === 'google-sheets');
+}
+
+/**
+ * The destination to store, or null when there is nothing worth storing.
+ *
+ * Null covers the two ways this card can be incomplete: no spreadsheet, or no
+ * column that says anything. Storing either would put a destination in the
+ * config that the factory degrades to a no-op on every submission, which the
+ * author would only discover by looking at a delivery history full of them.
+ */
+export function builtGoogleSheets(state: GoogleSheetsState): FormDestination | null {
+  const columns = storedColumns(state.columns);
+  if (!state.spreadsheetId || columns.length === 0) return null;
+  return {
+    type: 'google-sheets',
+    enabled: state.enabled,
+    settings: {
+      spreadsheetId: state.spreadsheetId,
+      ...(state.sheetTitle.trim() ? { sheetTitle: state.sheetTitle.trim() } : {}),
+    },
+    columns,
+  };
+}
+
 function initialWebhook(destinations: FormDestination[]): WebhookState {
   const w = destinations.find((d) => d.type === 'webhook');
   if (w && w.type === 'webhook') {
@@ -315,6 +411,12 @@ export function IntegrationsEditor({
   initialDestinations,
   hubspot: hubspotProps,
   hubspotConnected,
+  googleSheetsConnected = false,
+  googleSheetsAvailable = true,
+  googlePickerAvailable = false,
+  salesforceConnected = false,
+  salesforceFields = { enabled: false, reason: 'not_connected' },
+  formName = '',
   questions,
   readiness = NOT_READY,
   partialsHeld = false,
@@ -326,6 +428,22 @@ export function IntegrationsEditor({
   hubspot: HubSpotPropertiesResponse;
   /** Account-level HubSpot connection status (gates the mapping UI). */
   hubspotConnected: boolean;
+  /** Account-level Google connection: without it the spreadsheet card cannot list tabs. */
+  googleSheetsConnected?: boolean;
+  /**
+   * Whether this deployment can connect Google Sheets at all. When it cannot,
+   * the spreadsheet card is left out, unless this form already stores a
+   * spreadsheet destination: that one stays visible so it can be switched off.
+   */
+  googleSheetsAvailable?: boolean;
+  /** Whether an existing spreadsheet can be chosen in Google's Picker. */
+  googlePickerAvailable?: boolean;
+  /** Account-level Salesforce connection. */
+  salesforceConnected?: boolean;
+  /** The connected org's fields as the tab loaded them. */
+  salesforceFields?: SalesforceFieldsResponse;
+  /** Names the spreadsheet the card creates for this form. */
+  formName?: string;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
   /**
@@ -347,6 +465,10 @@ export function IntegrationsEditor({
   errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
+  const [sheets, setSheets] = useState<GoogleSheetsState>(() =>
+    initialGoogleSheets(initialDestinations),
+  );
+  const [sf, setSf] = useState<SalesforceState>(() => initialSalesforce(initialDestinations));
   const [formActivityError, setFormActivityError] = useState<string | null>(null);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   // The destinations as the server last accepted them. Seeded from the freshly
@@ -519,6 +641,18 @@ export function IntegrationsEditor({
         bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
       });
     }
+    // The spreadsheet destination, when the card says enough to store one.
+    const sheetsDestination = builtGoogleSheets(sheets);
+    if (sheetsDestination) out.push(sheetsDestination);
+
+    // Salesforce: the first stored one, as this card edits it. A stored second
+    // is dropped on save (the card says so), the same rule as HubSpot's.
+    const salesforceDestination = builtSalesforce(sf);
+    if (salesforceDestination) out.push(salesforceDestination);
+
+    // Last: every destination kind this screen does not edit (see
+    // `carriedOthers`). Without this, saving here deletes them.
+    out.push(...carriedOthers(savedDestinations.current));
     return { destinations: out, webhookError };
   }
 
@@ -621,6 +755,20 @@ export function IntegrationsEditor({
     },
     [markDirty],
   );
+  const editSheets = useCallback(
+    (next: GoogleSheetsState) => {
+      setSheets(next);
+      markDirty();
+    },
+    [markDirty],
+  );
+  const editSalesforce = useCallback(
+    (next: SalesforceState) => {
+      setSf(next);
+      markDirty();
+    },
+    [markDirty],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -659,26 +807,30 @@ export function IntegrationsEditor({
         />
       </LocaleContext.Provider>
 
-      {/* Google Sheets — announced, not shipped. Inert by design: no toggle,
-          nothing focusable, and it never writes a destination to the config. */}
-      <section
-        data-testid="integration-gsheets"
-        aria-disabled="true"
-        className="cursor-default rounded-lg border border-border bg-card p-5 opacity-60"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <GoogleSheetsLogo size={20} />
-              <h2 className="text-lg font-semibold">{m.gsheetsTitle}</h2>
-              <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
-                {m.comingSoon}
-              </span>
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">{m.gsheetsDesc}</p>
-          </div>
-        </div>
-      </section>
+      {showsGoogleSheetsCard(googleSheetsAvailable, initialDestinations) ? (
+        <GoogleSheetsCard
+          state={sheets}
+          setState={editSheets}
+          questions={questions}
+          connected={googleSheetsConnected}
+          pickerAvailable={googlePickerAvailable}
+          formName={formName}
+          locale={locale}
+          m={m}
+        />
+      ) : null}
+
+      <SalesforceCard
+        state={sf}
+        setState={editSalesforce}
+        questions={questions}
+        connected={salesforceConnected}
+        initialFields={salesforceFields}
+        extraStored={initialDestinations.filter((d) => d.type === 'salesforce').length > 1}
+        formId={id}
+        locale={locale}
+        m={m}
+      />
 
       {/* The Save button is gone (V5-A4) — everything here autosaves, so what
           belongs in this bar is the state of that save, not an action. */}

@@ -268,6 +268,18 @@ export interface BuilderMessages {
     revealPlays: string;
     /** Vertical layout: where the reveal actually plays (page-canvas block). */
     revealVerticalNote: string;
+    /**
+     * The canvas card a dCal scheduler shows before an event type is picked.
+     * It stands where `schedulerUnset` does for Calendly, and says what dCal
+     * is rather than only that nothing is configured: this is the first place
+     * most authors will meet it.
+     */
+    schedulerDcalSetupTitle: string;
+    schedulerDcalSetupBody: string;
+    schedulerDcalSetupPointOne: string;
+    schedulerDcalSetupPointTwo: string;
+    schedulerDcalSetupPick: string;
+    schedulerDcalSetupCreate: string;
     /** V6 — the scheduler's live Calendly embed on the canvas. */
     schedulerUnset: string;
     schedulerNote: string;
@@ -347,7 +359,42 @@ export interface BuilderMessages {
     schedulerMapPickFirst: string;
     schedulerMapName: string;
     schedulerMapEmail: string;
+    /** dCal's booking form asks for notes by itself, where Calendly's does not. */
+    schedulerMapNotes: string;
     schedulerMapAuto: string;
+    /**
+     * dCal, the third provider. It needs no connected credential: the author's
+     * own session lists their event types, so there is no "connect" state
+     * here, only "you have none yet".
+     */
+    /**
+     * The section hint under dCal. `schedulerHint` names Calendly, so reusing
+     * it here told an author picking dCal to pick a Calendly event.
+     */
+    schedulerDcalHint: string;
+    /**
+     * Whose list it is, dCal's rule. `schedulerScopedTo` states Calendly's
+     * ("owns or hosts", and team events only when that user is a host), which
+     * is not how dCal scopes it: the author's own events, plus their teams'.
+     */
+    schedulerDcalScopedTo: string;
+    schedulerProvider: string;
+    schedulerProviderCalendly: string;
+    schedulerProviderDcal: string;
+    schedulerDcalWorkspace: string;
+    /** No event type in THIS workspace. The two ways out follow. */
+    schedulerDcalEmpty: string;
+    /** Only shown when the author actually has another workspace to switch to. */
+    schedulerDcalEmptySwitch: string;
+    /** Opens dCal's event-type editor in a new tab. */
+    schedulerDcalCreate: string;
+    /** Re-reads the list, for when they come back from creating one. */
+    schedulerDcalRefresh: string;
+    schedulerDcalRefreshing: string;
+    /** dCal is not configured for this deployment, or there is no session to forward. */
+    schedulerDcalUnavailable: string;
+    /** A team event, so the author can tell it from their own: `{team}` is its name. */
+    schedulerDcalTeam: string;
     /** V6 — where the form goes once the respondent books. */
     schedulerAfter: string;
     schedulerAfterHint: string;
@@ -783,6 +830,13 @@ const en: BuilderMessages = {
     revealSubtitlePlaceholder: 'Add a line of reassurance (optional)',
     revealPlays: 'Plays for {ms} ms, then the form continues on its own.',
     revealVerticalNote: 'Plays once, after Submit, before the result.',
+    schedulerDcalSetupTitle: 'Book the meeting without leaving the form',
+    schedulerDcalSetupBody:
+      'dCal is Dapta\u2019s own scheduler. Pick one of your event types and its booking page runs right here, inside this question.',
+    schedulerDcalSetupPointOne: 'Nothing to connect: your own account already lists your event types.',
+    schedulerDcalSetupPointTwo: 'Their name and email carry over, so nobody types them twice.',
+    schedulerDcalSetupPick: 'Pick an event type',
+    schedulerDcalSetupCreate: 'Create one in dCal',
     schedulerUnset: 'No event type picked yet',
     schedulerNote: 'Respondents pick a time here. Booking answers this question and moves the form on.',
     schedulerLoading: 'Loading the calendar…',
@@ -868,10 +922,24 @@ const en: BuilderMessages = {
     schedulerMapPickFirst: 'Pick an event type to see the fields its booking form asks for.',
     schedulerMapName: 'Name',
     schedulerMapEmail: 'Email',
+    schedulerMapNotes: 'Notes',
     schedulerMapAuto: 'Automatic',
     schedulerAfter: 'After booking',
     schedulerAfterHint: 'What happens once the respondent picks a time.',
     schedulerAfterContinue: 'Continue to the next question',
+    schedulerDcalHint: 'Pick a dCal event type. When someone books, it counts as their answer.',
+    schedulerDcalScopedTo: 'Showing {email}\u2019s own event types, and their teams\u2019.',
+    schedulerProvider: 'Scheduler',
+    schedulerProviderCalendly: 'Calendly',
+    schedulerProviderDcal: 'dCal',
+    schedulerDcalWorkspace: 'Workspace',
+    schedulerDcalEmpty: 'This workspace has no event type yet.',
+    schedulerDcalEmptySwitch: 'Pick another workspace above, or:',
+    schedulerDcalCreate: 'Create one in dCal',
+    schedulerDcalRefresh: 'I created it, load the list',
+    schedulerDcalRefreshing: 'Loading the list again…',
+    schedulerDcalUnavailable: 'dCal is not available on this deployment.',
+    schedulerDcalTeam: 'Team: {team}',
     schedulerAfterSubmit: 'Submit the form and show the ending',
     scoring: 'Scoring',
     scoringHint:
@@ -1261,6 +1329,13 @@ const es: BuilderMessages = {
     revealSubtitlePlaceholder: 'Añade una línea que tranquilice (opcional)',
     revealPlays: 'Se muestra {ms} ms y luego el formulario continúa solo.',
     revealVerticalNote: 'Se muestra una vez, después de Enviar y antes del resultado.',
+    schedulerDcalSetupTitle: 'Agenda la reunión sin salir del formulario',
+    schedulerDcalSetupBody:
+      'dCal es el agendador de Dapta. Elige uno de tus tipos de evento y su página de agendamiento corre aquí mismo, dentro de esta pregunta.',
+    schedulerDcalSetupPointOne: 'No hay nada que conectar: tu propia cuenta ya lista tus tipos de evento.',
+    schedulerDcalSetupPointTwo: 'El nombre y el correo viajan solos, así nadie los escribe dos veces.',
+    schedulerDcalSetupPick: 'Elegir un tipo de evento',
+    schedulerDcalSetupCreate: 'Crear uno en dCal',
     schedulerUnset: 'Aún no eliges un tipo de evento',
     schedulerNote: 'Aquí eligen un horario. Agendar responde esta pregunta y avanza el formulario.',
     schedulerLoading: 'Cargando el calendario…',
@@ -1347,10 +1422,24 @@ const es: BuilderMessages = {
       'Elige un tipo de evento para ver los campos que pide su formulario de agendamiento.',
     schedulerMapName: 'Nombre',
     schedulerMapEmail: 'Correo electrónico',
+    schedulerMapNotes: 'Notas',
     schedulerMapAuto: 'Automático',
     schedulerAfter: 'Al agendar',
     schedulerAfterHint: 'Qué pasa cuando la persona elige un horario.',
     schedulerAfterContinue: 'Continuar a la siguiente pregunta',
+    schedulerDcalHint: 'Elige un tipo de evento de dCal. Cuando alguien agenda, cuenta como su respuesta.',
+    schedulerDcalScopedTo: 'Mostrando los eventos de {email} y los de sus equipos.',
+    schedulerProvider: 'Agendador',
+    schedulerProviderCalendly: 'Calendly',
+    schedulerProviderDcal: 'dCal',
+    schedulerDcalWorkspace: 'Espacio de trabajo',
+    schedulerDcalEmpty: 'Este espacio de trabajo todavía no tiene ningún evento.',
+    schedulerDcalEmptySwitch: 'Elige otro espacio de trabajo arriba, o bien:',
+    schedulerDcalCreate: 'Crear uno en dCal',
+    schedulerDcalRefresh: 'Ya lo creé, cargar la lista',
+    schedulerDcalRefreshing: 'Cargando la lista de nuevo…',
+    schedulerDcalUnavailable: 'dCal no está disponible en esta instalación.',
+    schedulerDcalTeam: 'Equipo: {team}',
     schedulerAfterSubmit: 'Enviar el formulario y mostrar el final',
     scoring: 'Puntaje',
     scoringHint:

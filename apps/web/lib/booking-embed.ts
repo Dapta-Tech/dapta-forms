@@ -25,7 +25,23 @@ const HUBSPOT_MESSAGE_ORIGINS = ['https://meetings.hubspot.com', 'https://app.hu
 const PRECONNECT_ORIGINS: Record<BookingProvider, string[]> = {
   hubspot_meetings: ['https://meetings.hubspot.com', 'https://static.hsappstatic.net'],
   calendly: ['https://calendly.com', 'https://assets.calendly.com'],
+  // Deliberately empty: dCal is self-hostable, so its host is whatever the
+  // deployment points at, and there is no static origin to warm. Nothing is
+  // lost by it either, because `warmBookingEmbed` already warms the configured
+  // booking URL's own origin, which for dCal is the only host involved: the
+  // iframe is declarative, with no asset host beside it.
+  dcal: [],
 };
+
+/**
+ * The booked signal dCal posts to a framing page: `event` keyed with a dot,
+ * mirroring `calendly.event_scheduled` on purpose, so an origin-checked
+ * listener written for Calendly works here unchanged. Its payload carries only
+ * what the booking page's own URL already said plus the instant booked, and
+ * never the invitee's name or address, because dCal posts it with
+ * `targetOrigin: '*'`.
+ */
+const DCAL_SCHEDULED_EVENT = 'dapta-calendars.booking_scheduled';
 
 declare global {
   interface Window {
@@ -131,6 +147,11 @@ export interface BookingScheduledDetails {
   eventUri?: string;
   /** Provider URI of the invitee record (Calendly). */
   inviteeUri?: string;
+  /**
+   * The booking's own id, for a provider that names rather than addresses it
+   * (dCal's `uid`). Reported as `bookingUid` on the callback.
+   */
+  bookingUid?: string;
   /** Scheduled start, normalized to an ISO 8601 datetime. */
   startTime?: string;
 }
@@ -209,6 +230,47 @@ function parseHubSpotMeetingsMessage(event: {
 }
 
 /**
+ * The origin a dCal embed may be believed, derived from the booking URL that
+ * was actually embedded. dCal is self-hostable, so unlike the other two there
+ * is no origin to hardcode: the allowlist IS "the page we framed". Null when
+ * the configured URL is unusable, and a null allowlist trusts nothing.
+ */
+export function dcalMessageOrigin(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseDcalMessage(
+  event: { origin: string; data: unknown },
+  expectedOrigin: string | null,
+): BookingScheduledDetails | null {
+  // No configured origin means no allowlist, and an unauthenticated
+  // `targetOrigin: '*'` message with nothing to check it against is exactly
+  // what must never be believed: any framed page could claim a booking.
+  if (!expectedOrigin || event.origin !== expectedOrigin) return null;
+  const data = event.data;
+  if (!data || typeof data !== 'object') return null;
+  const record = data as {
+    event?: unknown;
+    payload?: { uid?: unknown; startUtc?: unknown; eventTypeSlug?: unknown };
+  };
+  if (record.event !== DCAL_SCHEDULED_EVENT) return null;
+
+  const uid = typeof record.payload?.uid === 'string' ? record.payload.uid.trim() : '';
+  const startTime = safeIsoDate(record.payload?.startUtc);
+  return {
+    provider: 'dcal',
+    ...(uid ? { bookingUid: uid.slice(0, 200) } : {}),
+    ...(startTime ? { startTime } : {}),
+  };
+}
+
+/**
  * Pure parser for a provider's window `message` event. Returns the scheduled
  * details when the event is a genuine "booked" signal from an allowlisted
  * origin, else null. Recognized signals:
@@ -218,11 +280,16 @@ function parseHubSpotMeetingsMessage(event: {
  * - HubSpot Meetings: `meetingBookSucceeded === true`,
  *   `type === 'hsMeetingBookSuccess'`, or `eventName === 'meetingBooked'` from
  *   https://meetings.hubspot.com / https://app.hubspot.com.
+ * - dCal: `data.event === 'dapta-calendars.booking_scheduled'` from the origin
+ *   of the booking URL that was embedded, which `expectedOrigin` must carry
+ *   (see `dcalMessageOrigin`) because that host is per-deployment.
  */
 export function parseBookingMessage(
   provider: BookingProvider,
   event: Pick<MessageEvent, 'origin' | 'data'>,
+  expectedOrigin?: string | null,
 ): BookingScheduledDetails | null {
+  if (provider === 'dcal') return parseDcalMessage(event, expectedOrigin ?? null);
   return provider === 'calendly'
     ? parseCalendlyMessage(event)
     : parseHubSpotMeetingsMessage(event);
@@ -237,12 +304,14 @@ export function parseBookingMessage(
 export function attachBookingMessageListener(
   provider: BookingProvider,
   handler: (details: BookingScheduledDetails) => void,
+  /** dCal only: the origin its booked signal must come from. */
+  expectedOrigin?: string | null,
 ): () => void {
   if (typeof window === 'undefined') return () => undefined;
   let fired = false;
   const listener = (event: MessageEvent) => {
     if (fired) return;
-    const details = parseBookingMessage(provider, event);
+    const details = parseBookingMessage(provider, event, expectedOrigin);
     if (!details) return;
     fired = true;
     handler(details);

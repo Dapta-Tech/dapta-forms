@@ -195,9 +195,19 @@ export const formRevealSchema = z.object({
  * exactly like any other step. All fields optional/additive (back-compat).
  */
 export const formSchedulerSchema = z.object({
-  /** Scheduling provider. v1 ships Calendly; the embed also supports HubSpot Meetings. */
-  provider: z.enum(['calendly', 'hubspot_meetings']).optional(),
-  /** The picked Calendly event type's stable URI (used by the builder's picker). */
+  /**
+   * Scheduling provider. v1 shipped Calendly; the embed also supports HubSpot
+   * Meetings and dCal (Dapta's own scheduler).
+   */
+  // Spelled out rather than `z.enum(bookingProvider)`: that const is declared
+  // further down this file, and a forward reference here is evaluated at import
+  // time, before it exists. The two lists must move together.
+  provider: z.enum(['calendly', 'hubspot_meetings', 'dcal']).optional(),
+  /**
+   * The picked event type's stable id, used by the builder's picker: Calendly's
+   * URI, or dCal's own event-type id. Not a URL on purpose, because neither
+   * provider's id is one.
+   */
   eventTypeUri: z.string().max(500).nullable().optional(),
   /** Its display name, stored so the builder can label it without a lookup. */
   eventTypeName: z.string().max(200).nullable().optional(),
@@ -500,8 +510,15 @@ export type BrandKit = z.infer<typeof brandKitSchema>;
 
 // --- Outcome extensions (booking + answer-forced overrides) ------------------
 
-/** Scheduling providers an outcome can hand off to after the form completes. */
-export const bookingProvider = ['hubspot_meetings', 'calendly'] as const;
+/**
+ * Scheduling providers an outcome can hand off to after the form completes.
+ *
+ * `dcal` is Dapta's own scheduler (dforms' sibling product). It needs no
+ * connected credential at all, unlike the other two: it projects the SAME
+ * identity service this app does, so the author's own session is what lists
+ * their event types, and the booking page it embeds is a plain URL.
+ */
+export const bookingProvider = ['hubspot_meetings', 'calendly', 'dcal'] as const;
 export type BookingProvider = (typeof bookingProvider)[number];
 
 /**
@@ -598,7 +615,7 @@ export const formOutcomeSchema = z.object({
 // --- Submission destinations (pluggable CRM / webhook sync) ------------------
 
 /** The configurable destination kinds a form may deliver submissions to. */
-export const destinationType = ['webhook', 'hubspot'] as const;
+export const destinationType = ['webhook', 'hubspot', 'google-sheets', 'salesforce'] as const;
 export type DestinationType = (typeof destinationType)[number];
 
 /** A property map: form stepKey / utmKey -> external property name. */
@@ -693,6 +710,21 @@ export function destinationFiresForPhase(
   destination: { type: string; events?: DestinationEvent[] | undefined },
   phase: DestinationEvent,
 ): boolean {
+  // A spreadsheet is APPEND-ONLY, which makes a partial a different thing here
+  // than it is anywhere else. A webhook receiving a partial and then the
+  // complete can reconcile them on its own key; a CRM upserts onto the same
+  // contact. A sheet cannot: it would hold one row from halfway through the
+  // form and a second, fuller row underneath, with nothing in either saying
+  // they are the same person. So this destination is complete-only, and it is
+  // decided here rather than left to a default, because the schema's absent
+  // `events` means BOTH and that default is wrong for exactly this kind.
+  if (destination.type === 'google-sheets') return phase === 'complete';
+  // Salesforce is complete-only in its first version for a reason of its own:
+  // a partial carries whatever the respondent typed so far, and the CREATE
+  // path has to invent a last name and a company for a Lead that lacks them.
+  // A partial would mint a placeholder record for every visitor who typed an
+  // email and left, in somebody's CRM, where sales would call them.
+  if (destination.type === 'salesforce') return phase === 'complete';
   const events = destination.events;
   if (!events || events.length === 0) return true;
   return events.includes(phase);
@@ -805,9 +837,120 @@ export const hubspotDestinationSchema = z.object({
 });
 export type HubspotDestination = z.infer<typeof hubspotDestinationSchema>;
 
+/**
+ * What fills ONE cell of a spreadsheet row.
+ *
+ * `answer` names a step by its key; `utm` names one of the five campaign keys;
+ * the rest take no key. Unlike a CRM mapping, which is a record keyed by the
+ * question, this is a LIST: a spreadsheet's columns are ordered, and the order
+ * is the author's to choose rather than whatever a record happens to iterate in.
+ */
+export const sheetColumnSource = [
+  'answer',
+  'utm',
+  'score',
+  'outcome',
+  'submitted_at',
+  'form_name',
+  'submission_id',
+] as const;
+export type SheetColumnSource = (typeof sheetColumnSource)[number];
+
+export const sheetColumnSchema = z.object({
+  /**
+   * The text in the header row. Stored rather than derived, because the author
+   * can rename a column without the question changing, and because a sheet that
+   * already has data must keep the heading its existing rows were written under.
+   */
+  header: z.string().min(1).max(200),
+  source: z.enum(sheetColumnSource),
+  /** The step key (`answer`) or the campaign key (`utm`). Unused by the rest. */
+  key: z.string().min(1).max(64).optional(),
+});
+export type SheetColumn = z.infer<typeof sheetColumnSchema>;
+
+/**
+ * At most this many columns in one row. Well under a sheet's own limit; it
+ * exists so a crafted config cannot make one delivery build an enormous row.
+ */
+export const MAX_SHEET_COLUMNS = 200;
+
+/**
+ * Append every submission to a Google Sheet as a new row.
+ *
+ * The credential is NOT here. Like the HubSpot token, it is held per account in
+ * `account_integration` (the OAuth refresh token the consent flow returned) and
+ * exchanged for a short-lived access token by the API at delivery time. Nothing
+ * about Google's client lives in a form's config.
+ */
+export const googleSheetsDestinationSchema = z.object({
+  type: z.literal('google-sheets'),
+  enabled: z.boolean().default(false),
+  settings: z
+    .object({
+      /**
+       * The spreadsheet's own id, as it appears in its URL. Stored rather than
+       * the URL: the URL carries a fragment and query of its own that change as
+       * the author clicks around their own document.
+       */
+      spreadsheetId: z.string().min(1).max(200).nullable().optional(),
+      /** The tab written to, by its visible name. Absent writes to the first tab. */
+      sheetTitle: z.string().max(200).nullable().optional(),
+    })
+    .default({}),
+  /**
+   * The row, left to right. Empty means the destination is not configured yet:
+   * the delivery degrades to a no-op rather than inventing a column order.
+   *
+   * Deliberately NOT derived from a submission's own answers at delivery time.
+   * Two respondents answer different optional questions, so a row built from
+   * whatever one of them happened to fill in would put the same question in a
+   * different column on every line, and nothing downstream could read the sheet.
+   */
+  columns: z.array(sheetColumnSchema).max(MAX_SHEET_COLUMNS).default([]),
+});
+export type GoogleSheetsDestination = z.infer<typeof googleSheetsDestinationSchema>;
+
+/**
+ * Salesforce destination: find the respondent by email and write them to the
+ * connected org, without creating a duplicate.
+ *
+ * The connection (My Domain plus an External Client App's consumer key and
+ * secret, Client Credentials Flow) lives in `account_integration`, encrypted,
+ * and is exchanged for an access token by the API at delivery time. Nothing
+ * about the org's credentials lives in a form's config.
+ *
+ * Every mapping names a field of the LEAD object by its API name (`Company`,
+ * `LeadSource`, `Industry__c`). When the email already belongs to a Contact the
+ * delivery updates that Contact instead, writing only the mapped fields that
+ * also exist on Contact, so one Lead-only field cannot fail the whole update.
+ */
+export const salesforceDestinationSchema = z.object({
+  type: z.literal('salesforce'),
+  enabled: z.boolean().default(false),
+  /** stepKey -> one Lead field or several (one SHOULD be `Email`). */
+  fieldMappings: fieldMapSchema.default({}),
+  /** utm_source/medium/campaign/term/content -> Lead field. */
+  utmMappings: propertyMapSchema.default({}),
+  /** Lead field to receive the score. */
+  scoreField: z.string().max(200).nullable().optional(),
+  /** Lead date or datetime field to receive the submitted date. */
+  dateField: z.string().max(200).nullable().optional(),
+  /**
+   * The IANA zone that names the CALENDAR DAY when `dateField` is a `date`
+   * field. Blank/absent = UTC. A `datetime` field receives the exact instant.
+   */
+  dayTimezone: z.string().max(64).optional(),
+  /** Fixed values stamped on every record written (e.g. `LeadSource`). */
+  staticFields: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+});
+export type SalesforceDestination = z.infer<typeof salesforceDestinationSchema>;
+
 export const formDestinationSchema = z.discriminatedUnion('type', [
   webhookDestinationSchema,
   hubspotDestinationSchema,
+  googleSheetsDestinationSchema,
+  salesforceDestinationSchema,
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
 
@@ -868,6 +1011,24 @@ export function hasExtraHubspotDestination(destinations: unknown, stored?: unkno
   // One is always fine. Past that, only an INCREASE is refused — and an absent
   // or unreadable `stored` counts as zero, so a create refuses anything over one.
   return next > 1 && next > hubspotCount(stored);
+}
+
+/** Rejection message for a second Salesforce destination. */
+export const ONE_SALESFORCE_DESTINATION_MESSAGE =
+  'Only one Salesforce destination per form. Map several fields from the same question instead.';
+
+/**
+ * True when a proposed destination list would ADD a Salesforce entry beyond the
+ * first. The same rule as {@link hasExtraHubspotDestination}, for the same
+ * reason: two destinations writing the same record from one submission race
+ * each other, and the editor only ever shows the first. Only an increase is
+ * refused, so a whole-array write that adds nothing never 400s.
+ */
+export function hasExtraSalesforceDestination(destinations: unknown, stored?: unknown): boolean {
+  const count = (list: unknown): number =>
+    Array.isArray(list) ? list.filter((d) => isRecord(d) && d.type === 'salesforce').length : 0;
+  const next = count(destinations);
+  return next > 1 && next > count(stored);
 }
 
 /**
@@ -1549,9 +1710,9 @@ export type FormEventInput = z.infer<typeof formEventSchema>;
 
 /**
  * The public booking callback: the renderer reports a meeting booked through an
- * outcome's scheduling embed (HubSpot Meetings / Calendly) so it can be tied to
- * the session's submission. Persisted as a `booking_event` row; delivery to
- * destinations is a later, outbox-driven concern.
+ * outcome's scheduling embed (HubSpot Meetings / Calendly / dCal) so it can be
+ * tied to the session's submission. Persisted as a `booking_event` row; delivery
+ * to destinations is a later, outbox-driven concern.
  */
 export const bookingCallbackSchema = z.object({
   /** Per-session id (sessionStorage) tying the booking to its submission. */
@@ -1561,6 +1722,18 @@ export const bookingCallbackSchema = z.object({
   eventUri: z.string().url().max(2048).optional(),
   /** Provider URI of the invitee record. */
   inviteeUri: z.string().url().max(2048).optional(),
+  /**
+   * The booking's own identifier, for a provider that names it rather than
+   * addressing it: dCal reports a `uid`, which is what its API reads a booking
+   * back by and what its reschedule and cancel links are built from.
+   *
+   * Kept APART from `eventUri` instead of widening that field, because
+   * `eventUri` is validated as a URL and every reader of it (the HubSpot
+   * booking sync fetches it) treats it as one. A uid in that field would be
+   * either rejected by the schema or fetched as an address, and both are worse
+   * than a second optional field.
+   */
+  bookingUid: z.string().min(1).max(200).optional(),
   /** Scheduled start as an ISO 8601 datetime. */
   startTime: z.string().datetime({ offset: true }).optional(),
 });
