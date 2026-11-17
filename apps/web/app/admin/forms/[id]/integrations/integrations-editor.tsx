@@ -1029,13 +1029,14 @@ const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> 
 };
 
 /** How long a "saved" pill stays spelled out before it folds to its short form. */
-const PILL_FOLD_MS = 2500;
+const PILL_FOLD_MS = 1500;
 /**
- * How long a settled pill stays before it steps out of the way, at every
- * width: once settled, the topbar keeps saying the state (and the cards say
- * what they wait for), so the pill never sits over content for long.
+ * How long a "saved" pill stays before it steps out of the way. ONLY "saved"
+ * goes away on its own: saving, retrying, partial, error and a lost change
+ * stay on screen until they resolve, at every width. The topbar status is not
+ * a fallback for them, since it is hidden below 1280 px.
  */
-const PILL_HIDE_MS = { saved: 4000, other: 7000 } as const;
+const PILL_SAVED_HIDE_MS = 2500;
 
 /** Below `sm`, where any floating element sits on the controls being scrolled. */
 const NARROW_QUERY = '(max-width: 639px)';
@@ -1108,14 +1109,13 @@ export function SaveStatusPill({
   useEffect(() => {
     setGone(false);
     setFolded(false);
-    if (status === 'saving') return;
+    // A state that is not "saved" stays until it resolves: no fold, no exit.
+    if (status !== 'saved') return;
     const narrow = typeof window !== 'undefined' && window.matchMedia?.(NARROW_QUERY).matches;
     const timers: ReturnType<typeof setTimeout>[] = [];
-    if (status === 'saved') {
-      if (narrow) setFolded(true);
-      else timers.push(setTimeout(() => setFolded(true), PILL_FOLD_MS));
-    }
-    timers.push(setTimeout(() => setGone(true), status === 'saved' ? PILL_HIDE_MS.saved : PILL_HIDE_MS.other));
+    if (narrow) setFolded(true);
+    else timers.push(setTimeout(() => setFolded(true), PILL_FOLD_MS));
+    timers.push(setTimeout(() => setGone(true), PILL_SAVED_HIDE_MS));
     return () => timers.forEach(clearTimeout);
   }, [status, detail]);
   const tone = PILL_TONE[status];

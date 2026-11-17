@@ -93,7 +93,7 @@ export function ConnectPanel({
       data-testid="connect-panel"
       // Bottom room for the save pill fixed to the corner: without it the
       // last card of either column could only ever be read under the pill.
-      className="mx-auto grid w-full max-w-[900px] items-start gap-4 pb-24 xl:max-w-[1320px] xl:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]"
+      className="mx-auto grid w-full max-w-[900px] items-start gap-4 pb-32 xl:max-w-[1320px] xl:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]"
     >
       <IntegrationsSection
         formId={formId}

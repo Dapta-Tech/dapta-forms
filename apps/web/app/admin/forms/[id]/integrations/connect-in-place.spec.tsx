@@ -174,17 +174,37 @@ describe('the autosave pill', () => {
     }
   });
 
-  it('steps out of the way on a phone once settled, even for a state that needs reading', async () => {
+  it.each([
+    ['a phone', '(max-width: 639px)'],
+    ['1024 px, where the topbar status is hidden', '(never)'],
+  ])('at %s, a failed save stays on screen until it resolves, then settles', async (_label, narrowQuery) => {
     const original = window.matchMedia;
-    window.matchMedia = ((q: string) => ({ matches: q.includes('max-width: 639px'), media: q })) as never;
+    window.matchMedia = ((q: string) => ({ matches: q.includes(narrowQuery), media: q })) as never;
     vi.useFakeTimers();
+    const pill = () => document.body.querySelector('[data-testid="integrations-save-status"]');
     try {
-      await render(<SaveStatusPill status="partial" detail="All saved except the webhook." m={m} />);
-      expect(fixed().textContent).toBe('All saved except the webhook.');
+      await render(<SaveStatusPill status="error" detail="Could not save the integrations." m={m} />);
       await act(async () => {
-        vi.advanceTimersByTime(7000);
+        vi.advanceTimersByTime(20_000);
       });
-      expect(document.body.querySelector('[data-testid="integrations-save-status"]')).toBeNull();
+      // Twenty seconds on, the failure is still said, in full, unfolded.
+      expect(pill()?.getAttribute('data-status')).toBe('error');
+      expect(pill()?.getAttribute('data-folded')).toBeNull();
+      expect(pill()?.textContent).toBe('Could not save the integrations.');
+      for (const status of ['partial', 'retrying', 'saving'] as const) {
+        await act(async () => root!.render(<SaveStatusPill status={status} detail="x" m={m} />));
+        await act(async () => {
+          vi.advanceTimersByTime(20_000);
+        });
+        expect(pill()?.getAttribute('data-status')).toBe(status);
+      }
+      // A later successful save settles it and it steps away.
+      await act(async () => root!.render(<SaveStatusPill status="saved" detail={null} m={m} />));
+      expect(pill()?.getAttribute('data-status')).toBe('saved');
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(pill()).toBeNull();
     } finally {
       vi.useRealTimers();
       window.matchMedia = original;
@@ -197,7 +217,7 @@ describe('the autosave pill', () => {
       await render(<SaveStatusPill status="saved" detail={null} m={m} />);
       expect(fixed().getAttribute('data-folded')).toBeNull();
       await act(async () => {
-        vi.advanceTimersByTime(3000);
+        vi.advanceTimersByTime(1600);
       });
       expect(fixed().getAttribute('data-folded')).toBe('true');
       // Its words are on screen (no hover or tap needed), and it is a status:
