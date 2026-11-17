@@ -256,11 +256,12 @@ export type HeaderSyncResult =
   /** Row 1 now reads exactly `headers` (it was written, or already did). */
   | { ok: true; outcome: 'written' | 'unchanged' }
   /**
-   * Row 1 holds something dForms did not write. Left exactly as it was: it may
-   * be a customer's own heading or their first row of data, and a spreadsheet
-   * does not remember what used to be in a cell.
+   * Row 1 holds something dForms cannot prove it wrote. Left exactly as it
+   * was: it may be a customer's own heading or their first row of data, and a
+   * spreadsheet does not remember what used to be in a cell. `current` is what
+   * row 1 holds, so the author can compare it before choosing to replace it.
    */
-  | { ok: true; outcome: 'foreign' }
+  | { ok: true; outcome: 'foreign'; current: string[] }
   | { ok: false; reason: 'not_found' | 'forbidden' | 'unavailable' };
 
 const cellText = (cell: unknown): string => String(cell ?? '').trim();
@@ -302,6 +303,11 @@ function wholeRowRange(sheetTitle: string | undefined): string {
  * writing. That is the safety property the old empty-only writer had, kept:
  * the overwrite is extended only to content dForms can prove it put there.
  *
+ * `replace` lifts that rule for ONE call, and only the author's explicit,
+ * confirmed "replace row 1" sends it: a sheet whose headings were written
+ * before dForms kept a record of them (or renamed since) can be brought back
+ * in line, and the caller records the result so later syncs are automatic.
+ *
  * The WHOLE of row 1 is read, not just as many cells as there are headers,
  * because a heading the author typed one column past ours is exactly what a
  * narrower read would miss and a wider write would destroy. The write spans
@@ -316,6 +322,7 @@ export async function syncHeaderRow(
   owned: string[][],
   fetchImpl: typeof fetch = fetch,
   timeoutMs: number = SHEETS_ADMIN_TIMEOUT_MS,
+  opts: { replace?: boolean } = {},
 ): Promise<HeaderSyncResult> {
   const wanted = headers.map((h) => h.trim());
   if (wanted.length === 0) return { ok: true, outcome: 'unchanged' };
@@ -344,7 +351,9 @@ export async function syncHeaderRow(
   if (matches) return { ok: true, outcome: 'unchanged' };
 
   const ours = [wanted, ...owned].some((candidate) => ownsHeaderRow(row.slice(0, used), candidate));
-  if (!ours) return { ok: true, outcome: 'foreign' };
+  if (!ours && !opts.replace) {
+    return { ok: true, outcome: 'foreign', current: row.slice(0, used).map(cellText) };
+  }
 
   const width = Math.max(wanted.length, used);
   const values = Array.from({ length: width }, (_, i) => wanted[i] ?? '');

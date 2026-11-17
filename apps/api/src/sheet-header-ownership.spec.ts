@@ -149,7 +149,11 @@ describe('SAFETY: a row 1 with foreign data is never overwritten', () => {
     });
     expect(writes).toEqual([]);
     expect(row1).toEqual(['2025-01-03', 'ana@example.com', 'Acme']);
-    expect((out as { sheetHeaders?: unknown }).sheetHeaders).toEqual({ outcome: 'foreign' });
+    expect((out as { sheetHeaders?: unknown }).sheetHeaders).toEqual({
+      outcome: 'foreign',
+      current: ['2025-01-03', 'ana@example.com', 'Acme'],
+      headers: [...OLD, 'booking'],
+    });
     // The columns are still saved: the header row is a notice, not a gate.
     const form = await getFormById(db, accountId, formId);
     expect(JSON.stringify(form!.config)).toContain('booking');
@@ -213,6 +217,8 @@ describe('the header button', () => {
     await expect(controller.syncFormSheetHeaders(asOwner(), formId)).resolves.toEqual({
       ok: true,
       outcome: 'foreign',
+      current: ['Name', 'Phone'],
+      headers: OLD,
     });
     expect(writes).toEqual([]);
     expect(await storedSnapshot()).toBeUndefined();
@@ -223,5 +229,36 @@ describe('the header button', () => {
       ok: false,
       reason: 'not_configured',
     });
+  });
+});
+
+describe('a sheet that drifted before snapshots existed (the reported production case)', () => {
+  // Row 1 still has the ORIGINAL headings; the columns were renamed in dForms
+  // and autosaved before this fix shipped, so nothing proves row 1 is ours.
+  const RENAMED = ['Submitted', 'Work email', 'Org', 'booking'];
+
+  it('leaves it alone on save and on the plain button, and says what is there', async () => {
+    await store(fromEditor(RENAMED));
+    const plain = await controller.syncFormSheetHeaders(asOwner(), formId);
+    expect(plain).toEqual({ ok: true, outcome: 'foreign', current: OLD, headers: RENAMED });
+    expect(writes).toEqual([]);
+  });
+
+  it('replaces row 1 on the confirmed replace, then follows the next rename by itself', async () => {
+    await store(fromEditor(RENAMED));
+    // Anything but a literal `true` is the ordinary sync.
+    await controller.syncFormSheetHeaders(asOwner(), formId, { replace: 'yes' });
+    expect(writes).toEqual([]);
+
+    const replaced = await controller.syncFormSheetHeaders(asOwner(), formId, { replace: true });
+    expect(replaced).toEqual({ ok: true, outcome: 'written' });
+    expect(row1).toEqual(RENAMED);
+    expect(await storedSnapshot()).toMatchObject({ headers: RENAMED });
+
+    // Recorded as dForms-written: an ordinary save now rewrites it with no prompt.
+    const next = ['Submitted', 'Work email', 'Company name', 'booking'];
+    const out = await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(next)] });
+    expect((out as { sheetHeaders?: unknown }).sheetHeaders).toEqual({ outcome: 'written' });
+    expect(row1).toEqual(next);
   });
 });

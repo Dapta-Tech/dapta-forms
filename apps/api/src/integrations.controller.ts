@@ -504,7 +504,12 @@ export type GoogleSheetsHeaderRowResponse =
  * reason for the save itself to fail: the columns are stored either way.
  */
 export type SheetHeaderSync =
-  | { outcome: 'written' | 'unchanged' | 'foreign' }
+  | { outcome: 'written' | 'unchanged' }
+  /**
+   * Row 1 does not match and was left alone. `current` is what it holds and
+   * `headers` what would be written, for the card's side-by-side.
+   */
+  | { outcome: 'foreign'; current: string[]; headers: string[] }
   | { outcome: 'failed'; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
 
 /** The form-scoped header button's answer. */
@@ -1485,6 +1490,7 @@ export class FormDestinationsController {
   async syncFormSheetHeaders(
     @Req() req: ReqLike,
     @Param('id') id: string,
+    @Body() body?: unknown,
   ): Promise<FormSheetHeaderRowResponse> {
     const p = await this.auth.resolveHost(req);
     const form = await getFormById(this.db, p.accountId, id);
@@ -1494,8 +1500,13 @@ export class FormDestinationsController {
     if (!entry || !sheetTargetOf(entry) || sheetHeadersOf(entry).length === 0) {
       return { ok: false, reason: 'not_configured' };
     }
+    // `replace: true` is the author's confirmed "replace row 1": the one path
+    // that may overwrite a row 1 dForms cannot prove it wrote. A literal
+    // `true` only; anything else is the ordinary, conservative sync.
+    const replace = isRecord(body) && body.replace === true;
     const synced = await this.syncSheetHeaders(p.accountId, stored as unknown[], stored, {
       force: true,
+      replace,
       timeoutMs: SHEETS_SAVE_TIMEOUT_MS * 2,
     });
     const before = snapshotOf(entry);
@@ -1536,7 +1547,7 @@ export class FormDestinationsController {
     accountId: string,
     destinations: unknown[],
     stored: unknown,
-    opts: { force?: boolean; timeoutMs?: number } = {},
+    opts: { force?: boolean; replace?: boolean; timeoutMs?: number } = {},
   ): Promise<{ destinations: unknown[]; result?: SheetHeaderSync }> {
     const index = destinations.findIndex((d) => isRecord(d) && d.type === 'google-sheets');
     if (index === -1) return { destinations };
@@ -1595,9 +1606,12 @@ export class FormDestinationsController {
       owned,
       this.fetchImpl,
       opts.timeoutMs ?? SHEETS_SAVE_TIMEOUT_MS,
+      { replace: opts.replace },
     );
     if (!result.ok) return withSnapshot(storedSnapshot, { outcome: 'failed', reason: result.reason });
-    if (result.outcome === 'foreign') return withSnapshot(storedSnapshot, { outcome: 'foreign' });
+    if (result.outcome === 'foreign') {
+      return withSnapshot(storedSnapshot, { outcome: 'foreign', current: result.current, headers });
+    }
     return withSnapshot({ ...target, headers }, { outcome: result.outcome });
   }
 

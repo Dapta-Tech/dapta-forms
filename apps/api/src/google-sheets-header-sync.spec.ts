@@ -103,7 +103,7 @@ describe('SAFETY: a row 1 with foreign data is never overwritten', () => {
     const s = sheet(['2025-01-03', 'ana@example.com', 'Acme']);
     await expect(
       syncHeaderRow('tok', 'sheet-1', 'Responses', [...OLD, 'booking'], [OLD], s.fetchImpl),
-    ).resolves.toEqual({ ok: true, outcome: 'foreign' });
+    ).resolves.toMatchObject({ ok: true, outcome: 'foreign' });
     expect(s.writes()).toHaveLength(0);
   });
 
@@ -111,7 +111,7 @@ describe('SAFETY: a row 1 with foreign data is never overwritten', () => {
     const s = sheet([...OLD, 'Notes']);
     await expect(
       syncHeaderRow('tok', 'sheet-1', 'Responses', [...OLD, 'booking'], [OLD], s.fetchImpl),
-    ).resolves.toEqual({ ok: true, outcome: 'foreign' });
+    ).resolves.toMatchObject({ ok: true, outcome: 'foreign' });
     expect(s.writes()).toHaveLength(0);
   });
 
@@ -119,7 +119,7 @@ describe('SAFETY: a row 1 with foreign data is never overwritten', () => {
     const s = sheet(['Submitted', 'E-mail address', 'Company']);
     await expect(
       syncHeaderRow('tok', 'sheet-1', 'Responses', [...OLD, 'booking'], [OLD], s.fetchImpl),
-    ).resolves.toEqual({ ok: true, outcome: 'foreign' });
+    ).resolves.toMatchObject({ ok: true, outcome: 'foreign' });
     expect(s.writes()).toHaveLength(0);
   });
 
@@ -127,8 +127,32 @@ describe('SAFETY: a row 1 with foreign data is never overwritten', () => {
     const s = sheet(['Email', 'Submitted', 'Company']);
     await expect(
       syncHeaderRow('tok', 'sheet-1', 'Responses', [...OLD, 'booking'], [OLD], s.fetchImpl),
-    ).resolves.toEqual({ ok: true, outcome: 'foreign' });
+    ).resolves.toMatchObject({ ok: true, outcome: 'foreign' });
     expect(s.writes()).toHaveLength(0);
+  });
+});
+
+describe('the author can replace a row 1 that does not match, on purpose', () => {
+  it('reports what row 1 holds, so it can be compared before anything is replaced', async () => {
+    const s = sheet(['Submitted', 'E-mail address', 'Company', '', '']);
+    await expect(
+      syncHeaderRow('tok', 'sheet-1', 'Responses', ['Submitted', 'Work email', 'Org'], [], s.fetchImpl),
+    ).resolves.toEqual({
+      ok: true,
+      outcome: 'foreign',
+      current: ['Submitted', 'E-mail address', 'Company'],
+    });
+  });
+
+  it('overwrites it only when asked with `replace`', async () => {
+    const s = sheet(['Submitted', 'E-mail address', 'Company', 'Notes']);
+    await expect(
+      syncHeaderRow('tok', 'sheet-1', 'Responses', ['Submitted', 'Work email'], [], s.fetchImpl, undefined, {
+        replace: true,
+      }),
+    ).resolves.toEqual({ ok: true, outcome: 'written' });
+    // The old width is blanked past the new headings, like any other rewrite.
+    expect(s.writes()[0]!.body).toEqual({ values: [['Submitted', 'Work email', '', '']] });
   });
 });
 
