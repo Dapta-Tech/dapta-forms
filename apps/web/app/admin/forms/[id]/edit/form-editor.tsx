@@ -860,15 +860,19 @@ export function FormEditor({
           ? bm.shell.saveError
           : status === 'conflict'
             ? bm.shell.conflict
-            : hasQuestions
-              ? bm.shell.saved
-              : bm.shell.draft;
+            : status === 'partial'
+              ? bm.shell.savedPartial
+              : hasQuestions
+                ? bm.shell.saved
+                : bm.shell.draft;
   const statusDot =
     status === 'error' || status === 'conflict'
       ? 'bg-destructive'
-      : status === 'saving' || status === 'retrying'
-        ? 'bg-muted-foreground'
-        : 'bg-signal-edge';
+      : status === 'partial'
+        ? 'bg-warning'
+        : status === 'saving' || status === 'retrying'
+          ? 'bg-muted-foreground'
+          : 'bg-signal-edge';
   /** Kept for tests/tools reading `data-status`: an empty saved form is "draft". */
   const displayStatus = status === 'saved' && !hasQuestions ? 'draft' : status;
 
@@ -995,14 +999,16 @@ export function FormEditor({
           <span
             className={cn(
               'hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground xl:inline-flex',
-              (status === 'error' || status === 'retrying') && statusDetailText ? 'cursor-help' : '',
+              (status === 'error' || status === 'retrying' || status === 'partial') && statusDetailText ? 'cursor-help' : '',
             )}
             data-testid="editor-save-status"
             data-status={displayStatus}
             // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
             title={
-              (status === 'error' || status === 'retrying') && statusDetailText
-                ? tb(m.saveErrorReason, { reason: statusDetailText })
+              (status === 'error' || status === 'retrying' || status === 'partial') && statusDetailText
+                ? status === 'partial'
+                  ? statusDetailText
+                  : tb(m.saveErrorReason, { reason: statusDetailText })
                 : undefined
             }
           >

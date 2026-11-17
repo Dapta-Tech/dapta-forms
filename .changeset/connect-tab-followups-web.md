@@ -13,3 +13,6 @@ Connect tab follow-ups: nothing the save pill calls saved is lost on a reload.
 - The save pill is fixed to the bottom-right corner on phones too, says nothing until the first save, and settles into a short, flat "Saved" that does not block taps.
 - A header-row sync that failed (Google down while columns were reordered) is retried by the next save instead of being skipped, and a row 1 that fell out of date is shown with a one-press update.
 - A change whose save fails after the tab is left is retried a few times, then reported as not saved, once, when the author comes back; the topbar never stays on a promise of another try.
+- A half-filled HubSpot or Salesforce row (a question with no field yet, a fixed value with no value) is saved and comes back after a reload, with a note under it saying what it still needs; nothing is sent from it until it is complete.
+- Integrations saves go through one queue per form: writes are serial, only the latest snapshot is ever written or retried, and the topbar and the save pill both show that snapshot's state. A webhook URL that is not valid shows as "Partly saved" in both.
+- The save pill shows nothing until the author edits, never takes a tap, and on a phone steps away once settled; what a card is still waiting for is said on the card.

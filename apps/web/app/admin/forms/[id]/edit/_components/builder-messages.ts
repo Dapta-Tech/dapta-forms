@@ -21,6 +21,8 @@ export interface BuilderMessages {
     saving: string;
     draft: string;
     saveError: string;
+    /** Saved, except one integration that was left out (it is NOT saved). */
+    savedPartial: string;
     /** A save that could not reach the server is being retried automatically. */
     retrying: string;
     /** Banner offering to restore work recovered from the local crash backup. */
@@ -667,6 +669,7 @@ const en: BuilderMessages = {
     saving: 'Saving…',
     draft: 'Draft',
     saveError: 'Not saved',
+    savedPartial: 'Partly saved',
     retrying: 'Retrying…',
     recoveryTitle: 'Unsaved changes recovered',
     recoveryBody:
@@ -1164,6 +1167,7 @@ const es: BuilderMessages = {
     saving: 'Guardando…',
     draft: 'Borrador',
     saveError: 'Sin guardar',
+    savedPartial: 'Guardado en parte',
     retrying: 'Reintentando…',
     recoveryTitle: 'Cambios sin guardar recuperados',
     recoveryBody:

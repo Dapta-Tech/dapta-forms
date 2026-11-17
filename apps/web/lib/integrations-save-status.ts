@@ -16,7 +16,11 @@ import { useSyncExternalStore } from 'react';
  * until a later save succeeds.
  */
 export type IntegrationsSaveState = {
-  status: 'saved' | 'saving' | 'retrying' | 'error';
+  /**
+   * `partial`: saved, except one card that was left out (a webhook URL that is
+   * not valid). NOT saved for that card, so it ranks above `saved`.
+   */
+  status: 'saved' | 'saving' | 'partial' | 'retrying' | 'error';
   detail?: string | null;
   /** The save failed after the tab unmounted: the change is not stored. */
   lost?: boolean;
@@ -55,7 +59,7 @@ export function useIntegrationsSave(formId: string): IntegrationsSaveState | und
  * A conflict outranks an error: it is the one the person has to act on (pick
  * a version), while an error retries on its own.
  */
-const SAVE_RANK = { saved: 0, saving: 1, retrying: 2, error: 3, conflict: 4 } as const;
+const SAVE_RANK = { saved: 0, saving: 1, partial: 2, retrying: 3, error: 4, conflict: 5 } as const;
 type SaveRankKey = keyof typeof SAVE_RANK;
 
 /** The worse of the form's own save and the integrations' save. */

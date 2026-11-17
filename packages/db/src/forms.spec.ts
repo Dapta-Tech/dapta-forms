@@ -240,3 +240,31 @@ describe('duplicateForm strips the owned mirror state', () => {
     expect(copy.value.config).toEqual({ version: 1, steps: [] });
   });
 });
+
+describe('duplicateForm strips the Google Sheets header bookkeeping', () => {
+  it('drops headerSnapshot, headerForeign and headerBroken, keeps the sheet and columns', async () => {
+    const st = { spreadsheetId: 'sheet-1', sheetTitle: '', headers: ['A'] };
+    const src = await createForm(writerOne, accountId, {
+      name: 'With sheet',
+      config: {
+        version: 1,
+        steps: [],
+        destinations: [
+          {
+            type: 'google-sheets',
+            enabled: true,
+            settings: { spreadsheetId: 'sheet-1', headerSnapshot: st, headerForeign: st, headerBroken: { ...st, reason: 'x', at: 1 } },
+            columns: [{ header: 'A', source: 'score' }],
+          },
+        ],
+      },
+    });
+    if (!src.ok) throw new Error('createForm failed');
+    const copy = await duplicateForm(writerOne, accountId, src.value.id);
+    if (!copy.ok) throw new Error('duplicateForm failed');
+    const d = (copy.value.config as { destinations: Array<{ settings: Record<string, unknown>; columns: unknown }> })
+      .destinations[0]!;
+    expect(d.settings).toEqual({ spreadsheetId: 'sheet-1' });
+    expect(d.columns).toEqual([{ header: 'A', source: 'score' }]);
+  });
+});

@@ -166,14 +166,29 @@ describe('the autosave pill', () => {
     expect(document.documentElement.classList.contains('has-save-pill')).toBe(false);
   });
 
-  it('says nothing will be sent while a chosen sheet has no column with a heading', async () => {
-    await render(<SaveStatusPill status="pending" detail={null} pendingText={m.autosavedNoColumns} m={m} />);
-    expect(fixed().textContent).toBe(m.autosavedNoColumns);
+  it('never takes a tap, in any state', async () => {
+    for (const status of ['saving', 'saved', 'partial', 'retrying', 'error'] as const) {
+      act(() => root?.unmount());
+      await render(<SaveStatusPill status={status} detail="x" m={m} />);
+      expect(fixed().className).toContain('pointer-events-none');
+    }
   });
 
-  it('still speaks before the first save when there is something to read', async () => {
-    await render(<SaveStatusPill status="pending" detail={null} touched={false} m={m} />);
-    expect(fixed().textContent).toBe(m.autosavedPendingSheet);
+  it('steps out of the way on a phone once settled, even for a state that needs reading', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q.includes('max-width: 639px'), media: q })) as never;
+    vi.useFakeTimers();
+    try {
+      await render(<SaveStatusPill status="partial" detail="All saved except the webhook." m={m} />);
+      expect(fixed().textContent).toBe('All saved except the webhook.');
+      await act(async () => {
+        vi.advanceTimersByTime(7000);
+      });
+      expect(document.body.querySelector('[data-testid="integrations-save-status"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      window.matchMedia = original;
+    }
   });
 
   it('folds a plain "saved" to a short, flat status after a moment', async () => {
@@ -228,7 +243,6 @@ describe('the autosave pill', () => {
     ['retrying', 'bg-warning/10'],
     ['partial', 'bg-warning/10'],
     ['saving', 'bg-card'],
-    ['pending', 'pi-info-circle'],
   ] as const)('gives %s its own tone, from tokens', async (status, tone) => {
     await render(<SaveStatusPill status={status} detail={null} m={m} />);
     expect(fixed().getAttribute('data-status')).toBe(status);
@@ -236,10 +250,12 @@ describe('the autosave pill', () => {
     expect(fixed().innerHTML).not.toMatch(/#[0-9a-f]{3,6}\b/i);
   });
 
-  it('does not claim a switch-on it could not store as saved', async () => {
-    await render(<SaveStatusPill status="pending" detail={null} m={m} />);
-    expect(fixed().textContent).toBe(m.autosavedPendingSheet);
-    expect(fixed().innerHTML).not.toContain('bg-signal');
+  it('says nothing on load, whatever the state, until the author edits', async () => {
+    for (const status of ['saved', 'partial', 'error', 'retrying'] as const) {
+      act(() => root?.unmount());
+      await render(<SaveStatusPill status={status} detail="x" touched={false} m={m} />);
+      expect(document.body.querySelector('[data-testid="integrations-save-status"]')).toBeNull();
+    }
   });
 
   it('lifts the toasts above itself while it is on screen', async () => {

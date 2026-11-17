@@ -758,6 +758,11 @@ export function destinationFiresForPhase(
  * attach a Note. The private-app token is a server-side env secret
  * (`HUBSPOT_PRIVATE_APP_TOKEN`), NOT stored in the form config.
  */
+/** Bounds for the unfinished rows a CRM destination keeps (`drafts`). */
+const DRAFT_ROWS = 200;
+const draftText = z.string().max(200);
+const draftValue = z.string().max(500);
+
 export const hubspotDestinationSchema = z.object({
   type: z.literal('hubspot'),
   enabled: z.boolean().default(false),
@@ -827,6 +832,27 @@ export const hubspotDestinationSchema = z.object({
   outcomeProperty: z.string().max(200).nullable().optional(),
   /** Fixed property values stamped on every synced contact. */
   staticProperties: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+  /**
+   * Rows the author started on the Connect tab and has not finished (a key
+   * with no property yet, a fixed value with no property, a value-map row with
+   * one side empty). Stored so they survive a reload; never read by a delivery
+   * or the mirror form, which see only the complete mappings above.
+   */
+  drafts: z
+    .object({
+      mappings: z.array(z.object({ key: draftText, property: draftText })).max(DRAFT_ROWS).optional(),
+      statics: z.array(z.object({ key: draftText, value: draftValue })).max(DRAFT_ROWS).optional(),
+      valueMaps: z
+        .array(
+          z.object({
+            stepKey: draftText,
+            rows: z.array(z.object({ from: draftValue, to: draftValue })).max(DRAFT_ROWS),
+          }),
+        )
+        .max(DRAFT_ROWS)
+        .optional(),
+    })
+    .optional(),
   /** Derive the company name from the respondent's email domain. */
   inferCompanyFromEmail: z.boolean().optional(),
   /**
@@ -974,6 +1000,15 @@ export const googleSheetsDestinationSchema = z.object({
        * it only spares a sheet a re-read on every unrelated save.
        */
       headerForeign: sheetHeaderStateSchema.optional(),
+      /**
+       * The headings whose sync last failed for a reason that will not fix
+       * itself (the spreadsheet is gone, access was revoked, Google is not
+       * connected), and when. API-owned: saves skip Google for these headings
+       * for a while instead of paying a failed call each time.
+       */
+      headerBroken: sheetHeaderStateSchema
+        .extend({ reason: z.string().max(40), at: z.number().int().nonnegative() })
+        .optional(),
     })
     .default({}),
   /**
@@ -1021,6 +1056,17 @@ export const salesforceDestinationSchema = z.object({
   dayTimezone: z.string().max(64).optional(),
   /** Fixed values stamped on every record written (e.g. `LeadSource`). */
   staticFields: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+  /**
+   * Rows the author started and has not finished (a question with no field
+   * yet, a fixed value with no field). Stored so they survive a reload; never
+   * read by a delivery, which sees only the complete mappings above.
+   */
+  drafts: z
+    .object({
+      mappings: z.array(z.object({ key: draftText, field: draftText })).max(DRAFT_ROWS).optional(),
+      statics: z.array(z.object({ field: draftText, value: draftValue })).max(DRAFT_ROWS).optional(),
+    })
+    .optional(),
 });
 export type SalesforceDestination = z.infer<typeof salesforceDestinationSchema>;
 

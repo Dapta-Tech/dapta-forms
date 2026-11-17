@@ -1795,15 +1795,8 @@ export interface FormsMessages {
       saved: string;
       /** V5-A4 — steady-state autosave status (the Save button is gone). */
       autosaved: string;
-      /**
-       * Saved, but the spreadsheet card is switched on with no spreadsheet yet,
-       * which stores nothing: said instead of a plain "saved".
-       */
-      autosavedPendingSheet: string;
       /** The folded save pill's label, a word or two. */
       autosavedShort: string;
-      /** Saved, with a spreadsheet chosen but no column with a heading yet. */
-      autosavedNoColumns: string;
       /**
        * The last change on the tab failed to save after the author left it;
        * said once when they come back, since the screen shows what is stored.
@@ -1911,6 +1904,15 @@ export interface FormsMessages {
        * and admins can connect one (the API refuses others). `{provider}`.
        */
       connectAdminOnly: string;
+      /** Under an unfinished HubSpot row: it is saved, and what it still needs. */
+      hubspotRowNeedsProperty: string;
+      hubspotRowNeedsKey: string;
+      hubspotRowNeedsValue: string;
+      hubspotRowNeedsQuestion: string;
+      /** Inline on the Sheets card: switched on, no spreadsheet yet. */
+      gsheetsNoSheetYet: string;
+      /** Inline on the Sheets card: a spreadsheet, but no column with a heading. */
+      gsheetsNoNamedColumn: string;
       /** HubSpot keys contacts on email — a form with no address cannot sync. */
       emailRequiredTitle: string;
       emailRequiredBody: string;
@@ -2048,6 +2050,10 @@ export interface FormsMessages {
         desc: string;
         /** Heads the connect form shown in place of the mapping when not connected. */
         connectTitle: string;
+        /** Under an unfinished row: it is saved, and what it still needs to be sent. */
+        rowNeedsField: string;
+        rowNeedsQuestion: string;
+        rowNeedsValue: string;
         /** Shown in place of the mapping when the account has no Salesforce connection. */
         notConnected: string;
         /** Why the org's fields could not be read, by the API's reason. */
@@ -4293,9 +4299,7 @@ export const en: FormsMessages = {
       saving: 'Saving…',
       saved: 'Integrations saved.',
       autosaved: 'Changes saved automatically',
-      autosavedPendingSheet: 'Saved. Google Sheets starts sending once it has a spreadsheet.',
       autosavedShort: 'Saved',
-      autosavedNoColumns: 'Saved. Nothing is sent to the sheet until a column has a heading.',
       saveLostAfterLeave:
         'Your last change on this tab could not be saved after you left it, so it is not in the integrations below.',
       autosavedPartial: 'Saved everything except the webhook.',
@@ -4393,6 +4397,12 @@ export const en: FormsMessages = {
         'Paste a HubSpot private app token to connect this workspace. Once it is connected, every form here can map its questions to contact properties.',
       connectAdminOnly:
         '{provider} is not connected for this workspace yet, and only an owner or admin can connect it. Ask one to connect it here or under Integrations.',
+      hubspotRowNeedsProperty: 'Saved. Choose the HubSpot property to send it.',
+      hubspotRowNeedsKey: 'Saved. Choose what fills it to send it.',
+      hubspotRowNeedsValue: 'Saved. Give it a value to send it.',
+      hubspotRowNeedsQuestion: 'Saved. Choose the question these values belong to.',
+      gsheetsNoSheetYet: 'Nothing is sent yet: create or choose a spreadsheet.',
+      gsheetsNoNamedColumn: 'Nothing is sent to the sheet until a column has a heading.',
       emailRequiredTitle: 'This form has no email address to sync',
       emailRequiredBody:
         'HubSpot matches a contact by email address. It updates the one it finds, or creates a new one. A submission with no address arrives with nothing to identify, so no contact is created and the lead is not synced. Add an email question, or a scheduler: Calendly collects the invitee’s address when someone books.',
@@ -4507,6 +4517,9 @@ export const en: FormsMessages = {
         title: 'Salesforce',
         desc: 'Send each completed response to Salesforce as a Lead.',
         connectTitle: 'Connect Salesforce to send Leads',
+        rowNeedsField: 'Saved. Choose the Salesforce field to send it.',
+        rowNeedsQuestion: 'Saved. Choose the question that fills it to send it.',
+        rowNeedsValue: 'Saved. Give it a value to send it.',
         notConnected: 'Connect your org once and every form in this workspace can send to it.',
         fieldsRejected: 'Salesforce refused to list its fields. Check that the Run As user can read Leads.',
         fieldsUnavailable: 'Salesforce did not answer. Try refreshing the fields.',
@@ -7061,9 +7074,7 @@ export const es: FormsMessages = {
       saving: 'Guardando…',
       saved: 'Integraciones guardadas.',
       autosaved: 'Cambios guardados automáticamente',
-      autosavedPendingSheet: 'Guardado. Google Sheets empieza a enviar cuando tenga una hoja.',
       autosavedShort: 'Guardado',
-      autosavedNoColumns: 'Guardado. No se envía nada a la hoja hasta que una columna tenga encabezado.',
       saveLostAfterLeave:
         'Tu último cambio en esta pestaña no se pudo guardar después de que saliste, así que no está en las integraciones de abajo.',
       autosavedPartial: 'Se guardó todo menos el webhook.',
@@ -7163,6 +7174,12 @@ export const es: FormsMessages = {
         'Pega un token de app privada de HubSpot para conectar este espacio de trabajo. Una vez conectado, cada formulario de aquí puede asignar sus preguntas a propiedades de contacto.',
       connectAdminOnly:
         '{provider} todavía no está conectado en este espacio de trabajo, y solo un propietario o un administrador puede conectarlo. Pídele a uno que lo conecte aquí o en Integraciones.',
+      hubspotRowNeedsProperty: 'Guardada. Elige la propiedad de HubSpot para enviarla.',
+      hubspotRowNeedsKey: 'Guardada. Elige qué la llena para enviarla.',
+      hubspotRowNeedsValue: 'Guardada. Ponle un valor para enviarla.',
+      hubspotRowNeedsQuestion: 'Guardada. Elige la pregunta a la que pertenecen estos valores.',
+      gsheetsNoSheetYet: 'Todavía no se envía nada: crea o elige una hoja.',
+      gsheetsNoNamedColumn: 'No se envía nada a la hoja hasta que una columna tenga encabezado.',
       emailRequiredTitle: 'Este formulario no tiene correo que sincronizar',
       emailRequiredBody:
         'HubSpot identifica al contacto por su correo: actualiza el que encuentra, o crea uno nuevo. Un envío sin correo llega sin nada con qué identificarlo, así que no se crea ningún contacto y ese lead no se sincroniza. Agrega una pregunta de correo, o un agendador: Calendly pide el correo de quien reserva.',
@@ -7278,6 +7295,9 @@ export const es: FormsMessages = {
         title: 'Salesforce',
         desc: 'Envía cada respuesta completa a Salesforce como Lead.',
         connectTitle: 'Conecta Salesforce para enviar Leads',
+        rowNeedsField: 'Guardada. Elige el campo de Salesforce para enviarla.',
+        rowNeedsQuestion: 'Guardada. Elige la pregunta que la llena para enviarla.',
+        rowNeedsValue: 'Guardada. Ponle un valor para enviarla.',
         notConnected: 'Conecta tu org una vez y cualquier formulario de este espacio de trabajo podrá enviarle datos.',
         fieldsRejected: 'Salesforce no quiso listar sus campos. Revisa que el usuario Run As pueda leer Leads.',
         fieldsUnavailable: 'Salesforce no respondió. Intenta actualizar los campos.',

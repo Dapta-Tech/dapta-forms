@@ -438,10 +438,15 @@ export function GoogleSheetsCard({
                 <i aria-hidden className="pi pi-external-link text-muted-foreground" style={{ fontSize: 11 }} />
               </a>
             ) : (
-              // Only promise Google Drive where the Picker button is really there.
-              <p className="text-sm text-muted-foreground">
-                {pickerAvailable ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
-              </p>
+              <>
+                {/* Only promise Google Drive where the Picker button is really there. */}
+                <p className="text-sm text-muted-foreground">
+                  {pickerAvailable ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
+                </p>
+                {/* The switch is on and stored, but nothing can be sent yet.
+                    Said here, on the card, not in the floating save pill. */}
+                <CardAdvisory testId="gsheets-no-sheet-yet" text={m.gsheetsNoSheetYet} />
+              </>
             )}
             <div className="flex flex-wrap gap-2">
               <Button
@@ -523,6 +528,9 @@ export function GoogleSheetsCard({
               />
             ) : null}
 
+            {state.spreadsheetId && state.columns.length > 0 && !state.columns.some(isCompleteColumn) ? (
+              <CardAdvisory testId="gsheets-no-named-column" text={m.gsheetsNoNamedColumn} />
+            ) : null}
             {state.columns.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
                 {m.gsheets.noColumns}
@@ -725,6 +733,19 @@ export function GoogleSheetsCard({
  * so a disabled one looked exactly like an enabled one. Faded instead.
  */
 const SOFT_DISABLED = 'disabled:bg-muted disabled:opacity-45';
+
+/** A quiet, persistent note on the card about what is not being sent yet. */
+function CardAdvisory({ text, testId }: { text: string; testId: string }) {
+  return (
+    <p
+      data-testid={testId}
+      className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground"
+    >
+      <i aria-hidden className="pi pi-info-circle mt-px shrink-0 text-muted-foreground" style={{ fontSize: 13 }} />
+      <span>{text}</span>
+    </p>
+  );
+}
 
 /**
  * Row 1 is dForms' own but out of date (a sync failed while Google was down,

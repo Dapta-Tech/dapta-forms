@@ -438,3 +438,65 @@ describe('a confirmed replace that races an edit', () => {
     expect(row1).toEqual(renamed);
   });
 });
+
+describe('what is known about row 1 is persisted whenever it changes', () => {
+  it('a replace that rewrites row 1 clears a stale foreign mark (the reviewed repro)', async () => {
+    const NEW1 = ['Submitted', 'Work email', 'Company'];
+    await store({
+      ...fromEditor(OLD),
+      settings: {
+        spreadsheetId: SHEET,
+        sheetTitle: 'Responses',
+        headerSnapshot: { spreadsheetId: SHEET, sheetTitle: 'Responses', headers: OLD },
+      },
+    });
+    // Someone types a heading of their own past ours, in the sheet.
+    row1 = [...OLD, 'Notes'];
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(NEW1)] }); // foreign, NEW1
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(OLD)] }); // back: in sync on paper
+    await controller.syncFormSheetHeaders(asOwner(), formId, { replace: true }); // row 1 = OLD, Notes cleared
+    expect(row1).toEqual(OLD);
+    // Back to NEW1: row 1 IS dForms' own now, so it follows. Before, the
+    // stale foreign mark for NEW1 made this skip Google entirely.
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(NEW1)] });
+    expect(row1).toEqual(NEW1);
+  });
+});
+
+describe('a sync that fails for good is not paid for on every save', () => {
+  it('remembers a permanent failure for these headings, and the button still asks', async () => {
+    await store(fromEditor(OLD));
+    let calls = 0;
+    controller.fetchImpl = (async () => {
+      calls += 1;
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+    const renamed = ['Submitted', 'Work email', 'Company'];
+    const first = await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(renamed)] });
+    expect((first as { sheetHeaders?: unknown }).sheetHeaders).toEqual({ outcome: 'failed', reason: 'not_found' });
+    const after = calls;
+    // Unrelated saves: no Google call, and no failure re-shown each time.
+    const second = await controller.putDestinations(asOwner(), formId, {
+      destinations: [{ ...fromEditor(renamed), enabled: false }],
+    });
+    expect(calls).toBe(after);
+    expect((second as { sheetHeaders?: unknown }).sheetHeaders).toBeUndefined();
+    // The button is an explicit request, so it asks anyway.
+    await controller.syncFormSheetHeaders(asOwner(), formId);
+    expect(calls).toBeGreaterThan(after);
+  });
+
+  it('does not remember a transient failure: the next save tries again', async () => {
+    await store(fromEditor(OLD));
+    let calls = 0;
+    controller.fetchImpl = (async () => {
+      calls += 1;
+      return new Response('{}', { status: 503 });
+    }) as unknown as typeof fetch;
+    const renamed = ['Submitted', 'Work email', 'Company'];
+    await controller.putDestinations(asOwner(), formId, { destinations: [fromEditor(renamed)] });
+    const after = calls;
+    await controller.putDestinations(asOwner(), formId, { destinations: [{ ...fromEditor(renamed), enabled: false }] });
+    expect(calls).toBeGreaterThan(after);
+  });
+});

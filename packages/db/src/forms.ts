@@ -967,18 +967,30 @@ export async function listLiveStepCounts(db: Db, accountId: string): Promise<Map
  * Exported for `POST /v1/forms`, the other way a config that names another
  * form's mirror can arrive: a config copied from an existing form.
  */
+const OWNED_SETTINGS: Record<string, readonly string[]> = {
+  hubspot: ['formGuid', 'formSignature'],
+  'google-sheets': ['headerSnapshot', 'headerForeign', 'headerBroken'],
+};
+
 export function withoutOwnedMirrorState(config: unknown): unknown {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return config;
   const destinations = (config as { destinations?: unknown }).destinations;
   if (!Array.isArray(destinations)) return config;
   const cleaned = destinations.map((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
-    if ((entry as { type?: unknown }).type !== 'hubspot') return entry;
+    const type = (entry as { type?: unknown }).type;
+    // The keys the API writes for itself, per destination type. A config
+    // arriving from outside (a create through the API or MCP, a duplicate)
+    // must never carry them: a forged Google Sheets `headerSnapshot` would let
+    // the first heading change overwrite somebody's row 1, and a forged
+    // `headerForeign` or `headerBroken` would stop the header row from ever
+    // syncing.
+    const owned = OWNED_SETTINGS[typeof type === 'string' ? type : ''];
+    if (!owned) return entry;
     const settings = (entry as { settings?: unknown }).settings;
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return entry;
     const rest = { ...(settings as Record<string, unknown>) };
-    delete rest.formGuid;
-    delete rest.formSignature;
+    for (const key of owned) delete rest[key];
     return { ...(entry as Record<string, unknown>), settings: rest };
   });
   return { ...(config as Record<string, unknown>), destinations: cleaned };
