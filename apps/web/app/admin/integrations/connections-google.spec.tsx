@@ -67,6 +67,9 @@ async function mount(
     providers?: IntegrationStatus[];
     outcome?: OauthOutcome | null;
     unavailable?: IntegrationProvider[];
+    messages?: typeof m;
+    locale?: 'en' | 'es';
+    canManage?: boolean;
   } = {},
 ) {
   container = document.createElement('div');
@@ -80,8 +83,9 @@ async function mount(
         serverProvided={[]}
         unavailable={opts.unavailable ?? []}
         oauthOutcome={opts.outcome ?? null}
-        messages={m}
-        locale="en"
+        canManage={opts.canManage}
+        messages={opts.messages ?? m}
+        locale={opts.locale ?? 'en'}
       />,
     );
   });
@@ -132,7 +136,45 @@ describe('the Google Sheets card', () => {
     const el = await mount();
     await act(async () => buttonLabelled(card(el), m.connectWithGoogle)!.click());
     expect(assign).not.toHaveBeenCalled();
-    expect(toasts.error).toHaveBeenCalledWith('no client');
+    // A sentence from the catalog, never the API's own English message.
+    expect(toasts.error).toHaveBeenCalledWith(m.connectFailedGeneric);
+  });
+
+  it('says why in the reader\'s language when the server cannot store a credential', async () => {
+    const es = getMessages('es').admin.connections;
+    actions.startGoogleSheetsAuthAction.mockResolvedValueOnce({
+      ok: false,
+      code: 'ENCRYPTION_UNAVAILABLE',
+      status: 400,
+      message: 'server encryption key not configured',
+    });
+    const el = await mount({ messages: es, locale: 'es' });
+    await act(async () => buttonLabelled(card(el), es.connectWithGoogle)!.click());
+    const said = toasts.error.mock.calls.at(-1)![0] as string;
+    expect(said).toBe(`${es.encryptionOff}. ${es.encryptionOffBody}`);
+    expect(said).not.toContain('server encryption key');
+  });
+
+  // The API refuses a connect or a disconnect from anyone but an owner or
+  // admin: a member gets the sentence, not a button that could only fail.
+  it('offers a member no connect button, and says an admin has to', async () => {
+    const el = await mount({ canManage: false });
+    expect(buttonLabelled(card(el), m.connectWithGoogle)).toBeUndefined();
+    expect(card(el).querySelector('[data-testid="provider-admin-only"]')?.textContent).toBe(
+      m.manageAdminOnly.replace('{provider}', m.gsheetsName),
+    );
+  });
+
+  it('shows a member what is connected, with no disconnect button', async () => {
+    const el = await mount({
+      canManage: false,
+      providers: [
+        { provider: 'google-sheets', connected: true, label: 'ops@example.com', last4: 'abcd', connectedAt: Date.UTC(2026, 10, 16) },
+      ],
+    });
+    expect(card(el).textContent).toContain('ops@example.com');
+    expect(buttonLabelled(card(el), m.disconnect)).toBeUndefined();
+    expect(card(el).querySelector('[data-testid="provider-admin-only"]')).not.toBeNull();
   });
 
   it('shows the connected account once it is connected', async () => {

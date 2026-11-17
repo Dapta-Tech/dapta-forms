@@ -145,7 +145,7 @@ its REST route, with the same role rule and the same masking.
 | Folders | `POST /v1/folders` | `create_folder` | write |
 | Folders | `PATCH /v1/folders/:id` | `rename_folder` | write |
 | Folders | `DELETE /v1/folders/:id` | `delete_folder` | **destructive** (forms are unfiled, never deleted) |
-| Destinations | `PUT /v1/forms/:id/destinations` | `set_destinations` | **destructive** (replaces the list; secrets come back masked) |
+| Destinations | `PUT /v1/forms/:id/destinations` | `set_destinations` | **destructive** (replaces the list; secrets come back masked; `sheet_header_row` carries the route's `sheetHeaders`: what the save did to row 1 of a Google Sheets destination) |
 | Destinations | `POST /v1/forms/:id/destinations/webhook/ping` | `ping_webhook` | write, owners and admins (the endpoint's status; sample answers for input steps, in the phase the webhook listens to, `test: true` at the top) |
 | Responses | `GET /v1/forms/:id/submissions/:submissionId` | `get_response` | read |
 | Responses | `GET /v1/forms/:id/submissions/:submissionId/files/:stepKey` | `get_response_file` | read (a short-lived link, never the bytes) |

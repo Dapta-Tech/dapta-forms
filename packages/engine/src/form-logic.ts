@@ -24,6 +24,7 @@ import type {
   FormRadius,
   FormTransition,
 } from './form-design';
+import { isEmailAddressShape } from './email-shape';
 
 /**
  * The step kinds a form can contain. `message` is an info step with no input;
@@ -625,6 +626,11 @@ export interface FormEnding {
    * alongside a redirect URL; 0/absent redirects immediately.
    */
   redirectDelayMs?: number;
+  /**
+   * Append the visitor's `utm_*` params to every redirect: this one, an
+   * outcome's own and the post-booking one. Absent = off. See {@link appendUtm}.
+   */
+  forwardUtm?: boolean;
 }
 
 /**
@@ -1349,7 +1355,6 @@ export function isPersonalEmail(value: AnswerValue): boolean {
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * A web address for a `url` step: optional http(s) scheme, a dotted host with a
  * TLD of two or more letters, optional port, optional path/query/fragment. A pure
@@ -1500,7 +1505,7 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
   switch (step.type) {
     case 'email': {
       const email = String(value).trim().toLowerCase();
-      if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
+      if (!isEmailAddressShape(email)) return { ok: false, error: 'Enter a valid email address.' };
       // Use the SAME personal-email test as validateAnswerCode (domain list +
       // free-mail bases) so both validators agree on any given address.
       if (step.corporateEmailOnly && isPersonalEmail(email))
@@ -1988,7 +1993,9 @@ export interface ResolvedEnding {
    * Where to send the respondent, or `null` to show the thank-you screen. Its
    * `[key]` tokens are filled (and percent-encoded) when `resolveEnding` is
    * given the answers, and dropped when it is told the form is embedded;
-   * otherwise it is the URL exactly as configured.
+   * otherwise it is the URL exactly as configured. When the form forwards UTMs
+   * (`ending.forwardUtm`) and `resolveEnding` is given them, they are appended
+   * last, embedded or not.
    */
   redirectUrl: string | null;
   /** How long to show the thank-you screen first. 0 = redirect immediately. */
@@ -2016,12 +2023,17 @@ export interface ResolvedEnding {
  * (`interpolateUrl`), or `embedded: true` to get it with every token-bearing
  * parameter dropped (`stripUrlTokens`); the headline and body stay templates
  * either way, because the done screen interpolates them itself.
+ *
+ * Pass `utm` (the visitor's captured `utm_*` params) to have them appended to
+ * the redirect after the tokens are handled, but only when the form turned on
+ * `ending.forwardUtm`. They are forwarded on an embedded form too: they are
+ * campaign data the visitor arrived with, not answers.
  */
 export function resolveEnding(
   config: FormConfig,
   outcome: FormOutcome | null,
   answers?: Answers,
-  opts: { embedded?: boolean } = {},
+  opts: { embedded?: boolean; utm?: Record<string, string> } = {},
 ): ResolvedEnding {
   const e = config.ending ?? null;
   const pick = (a: string | null | undefined, b: string | null | undefined): string | null => {
@@ -2051,10 +2063,12 @@ export function resolveEnding(
   return {
     headline: pick(outcome?.label, e?.headline),
     body: pick(outcome?.message, e?.body),
-    redirectUrl:
-      redirectUrl && (answers || opts.embedded)
-        ? redirectUrlFor(redirectUrl, answers ?? {}, opts.embedded === true)
-        : redirectUrl,
+    redirectUrl: resolvedRedirect(
+      redirectUrl,
+      answers,
+      opts.embedded === true,
+      forwardedUtm(config, opts.utm),
+    ),
     redirectDelayMs: redirectUrl && Number.isFinite(delaySource) ? Math.max(0, delaySource) : 0,
   };
 }
@@ -2118,7 +2132,7 @@ export function validateAnswerCode(
   switch (step.type) {
     case 'email': {
       const email = String(value).trim().toLowerCase();
-      if (!EMAIL_RE.test(email)) return { ok: false, code: 'email' };
+      if (!isEmailAddressShape(email)) return { ok: false, code: 'email' };
       if (step.corporateEmailOnly && isPersonalEmail(email))
         return { ok: false, code: 'work_email' };
       return { ok: true };
@@ -2307,9 +2321,87 @@ export function stripUrlTokens(template: string): string {
  * The redirect URL to navigate to: `[key]` tokens filled from the answers on a
  * standalone form (`interpolateUrl`), or stripped on an embedded one
  * (`stripUrlTokens`), so an embedded form's redirect never carries an answer.
+ *
+ * `utm`, when given, is appended afterwards with {@link appendUtm}. This
+ * function does not read the form's `forwardUtm` switch: pass
+ * `forwardedUtm(config, utm)` so the UTMs arrive only when it is on.
  */
-export function redirectUrlFor(template: string, answers: Answers, embedded: boolean): string {
-  return embedded ? stripUrlTokens(template) : interpolateUrl(template, answers);
+export function redirectUrlFor(
+  template: string,
+  answers: Answers,
+  embedded: boolean,
+  utm?: Record<string, string>,
+): string {
+  const url = embedded ? stripUrlTokens(template) : interpolateUrl(template, answers);
+  return utm ? appendUtm(url, utm) : url;
+}
+
+/**
+ * `resolveEnding`'s redirect: the URL as configured unless there is something
+ * to do to it (answers to fill, an embed to strip, UTMs to forward).
+ */
+function resolvedRedirect(
+  url: string | null,
+  answers: Answers | undefined,
+  embedded: boolean,
+  utm: Record<string, string> | undefined,
+): string | null {
+  const hasUtm = !!utm && Object.keys(utm).length > 0;
+  if (!url || !(answers || embedded || hasUtm)) return url;
+  return redirectUrlFor(url, answers ?? {}, embedded, utm);
+}
+
+/**
+ * The UTMs to forward to a redirect: the given ones when the form turned on
+ * `ending.forwardUtm`, else `undefined` (nothing is appended).
+ */
+export function forwardedUtm(
+  config: Pick<FormConfig, 'ending'>,
+  utm: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  return config.ending?.forwardUtm === true && utm ? utm : undefined;
+}
+
+/**
+ * Append the visitor's `utm_*` params to a redirect URL. Only keys starting
+ * with `utm_` are taken from `utm`; any other key is ignored. A `utm_*` key
+ * already in the URL wins over the visitor's (compared case-insensitively), so
+ * an owner who hardcoded `utm_source=newsletter` keeps it. The existing query
+ * and the `#hash` are preserved. When nothing would be appended, or the URL
+ * does not parse, the input comes back byte-identical; otherwise the URL is
+ * trimmed first, so a stored trailing space never lands before the `?`.
+ *
+ * Only the real query (before the `#`) is read and extended. A hash-routed
+ * destination such as `https://x.com/#/r?utm_source=a` keeps its fragment,
+ * query included, untouched, and the visitor's UTMs go before the `#`.
+ */
+export function appendUtm(url: string, utm: Record<string, string>): string {
+  const entries = Object.entries(utm).filter(
+    ([key, value]) => key.toLowerCase().startsWith('utm_') && typeof value === 'string',
+  );
+  if (entries.length === 0) return url;
+  const trimmed = url.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return url;
+  }
+  const present = new Set([...parsed.searchParams.keys()].map((k) => k.toLowerCase()));
+  const pairs: string[] = [];
+  for (const [key, value] of entries) {
+    if (present.has(key.toLowerCase())) continue;
+    pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+    present.add(key.toLowerCase());
+  }
+  if (pairs.length === 0) return url;
+  // Splice the new pairs in as text rather than re-serializing `searchParams`,
+  // which would re-encode the owner's query (an interpolated `%20` becomes `+`).
+  const hashAt = trimmed.indexOf('#');
+  const main = hashAt === -1 ? trimmed : trimmed.slice(0, hashAt);
+  const hash = hashAt === -1 ? '' : trimmed.slice(hashAt);
+  const joiner = !main.includes('?') ? '?' : main.endsWith('?') || main.endsWith('&') ? '' : '&';
+  return `${main}${joiner}${pairs.join('&')}${hash}`;
 }
 
 /**

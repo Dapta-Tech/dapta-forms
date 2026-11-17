@@ -697,6 +697,29 @@ export const webhookDestinationSchema = z.object({
 });
 export type WebhookDestination = z.infer<typeof webhookDestinationSchema>;
 
+/**
+ * Whether a stored destination can deliver anything at all.
+ *
+ * A Google Sheets destination is stored while the author is still setting it
+ * up (switched on, no spreadsheet yet, or no complete column), so their work
+ * survives a reload. Such a destination is skipped at enqueue time rather
+ * than handed to an adapter that could only record a no-op for every
+ * submission. Every other type is deliverable as stored.
+ */
+export function destinationIsDeliverable(destination: {
+  type: string;
+  settings?: unknown;
+  columns?: unknown;
+}): boolean {
+  if (destination.type !== 'google-sheets') return true;
+  const settings = (destination.settings ?? {}) as { spreadsheetId?: unknown };
+  if (typeof settings.spreadsheetId !== 'string' || !settings.spreadsheetId.trim()) return false;
+  const columns = Array.isArray(destination.columns) ? destination.columns : [];
+  return columns.some(
+    (c) => typeof c === 'object' && c !== null && isWritableSheetColumn(c as { header?: string }),
+  );
+}
+
 /** Submission phases a destination can subscribe to. */
 export const destinationEvents = ['partial', 'complete'] as const;
 export type DestinationEvent = (typeof destinationEvents)[number];
@@ -735,6 +758,11 @@ export function destinationFiresForPhase(
  * attach a Note. The private-app token is a server-side env secret
  * (`HUBSPOT_PRIVATE_APP_TOKEN`), NOT stored in the form config.
  */
+/** Bounds for the unfinished rows a CRM destination keeps (`drafts`). */
+const DRAFT_ROWS = 200;
+const draftText = z.string().max(200);
+const draftValue = z.string().max(500);
+
 export const hubspotDestinationSchema = z.object({
   type: z.literal('hubspot'),
   enabled: z.boolean().default(false),
@@ -804,6 +832,27 @@ export const hubspotDestinationSchema = z.object({
   outcomeProperty: z.string().max(200).nullable().optional(),
   /** Fixed property values stamped on every synced contact. */
   staticProperties: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+  /**
+   * Rows the author started on the Connect tab and has not finished (a key
+   * with no property yet, a fixed value with no property, a value-map row with
+   * one side empty). Stored so they survive a reload; never read by a delivery
+   * or the mirror form, which see only the complete mappings above.
+   */
+  drafts: z
+    .object({
+      mappings: z.array(z.object({ key: draftText, property: draftText })).max(DRAFT_ROWS).optional(),
+      statics: z.array(z.object({ key: draftText, value: draftValue })).max(DRAFT_ROWS).optional(),
+      valueMaps: z
+        .array(
+          z.object({
+            stepKey: draftText,
+            rows: z.array(z.object({ from: draftValue, to: draftValue })).max(DRAFT_ROWS),
+          }),
+        )
+        .max(DRAFT_ROWS)
+        .optional(),
+    })
+    .optional(),
   /** Derive the company name from the respondent's email domain. */
   inferCompanyFromEmail: z.boolean().optional(),
   /**
@@ -861,8 +910,13 @@ export const sheetColumnSchema = z.object({
    * The text in the header row. Stored rather than derived, because the author
    * can rename a column without the question changing, and because a sheet that
    * already has data must keep the heading its existing rows were written under.
+   *
+   * May be empty: a column the author has added but not named yet is stored
+   * as it is, so it survives a reload, and is left out of the sheet (row 1 and
+   * every delivered row alike) until it has a heading. See
+   * `isWritableSheetColumn`.
    */
-  header: z.string().min(1).max(200),
+  header: z.string().max(200),
   source: z.enum(sheetColumnSource),
   /** The step key (`answer`) or the campaign key (`utm`). Unused by the rest. */
   key: z.string().min(1).max(64).optional(),
@@ -870,10 +924,195 @@ export const sheetColumnSchema = z.object({
 export type SheetColumn = z.infer<typeof sheetColumnSchema>;
 
 /**
+ * A column that goes into the sheet: one with a heading. Nothing else.
+ *
+ * The ONE rule for which columns exist in the sheet and in what order, used
+ * by the header row, every delivered row, the create call, the editor's
+ * column letters and `destinationIsDeliverable`, so all of them always agree.
+ * A heading with no answer chosen yet is written (its heading in row 1, an
+ * empty cell in every row) rather than skipped: skipping it would shift every
+ * column after it the moment the answer is picked. This is also what every
+ * config written before the rule existed meant by `{header, source:'answer'}`
+ * with no key. A column with no heading has nothing to put in row 1, so it is
+ * stored (the author's work survives a reload) and not written.
+ */
+export function isWritableSheetColumn(column: { header?: string; source?: string; key?: string }): boolean {
+  return !!column.header?.trim();
+}
+
+/** The columns that go into the sheet, in order. */
+export function writableSheetColumns<T extends { header?: string; source?: string; key?: string }>(
+  columns: readonly T[] | undefined,
+): T[] {
+  return (columns ?? []).filter(isWritableSheetColumn);
+}
+
+/** One cell position of the sheet: the column behind it and the heading row 1 holds there. */
+export interface SheetCell<T> {
+  column: T;
+  /** The heading in row 1 at this position. */
+  header: string;
+  /**
+   * The column has no heading right now, but dForms wrote one at this position
+   * before: the position is HELD (row 1 keeps the old heading, the cell is
+   * delivered empty) so the columns after it do not shift.
+   */
+  held: boolean;
+}
+
+/**
+ * The cells of one sheet row, in order: `writableSheetColumns`, plus the
+ * positions a column with a cleared heading still holds.
+ *
+ * `written` is the row 1 dForms has on record for the SAME spreadsheet and
+ * tab (see `writtenSheetHeaders`). Without it this is exactly
+ * `writableSheetColumns`.
+ *
+ * Why positions are held: an author renaming column B clears its heading
+ * first. Dropping the column at that moment moved every later column one cell
+ * to the left, for row 1 and for any response delivered before the new name
+ * was typed. A column that stands at a position `written` covers keeps it
+ * instead: row 1 is left alone there and its cell is delivered empty, until
+ * the column gets a heading again or is deleted for real. A column that never
+ * had a heading holds nothing and stays out, as before.
+ *
+ * WHICH unnamed column holds a position is decided by POSITION, not by
+ * reading headings ahead. The columns are laid over `written` left to right:
+ * a named column takes the next position, an unnamed one either holds the
+ * next position or is not in the sheet at all. Of all the ways to do that,
+ * the one that changes the sheet least is taken, counting:
+ *   - a named column whose position holds a different heading in `written`
+ *     (it was renamed or moved): one change;
+ *   - a position of `written` no column stands on any more (its column was
+ *     deleted): one change;
+ *   - a named column past the end of `written` (appended): no change.
+ * On a tie the unnamed column is left out, which is what a column that was
+ * added and never named should be.
+ *
+ * Comparing by position is what makes two identical headings side by side
+ * work. `[A, X, X]` with the first X cleared is `[A, _, X]`: looking ahead by
+ * text saw "the next heading is X, and so is this position" and took the
+ * cleared column for a new one, so row 1 was rewritten and the third column
+ * moved. By position, holding it leaves every column where it was (no
+ * change), and dropping it leaves a written position with no column (one
+ * change), so it is held.
+ *
+ * THE LIMIT. Columns have no identity beyond their place in the list, so an
+ * edit that both moves columns and clears a heading before it is saved can
+ * only be read as the smallest change that explains it. Whatever is chosen,
+ * this function is the single answer: row 1, every delivered row and the
+ * card's letters are all built from it, so they agree with each other even
+ * then.
+ */
+export function sheetCells<T extends { header?: string; source?: string; key?: string }>(
+  columns: readonly T[] | undefined,
+  written?: readonly string[] | null,
+): SheetCell<T>[] {
+  const list = columns ?? [];
+  const named = list.map((c) => isWritableSheetColumn(c));
+  if (!written?.length || named.every(Boolean)) {
+    return list
+      .filter((_, i) => named[i])
+      .map((column) => ({ column, header: column.header!.trim(), held: false }));
+  }
+  const n = list.length;
+  const w = written.length;
+  // cost[i][p]: the least change for columns i.. when p positions are taken.
+  // holds[i][p]: whether unnamed column i holds position p in that best case.
+  const cost: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(n + 1).fill(0));
+  const holds: boolean[][] = Array.from({ length: n }, () => new Array<boolean>(n + 1).fill(false));
+  for (let p = 0; p <= n; p++) cost[n]![p] = Math.max(0, w - p);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let p = 0; p <= i; p++) {
+      if (named[i]) {
+        const moved = p < w && written[p] !== list[i]!.header!.trim() ? 1 : 0;
+        cost[i]![p] = moved + cost[i + 1]![p + 1]!;
+        continue;
+      }
+      const out = cost[i + 1]![p]!;
+      const held = p < w ? cost[i + 1]![p + 1]! : Number.POSITIVE_INFINITY;
+      holds[i]![p] = held < out;
+      cost[i]![p] = Math.min(out, held);
+    }
+  }
+  const cells: SheetCell<T>[] = [];
+  for (let i = 0; i < n; i++) {
+    const column = list[i]!;
+    const p = cells.length;
+    if (named[i]) cells.push({ column, header: column.header!.trim(), held: false });
+    else if (holds[i]![p]) cells.push({ column, header: written[p]!, held: true });
+  }
+  return cells;
+}
+
+/**
+ * The row 1 dForms has on record for the spreadsheet and tab this destination
+ * points at, or null when it has none (or has it for another target). Read
+ * from the STORED destination: the API owns these fields.
+ *
+ * That is `headerSnapshot` (what dForms wrote there) or, for a row 1 that is
+ * somebody else's, `headerForeign` (the headings these columns stood for when
+ * dForms found it may not write them). Either one says which positions the
+ * columns occupy, which is all `sheetCells` needs it for.
+ */
+export function writtenSheetHeaders(destination: object | null | undefined): string[] | null {
+  const settings = (destination as { settings?: unknown } | null | undefined)?.settings;
+  if (!settings || typeof settings !== 'object') return null;
+  const { spreadsheetId, sheetTitle, headerSnapshot, headerForeign } = settings as {
+    spreadsheetId?: unknown;
+    sheetTitle?: unknown;
+    headerSnapshot?: unknown;
+    headerForeign?: unknown;
+  };
+  if (typeof spreadsheetId !== 'string' || !spreadsheetId.trim()) return null;
+  const tab = typeof sheetTitle === 'string' ? sheetTitle.trim() : '';
+  for (const recorded of [headerSnapshot, headerForeign]) {
+    if (!recorded || typeof recorded !== 'object') continue;
+    const snap = recorded as { spreadsheetId?: unknown; sheetTitle?: unknown; headers?: unknown };
+    if (snap.spreadsheetId !== spreadsheetId.trim()) continue;
+    if ((typeof snap.sheetTitle === 'string' ? snap.sheetTitle : '') !== tab) continue;
+    if (!Array.isArray(snap.headers)) continue;
+    return snap.headers.filter((h): h is string => typeof h === 'string');
+  }
+  return null;
+}
+
+/**
+ * The row 1 to count a destination's columns against: what dForms has on
+ * record (`writtenSheetHeaders`) or, when it never recorded anything, the
+ * headings of the columns as they are stored now.
+ *
+ * The fallback is for a destination saved before snapshots existed. Its
+ * stored columns ARE what its row 1 was written from, so the first edit made
+ * to it (clearing a middle heading, say) is protected like any later one,
+ * instead of shifting the columns once and being protected from then on.
+ * Null for a destination with no spreadsheet.
+ */
+export function sheetBaselineHeaders(destination: object | null | undefined): string[] | null {
+  const recorded = writtenSheetHeaders(destination);
+  if (recorded) return recorded;
+  const entry = (destination ?? {}) as { settings?: unknown; columns?: unknown };
+  const spreadsheetId = (entry.settings as { spreadsheetId?: unknown } | undefined)?.spreadsheetId;
+  if (typeof spreadsheetId !== 'string' || !spreadsheetId.trim()) return null;
+  const columns = Array.isArray(entry.columns) ? (entry.columns as { header?: unknown }[]) : [];
+  return columns
+    .filter((c) => c && typeof c.header === 'string' && c.header.trim())
+    .map((c) => (c.header as string).trim());
+}
+
+/**
  * At most this many columns in one row. Well under a sheet's own limit; it
  * exists so a crafted config cannot make one delivery build an enormous row.
  */
 export const MAX_SHEET_COLUMNS = 200;
+
+/** Where a spreadsheet destination writes, and a list of row-1 headings there. */
+const sheetHeaderStateSchema = z.object({
+  spreadsheetId: z.string().min(1).max(200),
+  /** `''` is the first tab, the same as an absent `sheetTitle`. */
+  sheetTitle: z.string().max(200),
+  headers: z.array(z.string().max(200)).max(MAX_SHEET_COLUMNS),
+});
 
 /**
  * Append every submission to a Google Sheet as a new row.
@@ -896,6 +1135,33 @@ export const googleSheetsDestinationSchema = z.object({
       spreadsheetId: z.string().min(1).max(200).nullable().optional(),
       /** The tab written to, by its visible name. Absent writes to the first tab. */
       sheetTitle: z.string().max(200).nullable().optional(),
+      // An ABSENT spreadsheet is a destination the author switched on and has
+      // not finished: stored so the switch survives a reload, never delivered
+      // to (see `destinationIsDeliverable`).
+      /**
+       * The header row dForms last wrote (or found already in place), and
+       * where. Bookkeeping the API owns, like HubSpot's `formSignature`: a
+       * caller's copy is discarded on every save and this is set from the
+       * stored row and the Sheets call's result. It is what lets a later edit
+       * to the columns rewrite row 1 while a row 1 that holds anything else
+       * is never touched.
+       */
+      headerSnapshot: sheetHeaderStateSchema.optional(),
+      /**
+       * The headings dForms last found it may NOT write to row 1 (row 1 held
+       * something else), and where. Owned by the API like `headerSnapshot`:
+       * it only spares a sheet a re-read on every unrelated save.
+       */
+      headerForeign: sheetHeaderStateSchema.optional(),
+      /**
+       * The headings whose sync last failed for a reason that will not fix
+       * itself (the spreadsheet is gone, access was revoked, Google is not
+       * connected), and when. API-owned: saves skip Google for these headings
+       * for a while instead of paying a failed call each time.
+       */
+      headerBroken: sheetHeaderStateSchema
+        .extend({ reason: z.string().max(40), at: z.number().int().nonnegative() })
+        .optional(),
     })
     .default({}),
   /**
@@ -943,6 +1209,17 @@ export const salesforceDestinationSchema = z.object({
   dayTimezone: z.string().max(64).optional(),
   /** Fixed values stamped on every record written (e.g. `LeadSource`). */
   staticFields: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+  /**
+   * Rows the author started and has not finished (a question with no field
+   * yet, a fixed value with no field). Stored so they survive a reload; never
+   * read by a delivery, which sees only the complete mappings above.
+   */
+  drafts: z
+    .object({
+      mappings: z.array(z.object({ key: draftText, field: draftText })).max(DRAFT_ROWS).optional(),
+      statics: z.array(z.object({ field: draftText, value: draftValue })).max(DRAFT_ROWS).optional(),
+    })
+    .optional(),
 });
 export type SalesforceDestination = z.infer<typeof salesforceDestinationSchema>;
 
@@ -1280,6 +1557,12 @@ export const formEndingSchema = z.object({
     .nullable()
     .optional(),
   redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
+  /**
+   * Append the visitor's `utm_*` params to every redirect (the ending's, an
+   * outcome's own and the post-booking one). Absent = off. A `utm_*` key the
+   * owner already wrote into the URL is never overwritten.
+   */
+  forwardUtm: z.boolean().optional(),
 });
 export type FormEndingInput = z.infer<typeof formEndingSchema>;
 

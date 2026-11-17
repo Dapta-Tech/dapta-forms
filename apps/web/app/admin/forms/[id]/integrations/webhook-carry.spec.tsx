@@ -56,7 +56,7 @@ describe('carriedWebhooks', () => {
 });
 
 describe('WebhookCard — the carried-webhooks notice', () => {
-  function markup(over: { enabled: boolean; carriedCount: number }): string {
+  function markup(over: { enabled: boolean; carriedCount: number; canTest?: boolean }): string {
     return renderToStaticMarkup(
       <WebhookCard
         state={{
@@ -72,11 +72,27 @@ describe('WebhookCard — the carried-webhooks notice', () => {
         clearUrlError={() => {}}
         formId="form-1"
         carriedCount={over.carriedCount}
+        canTest={over.canTest}
         locale="en"
         m={m}
       />,
     );
   }
+
+  // The API sends a test delivery for owners and admins only: a member used
+  // to get an enabled button that answered with a failure.
+  it('disables the test for a member and says an owner or admin has to send it', () => {
+    const html = markup({ enabled: true, carriedCount: 0, canTest: false });
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-testid="webhook-ping"|<button[^>]*data-testid="webhook-ping"[^>]*disabled=""/);
+    expect(html).toContain('data-testid="webhook-ping-admin-only"');
+    expect(html).toContain(m.pingAdminOnly);
+  });
+
+  it('leaves the test enabled for an owner or admin', () => {
+    const html = markup({ enabled: true, carriedCount: 0 });
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*data-testid="webhook-ping"|<button[^>]*data-testid="webhook-ping"[^>]*disabled=""/);
+    expect(html).not.toContain('webhook-ping-admin-only');
+  });
 
   const NOTICE = 'data-testid="webhook-carried"';
 

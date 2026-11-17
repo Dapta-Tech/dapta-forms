@@ -5,20 +5,24 @@ import { createPortal } from 'react-dom';
 import { FOCUSABLE_SELECTOR } from '@/lib/focusable';
 import { useRouter } from 'next/navigation';
 import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
-import type { IntegrationProvider, IntegrationStatus, SalesforceConnectError } from '@/lib/admin-api';
+import type { IntegrationProvider, IntegrationStatus } from '@/lib/admin-api';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
 import { IntegrationMark } from '@/components/ui/provider-logo';
 import { DcalLogo } from '@/components/ui/dcal-logo';
-import {
-  connectIntegrationAction,
-  connectSalesforceAction,
-  disconnectIntegrationAction,
-  startGoogleSheetsAuthAction,
-} from './actions';
+import { disconnectIntegrationAction } from './actions';
 import { callAction } from '@/lib/call-action';
+import {
+  GoogleConnectButton,
+  SalesforceConnectForm,
+  TokenConnectForm,
+  salesforceProblem,
+} from './connect-forms';
+
+// Re-exported for the callers that learned it here before the connect forms
+// moved out to be shared with a form's Connect tab.
+export { salesforceProblem };
 
 type Msgs = FormsMessages['admin']['connections'];
 
@@ -61,9 +65,15 @@ export function ConnectionsPanel({
   dcal = null,
   loadError,
   oauthOutcome = null,
+  canManage = true,
   messages: m,
   locale,
 }: {
+  /**
+   * Owners and admins. The API refuses a connect or a disconnect from anyone
+   * else, so a member sees what is connected and a sentence, no buttons.
+   */
+  canManage?: boolean;
   initialProviders: IntegrationStatus[];
   encryptionAvailable: boolean;
   /** Providers the deployment already supplies a token for. */
@@ -167,6 +177,7 @@ export function ConnectionsPanel({
             encryptionAvailable={encryptionAvailable}
             serverProvided={serverProvided.includes(meta.id)}
             unavailable={isUnavailable(meta.id)}
+            canManage={canManage}
             onStatusChange={(s) => setStatuses((prev) => ({ ...prev, [meta.id]: s }))}
             m={m}
             locale={locale}
@@ -185,10 +196,13 @@ function ProviderCard({
   encryptionAvailable,
   serverProvided = false,
   unavailable = false,
+  canManage = true,
   onStatusChange,
   m,
   locale,
 }: {
+  /** See `ConnectionsPanel`. */
+  canManage?: boolean;
   meta: ProviderMeta;
   status: IntegrationStatus | null;
   encryptionAvailable: boolean;
@@ -203,44 +217,7 @@ function ProviderCard({
   const [pending, start] = useTransition();
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
   const [showConnect, setShowConnect] = useState(false);
-  const [token, setToken] = useState('');
   const connected = !!status;
-
-  /**
-   * Hand the browser to the provider's consent screen.
-   *
-   * `window.location.assign` rather than the router: the destination is another
-   * origin, so there is nothing for Next to prefetch or soft-navigate, and the
-   * way back in is the API's callback redirecting to this page with an outcome
-   * flag. Nothing is stored on this side, so a visitor who abandons the consent
-   * screen leaves no half-made connection behind.
-   */
-  function connectWithOauth() {
-    start(async () => {
-      const res = await callAction(() => startGoogleSheetsAuthAction());
-      if (res.ok) window.location.assign(res.authUrl);
-      else error(res.message || m.connectError);
-    });
-  }
-
-  function connect() {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      error(m.tokenRequired);
-      return;
-    }
-    start(async () => {
-      const res = await callAction(() => connectIntegrationAction(meta.id, trimmed));
-      if (res.ok) {
-        onStatusChange(res.status);
-        setToken('');
-        setShowConnect(false);
-        success(fill(m.connectSuccess, { provider: meta.name }));
-      } else {
-        error(m.connectError);
-      }
-    });
-  }
 
   async function disconnect() {
     const ok = await confirmDialog({
@@ -306,10 +283,18 @@ function ProviderCard({
               <p className="mt-1 text-xs text-muted-foreground">{m.encryptionOffBody}</p>
             </div>
           </div>
+        ) : !canManage && !connected ? (
+          <div className="flex flex-col gap-3">
+            {serverProvided ? <ServerProvidedNote providerName={meta.name} m={m} /> : null}
+            <p className="text-sm text-muted-foreground" data-testid="provider-admin-only">
+              {fill(m.manageAdminOnly, { provider: meta.name })}
+            </p>
+          </div>
         ) : connected && status ? (
           <ConnectedView
             status={status}
-            onDisconnect={disconnect}
+            onDisconnect={canManage ? disconnect : null}
+            adminOnly={canManage ? null : fill(m.manageAdminOnly, { provider: meta.name })}
             pending={pending}
             m={m}
             locale={locale}
@@ -321,10 +306,7 @@ function ProviderCard({
             {meta.note ? (
               <p className="text-xs text-muted-foreground">{meta.note}</p>
             ) : null}
-            <Button onClick={connectWithOauth} disabled={pending} className="self-start">
-              <IntegrationMark provider={meta.id} size={14} />
-              {pending ? m.connecting : m.connectWithGoogle}
-            </Button>
+            <GoogleConnectButton m={m} className="self-start" />
           </div>
         ) : meta.how === 'salesforce' && showConnect ? (
           <SalesforceConnectForm
@@ -339,16 +321,15 @@ function ProviderCard({
         ) : showConnect ? (
           // Connecting stays available while the server supplies a token — an
           // account can override the shared one with its own.
-          <ConnectForm
-            token={token}
-            setToken={setToken}
-            onConnect={connect}
-            onCancel={() => {
-              setShowConnect(false);
-              setToken('');
-            }}
-            pending={pending}
+          <TokenConnectForm
+            provider={meta.id}
             providerName={meta.name}
+            onConnected={(s) => {
+              onStatusChange(s);
+              setShowConnect(false);
+              success(fill(m.connectSuccess, { provider: meta.name }));
+            }}
+            onCancel={() => setShowConnect(false)}
             m={m}
           />
         ) : (
@@ -424,13 +405,17 @@ function StatusBadge({
 function ConnectedView({
   status,
   onDisconnect,
+  adminOnly = null,
   pending,
   m,
   locale,
   note,
 }: {
   status: IntegrationStatus;
-  onDisconnect: () => void;
+  /** Null for a member: the API would refuse, so there is no button. */
+  onDisconnect: (() => void) | null;
+  /** The sentence a member reads where the button would be. */
+  adminOnly?: string | null;
   pending: boolean;
   m: Msgs;
   locale: Locale;
@@ -459,171 +444,22 @@ function ConnectedView({
             {fill(m.connectedOn, { date })}
           </dd>
         </dl>
-        <Button variant="destructive" size="sm" onClick={onDisconnect} disabled={pending}>
-          {pending ? m.disconnecting : m.disconnect}
-        </Button>
+        {onDisconnect ? (
+          <Button variant="destructive" size="sm" onClick={onDisconnect} disabled={pending}>
+            {pending ? m.disconnecting : m.disconnect}
+          </Button>
+        ) : null}
       </div>
+      {adminOnly ? (
+        <p className="text-xs text-muted-foreground" data-testid="provider-admin-only">
+          {adminOnly}
+        </p>
+      ) : null}
       {note ? (
         <p className="text-xs text-muted-foreground" data-testid="connection-scope-note">
           {note}
         </p>
       ) : null}
-    </div>
-  );
-}
-
-function ConnectForm({
-  token,
-  setToken,
-  onConnect,
-  onCancel,
-  pending,
-  providerName,
-  m,
-}: {
-  token: string;
-  setToken: (v: string) => void;
-  onConnect: () => void;
-  onCancel: () => void;
-  pending: boolean;
-  providerName: string;
-  m: Msgs;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium" htmlFor="connect-token">
-        {fill(m.tokenLabel, { provider: providerName })}
-      </label>
-      <Input
-        id="connect-token"
-        type="password"
-        value={token}
-        autoComplete="off"
-        placeholder={m.tokenPlaceholder}
-        onChange={(e) => setToken(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onConnect();
-        }}
-      />
-      <p className="text-xs text-muted-foreground">{m.tokenHelp}</p>
-      <div className="mt-1 flex items-center gap-2">
-        <Button onClick={onConnect} disabled={pending}>
-          {pending ? m.connecting : m.connect}
-        </Button>
-        <Button variant="ghost" onClick={onCancel} disabled={pending}>
-          {m.cancel}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Salesforce's connect form: the org's My Domain and an External Client App's
- * consumer key and secret, with the one-time setup the admin has to do first.
- *
- * The setup steps are ON the card rather than behind a docs link because the
- * person filling this in is often not the Salesforce admin, and they need to
- * be able to forward exactly what to ask for. A refusal names which of the
- * three things to fix, including the ten-minute wait after creating the app,
- * which otherwise reads as "I did something wrong".
- */
-function SalesforceConnectForm({
-  onConnected,
-  onCancel,
-  m,
-}: {
-  onConnected: (status: IntegrationStatus) => void;
-  onCancel: () => void;
-  m: Msgs;
-}) {
-  const [domain, setDomain] = useState('');
-  const [consumerKey, setConsumerKey] = useState('');
-  const [consumerSecret, setConsumerSecret] = useState('');
-  const [problem, setProblem] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-
-  function connect() {
-    const input = {
-      domain: domain.trim(),
-      consumerKey: consumerKey.trim(),
-      consumerSecret: consumerSecret.trim(),
-    };
-    if (!input.domain || !input.consumerKey || !input.consumerSecret) {
-      setProblem(m.salesforceFieldsRequired);
-      return;
-    }
-    setProblem(null);
-    start(async () => {
-      // Thirty seconds, not the default fifteen: connecting waits on two calls
-      // to the org, each bounded server-side, and the button must not give up
-      // before the server has had the chance to say why.
-      const res = await callAction(() => connectSalesforceAction(input), { timeoutMs: 30_000 });
-      if (res.ok) {
-        setConsumerSecret('');
-        onConnected(res.status);
-        return;
-      }
-      setProblem(salesforceProblem(res, m));
-    });
-  }
-
-  const field = (
-    id: string,
-    label: string,
-    value: string,
-    set: (v: string) => void,
-    opts: { secret?: boolean; placeholder?: string } = {},
-  ) => (
-    <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium" htmlFor={id}>
-        {label}
-      </label>
-      <Input
-        id={id}
-        type={opts.secret ? 'password' : 'text'}
-        value={value}
-        autoComplete="off"
-        spellCheck={false}
-        placeholder={opts.placeholder}
-        onChange={(e) => set(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') connect();
-        }}
-      />
-    </div>
-  );
-
-  return (
-    <div className="flex flex-col gap-3" data-testid="salesforce-connect-form">
-      <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-        <p className="font-medium text-foreground">{m.salesforceSetupTitle}</p>
-        <ol className="mt-1.5 list-decimal space-y-1 pl-4">
-          {m.salesforceSetupSteps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
-        <p className="mt-2">{m.salesforceEditionNote}</p>
-      </div>
-      {field('sf-domain', m.salesforceDomainLabel, domain, setDomain, {
-        placeholder: m.salesforceDomainPlaceholder,
-      })}
-      {field('sf-key', m.salesforceKeyLabel, consumerKey, setConsumerKey)}
-      {field('sf-secret', m.salesforceSecretLabel, consumerSecret, setConsumerSecret, { secret: true })}
-      <p className="text-xs text-muted-foreground">{m.tokenHelp}</p>
-      {problem ? (
-        <p role="alert" data-testid="salesforce-connect-problem" className="text-sm text-destructive">
-          {problem}
-        </p>
-      ) : null}
-      <div className="mt-1 flex items-center gap-2">
-        <Button onClick={connect} disabled={pending}>
-          {pending ? m.connecting : m.connect}
-        </Button>
-        <Button variant="ghost" onClick={onCancel} disabled={pending}>
-          {m.cancel}
-        </Button>
-      </div>
     </div>
   );
 }
@@ -793,25 +629,4 @@ function DcalStepsDialog({
     </div>,
     document.body,
   );
-}
-
-/**
- * The sentence for a refused Salesforce connection. Every path names a cause:
- * Salesforce's own refusal by reason, a role that may not connect, no answer
- * in time, and otherwise the API's message beside the generic line, so nobody
- * is left with "could not connect" and nothing to act on.
- */
-export function salesforceProblem(
-  res:
-    | { ok: false; transport: true; message: string }
-    | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string; cause?: string },
-  m: Msgs,
-): string {
-  if ('transport' in res) return m.salesforceErrors.timeout;
-  // "Did not answer" carries how the call died, which is what tells an
-  // operator whether this server is blocked from Salesforce.
-  if (res.reason === 'unreachable' && res.cause) return `${m.salesforceErrors.unreachable} (${res.cause})`;
-  if (res.reason) return m.salesforceErrors[res.reason];
-  if (res.status === 403) return m.salesforceErrors.forbidden;
-  return res.message ? `${m.connectError} (${res.message})` : m.connectError;
 }

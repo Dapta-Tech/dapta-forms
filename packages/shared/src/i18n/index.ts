@@ -1230,6 +1230,9 @@ export interface FormsMessages {
         delay: string;
         delayHint: string;
         delayHelp: string;
+        /** Switch label: append the visitor's `utm_*` params to every redirect. */
+        forwardUtm: string;
+        forwardUtmHint: string;
         /** Shown when score ranges exist — they can override any field here. */
         outcomesNote: string;
       };
@@ -1795,6 +1798,15 @@ export interface FormsMessages {
       saved: string;
       /** V5-A4 — steady-state autosave status (the Save button is gone). */
       autosaved: string;
+      /** The folded save pill's label, a word or two. */
+      autosavedShort: string;
+      /**
+       * The last change on the tab failed to save after the author left it;
+       * said once when they come back, since the screen shows what is stored.
+       */
+      saveLostAfterLeave: string;
+      /** Dismisses the "your last change was not saved" notice once it has been read. */
+      saveLostDismiss: string;
       /** V5-QA — saved, except one card that has a problem of its own. */
       autosavedPartial: string;
       saveError: string;
@@ -1892,7 +1904,25 @@ export interface FormsMessages {
       // Account-connection gating + Typeform-style mapping (per-form)
       connectPromptTitle: string;
       connectPromptBody: string;
-      connectPromptCta: string;
+      /**
+       * A plain member on a card whose provider is not connected: only owners
+       * and admins can connect one (the API refuses others). `{provider}`.
+       */
+      connectAdminOnly: string;
+      /** Under an unfinished HubSpot row: it is saved, and what it still needs. */
+      hubspotRowNeedsProperty: string;
+      hubspotRowNeedsKey: string;
+      hubspotRowNeedsValue: string;
+      hubspotRowNeedsQuestion: string;
+      /** Inline on the Sheets card: switched on, no spreadsheet yet. */
+      gsheetsNoSheetYet: string;
+      /**
+       * The webhook switched on with no URL: it is not saved (a webhook needs a
+       * URL to be stored), said on the card and as the partial save's reason.
+       */
+      webhookNeedsUrl: string;
+      /** Inline on the Sheets card: a spreadsheet, but no column with a heading. */
+      gsheetsNoNamedColumn: string;
       /** HubSpot keys contacts on email — a form with no address cannot sync. */
       emailRequiredTitle: string;
       emailRequiredBody: string;
@@ -1914,6 +1944,8 @@ export interface FormsMessages {
       pingOk: string;
       pingFailed: string;
       pingNeedsUrl: string;
+      /** The test delivery is admin-only at the API: said to a member instead of a button that fails. */
+      pingAdminOnly: string;
       pingHelp: string;
       /**
        * Why a test delivery failed. One line per reason the API can name — a
@@ -2028,9 +2060,14 @@ export interface FormsMessages {
       salesforce: {
         title: string;
         desc: string;
+        /** Heads the connect form shown in place of the mapping when not connected. */
+        connectTitle: string;
+        /** Under an unfinished row: it is saved, and what it still needs to be sent. */
+        rowNeedsField: string;
+        rowNeedsQuestion: string;
+        rowNeedsValue: string;
         /** Shown in place of the mapping when the account has no Salesforce connection. */
         notConnected: string;
-        connectLink: string;
         /** Why the org's fields could not be read, by the API's reason. */
         fieldsRejected: string;
         fieldsUnavailable: string;
@@ -2074,13 +2111,19 @@ export interface FormsMessages {
       gsheets: {
         title: string;
         desc: string;
+        /** Heads the "Continue with Google" prompt when the account has no Google connection. */
+        connectTitle: string;
         /** Shown in place of the whole card when the account has no Google connection. */
         notConnected: string;
         sheetLabel: string;
         /** Shown before any spreadsheet is chosen: the two ways to get one. */
         sheetHelp: string;
+        /** The same, where the Picker is not available and creating is the only way. */
+        sheetHelpCreateOnly: string;
         createSheet: string;
         chooseSheet: string;
+        /** Google's Picker is admin-only at the API: said to a member instead of the button. */
+        chooseAdminOnly: string;
         sheetCreated: string;
         createFailed: string;
         pickerFailed: string;
@@ -2092,6 +2135,28 @@ export interface FormsMessages {
         /** The empty option: write to whichever tab is first. */
         tabFirst: string;
         openSheet: string;
+        /** The primary button on the attached block. */
+        openSheetButton: string;
+        /** The attached block's title while the spreadsheet's name is not known yet. */
+        attachedUnnamed: string;
+        /** Where responses go, under the spreadsheet's name. `{tab}` is the tab's name. */
+        attachedInTab: string;
+        /** The same sentence when no tab is chosen and its name is not known. */
+        attachedFirstTab: string;
+        /** The one quiet action that reveals "create" and "choose" once a sheet is attached. */
+        changeSheet: string;
+        /** Above the two options it reveals. */
+        changeHelp: string;
+        /** Closes the options without changing anything. */
+        changeKeep: string;
+        /** The confirm asked before another spreadsheet replaces the attached one. `{name}` is the current one. */
+        changeTitle: string;
+        changeBodyCreate: string;
+        changeBodyChoose: string;
+        changeConfirmCreate: string;
+        changeConfirmChoose: string;
+        /** On the create button while Google is creating the spreadsheet. */
+        creatingSheet: string;
         sheetNotFound: string;
         sheetForbidden: string;
         tabsUnavailable: string;
@@ -2109,9 +2174,35 @@ export interface FormsMessages {
         fillFromForm: string;
         writeHeaders: string;
         headersWritten: string;
-        /** Row 1 already held something, so nothing was overwritten. */
+        /** Row 1 already read exactly these headings. */
+        headersUnchanged: string;
+        /**
+         * Columns with no heading: stored, not written to the sheet. `{n}` is
+         * how many (Many only).
+         */
+        columnPendingOne: string;
+        columnPendingMany: string;
+        /** Under one column row: exactly what it still needs. */
+        rowNeedsAnswer: string;
+        rowNeedsUtm: string;
+        rowNeedsHeader: string;
+        /** A column whose heading was cleared, still holding its place in the sheet. `{header}` is what row 1 says. */
+        rowHeldHeader: string;
+        /** Row 1 does not match the columns, so nothing was overwritten on its own. */
         headersNotEmpty: string;
+        /** Row 1 is dForms' own but out of date with the columns (it can be updated). */
+        headersStale: string;
         headersFailed: string;
+        /** The side-by-side shown when row 1 does not match. */
+        headersColumn: string;
+        headersInSheet: string;
+        headersToWrite: string;
+        headersEmptyCell: string;
+        /** The explicit, confirmed way out of a row 1 that does not match. */
+        replaceRow: string;
+        replaceTitle: string;
+        replaceBody: string;
+        replaceCancel: string;
         /** Default headings for the columns that are not questions. */
         colSubmittedAt: string;
         colScore: string;
@@ -2160,6 +2251,8 @@ export interface FormsMessages {
       salesforceDomainPlaceholder: string;
       salesforceKeyLabel: string;
       salesforceSecretLabel: string;
+      /** Under the Salesforce form: what happens to the key and secret. */
+      salesforceSecretHelp: string;
       /** What the Salesforce admin has to set up first, as a short checklist. */
       salesforceSetupTitle: string;
       salesforceSetupSteps: string[];
@@ -2189,6 +2282,10 @@ export interface FormsMessages {
       connect: string;
       connecting: string;
       disconnect: string;
+      /** Connecting and disconnecting are admin-only at the API: said to a member instead of the buttons. `{provider}`. */
+      manageAdminOnly: string;
+      /** A connect attempt failed for a reason with no sentence of its own. */
+      connectFailedGeneric: string;
       disconnecting: string;
       cancel: string;
       tokenLabel: string;
@@ -2536,6 +2633,21 @@ export interface FormsMessages {
       saveFirst: string;
       unpublishedChanges: string;
       noChanges: string;
+      /** The pill's label while an edit is on its way to the server (not pressable yet). */
+      saving: string;
+      /**
+       * Why Publish cannot be pressed, one per blocked state. Read out as the
+       * button's description and shown as its tooltip, so each is a full
+       * sentence that stands on its own.
+       */
+      blockedSaving: string;
+      /** The save failed for now and is being retried on its own. */
+      blockedRetrying: string;
+      blockedSaveFailed: string;
+      /** Someone else saved the form; the editor's banner offers the two ways out. */
+      blockedConflict: string;
+      /** The form has no questions yet. */
+      blockedEmpty: string;
       /** The publish menu (the chevron beside Publish), and what it holds: revert. */
       moreOptions: string;
       revert: string;
@@ -3519,7 +3631,7 @@ export const en: FormsMessages = {
         overrideIsAnyOf: '{field} is any of {bound}',
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
-          'Leave empty to show the thank-you screen. If set, respondents are sent here instead. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out.',
+          'Leave empty to show the thank-you screen. If set, respondents are sent here instead. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out. Keep in mind that an answer placed in the URL, such as an email, ends up in the destination site’s browser history and server logs.',
         messageLabel: 'Message shown for this outcome',
         messageHelp:
           'The thank-you body respondents see for this range. Use [field] to insert an answer. Leave empty to use the default message.',
@@ -3537,12 +3649,15 @@ export const en: FormsMessages = {
         bodyPlaceholder: 'We’ll be in touch shortly.',
         redirect: 'Redirect URL (optional)',
         redirectHint:
-          'Leave empty to show the thank-you screen. If set, everyone is sent here. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out.',
+          'Leave empty to show the thank-you screen. If set, everyone is sent here. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out. Keep in mind that an answer placed in the URL, such as an email, ends up in the destination site’s browser history and server logs.',
         redirectPlaceholder: 'https://…',
         delay: 'Show the thank-you first for (ms)',
         delayHint: '0 redirects immediately.',
         delayHelp:
           'Hold the thank-you screen this long so the respondent can read it, then send them to the URL above. Only applies when a redirect is set.',
+        forwardUtm: 'Forward UTM parameters',
+        forwardUtmHint:
+          'Adds the visitor’s UTM parameters (utm_source, utm_campaign and the rest) to every redirect, including the ones set on a score range, so the destination can attribute the visit. A UTM parameter already in the URL is kept as written.',
         outcomesNote:
           'These are the defaults. A score range in Results that fills the same field wins for the people who land in it; a range that leaves it empty uses what you set here.',
       },
@@ -4244,6 +4359,10 @@ export const en: FormsMessages = {
       saving: 'Saving…',
       saved: 'Integrations saved.',
       autosaved: 'Changes saved automatically',
+      autosavedShort: 'Saved',
+      saveLostDismiss: 'Got it',
+      saveLostAfterLeave:
+        'Your last change on this tab could not be saved after you left it, so it is not in the integrations below.',
       autosavedPartial: 'Saved everything except the webhook.',
       saveError: 'Could not save integrations.',
       saveOffline:
@@ -4336,8 +4455,16 @@ export const en: FormsMessages = {
         'This card edits the first one. The rest keep running exactly as they are and are saved untouched. They are just not editable from here. You can see all of them under Integrations.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
-        'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
-      connectPromptCta: 'Go to Connections',
+        'Paste a HubSpot private app token to connect this workspace. Once it is connected, every form here can map its questions to contact properties.',
+      connectAdminOnly:
+        '{provider} is not connected for this workspace yet, and only an owner or admin can connect it. Ask one to connect it here or under Integrations.',
+      hubspotRowNeedsProperty: 'Saved. Choose the HubSpot property to send it.',
+      hubspotRowNeedsKey: 'Saved. Choose what fills it to send it.',
+      hubspotRowNeedsValue: 'Saved. Give it a value to send it.',
+      hubspotRowNeedsQuestion: 'Saved. Choose the question these values belong to.',
+      gsheetsNoSheetYet: 'Nothing is sent yet: create or choose a spreadsheet.',
+      webhookNeedsUrl: 'Paste the webhook URL to start sending. Until then the webhook is not saved.',
+      gsheetsNoNamedColumn: 'Nothing is sent to the sheet until a column has a heading.',
       emailRequiredTitle: 'This form has no email address to sync',
       emailRequiredBody:
         'HubSpot matches a contact by email address. It updates the one it finds, or creates a new one. A submission with no address arrives with nothing to identify, so no contact is created and the lead is not synced. Add an email question, or a scheduler: Calendly collects the invitee’s address when someone books.',
@@ -4350,7 +4477,7 @@ export const en: FormsMessages = {
       hubspotHowBodyScheduler:
         'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. This form does not ask for one. The booking collects it, so nothing here should be mapped to “email”.',
       schedulerDisconnected:
-        'Calendly is not connected for this account, so the invitee’s address cannot be read back and nothing will reach HubSpot. The booking still succeeds, which is why this fails quietly. Connect Calendly in Connections.',
+        'Calendly is not connected for this account, so the invitee’s address cannot be read back and nothing will reach HubSpot. The booking still succeeds, which is why this fails quietly. Connect Calendly under Integrations.',
       mapQuestionsHelpScheduler:
         'Send each answer to a HubSpot contact property. Do not map anything to “email”. The booking supplies it, and a mapping here takes over and stops the sync.',
       emailMappingConflictTitle: 'This mapping stops the sync',
@@ -4361,6 +4488,7 @@ export const en: FormsMessages = {
       pingOk: 'Test delivered. Your endpoint accepted it.',
       pingFailed: 'Test failed: {reason}',
       pingNeedsUrl: 'Save a webhook URL first.',
+      pingAdminOnly: 'Only an owner or admin can send a test delivery. Ask one to send it.',
       pingHelp:
         'Posts one sample body in the real shape, signed the same way, so you can check what your endpoint receives. The answers are made up and marked as a test.',
       pingStatus: 'Your endpoint answered HTTP {status}.',
@@ -4451,8 +4579,11 @@ export const en: FormsMessages = {
       salesforce: {
         title: 'Salesforce',
         desc: 'Send each completed response to Salesforce as a Lead.',
-        notConnected: 'Connect Salesforce on the Connections page to use it here.',
-        connectLink: 'Go to Connections',
+        connectTitle: 'Connect Salesforce to send Leads',
+        rowNeedsField: 'Saved. Choose the Salesforce field to send it.',
+        rowNeedsQuestion: 'Saved. Choose the question that fills it to send it.',
+        rowNeedsValue: 'Saved. Give it a value to send it.',
+        notConnected: 'Connect your org once and every form in this workspace can send to it.',
         fieldsRejected: 'Salesforce refused to list its fields. Check that the Run As user can read Leads.',
         fieldsUnavailable: 'Salesforce did not answer. Try refreshing the fields.',
         refreshFields: 'Refresh fields',
@@ -4493,12 +4624,17 @@ export const en: FormsMessages = {
       gsheets: {
         title: 'Google Sheets',
         desc: 'Append each response to a spreadsheet as a new row.',
-        notConnected: 'Connect Google Sheets on the Connections page to use it here.',
+        connectTitle: 'Connect Google Sheets',
+        notConnected:
+          'Sign in with the Google account that should own the spreadsheets. You come back to this tab when you are done.',
         sheetLabel: 'Spreadsheet',
         sheetHelp:
           'Create a new spreadsheet for this form, or choose one you already have in Google Drive.',
+        sheetHelpCreateOnly: 'Create a new spreadsheet for this form in your Google Drive.',
         createSheet: 'Create a new spreadsheet',
         chooseSheet: 'Choose from Google Drive',
+        chooseAdminOnly:
+          'Only an owner or admin can choose a spreadsheet that already exists in Google Drive. You can create a new one here.',
         sheetCreated: 'The spreadsheet was created in your Google Drive.',
         createFailed: 'The spreadsheet could not be created. Try again.',
         pickerFailed: 'Google Drive could not be opened. Try again.',
@@ -4507,27 +4643,61 @@ export const en: FormsMessages = {
         tabLabel: 'Tab',
         tabFirst: 'The first tab',
         openSheet: 'Open the spreadsheet',
+        openSheetButton: 'Open sheet',
+        attachedUnnamed: 'Google spreadsheet',
+        attachedInTab: 'Responses are added to this spreadsheet as new rows, in the "{tab}" tab.',
+        attachedFirstTab: 'Responses are added to this spreadsheet as new rows, in its first tab.',
+        changeSheet: 'Change sheet',
+        changeHelp: 'Send new responses to a different spreadsheet:',
+        changeKeep: 'Keep this sheet',
+        changeTitle: 'Change the spreadsheet?',
+        changeBodyCreate:
+          'A new spreadsheet will be created in your Google Drive, and new responses will go to it from now on. "{name}" keeps the rows it already has and stops receiving responses.',
+        changeBodyChoose:
+          'You will choose a spreadsheet from your Google Drive, and new responses will go to it from now on. "{name}" keeps the rows it already has and stops receiving responses.',
+        changeConfirmCreate: 'Create and switch',
+        changeConfirmChoose: 'Choose a sheet',
+        creatingSheet: 'Creating the sheet…',
         sheetNotFound:
           'dForms can no longer open this spreadsheet. Choose it again from Google Drive, or create a new one.',
         sheetForbidden:
-          'Google no longer lets dForms write here. Reconnect Google Sheets on the Connections page.',
+          'Google no longer lets dForms write here. Reconnect Google Sheets under Integrations.',
         tabsUnavailable: 'The tabs could not be read. Try again.',
         columnsLabel: 'Columns',
         columnsHelp: 'One column per cell of the row, left to right.',
         noColumns: 'No columns yet. Nothing is sent until you add one.',
         addColumn: 'Add a column',
         removeColumn: 'Remove this column',
-        moveUp: 'Move this column left',
-        moveDown: 'Move this column right',
+        moveUp: 'Move this column up',
+        moveDown: 'Move this column down',
         headerFor: 'Column heading',
         sourceFor: 'What fills this column',
         keyFor: 'Which one',
         pickOne: 'Pick one',
         fillFromForm: 'Use the form’s questions',
-        writeHeaders: 'Write the header row',
-        headersWritten: 'The header row was written.',
-        headersNotEmpty: 'The first row already has content, so it was left alone.',
-        headersFailed: 'The header row could not be written.',
+        writeHeaders: 'Update the header row',
+        headersWritten: 'Row 1 of the sheet now matches these columns.',
+        headersUnchanged: 'Row 1 of the sheet already matches these columns.',
+        columnPendingOne: 'A column without a heading is saved, and goes into the sheet once it has one.',
+        columnPendingMany: '{n} columns without a heading are saved, and go into the sheet once they have one.',
+        rowNeedsAnswer: 'Choose which answer fills this column. Until then its cells stay empty.',
+        rowNeedsUtm: 'Choose which campaign tag fills this column. Until then its cells stay empty.',
+        rowNeedsHeader: 'Give it a heading to write it to the sheet.',
+        rowHeldHeader:
+          'Give it a heading. Until then the sheet keeps "{header}" above this column and its cells stay empty, so the columns after it do not move.',
+        headersNotEmpty: 'Row 1 of the sheet does not match these columns, so it was not changed on its own.',
+        headersFailed: 'The header row could not be updated. Your columns are saved.',
+        headersStale:
+          'Row 1 of the sheet is out of date with these columns, so responses would land under the wrong headings. dForms wrote it, so it can update it now.',
+        headersColumn: 'Column',
+        headersInSheet: 'In the sheet now',
+        headersToWrite: 'Will be written',
+        headersEmptyCell: 'empty',
+        replaceRow: 'Replace row 1',
+        replaceTitle: 'Replace row 1 of the sheet?',
+        replaceBody:
+          'Row 1 is overwritten with the headings of these columns. What those cells hold now is replaced, and only the sheet’s version history in Google keeps it. From then on, dForms keeps row 1 in line with your columns by itself.',
+        replaceCancel: 'Cancel',
         colSubmittedAt: 'Submitted',
         colScore: 'Score',
         colOutcome: 'Outcome',
@@ -4545,7 +4715,7 @@ export const en: FormsMessages = {
       },
     },
     connections: {
-      title: 'Connections',
+      title: 'Integrations',
       subtitle:
         'Connect each service to your account once. Then map fields for each form from its integrations tab.',
       hubspotName: 'HubSpot',
@@ -4575,6 +4745,8 @@ export const en: FormsMessages = {
       salesforceDomainPlaceholder: 'yourcompany.my.salesforce.com',
       salesforceKeyLabel: 'Consumer Key',
       salesforceSecretLabel: 'Consumer Secret',
+      salesforceSecretHelp:
+        'The Consumer Key and Secret are checked with Salesforce, encrypted and stored on the server. The secret is never shown again.',
       salesforceSetupTitle: 'Before you connect, a Salesforce admin sets this up once:',
       salesforceSetupSteps: [
         'In Setup, create an External Client App with OAuth enabled.',
@@ -4609,6 +4781,8 @@ export const en: FormsMessages = {
       connect: 'Connect',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
+      manageAdminOnly: 'Only an owner or admin can connect or disconnect {provider}. Ask one to do it.',
+      connectFailedGeneric: 'Could not connect. Check the values and try again.',
       disconnecting: 'Disconnecting…',
       cancel: 'Cancel',
       tokenLabel: 'Paste your {provider} token',
@@ -5138,7 +5312,7 @@ export const en: FormsMessages = {
         'PATCH /v1/folders/:id': 'Renames a folder.',
         'DELETE /v1/folders/:id': 'Deletes a folder. Its forms are kept, outside any folder.',
         'PUT /v1/forms/:id/destinations':
-          'Replaces the form’s destinations (webhooks and HubSpot). Takes effect at once, without publishing.',
+          'Replaces the form’s destinations (webhooks, HubSpot, Google Sheets and Salesforce). Takes effect at once, without publishing. When the change touches a spreadsheet’s columns, row 1 of the sheet is updated to match, unless it holds something dForms did not write, and `sheetHeaders` says what happened.',
         'POST /v1/forms/:id/destinations/webhook/ping':
           'Sends a test event to the form’s webhook and tells you how the endpoint answered.',
         'GET /v1/forms/:id/submissions':
@@ -5280,6 +5454,12 @@ export const en: FormsMessages = {
       saveFirst: 'Your latest changes could not be saved, so nothing was published. Try again once they save.',
       unpublishedChanges: 'Unpublished changes',
       noChanges: 'All changes are published',
+      saving: 'Saving…',
+      blockedSaving: 'Saving your changes. You can publish as soon as they are saved.',
+      blockedRetrying: 'Your changes are not saved yet. Trying again.',
+      blockedSaveFailed: 'Your changes could not be saved. You can publish once they are saved.',
+      blockedConflict: 'This form was saved from somewhere else. Choose which version to keep before you publish.',
+      blockedEmpty: 'Add a question first. Then you can publish.',
       moreOptions: 'Publish options',
       revert: 'Revert to the previous published version',
       revertAvailable: 'Published on {date}',
@@ -5483,7 +5663,10 @@ export const en: FormsMessages = {
         },
         publish: {
           title: 'Publish when you are ready',
-          body: 'Nothing is live until you publish. Then you get a link to share.',
+          // The form is live at its link from the moment it is created; only the
+          // EDITS wait for a publish. This said "Nothing is live until you
+          // publish", under a pill that read "Published".
+          body: "Your edits are saved as a draft. They go live on your form's link when you publish.",
         },
       },
     },
@@ -6256,7 +6439,7 @@ export const es: FormsMessages = {
         overrideIsAnyOf: '{field} es alguno de {bound}',
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
-          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten.',
+          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten. Ten en cuenta que una respuesta incluida en la URL, como un correo electrónico, queda en el historial del navegador y en los registros del servidor del sitio de destino.',
         messageLabel: 'Mensaje mostrado para este resultado',
         messageHelp:
           'El cuerpo de agradecimiento que ven los respondientes en este rango. Usa [campo] para insertar una respuesta. Déjalo vacío para usar el mensaje por defecto.',
@@ -6274,12 +6457,15 @@ export const es: FormsMessages = {
         bodyPlaceholder: 'Te contactamos en breve.',
         redirect: 'URL de redirección (opcional)',
         redirectHint:
-          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige a todos ahí. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten.',
+          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige a todos ahí. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten. Ten en cuenta que una respuesta incluida en la URL, como un correo electrónico, queda en el historial del navegador y en los registros del servidor del sitio de destino.',
         redirectPlaceholder: 'https://…',
         delay: 'Mostrar el agradecimiento antes durante (ms)',
         delayHint: '0 redirige de inmediato.',
         delayHelp:
           'Mantiene la pantalla de agradecimiento este tiempo para que el respondiente la lea y luego lo envía a la URL de arriba. Solo aplica si hay redirección.',
+        forwardUtm: 'Reenviar parámetros UTM',
+        forwardUtmHint:
+          'Agrega los parámetros UTM del visitante (utm_source, utm_campaign y los demás) a cada redirección, incluidas las definidas en un rango de puntaje, para que el destino pueda atribuir la visita. Un parámetro UTM que ya esté en la URL se conserva tal como está escrito.',
         outcomesNote:
           'Estos son los valores por defecto. Un rango de puntaje en Resultados que llene el mismo campo gana para quienes caigan en él; un rango que lo deje vacío usa lo que definas aquí.',
       },
@@ -6555,7 +6741,7 @@ export const es: FormsMessages = {
         bannerScopeForm: 'Todas las pantallas',
         bannerScopeCover: 'Solo la portada',
         bannerColor: 'Color del banner',
-        bannerColorHint: 'Vacío usa un tinte suave del acento; elegí un color para que la franja se note.',
+        bannerColorHint: 'Vacío usa un tinte suave del acento; elige un color para que la franja se note.',
         bannerTextColor: 'Color del texto del banner',
         bannerSize: 'Alto del banner',
         bannerSizeSm: 'Fina',
@@ -6984,6 +7170,10 @@ export const es: FormsMessages = {
       saving: 'Guardando…',
       saved: 'Integraciones guardadas.',
       autosaved: 'Cambios guardados automáticamente',
+      autosavedShort: 'Guardado',
+      saveLostDismiss: 'Entendido',
+      saveLostAfterLeave:
+        'Tu último cambio en esta pestaña no se pudo guardar después de que saliste, así que no está en las integraciones de abajo.',
       autosavedPartial: 'Se guardó todo menos el webhook.',
       saveError: 'No se pudieron guardar las integraciones.',
       saveOffline:
@@ -7078,8 +7268,16 @@ export const es: FormsMessages = {
         'Esta tarjeta edita el primero. Los demás siguen funcionando igual y se guardan sin tocarlos: solo que no se editan desde acá. Los ves todos en Integraciones.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
-        'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',
-      connectPromptCta: 'Ir a Conexiones',
+        'Pega un token de app privada de HubSpot para conectar este espacio de trabajo. Una vez conectado, cada formulario de aquí puede asignar sus preguntas a propiedades de contacto.',
+      connectAdminOnly:
+        '{provider} todavía no está conectado en este espacio de trabajo, y solo un propietario o un administrador puede conectarlo. Pídele a uno que lo conecte aquí o en Integraciones.',
+      hubspotRowNeedsProperty: 'Guardada. Elige la propiedad de HubSpot para enviarla.',
+      hubspotRowNeedsKey: 'Guardada. Elige qué la llena para enviarla.',
+      hubspotRowNeedsValue: 'Guardada. Ponle un valor para enviarla.',
+      hubspotRowNeedsQuestion: 'Guardada. Elige la pregunta a la que pertenecen estos valores.',
+      gsheetsNoSheetYet: 'Todavía no se envía nada: crea o elige una hoja.',
+      webhookNeedsUrl: 'Pega la URL del webhook para empezar a enviar. Mientras tanto, el webhook no queda guardado.',
+      gsheetsNoNamedColumn: 'No se envía nada a la hoja hasta que una columna tenga encabezado.',
       emailRequiredTitle: 'Este formulario no tiene correo que sincronizar',
       emailRequiredBody:
         'HubSpot identifica al contacto por su correo: actualiza el que encuentra, o crea uno nuevo. Un envío sin correo llega sin nada con qué identificarlo, así que no se crea ningún contacto y ese lead no se sincroniza. Agrega una pregunta de correo, o un agendador: Calendly pide el correo de quien reserva.',
@@ -7092,17 +7290,18 @@ export const es: FormsMessages = {
       hubspotHowBodyScheduler:
         'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Este formulario no lo pide: lo recoge la agenda, así que acá no hay que mapear nada a «email».',
       schedulerDisconnected:
-        'Calendly no está conectado en esta cuenta, así que no se puede leer el correo del invitado y no va a llegar nada a HubSpot. La reserva igual funciona, por eso falla en silencio. Conectá Calendly en Conexiones.',
+        'Calendly no está conectado en esta cuenta, así que no se puede leer el correo del invitado y no va a llegar nada a HubSpot. La reserva igual funciona, por eso falla en silencio. Conecta Calendly en Integraciones.',
       mapQuestionsHelpScheduler:
-        'Mandá cada respuesta a una propiedad de contacto de HubSpot. No mapees nada a «email»: lo aporta la agenda, y un mapeo acá lo reemplaza y apaga la sincronización.',
+        'Manda cada respuesta a una propiedad de contacto de HubSpot. No mapees nada a «email»: lo aporta la agenda, y un mapeo acá lo reemplaza y apaga la sincronización.',
       emailMappingConflictTitle: 'Este mapeo apaga la sincronización',
       emailMappingConflictBody:
-        'La agenda ya aporta el correo. Una pregunta mapeada a «email» pasa a ser la llave del contacto, así que las respuestas dejan de llegar a HubSpot después de agendar. Quitá el mapeo en: {keys}.',
+        'La agenda ya aporta el correo. Una pregunta mapeada a «email» pasa a ser la llave del contacto, así que las respuestas dejan de llegar a HubSpot después de agendar. Quita el mapeo en: {keys}.',
       pingWebhook: 'Enviar prueba',
       pingSending: 'Enviando…',
       pingOk: 'Prueba entregada: tu endpoint la aceptó.',
       pingFailed: 'La prueba falló: {reason}',
       pingNeedsUrl: 'Primero guarda una URL de webhook.',
+      pingAdminOnly: 'Solo un propietario o un administrador puede enviar una entrega de prueba. Pídele a uno que la envíe.',
       pingHelp:
         'Manda un cuerpo de ejemplo con la forma real, firmado igual, para que veas qué recibe tu endpoint. Las respuestas son inventadas y van marcadas como prueba.',
       pingStatus: 'Tu endpoint respondió HTTP {status}.',
@@ -7113,12 +7312,12 @@ export const es: FormsMessages = {
       pingRejectedBody: 'Leyó la petición y rechazó el cuerpo.',
       pingUnauthorized: 'Rechazó la petición por falta de autorización: revisa el token o secreto que espera.',
       pingNotFound: 'No hay nada en esa URL.',
-      pingRateLimited: 'Nos está limitando por frecuencia; probá de nuevo en un momento.',
+      pingRateLimited: 'Nos está limitando por frecuencia; prueba de nuevo en un momento.',
       pingServerError: 'Falló de su lado.',
-      pingRedirect: 'Respondió con una redirección, y nunca las seguimos. Usá la URL final directamente.',
+      pingRedirect: 'Respondió con una redirección, y nunca las seguimos. Usa la URL final directamente.',
       pingBlocked:
         'Bloqueado antes de enviar: esa dirección es privada, reservada o interna, y nunca publicamos hacia ahí.',
-      pingUnreachable: 'Nadie respondió en esa URL: revisá que el host esté accesible y no expire.',
+      pingUnreachable: 'Nadie respondió en esa URL: revisa que el host esté accesible y no expire.',
       pingUnknown: 'La entrega falló por un motivo que no pudimos identificar.',
       connectedBadge: 'HubSpot conectado',
       propertiesUnavailable:
@@ -7194,8 +7393,11 @@ export const es: FormsMessages = {
       salesforce: {
         title: 'Salesforce',
         desc: 'Envía cada respuesta completa a Salesforce como Lead.',
-        notConnected: 'Conecta Salesforce en la página de Conexiones para usarlo aquí.',
-        connectLink: 'Ir a Conexiones',
+        connectTitle: 'Conecta Salesforce para enviar Leads',
+        rowNeedsField: 'Guardada. Elige el campo de Salesforce para enviarla.',
+        rowNeedsQuestion: 'Guardada. Elige la pregunta que la llena para enviarla.',
+        rowNeedsValue: 'Guardada. Ponle un valor para enviarla.',
+        notConnected: 'Conecta tu org una vez y cualquier formulario de este espacio de trabajo podrá enviarle datos.',
         fieldsRejected: 'Salesforce no quiso listar sus campos. Revisa que el usuario Run As pueda leer Leads.',
         fieldsUnavailable: 'Salesforce no respondió. Intenta actualizar los campos.',
         refreshFields: 'Actualizar campos',
@@ -7236,12 +7438,17 @@ export const es: FormsMessages = {
       gsheets: {
         title: 'Google Sheets',
         desc: 'Añade cada respuesta a una hoja de cálculo como una fila nueva.',
-        notConnected: 'Conecta Google Sheets en la página de Conexiones para usarlo aquí.',
+        connectTitle: 'Conecta Google Sheets',
+        notConnected:
+          'Inicia sesión con la cuenta de Google que debe ser dueña de las hojas. Al terminar vuelves a esta pestaña.',
         sheetLabel: 'Hoja de cálculo',
         sheetHelp:
           'Crea una hoja nueva para este formulario o elige una que ya tengas en Google Drive.',
+        sheetHelpCreateOnly: 'Crea una hoja nueva para este formulario en tu Google Drive.',
         createSheet: 'Crear una hoja nueva',
         chooseSheet: 'Elegir de Google Drive',
+        chooseAdminOnly:
+          'Solo un propietario o un administrador puede elegir una hoja que ya existe en Google Drive. Tú puedes crear una nueva aquí.',
         sheetCreated: 'La hoja se creó en tu Google Drive.',
         createFailed: 'No se pudo crear la hoja. Inténtalo de nuevo.',
         pickerFailed: 'No se pudo abrir Google Drive. Inténtalo de nuevo.',
@@ -7250,27 +7457,61 @@ export const es: FormsMessages = {
         tabLabel: 'Pestaña',
         tabFirst: 'La primera pestaña',
         openSheet: 'Abrir la hoja',
+        openSheetButton: 'Abrir hoja',
+        attachedUnnamed: 'Hoja de cálculo de Google',
+        attachedInTab: 'Las respuestas se agregan a esta hoja como filas nuevas, en la pestaña «{tab}».',
+        attachedFirstTab: 'Las respuestas se agregan a esta hoja como filas nuevas, en su primera pestaña.',
+        changeSheet: 'Cambiar de hoja',
+        changeHelp: 'Envía las respuestas nuevas a otra hoja:',
+        changeKeep: 'Conservar esta hoja',
+        changeTitle: '¿Cambiar de hoja?',
+        changeBodyCreate:
+          'Se va a crear una hoja nueva en tu Google Drive y las respuestas nuevas irán a ella a partir de ahora. «{name}» conserva las filas que ya tiene y deja de recibir respuestas.',
+        changeBodyChoose:
+          'Vas a elegir una hoja de tu Google Drive y las respuestas nuevas irán a ella a partir de ahora. «{name}» conserva las filas que ya tiene y deja de recibir respuestas.',
+        changeConfirmCreate: 'Crear y cambiar',
+        changeConfirmChoose: 'Elegir una hoja',
+        creatingSheet: 'Creando la hoja…',
         sheetNotFound:
           'dForms ya no puede abrir esta hoja. Elígela otra vez desde Google Drive o crea una nueva.',
         sheetForbidden:
-          'Google ya no deja que dForms escriba aquí. Vuelve a conectar Google Sheets en la página de Conexiones.',
+          'Google ya no deja que dForms escriba aquí. Vuelve a conectar Google Sheets en Integraciones.',
         tabsUnavailable: 'No se pudieron leer las pestañas. Inténtalo de nuevo.',
         columnsLabel: 'Columnas',
         columnsHelp: 'Una columna por celda de la fila, de izquierda a derecha.',
         noColumns: 'Todavía no hay columnas. No se envía nada hasta que agregues una.',
         addColumn: 'Agregar una columna',
         removeColumn: 'Quitar esta columna',
-        moveUp: 'Mover esta columna a la izquierda',
-        moveDown: 'Mover esta columna a la derecha',
+        moveUp: 'Subir esta columna',
+        moveDown: 'Bajar esta columna',
         headerFor: 'Encabezado de la columna',
         sourceFor: 'Qué llena esta columna',
         keyFor: 'Cuál',
         pickOne: 'Elige una',
         fillFromForm: 'Usar las preguntas del formulario',
-        writeHeaders: 'Escribir la fila de encabezados',
-        headersWritten: 'Se escribió la fila de encabezados.',
-        headersNotEmpty: 'La primera fila ya tiene contenido, así que no se tocó.',
-        headersFailed: 'No se pudo escribir la fila de encabezados.',
+        writeHeaders: 'Actualizar encabezados en la hoja',
+        headersWritten: 'La fila 1 de la hoja quedó igual a estas columnas.',
+        headersUnchanged: 'La fila 1 de la hoja ya coincide con estas columnas.',
+        columnPendingOne: 'Una columna sin encabezado quedó guardada y entra en la hoja cuando tenga uno.',
+        columnPendingMany: '{n} columnas sin encabezado quedaron guardadas y entran en la hoja cuando tengan uno.',
+        rowNeedsAnswer: 'Elige qué respuesta llena esta columna. Mientras tanto, sus celdas quedan vacías.',
+        rowNeedsUtm: 'Elige qué etiqueta de campaña llena esta columna. Mientras tanto, sus celdas quedan vacías.',
+        rowNeedsHeader: 'Ponle un encabezado para escribirla en la hoja.',
+        rowHeldHeader:
+          'Ponle un encabezado. Mientras tanto la hoja conserva «{header}» sobre esta columna y sus celdas quedan vacías, así las columnas siguientes no se mueven.',
+        headersNotEmpty: 'La fila 1 de la hoja no coincide con estas columnas, así que no se cambió sola.',
+        headersFailed: 'No se pudo actualizar la fila de encabezados. Tus columnas sí quedaron guardadas.',
+        headersStale:
+          'La fila 1 de la hoja no está al día con estas columnas, así que las respuestas quedarían bajo encabezados equivocados. La escribió dForms, así que puede actualizarla ahora.',
+        headersColumn: 'Columna',
+        headersInSheet: 'En la hoja ahora',
+        headersToWrite: 'Se escribirá',
+        headersEmptyCell: 'vacía',
+        replaceRow: 'Reemplazar la fila 1',
+        replaceTitle: '¿Reemplazar la fila 1 de la hoja?',
+        replaceBody:
+          'La fila 1 se sobrescribe con los encabezados de estas columnas. Lo que tienen ahora esas celdas se reemplaza y solo queda en el historial de versiones de la hoja en Google. Desde ese momento, dForms mantiene la fila 1 al día con tus columnas por sí solo.',
+        replaceCancel: 'Cancelar',
         colSubmittedAt: 'Enviada',
         colScore: 'Puntaje',
         colOutcome: 'Resultado',
@@ -7288,7 +7529,7 @@ export const es: FormsMessages = {
       },
     },
     connections: {
-      title: 'Conexiones',
+      title: 'Integraciones',
       subtitle:
         'Conecta cada servicio a tu cuenta una sola vez. Luego asigna los campos de cada formulario desde su pestaña de integraciones.',
       hubspotName: 'HubSpot',
@@ -7318,6 +7559,8 @@ export const es: FormsMessages = {
       salesforceDomainPlaceholder: 'tuempresa.my.salesforce.com',
       salesforceKeyLabel: 'Consumer Key',
       salesforceSecretLabel: 'Consumer Secret',
+      salesforceSecretHelp:
+        'La Consumer Key y el Consumer Secret se verifican con Salesforce, se cifran y se guardan en el servidor. El secret no se vuelve a mostrar.',
       salesforceSetupTitle: 'Antes de conectar, un admin de Salesforce configura esto una sola vez:',
       salesforceSetupSteps: [
         'En Setup, crea una External Client App con OAuth activado.',
@@ -7352,6 +7595,8 @@ export const es: FormsMessages = {
       connect: 'Conectar',
       connecting: 'Conectando…',
       disconnect: 'Desconectar',
+      manageAdminOnly: 'Solo un propietario o un administrador puede conectar o desconectar {provider}. Pídele a uno que lo haga.',
+      connectFailedGeneric: 'No se pudo conectar. Revisa los valores e inténtalo de nuevo.',
       disconnecting: 'Desconectando…',
       cancel: 'Cancelar',
       tokenLabel: 'Pega tu token de {provider}',
@@ -7884,7 +8129,7 @@ export const es: FormsMessages = {
         'PATCH /v1/folders/:id': 'Renombra una carpeta.',
         'DELETE /v1/folders/:id': 'Borra una carpeta. Sus forms se quedan, fuera de cualquier carpeta.',
         'PUT /v1/forms/:id/destinations':
-          'Reemplaza los destinos del form (webhooks y HubSpot). Aplica de inmediato, sin publicar.',
+          'Reemplaza los destinos del form (webhooks, HubSpot, Google Sheets y Salesforce). Aplica de inmediato, sin publicar. Si el cambio toca las columnas de una hoja, la fila 1 se actualiza para coincidir, salvo que tenga algo que dForms no escribió, y `sheetHeaders` dice qué pasó.',
         'POST /v1/forms/:id/destinations/webhook/ping':
           'Manda un evento de prueba al webhook del form y te dice cómo respondió el endpoint.',
         'GET /v1/forms/:id/submissions':
@@ -8026,6 +8271,12 @@ export const es: FormsMessages = {
       saveFirst: 'Tus últimos cambios no se pudieron guardar, así que no se publicó nada. Inténtalo cuando se guarden.',
       unpublishedChanges: 'Cambios sin publicar',
       noChanges: 'Todos los cambios están publicados',
+      saving: 'Guardando…',
+      blockedSaving: 'Guardando tus cambios. Podrás publicar en cuanto se guarden.',
+      blockedRetrying: 'Tus cambios aún no se guardan. Reintentando.',
+      blockedSaveFailed: 'No se pudieron guardar tus cambios. Podrás publicar cuando se guarden.',
+      blockedConflict: 'Este formulario se guardó desde otro lugar. Elige con qué versión te quedas antes de publicar.',
+      blockedEmpty: 'Agrega una pregunta primero. Después podrás publicar.',
       moreOptions: 'Opciones de publicación',
       revert: 'Volver a la versión publicada anterior',
       revertAvailable: 'Publicada el {date}',
@@ -8229,7 +8480,7 @@ export const es: FormsMessages = {
         },
         publish: {
           title: 'Publica cuando estés listo',
-          body: 'Nada está en línea hasta que publiques. Ahí obtienes el enlace para compartir.',
+          body: 'Tus cambios se guardan como borrador. Salen en el enlace de tu formulario cuando publiques.',
         },
       },
     },

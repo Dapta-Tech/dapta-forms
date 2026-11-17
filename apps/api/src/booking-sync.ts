@@ -8,7 +8,13 @@ import {
   type HubspotDestination,
   type SubmissionVisit,
 } from '@quill/types';
-import { publicTitle, resolveOutcome, INVITEE_FIELDS, type FormConfig } from '@quill/engine';
+import {
+  hasEmailShapedTail,
+  publicTitle,
+  resolveOutcome,
+  INVITEE_FIELDS,
+  type FormConfig,
+} from '@quill/engine';
 import { createDestination, dayMidnightMs, utcMidnightMs } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { OutboxSkipError } from './email-effects';
@@ -621,7 +627,7 @@ interface SubmissionRow {
 function looseEmailFromData(data: Record<string, unknown>): string | null {
   for (const [key, value] of Object.entries(data)) {
     if (typeof value !== 'string') continue;
-    if (/@/.test(value) && (key.toLowerCase().includes('email') || /@[^@]+\.[^@]+$/.test(value))) {
+    if (/@/.test(value) && (key.toLowerCase().includes('email') || hasEmailShapedTail(value))) {
       return value.trim().toLowerCase();
     }
   }

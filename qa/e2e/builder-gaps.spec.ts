@@ -76,7 +76,7 @@ test.beforeAll(async ({ request }) => {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/admin/forms/${id}/edit`);
-  await expect(page.getByRole('button', { name: 'Publish', exact: true })).toBeVisible({
+  await expect(page.getByTestId('publish-button')).toBeVisible({
     timeout: 20_000,
   });
 }
@@ -99,7 +99,7 @@ async function saveAndPublish(page: Page) {
   // status flips back to "Saved" once the last pending save completes.
   await expect(page.getByText('Unpublished changes')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('Saved', { exact: true })).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await page.getByTestId('publish-button').click();
   await expect(page.getByText(/Changes published/)).toBeVisible({ timeout: 15_000 });
 }
 

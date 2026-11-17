@@ -589,6 +589,24 @@ export type GoogleSheetsHeaderRowResponse =
   | { ok: true; written: false; reason: 'not_empty' }
   | { ok: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
 
+/**
+ * What keeping a form's header row in line with its columns did (the API's
+ * `SheetHeaderSync`). `foreign`: row 1 holds something dForms did not write,
+ * and it was left exactly as it was.
+ */
+export type SheetHeaderSync =
+  | { outcome: 'written' | 'unchanged' }
+  /** A `check` found row 1 is dForms' own but out of date (nothing written). */
+  | { outcome: 'stale' }
+  /** Row 1 does not match: what it holds, and what would be written instead. */
+  | { outcome: 'foreign'; current: string[]; headers: string[] }
+  | { outcome: 'failed'; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/** POST /v1/forms/:id/destinations/google-sheets/header-row. */
+export type FormSheetHeaderRowResponse =
+  | ({ ok: true } & SheetHeaderSync)
+  | { ok: false; reason: 'not_configured' };
+
 /** GET /v1/integrations — this account's connections + server encryption availability. */
 export interface IntegrationsResponse {
   encryptionAvailable: boolean;
@@ -960,7 +978,21 @@ export const adminApi = {
     req<CalendlyEventTypesResponse>('GET', '/v1/integrations/calendly/event-types'),
   /** Partial write: replaces ONLY the config's `destinations` key server-side. */
   updateFormDestinations: (id: string, destinations: FormDestination[]) =>
-    req<FormDetail>('PUT', `/v1/forms/${id}/destinations`, { destinations }),
+    req<FormDetail & { formActivityError?: string; sheetHeaders?: SheetHeaderSync }>(
+      'PUT',
+      `/v1/forms/${id}/destinations`,
+      { destinations },
+    ),
+  /**
+   * Bring the form's spreadsheet header row in line with its STORED columns.
+   * The API reads everything it needs from the form, so this sends no body.
+   */
+  syncFormSheetHeaders: (id: string, opts?: { replace?: boolean; check?: boolean }) =>
+    req<FormSheetHeaderRowResponse>(
+      'POST',
+      `/v1/forms/${id}/destinations/google-sheets/header-row`,
+      opts?.replace ? { replace: true } : opts?.check ? { check: true } : undefined,
+    ),
 
   // Account-level integration connections (paste-token model; admin/owner writes)
   /** This account's connections (token-free) + whether server encryption is available. */
@@ -1034,8 +1066,12 @@ export const adminApi = {
    * minted by this authenticated call, so the URL must be followed as-is and
    * never rebuilt by the caller.
    */
-  authorizeGoogleSheets: () =>
-    req<{ authUrl: string }>('POST', '/v1/integrations/google-sheets/authorize'),
+  authorizeGoogleSheets: (returnTo?: string) =>
+    req<{ authUrl: string }>(
+      'POST',
+      '/v1/integrations/google-sheets/authorize',
+      returnTo ? { returnTo } : undefined,
+    ),
   /** The tabs of one spreadsheet, for the mapping editor's picker. */
   googleSheetsTabs: (spreadsheetId: string) =>
     req<GoogleSheetsTabsResponse>(

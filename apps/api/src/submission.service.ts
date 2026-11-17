@@ -21,6 +21,7 @@ import {
   respondentFullName,
   summarizeAnswers,
   validateSubmission,
+  hasEmailShapedTail,
   type FormConfig,
 } from '@quill/engine';
 import {
@@ -654,7 +655,7 @@ function overLongAnswer(
 function pickEmail(data: Record<string, unknown>): string | null {
   for (const [key, value] of Object.entries(data)) {
     if (typeof value !== 'string') continue;
-    if (/@/.test(value) && (key.toLowerCase().includes('email') || /@[^@]+\.[^@]+$/.test(value))) {
+    if (/@/.test(value) && (key.toLowerCase().includes('email') || hasEmailShapedTail(value))) {
       return value;
     }
   }

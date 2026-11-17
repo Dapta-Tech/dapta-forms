@@ -1,9 +1,10 @@
 'use client';
 
 import type { FormConfig, FormEnding } from '@quill/engine';
-import { Field, TextField, TextArea, NumberField, PanelSection } from './fields';
+import { Field, TextField, TextArea, NumberField, PanelSection, InlineField } from './fields';
 import { RedirectField } from './redirect-field';
 import { HelpTip } from '@/components/ui/help-tip';
+import { Switch } from '@/components/ui/switch';
 import type { EditorMessages } from './messages';
 
 /** Above this, "hold the screen then redirect" stops reading as a transition. */
@@ -36,6 +37,10 @@ export function EndingPanel({
 }) {
   const ending = config.ending ?? {};
   const em = m.ending;
+  // UTM forwarding applies to every redirect, so it is offered as soon as any
+  // exists: the form's own, or one set on a score range (booking ones too).
+  const anyRedirect =
+    !!ending.redirectUrl?.trim() || (config.outcomes ?? []).some((o) => !!o.redirectUrl?.trim());
 
   return (
     <div className="flex flex-col gap-4">
@@ -94,6 +99,22 @@ export function EndingPanel({
               }}
             />
           </Field>
+        ) : null}
+
+        {anyRedirect ? (
+          <InlineField
+            label={em.forwardUtm}
+            hint={em.forwardUtmHint}
+            hintId="ending-forward-utm-hint"
+          >
+            <Switch
+              checked={ending.forwardUtm === true}
+              onCheckedChange={(on) => onEndingChange({ forwardUtm: on || undefined })}
+              aria-label={em.forwardUtm}
+              aria-describedby="ending-forward-utm-hint"
+              data-testid="ending-forward-utm"
+            />
+          </InlineField>
         ) : null}
 
         {hasOutcomes ? (

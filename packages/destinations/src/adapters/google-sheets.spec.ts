@@ -11,6 +11,7 @@
  *      with `=` must stay text, and a row must keep its length when an optional
  *      question goes unanswered, or every column below it shifts.
  */
+import { createDestination } from '../factory';
 import { describe, expect, it, vi } from 'vitest';
 import type { SheetColumn } from '@quill/types';
 import type { DestinationContext } from '../destination.port';
@@ -173,6 +174,93 @@ describe('a delivery', () => {
     const [url, init] = callOf(fetchImpl);
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer ya29.token');
     expect(url).not.toContain('ya29.token');
+  });
+});
+
+describe('which columns a delivered row holds', () => {
+  // The one rule (`isWritableSheetColumn`): a column with a heading is in the
+  // sheet, one without is not. A complete, B heading with no answer yet,
+  // C complete, D no heading, E complete: row 1 is A, B, C, E, and so is
+  // every delivered row, with an empty cell under B.
+  it('writes A, B (empty), C, E and skips D, in the same letters as row 1', async () => {
+    const fetchImpl = answers(200, OK);
+    await new GoogleSheetsDestination(
+      options({
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: 'B', source: 'answer' },
+          { header: 'C', source: 'score' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'E', source: 'utm', key: 'utm_source' },
+        ],
+      }),
+      fetchImpl,
+    ).deliver(ctx());
+    const body = JSON.parse(String(callOf(fetchImpl)[1].body)) as { values: string[][] };
+    expect(body.values).toEqual([['sam@example.com', '', '42', 'google']]);
+  });
+
+  // The author is renaming column B and has cleared its heading: dForms
+  // wrote "B" to row 1 before, so the position is held with an empty cell and
+  // C stays under C. It used to be dropped, and C landed under B.
+  it('keeps an empty cell where a column with a cleared heading still holds its place', async () => {
+    const fetchImpl = answers(200, OK);
+    await new GoogleSheetsDestination(
+      options({
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'C', source: 'score' },
+        ],
+        writtenHeaders: ['A', 'B', 'C'],
+      }),
+      fetchImpl,
+    ).deliver(ctx());
+    const body = JSON.parse(String(callOf(fetchImpl)[1].body)) as { values: string[][] };
+    expect(body.values).toEqual([['sam@example.com', '', '42']]);
+  });
+
+  it('keeps the cell under the first of two identical headings when it is cleared', async () => {
+    const fetchImpl = answers(200, OK);
+    await new GoogleSheetsDestination(
+      options({
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: '', source: 'answer', key: 'company' },
+          { header: 'X', source: 'score' },
+        ],
+        writtenHeaders: ['A', 'X', 'X'],
+      }),
+      fetchImpl,
+    ).deliver(ctx());
+    const body = JSON.parse(String(callOf(fetchImpl)[1].body)) as { values: string[][] };
+    // Three cells: the score stays under the THIRD column.
+    expect(body.values).toEqual([['sam@example.com', '', '42']]);
+  });
+
+  it('still leaves out a column that never had a heading, with a row 1 recorded', async () => {
+    const fetchImpl = answers(200, OK);
+    await new GoogleSheetsDestination(
+      options({
+        columns: [
+          { header: 'A', source: 'answer', key: 'email' },
+          { header: 'C', source: 'score' },
+          { header: '', source: 'answer', key: 'company' },
+        ],
+        writtenHeaders: ['A', 'C'],
+      }),
+      fetchImpl,
+    ).deliver(ctx());
+    const body = JSON.parse(String(callOf(fetchImpl)[1].body)) as { values: string[][] };
+    expect(body.values).toEqual([['sam@example.com', '42']]);
+  });
+
+  it('is not built at all when no column has a heading', () => {
+    const d = createDestination(
+      { type: 'google-sheets', googleSheets: options({ columns: [{ header: '', source: 'score' }] }) },
+      answers(200, OK),
+    );
+    expect(d.type).not.toBe('google-sheets');
   });
 });
 

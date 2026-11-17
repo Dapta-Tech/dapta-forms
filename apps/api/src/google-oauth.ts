@@ -128,6 +128,37 @@ export function googleStateKey(env: GoogleOAuthEnv | undefined): Buffer | null {
 export interface GoogleStateClaims {
   accountId: string;
   issuedAt: number;
+  /**
+   * The dashboard path the flow was started from, when it was started
+   * somewhere other than the connections page (a form's Connect tab). Present
+   * only on a v2 state, and only when it passed `safeGoogleReturnTo` both when
+   * it was signed and again when it was read.
+   */
+  returnTo?: string;
+}
+
+/** The state format that also carries where to send the browser back. */
+export const GOOGLE_STATE_VERSION_RETURN = 'v2';
+
+/**
+ * The only paths a finished consent flow may return to: the connections page,
+ * or one form's editor (the callback adds `tab=connect`).
+ *
+ * An allowlist of two shapes rather than "any path under /admin": the value
+ * ends up in a `Location` header, and the narrower the set, the less there is
+ * to reason about. A path only, never a URL: the callback prefixes the
+ * deployment's own `PUBLIC_APP_URL`, so a value that is not a bare path (a
+ * scheme, `//host`, a backslash, a query, an encoded character) cannot change
+ * which origin the browser lands on. It is checked when the state is signed
+ * AND when it is read, so a key compromise is the only way to get anything
+ * else through, and even then it is still a path on this origin.
+ */
+const RETURN_TO_RE = /^\/admin\/(?:integrations|forms\/[A-Za-z0-9_-]{1,64}\/edit)$/;
+
+/** The return path if it is one of the allowed shapes, else null. */
+export function safeGoogleReturnTo(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  return RETURN_TO_RE.test(raw) ? raw : null;
 }
 
 const b64url = (b: Buffer): string => b.toString('base64url');
@@ -145,16 +176,30 @@ function sign(key: Buffer, signed: string): string {
  * format can never be handed a v1 signature, and a newline appears in none of
  * the three fields (a UUID, a number, base64url), so the split is unambiguous.
  *
+ * Version 2 adds a fourth field, the dashboard path to return to (see
+ * `safeGoogleReturnTo`, which forbids a newline among everything else), and
+ * is minted only when there is one. Signed like the rest, so the callback can
+ * redirect to it without trusting anything the browser brought back.
+ *
  * The nonce makes two flows started in the same millisecond distinct. It is not
  * recorded anywhere: a state is single-use in practice because Google refuses to
  * redeem a code twice, and keeping a table of nonces would buy only the ability
  * to refuse the second attempt a few milliseconds earlier.
  */
-export function signGoogleState(accountId: string, key: Buffer, now: number = Date.now()): string {
-  const payload = b64url(
-    Buffer.from(`${accountId}\n${now}\n${b64url(randomBytes(8))}`, 'utf8'),
-  );
-  const signed = `${GOOGLE_STATE_VERSION}.${payload}`;
+export function signGoogleState(
+  accountId: string,
+  key: Buffer,
+  now: number = Date.now(),
+  returnTo?: string | null,
+): string {
+  // Version 2 is version 1 with a fourth field, the return path. Minted only
+  // when there IS a path to carry, so a flow started on the connections page
+  // still produces exactly the v1 state it always did.
+  const back = safeGoogleReturnTo(returnTo);
+  const fields = [accountId, String(now), b64url(randomBytes(8))];
+  if (back) fields.push(back);
+  const payload = b64url(Buffer.from(fields.join('\n'), 'utf8'));
+  const signed = `${back ? GOOGLE_STATE_VERSION_RETURN : GOOGLE_STATE_VERSION}.${payload}`;
   return `${signed}.${sign(key, signed)}`;
 }
 
@@ -177,7 +222,7 @@ export function verifyGoogleState(
   const parts = state.split('.');
   if (parts.length !== 3) return null;
   const [version, payload, signature] = parts as [string, string, string];
-  if (version !== GOOGLE_STATE_VERSION) return null;
+  if (version !== GOOGLE_STATE_VERSION && version !== GOOGLE_STATE_VERSION_RETURN) return null;
   if (!B64URL_RE.test(payload) || !B64URL_RE.test(signature)) return null;
 
   const expected = sign(key, `${version}.${payload}`);
@@ -186,13 +231,18 @@ export function verifyGoogleState(
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
 
   const fields = Buffer.from(payload, 'base64url').toString('utf8').split('\n');
-  if (fields.length !== 3) return null;
+  // The field count is tied to the version, so a v1 signature can never be
+  // stretched to cover a return path it was not minted with.
+  if (fields.length !== (version === GOOGLE_STATE_VERSION ? 3 : 4)) return null;
   const accountId = fields[0]!;
   const issuedAt = Number(fields[1]);
   if (!accountId || !Number.isSafeInteger(issuedAt)) return null;
   if (issuedAt > now + 60_000) return null;
   if (now - issuedAt > GOOGLE_STATE_TTL_MS) return null;
-  return { accountId, issuedAt };
+  if (version === GOOGLE_STATE_VERSION) return { accountId, issuedAt };
+  const returnTo = safeGoogleReturnTo(fields[3]);
+  if (!returnTo) return null;
+  return { accountId, issuedAt, returnTo };
 }
 
 /**

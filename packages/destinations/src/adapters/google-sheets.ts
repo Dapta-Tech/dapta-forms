@@ -34,7 +34,7 @@ import type {
   DestinationResult,
   SubmissionDestination,
 } from '../destination.port';
-import type { SheetColumn } from '@quill/types';
+import { sheetCells, type SheetColumn } from '@quill/types';
 
 export const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -56,6 +56,13 @@ export interface GoogleSheetsDestinationOptions {
   sheetTitle?: string;
   /** The row, left to right. Empty means not configured: the factory degrades. */
   columns: SheetColumn[];
+  /**
+   * The row 1 dForms last wrote to this spreadsheet and tab, when it recorded
+   * one. A column whose heading was cleared keeps the position it holds there
+   * (an empty cell), so the columns after it are not delivered one cell to
+   * the left while the author types a new name. See `sheetCells`.
+   */
+  writtenHeaders?: readonly string[] | null;
   timeoutMs?: number;
 }
 
@@ -136,6 +143,15 @@ export function buildRow(columns: SheetColumn[], ctx: DestinationContext): strin
   });
 }
 
+/** One row from resolved cells: a held position is an empty cell, never a value. */
+function buildCells(cells: { column: SheetColumn; held: boolean }[], ctx: DestinationContext): string[] {
+  const values = buildRow(
+    cells.map((cell) => cell.column),
+    ctx,
+  );
+  return cells.map((cell, i) => (cell.held ? '' : values[i]!));
+}
+
 /**
  * The A1 range the row is appended to.
  *
@@ -187,8 +203,11 @@ export class GoogleSheetsDestination implements SubmissionDestination {
   ) {}
 
   async deliver(ctx: DestinationContext): Promise<DestinationResult> {
-    const { accessToken, spreadsheetId, sheetTitle, columns } = this.options;
-    const row = buildRow(columns, ctx);
+    const { accessToken, spreadsheetId, sheetTitle, columns, writtenHeaders } = this.options;
+    // The same cells row 1 holds (`sheetCells`): the columns with a heading,
+    // and an EMPTY cell at a position a column with a cleared heading still
+    // holds. A column that never had a heading is not in the row at all.
+    const row = buildCells(sheetCells(columns, writtenHeaders), ctx);
     const body = JSON.stringify({ values: [row] });
 
     const url = new URL(

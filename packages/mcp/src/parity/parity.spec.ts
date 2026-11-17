@@ -283,6 +283,43 @@ describe('what the tools carry back', () => {
     });
   });
 
+  it('set_destinations reports what the save did to row 1 of the spreadsheet, the sheet\'s own cells kept apart', async () => {
+    const local = await bootHarness({
+      backend: {
+        setDestinations: async (_c, id, destinations) => ({
+          formId: id,
+          updatedAt: 2,
+          destinations,
+          formActivityError: null,
+          sheetHeaders: { outcome: 'foreign', current: ['Name', '<b>Phone</b>'], headers: ['Email', 'Company'] },
+        }),
+      },
+    });
+    try {
+      const c = await local.connect(local.key('owner'));
+      const res = await c.callTool({
+        name: 'set_destinations',
+        arguments: { form_id: 'form-1', destinations: [{ type: 'google-sheets', enabled: true, settings: {}, columns: [] }] },
+      });
+      expect(structured<{ sheet_header_row: unknown }>(res).sheet_header_row).toEqual({
+        outcome: 'foreign',
+        reason: null,
+        headers: ['Email', 'Company'],
+        // The spreadsheet's text is somebody else's: cleaned, and under its own key.
+        sheet_supplied: { row_1: ['Name', 'Phone'] },
+      });
+      expect(JSON.stringify(res)).toContain('left untouched');
+    } finally {
+      await local.close();
+    }
+    // No spreadsheet outcome: the field is there and null.
+    const plain = await owner.callTool({
+      name: 'set_destinations',
+      arguments: { form_id: 'form-1', destinations: [{ type: 'webhook', enabled: true, settings: { url: 'https://example.test/h' } }] },
+    });
+    expect(structured<{ sheet_header_row: unknown }>(plain).sheet_header_row).toBeNull();
+  });
+
   it('names what was refused and how to fix it', async () => {
     expect(errorText(await owner.callTool({ name: 'set_form_slug', arguments: { form_id: 'form-1', slug: 'taken' } }))).toMatch(/^SLUG_TAKEN: .*Pick another slug/);
     expect(errorText(await owner.callTool({ name: 'create_folder', arguments: { name: 'Campaigns' } }))).toMatch(/^NAME_TAKEN: .*Pick another/);

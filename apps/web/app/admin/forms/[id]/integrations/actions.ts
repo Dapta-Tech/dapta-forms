@@ -12,10 +12,13 @@ import {
   type GoogleSheetsHeaderRowResponse,
   type GoogleSheetsPickerResponse,
   type GoogleSheetsTabsResponse,
+  type FormSheetHeaderRowResponse,
+  type HubSpotPropertiesResponse,
   type SalesforceFieldsResponse,
+  type SheetHeaderSync,
   type WebhookPingResult,
 } from '@/lib/admin-api';
-import type { FormDestination } from '@quill/types';
+import { sheetBaselineHeaders, type FormDestination } from '@quill/types';
 
 /**
  * Save the integrations (destinations) for a form. Uses the API's PARTIAL
@@ -32,21 +35,70 @@ import type { FormDestination } from '@quill/types';
 export async function saveIntegrationsAction(
   id: string,
   destinations: FormDestination[],
-): Promise<{ ok: boolean; message?: string; formActivityError?: string }> {
+): Promise<{
+  ok: boolean;
+  message?: string;
+  formActivityError?: string;
+  sheetHeaders?: SheetHeaderSync;
+  /**
+   * The row 1 the API has on record for the spreadsheet card after this save
+   * (null when it has none). The card uses it to keep a column whose heading
+   * was cleared on the letter it still holds in the sheet.
+   */
+  sheetWritten?: string[] | null;
+}> {
   try {
     // The API builds the HubSpot mirror form as part of this write and reports
     // a refusal without failing the save — an author must be able to edit their
     // mappings while a portal is unreachable or has not granted the scopes.
+    // The spreadsheet's header row is brought in line the same way, and its
+    // outcome rides back for the card to show.
     const saved = await adminApi.updateFormDestinations(id, destinations);
     revalidatePath(`/admin/forms/${id}/integrations`);
-    const reason = (saved as { formActivityError?: string }).formActivityError;
-    return reason ? { ok: true, formActivityError: reason } : { ok: true };
+    return {
+      ok: true,
+      ...(saved.formActivityError ? { formActivityError: saved.formActivityError } : {}),
+      ...(saved.sheetHeaders ? { sheetHeaders: saved.sheetHeaders } : {}),
+      sheetWritten: sheetBaselineHeaders(
+        (saved.config?.destinations ?? []).find((d: { type?: string }) => d.type === 'google-sheets'),
+      ),
+    };
   } catch (e) {
     unstable_rethrow(e);
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : 'Failed to save.',
-    };
+    // Only the API's own refusal is worth showing as it is. A transport-level
+    // message ("fetch failed") means nothing to an author, so the caller falls
+    // back to its catalog sentence for that.
+    return { ok: false, message: e instanceof ApiError ? e.message : undefined };
+  }
+}
+
+/**
+ * Attach one card's destination to whatever the form stores NOW.
+ *
+ * For a card action that finishes after the Connect tab was left (a
+ * spreadsheet created in Drive while the author moved on to Build). The
+ * editor that started it is gone, and the snapshot it held is as old as the
+ * moment it unmounted: writing that whole array could undo a mapping made
+ * since. So this reads the fresh destinations and replaces only the first
+ * entry of the card's own type (or adds it), like the Build tab's
+ * per-question picker does, and the editor sends it through the form's save
+ * queue so it is serial with every other write.
+ */
+export async function mergeIntegrationCardAction(
+  id: string,
+  card: FormDestination,
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const form = await adminApi.getForm(id);
+    const destinations = (form.config.destinations ?? []) as FormDestination[];
+    const index = destinations.findIndex((d) => d.type === card.type);
+    const next = index === -1 ? [...destinations, card] : destinations.map((d, i) => (i === index ? card : d));
+    await adminApi.updateFormDestinations(id, next);
+    revalidatePath(`/admin/forms/${id}/integrations`);
+    return { ok: true };
+  } catch (e) {
+    unstable_rethrow(e);
+    return { ok: false, message: e instanceof ApiError ? e.message : undefined };
   }
 }
 
@@ -154,6 +206,45 @@ export async function googleSheetsPickerAction(): Promise<
     unstable_rethrow(e);
     if (e instanceof ApiError) return { ok: false, message: e.message };
     return { ok: false };
+  }
+}
+
+/**
+ * Bring the form's spreadsheet header row in line with its saved columns.
+ *
+ * Form-scoped: the API reads the columns, the spreadsheet and what dForms last
+ * wrote from the stored form, so nothing sent from here decides what may be
+ * overwritten. A row 1 holding anything dForms did not write comes back as
+ * `foreign` and is left alone.
+ */
+export async function syncSheetHeadersAction(
+  formId: string,
+  /**
+   * `replace`: the author confirmed "replace row 1". `check`: the card is
+   * opening, so only look (nothing written, nothing stored).
+   */
+  mode: boolean | 'check' = false,
+): Promise<{ ok: true; data: FormSheetHeaderRowResponse } | { ok: false; message?: string }> {
+  try {
+    const opts = mode === 'check' ? { check: true } : { replace: mode === true };
+    return { ok: true, data: await adminApi.syncFormSheetHeaders(formId, opts) };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) return { ok: false, message: e.message };
+    return { ok: false };
+  }
+}
+
+/**
+ * HubSpot's contact properties, re-read after HubSpot was connected from the
+ * form's own Connect tab, so the mapping can open without reloading the page.
+ */
+export async function hubspotPropertiesAction(): Promise<HubSpotPropertiesResponse> {
+  try {
+    return await adminApi.hubspotProperties();
+  } catch (e) {
+    unstable_rethrow(e);
+    return { enabled: false, reason: e instanceof Error ? e.message : 'unavailable' };
   }
 }
 
