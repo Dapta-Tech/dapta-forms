@@ -384,6 +384,24 @@ describe('strict rules with an API key', () => {
     const plain = { destinations: [{ type: 'webhook', enabled: true, settings: { url: 'https://example.com/hook' } }] };
     await expect(key.destinations.putDestinations(req(), formId, plain)).resolves.toBeTruthy();
   });
+
+  it('refuses events on a HubSpot or Salesforce destination: the Connect tab has no switch for it yet', async () => {
+    const body = {
+      destinations: [
+        { type: 'webhook', enabled: true, events: ['complete'], settings: { url: 'https://example.com/hook' } },
+        { type: 'hubspot', enabled: true, events: ['complete'], fieldMappings: { email: 'email' } },
+        { type: 'salesforce', enabled: true, events: ['partial', 'complete'], fieldMappings: { email: 'Email' } },
+      ],
+    };
+    const r = await refusal(key.destinations.putDestinations(req(), formId, body));
+    expect(r.issues).toEqual([
+      { path: 'destinations.1.events', code: 'UNSUPPORTED_FIELD', message: expect.any(String) },
+      { path: 'destinations.2.events', code: 'UNSUPPORTED_FIELD', message: expect.any(String) },
+    ]);
+    // A session's save, which never sends it, stores the CRM entries as before.
+    const out = await session.destinations.putDestinations(req(), formId, body);
+    expect(out).toBeTruthy();
+  });
 });
 
 describe('a session keeps saving legacy forms exactly as before', () => {

@@ -39,14 +39,11 @@ import {
   destinationFiresForPhase,
   formDestinationSchema,
   MAX_SHEET_COLUMNS,
-  hasExtraHubspotDestination,
-  hasExtraSalesforceDestination,
+  extraOnePerFormDestination,
   sheetBaselineHeaders,
   sheetCells,
   writtenSheetHeaders,
   maskConfigSecrets,
-  ONE_HUBSPOT_DESTINATION_MESSAGE,
-  ONE_SALESFORCE_DESTINATION_MESSAGE,
   type DestinationEvent,
   type FormDestination,
 } from '@quill/types';
@@ -529,12 +526,19 @@ export type FormSheetHeaderRowResponse =
   | ({ ok: true } & SheetHeaderSync)
   | { ok: false; reason: 'not_configured' };
 
+/**
+ * The providers the generic `:provider` routes serve. `gohighlevel` is a
+ * provider in the store but has no connect route yet, so until it has one
+ * these routes treat it as unknown and do not name it.
+ */
+const ROUTED_PROVIDERS: readonly IntegrationProvider[] = integrationProviders.filter((p) => p !== 'gohighlevel');
+
 /** Narrow a path param to a known provider, or 400 (never echoes the raw input). */
 function parseProvider(raw: string): IntegrationProvider {
-  if ((integrationProviders as readonly string[]).includes(raw)) return raw as IntegrationProvider;
+  if ((ROUTED_PROVIDERS as readonly string[]).includes(raw)) return raw as IntegrationProvider;
   throw new BadRequestException({
     error: 'BAD_REQUEST',
-    message: `unknown integration provider (expected one of ${integrationProviders.join(', ')})`,
+    message: `unknown integration provider (expected one of ${ROUTED_PROVIDERS.join(', ')})`,
   });
 }
 
@@ -1516,18 +1520,10 @@ export class FormDestinationsController {
     const before = await getFormById(this.db, p.accountId, id);
     if (!before) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     const stored = (before.config as { destinations?: unknown } | null)?.destinations;
-    if (hasExtraHubspotDestination(destinations, stored)) {
-      throw new BadRequestException({
-        error: 'BAD_REQUEST',
-        message: ONE_HUBSPOT_DESTINATION_MESSAGE,
-      });
-    }
-    if (hasExtraSalesforceDestination(destinations, stored)) {
-      throw new BadRequestException({
-        error: 'BAD_REQUEST',
-        message: ONE_SALESFORCE_DESTINATION_MESSAGE,
-      });
-    }
+    // The same rule covers every one-per-form kind (HubSpot, Salesforce,
+    // HighLevel), checked in that order, each with its own message.
+    const extra = extraOnePerFormDestination(destinations, stored);
+    if (extra) throw new BadRequestException({ error: 'BAD_REQUEST', message: extra.message });
     // Bring the HubSpot mirror form in line BEFORE storing, so the guid it
     // returns is written in the same request that created it — no window where
     // a form exists in the portal that nothing points at. A HubSpot failure

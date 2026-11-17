@@ -7,7 +7,7 @@ import {
   type GoogleSheetsDestinationOptions,
 } from './adapters/google-sheets';
 import { SalesforceDestination, type SalesforceDestinationOptions } from './adapters/salesforce';
-import { writableSheetColumns } from '@quill/types';
+import { GOHIGHLEVEL_REASONS, writableSheetColumns, type GoHighLevelDeliveryOptions } from '@quill/types';
 
 /**
  * A fully-resolved destination spec: the form-config settings for the chosen
@@ -21,6 +21,8 @@ export interface DestinationSpec {
   hubspot?: HubspotDestinationOptions;
   googleSheets?: GoogleSheetsDestinationOptions;
   salesforce?: SalesforceDestinationOptions;
+  /** The stored mappings plus the account's credentials, resolved by the API. */
+  gohighlevel?: GoHighLevelDeliveryOptions;
 }
 
 /**
@@ -69,6 +71,12 @@ export function createDestination(
       }
       return new SalesforceDestination(sf, fetchImpl);
     }
+    case 'gohighlevel':
+      // No adapter yet: every HighLevel delivery is the named no-op the
+      // delivery history shows as "not connected". The adapter goes here,
+      // behind a credentials check (`spec.gohighlevel?.credentials.token` and
+      // `.locationId`), with this same no-op when either is missing.
+      return new LogOnlyDestination(GOHIGHLEVEL_REASONS.notConnected);
     default:
       return new LogOnlyDestination(`unknown destination type: ${String(spec.type)}`);
   }

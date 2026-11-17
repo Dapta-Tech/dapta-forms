@@ -2033,6 +2033,7 @@ export interface FormsMessages {
       historyWebhookTitle: string;
       historyHubspotTitle: string;
       historySalesforceTitle: string;
+      historyHighlevelTitle: string;
       historySheetsTitle: string;
       historyEmailTitle: string;
       historyHelp: string;
@@ -2089,6 +2090,7 @@ export interface FormsMessages {
         webhook: string;
         hubspot: string;
         salesforce: string;
+        highlevel: string;
         googleSheets: string;
         other: string;
       };
@@ -2110,8 +2112,24 @@ export interface FormsMessages {
         salesforceNotConnected: string;
         hubspotNotConnected: string;
         webhookNoUrl: string;
+        /** The factory's no-op for a HighLevel destination with no usable connection. */
+        highlevelNotConnected: string;
+        /** HighLevel deduplicates on email or phone, so a response with neither is not sent. */
+        highlevelNoEmailOrPhone: string;
+        /** HighLevel answered 401: the token was revoked or rotated. */
+        highlevelTokenRejected: string;
+        /** HighLevel answered 403: the token cannot reach the location, or lacks a scope. */
+        highlevelLocationForbidden: string;
         /** HubSpot refused the booking properties a booking update wrote. `{status}`. */
         bookingRejected: string;
+      };
+      /**
+       * The per-form HighLevel card. Reserved: the card itself is not built
+       * yet, and its remaining copy joins this object when it is.
+       */
+      highlevel: {
+        title: string;
+        desc: string;
       };
       salesforce: {
         title: string;
@@ -2330,6 +2348,25 @@ export interface FormsMessages {
         timeout: string;
         /** The member's role may not connect integrations. */
         forbidden: string;
+      };
+      /**
+       * The HighLevel connection card. Reserved: the card itself is not built
+       * yet, and its remaining copy (steps, fields, connected state) joins
+       * this object when it is.
+       */
+      highlevel: {
+        name: string;
+        desc: string;
+        /** Why a connection was refused, one sentence per `GoHighLevelConnectError`. */
+        errors: {
+          token_format: string;
+          invalid_token: string;
+          wrong_location: string;
+          missing_scope: string;
+          unreachable: string;
+          timeout: string;
+          forbidden: string;
+        };
       };
       /** What the page says when the consent round trip comes back. */
       googleConnected: string;
@@ -4618,6 +4655,7 @@ export const en: FormsMessages = {
       historyWebhookTitle: 'Webhook history',
       historyHubspotTitle: 'HubSpot history',
       historySalesforceTitle: 'Salesforce history',
+      historyHighlevelTitle: 'HighLevel history',
       historySheetsTitle: 'Google Sheets history',
       historyEmailTitle: 'Email history',
       historyHelp: 'The last deliveries this form made, newest first. Open one to see what was sent.',
@@ -4653,6 +4691,7 @@ export const en: FormsMessages = {
         webhook: 'your endpoint',
         hubspot: 'HubSpot',
         salesforce: 'Salesforce',
+        highlevel: 'HighLevel',
         googleSheets: 'Google Sheets',
         other: 'the destination',
       },
@@ -4668,7 +4707,17 @@ export const en: FormsMessages = {
         salesforceNotConnected: 'Salesforce is not connected. Connect it again to keep sending leads.',
         hubspotNotConnected: 'HubSpot is not connected.',
         webhookNoUrl: 'The webhook has no URL.',
+        highlevelNotConnected: 'HighLevel is not connected. Connect it again to keep sending leads.',
+        highlevelNoEmailOrPhone:
+          'This response has no email or phone, so HighLevel cannot tell whether the contact already exists. Nothing was sent.',
+        highlevelTokenRejected: 'HighLevel stopped accepting the token. Connect HighLevel again with a new token.',
+        highlevelLocationForbidden:
+          'The token cannot reach this sub-account, or it is missing a scope. Connect HighLevel again.',
         bookingRejected: 'HubSpot refused the booking update with HTTP {status}. Check the booking properties.',
+      },
+      highlevel: {
+        title: 'HighLevel',
+        desc: 'Send each completed response to HighLevel as a contact.',
       },
       salesforce: {
         title: 'Salesforce',
@@ -4865,6 +4914,22 @@ export const en: FormsMessages = {
         timeout:
           'Salesforce took too long to answer. Try again; if it keeps happening, this server may not be allowed to reach Salesforce.',
         forbidden: 'Only workspace admins and owners can connect integrations.',
+      },
+      highlevel: {
+        name: 'HighLevel',
+        desc: 'Send respondents to HighLevel as contacts, or update them if they already exist, and map questions to fields.',
+        errors: {
+          token_format: 'That is not a HighLevel Private Integration token. It starts with pit-.',
+          invalid_token: 'HighLevel did not accept the token. Check that you copied all of it, or create a new one.',
+          wrong_location:
+            'This token has no access to that Location ID. Use the token and the Location ID of the same sub-account.',
+          missing_scope:
+            'The token is missing a scope. Give it contacts.write, locations.readonly and locations/customFields.readonly.',
+          unreachable: 'HighLevel did not answer. Try again in a moment.',
+          timeout:
+            'HighLevel took too long to answer. Try again; if it keeps happening, this server may not be allowed to reach HighLevel.',
+          forbidden: 'Only workspace admins and owners can connect integrations.',
+        },
       },
       googleConnected: 'Google Sheets is connected.',
       googleCancelled: 'Google Sheets was not connected.',
@@ -7469,6 +7534,7 @@ export const es: FormsMessages = {
       historyWebhookTitle: 'Historial del webhook',
       historyHubspotTitle: 'Historial de HubSpot',
       historySalesforceTitle: 'Historial de Salesforce',
+      historyHighlevelTitle: 'Historial de HighLevel',
       historySheetsTitle: 'Historial de Google Sheets',
       historyEmailTitle: 'Historial de correos',
       historyHelp:
@@ -7505,6 +7571,7 @@ export const es: FormsMessages = {
         webhook: 'tu endpoint',
         hubspot: 'HubSpot',
         salesforce: 'Salesforce',
+        highlevel: 'HighLevel',
         googleSheets: 'Google Sheets',
         other: 'el destino',
       },
@@ -7520,7 +7587,17 @@ export const es: FormsMessages = {
         salesforceNotConnected: 'Salesforce no está conectado. Conéctalo de nuevo para seguir enviando leads.',
         hubspotNotConnected: 'HubSpot no está conectado.',
         webhookNoUrl: 'El webhook no tiene URL.',
+        highlevelNotConnected: 'HighLevel no está conectado. Conéctalo de nuevo para seguir enviando leads.',
+        highlevelNoEmailOrPhone:
+          'Esta respuesta no tiene email ni teléfono, así que HighLevel no puede saber si el contacto ya existe. No se envió nada.',
+        highlevelTokenRejected: 'HighLevel dejó de aceptar el token. Conecta HighLevel de nuevo con un token nuevo.',
+        highlevelLocationForbidden:
+          'El token no tiene acceso a esta subcuenta o le falta un scope. Conecta HighLevel de nuevo.',
         bookingRejected: 'HubSpot rechazó la actualización del agendamiento con HTTP {status}. Revisa las propiedades del agendamiento.',
+      },
+      highlevel: {
+        title: 'HighLevel',
+        desc: 'Envía cada respuesta completa a HighLevel como contacto.',
       },
       salesforce: {
         title: 'Salesforce',
@@ -7717,6 +7794,22 @@ export const es: FormsMessages = {
         timeout:
           'Salesforce tardó demasiado en responder. Vuelve a intentar; si sigue pasando, puede que este servidor no tenga permitido conectarse a Salesforce.',
         forbidden: 'Solo un propietario o un administrador del espacio de trabajo puede conectar integraciones.',
+      },
+      highlevel: {
+        name: 'HighLevel',
+        desc: 'Envía a quienes responden a HighLevel como contactos, o actualízalos si ya existen, y asigna preguntas a campos.',
+        errors: {
+          token_format: 'Eso no es un token de Private Integration de HighLevel. Empieza por pit-.',
+          invalid_token: 'HighLevel no aceptó el token. Revisa que lo copiaste completo o crea uno nuevo.',
+          wrong_location:
+            'Este token no tiene acceso a ese Location ID. Usa el token y el Location ID de la misma subcuenta.',
+          missing_scope:
+            'Al token le falta un scope. Dale contacts.write, locations.readonly y locations/customFields.readonly.',
+          unreachable: 'HighLevel no respondió. Vuelve a intentar en un momento.',
+          timeout:
+            'HighLevel tardó demasiado en responder. Vuelve a intentar; si sigue pasando, puede que este servidor no tenga permitido conectarse a HighLevel.',
+          forbidden: 'Solo un propietario o un administrador del espacio de trabajo puede conectar integraciones.',
+        },
       },
       googleConnected: 'Google Sheets quedó conectado.',
       googleCancelled: 'Google Sheets no se conectó.',

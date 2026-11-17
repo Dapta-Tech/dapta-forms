@@ -92,6 +92,13 @@ const WEBHOOK_FIELDS: Path[] = [
   ['settings', 'signatureHeader'],
   ['settings', 'timeoutMs'],
 ];
+/**
+ * Destination kinds whose `events` (send partial responses too) has no switch
+ * in the Connect tab yet. The phase rule already reads it, so an agent setting
+ * it would change what a CRM receives with nothing on the card to show it.
+ * The webhook's trigger has its control and is not here.
+ */
+const EVENTS_WITHOUT_CONTROL: ReadonlySet<unknown> = new Set(['hubspot', 'salesforce', 'gohighlevel']);
 
 /**
  * Step types the editor saves with a blank title on purpose, so a key may too.
@@ -131,6 +138,9 @@ export function strictDestinationIssues(destinations: unknown, prefix: Path): Va
   if (!Array.isArray(destinations)) return [];
   const issues: ValidationIssue[] = [];
   destinations.forEach((entry, i) => {
+    if (isObj(entry) && EVENTS_WITHOUT_CONTROL.has(entry.type) && isSet(entry.events)) {
+      issues.push(unsupported([...prefix, i, 'events']));
+    }
     if (!isObj(entry) || entry.type !== 'webhook') return;
     for (const field of WEBHOOK_FIELDS) {
       if (isSet(at(entry, field))) issues.push(unsupported([...prefix, i, ...field]));

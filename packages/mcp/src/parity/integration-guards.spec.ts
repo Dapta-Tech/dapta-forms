@@ -74,6 +74,39 @@ describe('set_destinations and a provider that is not connected', () => {
     }
   });
 
+  it('tells the agent a provider nothing can connect yet is not the deployment\'s to set up', async () => {
+    const message =
+      'Destination 1 is a new or changed HighLevel destination, and dForms cannot connect HighLevel yet, so it would deliver nothing. Leave this destination out or switched off.';
+    const h = await bootHarness({
+      backend: {
+        setDestinations: async () => {
+          throw new BackendError(400, 'INTEGRATION_NOT_CONNECTED', message, [], {
+            provider: 'gohighlevel',
+            integrationsUrl: URL,
+            unavailable: true,
+          });
+        },
+      },
+    });
+    try {
+      const c = await h.connect(h.key('owner'));
+      const text = errorText(
+        await c.callTool({
+          name: 'set_destinations',
+          arguments: { form_id: 'form-1', destinations: [{ type: 'gohighlevel', enabled: true }] },
+        }),
+      );
+      expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed HighLevel destination/);
+      expect(text).toMatch(/cannot connect this provider yet, on any deployment/);
+      // Neither the operator hint nor list_integrations applies: nothing can enable it.
+      expect(text).not.toMatch(/whoever runs this dForms deployment/);
+      expect(text).not.toMatch(/list_integrations lists it/);
+      expect(text).not.toContain(URL);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('reports every warning of the save, and an empty list when there is none', async () => {
     const h = await bootHarness({
       backend: {

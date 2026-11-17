@@ -62,6 +62,13 @@ const SHEET = {
 };
 const SALESFORCE = { type: 'salesforce', enabled: true, fieldMappings: { email: 'Email' }, utmMappings: {} };
 const WEBHOOK = { type: 'webhook', enabled: true, settings: { url: 'https://example.test/hook' } };
+/** Nothing can connect HighLevel yet, so this entry can never deliver. */
+const HIGHLEVEL = {
+  type: 'gohighlevel',
+  enabled: true,
+  fieldMappings: { email: [{ kind: 'standard', field: 'email' }] },
+  utmMappings: {},
+};
 
 /** What the Connect tab's cards store, exactly as `builtGoogleSheets` / `builtSalesforce` build them. */
 const EDITOR = {
@@ -157,6 +164,20 @@ describe('a destination whose provider is not connected', () => {
     it('refuses a new Salesforce entry the same way', async () => {
       const body = await refusal(controller(via).putDestinations(req(), formId, { destinations: [SALESFORCE] }));
       expect(body).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'salesforce', index: 0, integrationsUrl: PAGE });
+    });
+
+    it('refuses a HighLevel entry, which nothing can connect yet, and stores nothing', async () => {
+      const before = await stored();
+      const body = await refusal(controller(via).putDestinations(req(), formId, { destinations: [WEBHOOK, HIGHLEVEL] }));
+      // Not retryable: there is no page where it could be connected yet.
+      expect(body).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'gohighlevel', index: 1, unavailable: true });
+      expect(body.message).toBe(
+        'Destination 2 is a new or changed HighLevel destination, and dForms cannot connect HighLevel yet, so it would deliver nothing. Leave this destination out or switched off.',
+      );
+      expect(await stored()).toEqual(before);
+      // Creating a form with one is refused the same way.
+      const created = await refusal(newForm(via, [HIGHLEVEL]));
+      expect(created).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'gohighlevel' });
     });
 
     it('refuses even a Sheets entry with no spreadsheet yet: an agent has no card to finish it on', async () => {
@@ -339,6 +360,17 @@ describe('a destination whose provider is not connected', () => {
       await updateFormDestinations(db, accountId, formId, [{ ...SHEET, enabled: false }] as never);
       const out = await controller('session').putDestinations(req(), formId, { destinations: [SHEET] });
       expect(out.warnings?.[0]).toMatchObject({ code: 'INTEGRATION_NOT_CONNECTED' });
+    });
+
+    it('saves a HighLevel entry with a warning rather than refusing it', async () => {
+      const out = await controller('session').putDestinations(req(), formId, { destinations: [HIGHLEVEL] });
+      expect(out.warnings?.[0]).toMatchObject({
+        code: 'INTEGRATION_NOT_CONNECTED',
+        index: 0,
+        type: 'gohighlevel',
+        message: 'HighLevel cannot be connected in dForms yet, so this destination was saved, but it delivers nothing.',
+      });
+      expect(await stored()).toHaveLength(1);
     });
 
     it('saves a fully set up entry for a provider not connected (the save queue replaying it after a disconnect)', async () => {

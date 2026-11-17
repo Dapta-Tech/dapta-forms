@@ -332,9 +332,24 @@ const ACTIONABLE: Record<string, { message?: string; hint: string }> = {
 export const INTEGRATION_UNAVAILABLE_HINT =
   'Nobody in this workspace can connect this provider here: this dForms deployment has no way to connect it, so there is no page to send the user to, and the same call is refused again. list_integrations lists it in unavailable. Tell the user that whoever runs this dForms deployment has to set it up first; until then, send the call again without this destination, or with it switched off (enabled false).';
 
+/**
+ * The hint for a provider no dForms deployment can connect yet (its connect
+ * route does not exist). Not the deployment's doing, so the operator hint above
+ * would be wrong, and it is not in list_integrations' unavailable either.
+ */
+export const INTEGRATION_NOT_YET_HINT =
+  'dForms cannot connect this provider yet, on any deployment: there is no page to send the user to, and the same call is refused again. Send the call again without this destination, or with it switched off (enabled false), and tell the user it is not available yet.';
+
+/** Providers the API refuses as unavailable because nothing can connect them yet. */
+const NOT_YET_CONNECTABLE: ReadonlySet<unknown> = new Set(['gohighlevel']);
+
 /** Whether a refusal is about a provider the deployment cannot connect at all, as the route flags it. */
 export const isUnavailableProvider = (error: BackendError): boolean =>
   error.code === 'INTEGRATION_NOT_CONNECTED' && error.details['unavailable'] === true;
+
+/** The hint for an unavailable-provider refusal: not connectable yet, or not set up on this deployment. */
+export const unavailableProviderHint = (error: BackendError): string =>
+  NOT_YET_CONNECTABLE.has(error.details['provider']) ? INTEGRATION_NOT_YET_HINT : INTEGRATION_UNAVAILABLE_HINT;
 
 const CONNECTION: Record<string, { message?: string; hint: string }> = {
   FORBIDDEN: {
@@ -369,7 +384,7 @@ export function toFailure(error: unknown, credential: CredentialKind = 'key', to
     }
     if (error.status >= 500) return internalError();
     const known = isUnavailableProvider(error)
-      ? { hint: INTEGRATION_UNAVAILABLE_HINT }
+      ? { hint: unavailableProviderHint(error) }
       : ((credential === 'connection' ? CONNECTION[error.code] : undefined) ?? ACTIONABLE[error.code]);
     let message = known?.message ?? error.message;
     if (error.code === 'STALE' && typeof error.details['updatedAt'] === 'number')

@@ -33,9 +33,15 @@ import {
   isSafeImageUrl,
 } from '@quill/engine';
 import { submissionVisitSchema, submissionVisitViewSchema } from './submission-visit';
+import {
+  GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES,
+  GOHIGHLEVEL_STANDARD_FIELD_KEYS,
+  GOHIGHLEVEL_UTM_KEYS,
+} from './gohighlevel';
 
 export * from './submission-visit';
 export * from './link-page';
+export * from './gohighlevel';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -615,7 +621,7 @@ export const formOutcomeSchema = z.object({
 // --- Submission destinations (pluggable CRM / webhook sync) ------------------
 
 /** The configurable destination kinds a form may deliver submissions to. */
-export const destinationType = ['webhook', 'hubspot', 'google-sheets', 'salesforce'] as const;
+export const destinationType = ['webhook', 'hubspot', 'google-sheets', 'salesforce', 'gohighlevel'] as const;
 export type DestinationType = (typeof destinationType)[number];
 
 /** A property map: form stepKey / utmKey -> external property name. */
@@ -725,9 +731,29 @@ export const destinationEvents = ['partial', 'complete'] as const;
 export type DestinationEvent = (typeof destinationEvents)[number];
 
 /**
- * Resolve whether a destination should fire for a given phase. Absent/empty
- * `events` = both phases (back-compat). Only webhook destinations carry an
- * `events` filter today; others always fire (their adapters gate internally).
+ * The CRM destinations whose ABSENT `events` means complete-only.
+ *
+ * Salesforce was complete-only before `events` existed on it, for a reason of
+ * its own: a partial carries whatever the respondent typed so far, and the
+ * CREATE path has to invent a last name and a company for a Lead that lacks
+ * them, so a partial would mint a placeholder record for every visitor who
+ * typed an email and left. Every Salesforce config stored before the switch
+ * has no `events`, and must keep behaving exactly as it did. HighLevel starts
+ * the same way: partials are something the author turns on.
+ */
+const COMPLETE_ONLY_BY_DEFAULT: ReadonlySet<string> = new Set(['salesforce', 'gohighlevel']);
+
+/**
+ * Resolve whether a destination should fire for a given phase.
+ *
+ *   google-sheets            complete only, whatever `events` says
+ *   salesforce, gohighlevel  `events` absent or empty: complete only
+ *   webhook, hubspot         `events` absent or empty: both (back-compat)
+ *   any of the last four     an explicit `events` is respected as written
+ *
+ * The CRM cards write `events` explicitly when the author touches the
+ * "send partial responses too" switch, so a stored config without it always
+ * means the default of its kind.
  */
 export function destinationFiresForPhase(
   destination: { type: string; events?: DestinationEvent[] | undefined },
@@ -742,16 +768,19 @@ export function destinationFiresForPhase(
   // decided here rather than left to a default, because the schema's absent
   // `events` means BOTH and that default is wrong for exactly this kind.
   if (destination.type === 'google-sheets') return phase === 'complete';
-  // Salesforce is complete-only in its first version for a reason of its own:
-  // a partial carries whatever the respondent typed so far, and the CREATE
-  // path has to invent a last name and a company for a Lead that lacks them.
-  // A partial would mint a placeholder record for every visitor who typed an
-  // email and left, in somebody's CRM, where sales would call them.
-  if (destination.type === 'salesforce') return phase === 'complete';
   const events = destination.events;
-  if (!events || events.length === 0) return true;
+  if (!events || events.length === 0) {
+    return COMPLETE_ONLY_BY_DEFAULT.has(destination.type) ? phase === 'complete' : true;
+  }
   return events.includes(phase);
 }
+
+/**
+ * The submission phases a CRM destination listens to (additive). Absent means
+ * the default of its kind (see `destinationFiresForPhase`): both for HubSpot,
+ * complete only for Salesforce and HighLevel.
+ */
+const crmEventsSchema = z.array(z.enum(['partial', 'complete'])).optional();
 
 /**
  * HubSpot destination — upsert the respondent as a contact and (on complete)
@@ -766,6 +795,8 @@ const draftValue = z.string().max(500);
 export const hubspotDestinationSchema = z.object({
   type: z.literal('hubspot'),
   enabled: z.boolean().default(false),
+  /** Which phases sync (additive). Absent = both, as before the switch existed. */
+  events: crmEventsSchema,
   settings: z
     .object({
       note: z.boolean().optional(),
@@ -1194,6 +1225,8 @@ export type GoogleSheetsDestination = z.infer<typeof googleSheetsDestinationSche
 export const salesforceDestinationSchema = z.object({
   type: z.literal('salesforce'),
   enabled: z.boolean().default(false),
+  /** Which phases deliver (additive). Absent = complete only, as before the switch existed. */
+  events: crmEventsSchema,
   /** stepKey -> one Lead field or several (one SHOULD be `Email`). */
   fieldMappings: fieldMapSchema.default({}),
   /** utm_source/medium/campaign/term/content -> Lead field. */
@@ -1223,11 +1256,113 @@ export const salesforceDestinationSchema = z.object({
 });
 export type SalesforceDestination = z.infer<typeof salesforceDestinationSchema>;
 
+/** A standard contact field of HighLevel, by its upsert key. */
+const goHighLevelStandardTargetSchema = z.object({
+  kind: z.literal('standard'),
+  field: z.enum(GOHIGHLEVEL_STANDARD_FIELD_KEYS),
+});
+
+/**
+ * A custom field of the location. `dataType` is any type GHL reports, not only
+ * the mappable ones: which type a mapping may target is an AUTHORING rule
+ * (`goHighLevelSlotAccepts`, which the API is to check on save and the adapter
+ * at delivery), so narrowing it later never makes a stored config stop parsing.
+ */
+export const goHighLevelCustomFieldTargetSchema = z.object({
+  kind: z.literal('custom'),
+  /** What the upsert takes. */
+  id: z.string().trim().min(1).max(100),
+  /** GHL's `fieldKey` (`contact.utm_source`), kept to show the row without asking GHL. */
+  key: z.string().max(200),
+  /** The type when it was chosen, kept to validate the row without asking GHL. */
+  dataType: z.enum(GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES),
+});
+export type GoHighLevelCustomFieldTarget = z.infer<typeof goHighLevelCustomFieldTargetSchema>;
+
+/** Where one answer goes: a standard field or a custom field. */
+export const goHighLevelFieldTargetSchema = z.discriminatedUnion('kind', [
+  goHighLevelStandardTargetSchema,
+  goHighLevelCustomFieldTargetSchema,
+]);
+export type GoHighLevelFieldTarget = z.infer<typeof goHighLevelFieldTargetSchema>;
+
+/** A constant written on every contact. */
+const goHighLevelStaticFieldSchema = z.object({
+  target: goHighLevelFieldTargetSchema,
+  value: z.string().max(500),
+});
+export type GoHighLevelStaticField = z.infer<typeof goHighLevelStaticFieldSchema>;
+
+/**
+ * HighLevel (GoHighLevel) destination: upsert the respondent as a contact of
+ * the connected sub-account, then add the fixed tags.
+ *
+ * The connection (a Private Integration token and the Location ID) lives in
+ * `account_integration` under the `gohighlevel` provider, encrypted, and is
+ * read by the API at delivery time. Nothing about it lives in a form's config.
+ *
+ * Unlike Salesforce, a mapping target is not a bare name: a standard field and
+ * a custom field are told apart, and a custom field is named by its id (what
+ * the upsert takes) with its key and type kept alongside. The score, the
+ * submitted date and the UTMs go to custom fields only. Which custom-field
+ * types each mapping may target (`goHighLevelSlotAccepts`) and whether a
+ * standard field suits a question's type (`GOHIGHLEVEL_STANDARD_FIELDS`
+ * `sources`) are authoring rules the API is to check on save, not parse
+ * rules, so a stored config keeps parsing if either list changes.
+ *
+ * Precedence when two sources write one field: the mappings, then the UTMs,
+ * then the date and the score; `staticFields` only fill what is still empty.
+ * An empty answer is never sent, so it never clears a value GHL already has.
+ */
+export const goHighLevelDestinationSchema = z.object({
+  type: z.literal('gohighlevel'),
+  enabled: z.boolean().default(false),
+  /** Which phases deliver. Absent = complete only; the card writes it explicitly. */
+  events: crmEventsSchema,
+  /** stepKey -> the fields its answer fills (one question can fill several). */
+  fieldMappings: z
+    .record(z.string().min(1).max(200), z.array(goHighLevelFieldTargetSchema).min(1).max(20))
+    .default({}),
+  /** utm_* -> a text custom field. */
+  utmMappings: z.record(z.enum(GOHIGHLEVEL_UTM_KEYS), goHighLevelCustomFieldTargetSchema).default({}),
+  /** A number custom field to receive the score. */
+  scoreField: goHighLevelCustomFieldTargetSchema.nullable().optional(),
+  /** A date custom field to receive the submitted day. */
+  dateField: goHighLevelCustomFieldTargetSchema.nullable().optional(),
+  /** The IANA zone that names the submitted DAY. Blank/absent = UTC. */
+  dayTimezone: z.string().max(64).optional(),
+  /** Fixed values, each filling its field only when nothing else did. */
+  staticFields: z.array(goHighLevelStaticFieldSchema).max(DRAFT_ROWS).optional(),
+  /** Added to the contact after the upsert; never removes one it already has. */
+  tags: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  /** The contact's `source`. Absent or blank: `dForms: {form name}`. */
+  source: z.string().max(200).nullable().optional(),
+  /**
+   * Rows the author started and has not finished (a question with no field
+   * yet, a fixed value with no field). Stored so they survive a reload; never
+   * read by a delivery.
+   */
+  drafts: z
+    .object({
+      mappings: z
+        .array(z.object({ key: draftText, target: goHighLevelFieldTargetSchema.nullable().optional() }))
+        .max(DRAFT_ROWS)
+        .optional(),
+      statics: z
+        .array(z.object({ target: goHighLevelFieldTargetSchema.nullable().optional(), value: draftValue }))
+        .max(DRAFT_ROWS)
+        .optional(),
+    })
+    .optional(),
+});
+export type GoHighLevelDestination = z.infer<typeof goHighLevelDestinationSchema>;
+
 export const formDestinationSchema = z.discriminatedUnion('type', [
   webhookDestinationSchema,
   hubspotDestinationSchema,
   googleSheetsDestinationSchema,
   salesforceDestinationSchema,
+  goHighLevelDestinationSchema,
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
 
@@ -1294,18 +1429,61 @@ export function hasExtraHubspotDestination(destinations: unknown, stored?: unkno
 export const ONE_SALESFORCE_DESTINATION_MESSAGE =
   'Only one Salesforce destination per form. Map several fields from the same question instead.';
 
+/** Rejection message for a second HighLevel destination. */
+export const ONE_GOHIGHLEVEL_DESTINATION_MESSAGE =
+  'Only one HighLevel destination per form. Map several fields from the same question instead.';
+
 /**
- * True when a proposed destination list would ADD a Salesforce entry beyond the
- * first. The same rule as {@link hasExtraHubspotDestination}, for the same
- * reason: two destinations writing the same record from one submission race
- * each other, and the editor only ever shows the first. Only an increase is
- * refused, so a whole-array write that adds nothing never 400s.
+ * The destination kinds a form may carry at most one of, each with the
+ * sentence that refuses a second, in the order they are checked. The rule is
+ * {@link hasExtraHubspotDestination}'s, for the same reason: two destinations
+ * writing the same record from one submission race each other, and the editor
+ * only ever shows the first.
  */
+export const ONE_PER_FORM_DESTINATIONS = {
+  hubspot: ONE_HUBSPOT_DESTINATION_MESSAGE,
+  salesforce: ONE_SALESFORCE_DESTINATION_MESSAGE,
+  gohighlevel: ONE_GOHIGHLEVEL_DESTINATION_MESSAGE,
+} as const satisfies Partial<Record<DestinationType, string>>;
+export type OnePerFormDestinationType = keyof typeof ONE_PER_FORM_DESTINATIONS;
+
+/** How many entries of `type` a (loosely typed) destinations array carries. */
+function countOfType(destinations: unknown, type: string): number {
+  return Array.isArray(destinations) ? destinations.filter((d) => isRecord(d) && d.type === type).length : 0;
+}
+
+/**
+ * True when a proposed destination list would ADD a `type` entry beyond the
+ * first. Only an increase is refused, so a whole-array write that adds nothing
+ * never 400s; an absent or unreadable `stored` counts as zero.
+ */
+export function hasExtraDestinationOfType(
+  type: OnePerFormDestinationType,
+  destinations: unknown,
+  stored?: unknown,
+): boolean {
+  const next = countOfType(destinations, type);
+  return next > 1 && next > countOfType(stored, type);
+}
+
+/**
+ * The first one-per-form rule a proposed list breaks, with its message, or
+ * null. What the write paths call, so a kind added to
+ * {@link ONE_PER_FORM_DESTINATIONS} is enforced everywhere at once.
+ */
+export function extraOnePerFormDestination(
+  destinations: unknown,
+  stored?: unknown,
+): { type: OnePerFormDestinationType; message: string } | null {
+  for (const [type, message] of Object.entries(ONE_PER_FORM_DESTINATIONS) as [OnePerFormDestinationType, string][]) {
+    if (hasExtraDestinationOfType(type, destinations, stored)) return { type, message };
+  }
+  return null;
+}
+
+/** {@link hasExtraDestinationOfType} for Salesforce. */
 export function hasExtraSalesforceDestination(destinations: unknown, stored?: unknown): boolean {
-  const count = (list: unknown): number =>
-    Array.isArray(list) ? list.filter((d) => isRecord(d) && d.type === 'salesforce').length : 0;
-  const next = count(destinations);
-  return next > 1 && next > count(stored);
+  return hasExtraDestinationOfType('salesforce', destinations, stored);
 }
 
 /**

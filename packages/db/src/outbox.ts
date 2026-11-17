@@ -53,6 +53,7 @@ export const OUTBOX_KINDS = [
   // was rejected by the worker as an unknown kind.
   'google-sheets',
   'salesforce',
+  'gohighlevel',
   'booking_sync',
   'analytics',
   'dapta_sync',

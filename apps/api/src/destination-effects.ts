@@ -126,10 +126,11 @@ export class DestinationEffects {
         .filter(({ destination }) => destinationIsDeliverable(destination))
         // Per-event trigger filter: a destination with an `events` list only fires
         // for the phases it names (webhook `events:['complete']` skips partials, and
-        // vice versa). Absent/empty `events` fires on BOTH phases (back-compat), and
-        // destinations without the field (e.g. HubSpot) always pass — the helper
-        // returns true. Mapping happens BEFORE this filter so the idempotency key
-        // keeps each destination's ORIGINAL config-array index.
+        // vice versa). Absent/empty `events` means the default of its kind: both for
+        // webhooks and HubSpot, complete only for Salesforce and HighLevel, and a
+        // spreadsheet is complete only whatever it says (`destinationFiresForPhase`).
+        // Mapping happens BEFORE this filter so the idempotency key keeps each
+        // destination's ORIGINAL config-array index.
         .filter(({ destination }) => destinationFiresForPhase(destination, input.phase));
 
       // A re-submit of the same session+phase replaces every not-yet-sent
@@ -278,6 +279,12 @@ export class DestinationEffects {
    * to the wrong place entirely.
    */
   private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
+    if (destination.type === 'gohighlevel') {
+      // Nothing to resolve yet: there is no connection to read and no adapter
+      // to hand it to, so the factory turns this into its named no-op. This is
+      // where the account's credentials and the field types will be read.
+      return { type: 'gohighlevel' };
+    }
     if (destination.type === 'salesforce') {
       // Minted from the account's Client Credentials at DELIVERY time, cached
       // per account. Null when not connected or the org refused, which the

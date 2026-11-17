@@ -274,6 +274,45 @@ describe('per-event trigger filter (enqueue-time)', () => {
     expect(rows[0]!.action).toBe('complete');
   });
 
+  it('enqueues a Salesforce destination with no events on complete only, and one with both on both', async () => {
+    const legacy = { type: 'salesforce', enabled: true, fieldMappings: { email: 'Email' }, utmMappings: {} };
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-sf-legacy-p', [legacy]));
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-sf-legacy-c', [legacy]));
+    expect(await listOutbox(db, { kind: 'salesforce', subjectUid: 'sub-sf-legacy-p' })).toHaveLength(0);
+    expect(await listOutbox(db, { kind: 'salesforce', subjectUid: 'sub-sf-legacy-c' })).toHaveLength(1);
+
+    const both = { ...legacy, events: ['partial', 'complete'] };
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-sf-both-p', [both]));
+    expect(await listOutbox(db, { kind: 'salesforce', subjectUid: 'sub-sf-both-p' })).toHaveLength(1);
+  });
+
+  it('enqueues a HighLevel destination on complete only, and drains it to the named no-op without a request', async () => {
+    const ghl = {
+      type: 'gohighlevel',
+      enabled: true,
+      fieldMappings: { email: [{ kind: 'standard', field: 'email' }] },
+      utmMappings: {},
+    };
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-ghl-p', [ghl]));
+    expect(await listOutbox(db, { kind: 'gohighlevel', subjectUid: 'sub-ghl-p' })).toHaveLength(0);
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-ghl-c', [ghl]));
+    expect(await listOutbox(db, { kind: 'gohighlevel', subjectUid: 'sub-ghl-c' })).toHaveLength(1);
+
+    let requests = 0;
+    destinations.fetchImpl = (async () => {
+      requests += 1;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const env = { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5000, NODE_ENV: 'test' } as never;
+    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
+    await new OutboxWorker(db, env, email, destinations).drainOnce(Date.now() + 1_000);
+
+    const [row] = await listOutbox(db, { kind: 'gohighlevel', subjectUid: 'sub-ghl-c' });
+    expect(row!.status).toBe('skipped');
+    expect(row!.lastError).toBe('gohighlevel destination has no usable connection (reconnect HighLevel)');
+    expect(requests).toBe(0);
+  });
+
   it("events:['partial'] enqueues on partial but NOT on complete", async () => {
     const dest = {
       type: 'webhook',

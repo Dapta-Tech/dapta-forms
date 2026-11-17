@@ -333,7 +333,7 @@ describe('OutboxWorker destination dispatch', () => {
   // Every destination type is enqueued under its own type as the kind. A kind
   // the worker does not dispatch is retried and then marked failed, with the
   // respondent never delivered, which is what happened to Google Sheets.
-  it.each(['webhook', 'hubspot', 'google-sheets', 'salesforce'] as const)(
+  it.each(['webhook', 'hubspot', 'google-sheets', 'salesforce', 'gohighlevel'] as const)(
     'drains a %s row through the destination handler',
     async (kind) => {
       const id = await enqueueOutbox(db, { kind, action: 'complete', now: 1_000, payload: '{"x":1}' });
