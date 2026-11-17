@@ -118,6 +118,13 @@ describe('openapi spec', () => {
     expect(ok).toContain('#/components/schemas/DestinationWarning');
     expect(JSON.stringify(put.responses?.['400'])).toContain('#/components/schemas/IntegrationNotConnected');
     expect(put.description).toContain('sheetHeaders');
+    // The REST body has no length cap (only the MCP tool caps the list at 50).
+    expect(JSON.stringify(put.requestBody)).not.toContain('maxItems');
+    expect(put.description).not.toMatch(/at most 50/);
+    // An API key cannot set the dashboard-only webhook fields: the doc says so.
+    const destination = openapiSpec.components.schemas.Destination.description;
+    expect(destination).toMatch(/`signatureHeader` and `timeoutMs` are set in the dashboard only/);
+    expect(destination).toContain('UNSUPPORTED_FIELD');
     const refusal = openapiSpec.components.schemas.IntegrationNotConnected;
     expect(refusal.properties.error).toEqual({ const: 'INTEGRATION_NOT_CONNECTED' });
     expect(refusal.required).toEqual(expect.arrayContaining(['provider', 'index', 'integrationsUrl', 'unavailable']));

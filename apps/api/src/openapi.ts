@@ -132,7 +132,7 @@ const destinationSchema = {
   required: ['type'],
   additionalProperties: true,
   description:
-    'A webhook: { type: "webhook", id?, enabled, events?: ["partial", "complete"], settings: { url (https), secret?, signatureHeader? } }. HubSpot: { type: "hubspot", enabled, settings }, at most one per form. Google Sheets: { type: "google-sheets", enabled, settings: { spreadsheetId, sheetTitle? }, columns: [{ header, source, key? }] }, one row per response, into a spreadsheet dForms created or the author picked in the dashboard. Salesforce: { type: "salesforce", enabled, fieldMappings, utmMappings?, scoreField?, dateField?, dayTimezone?, staticFields? }, at most one per form. Google Sheets and Salesforce deliver through the workspace\u2019s own connection. A masked webhook secret sent back unchanged keeps the stored one; null removes it.',
+    'A webhook: { type: "webhook", id?, enabled, events?: ["partial", "complete"], settings: { url (https), secret?, signatureHeader?, timeoutMs? } }; `signatureHeader` and `timeoutMs` are set in the dashboard only: with an API key, an entry that carries either one is refused with 400 BAD_REQUEST (issue code UNSUPPORTED_FIELD), even when it matches what is stored, so leave them out. HubSpot: { type: "hubspot", enabled, settings }, at most one per form. Google Sheets: { type: "google-sheets", enabled, settings: { spreadsheetId, sheetTitle? }, columns: [{ header, source, key? }] }, one row per response, into a spreadsheet dForms created or the author picked in the dashboard. Salesforce: { type: "salesforce", enabled, fieldMappings, utmMappings?, scoreField?, dateField?, dayTimezone?, staticFields? }, at most one per form. Google Sheets and Salesforce deliver through the workspace\u2019s own connection. A masked webhook secret sent back unchanged keeps the stored one; null removes it.',
   properties: {
     type: { type: 'string', enum: ['webhook', 'hubspot', 'google-sheets', 'salesforce'] },
     enabled: { type: 'boolean' },
@@ -537,7 +537,7 @@ export const openapiSpec = {
       put: {
         summary: "Replace a form's destinations (host)",
         description:
-          'Body { destinations: Destination[] } (at most 50): the whole list, so an entry left out is removed. It applies to the live form at once, with no publish step; `PUT /v1/forms/{id}` ignores destinations inside a config. Start from the stored list (the form\u2019s `config.destinations`, with ids and masked secrets) and send back every entry that is not changing. Google Sheets and Salesforce deliver through the workspace\u2019s own connection: with an API key, a new or changed enabled entry whose provider is not connected is refused with 400 INTEGRATION_NOT_CONNECTED and nothing is stored, while an entry sent back exactly as stored is kept (with a warning) even when its provider was disconnected since. A browser session is never refused for this; it gets the warnings. For a Google Sheets destination the save also brings row 1 of the spreadsheet in line with the column headers, but only when row 1 is empty or still holds what dForms wrote, and `sheetHeaders` says what happened. The 200 body is the form as saved (secrets masked), plus `warnings`, `sheetHeaders` and `formActivityError` (why the HubSpot form activity could not be synced; the destinations were saved anyway) when they apply.',
+          'Body { destinations: Destination[] }: the whole list, so an entry left out is removed. It applies to the live form at once, with no publish step; `PUT /v1/forms/{id}` ignores destinations inside a config. Start from the stored list (the form\u2019s `config.destinations`, with ids and masked secrets) and send back every entry that is not changing. Google Sheets and Salesforce deliver through the workspace\u2019s own connection: with an API key, a new or changed enabled entry whose provider is not connected is refused with 400 INTEGRATION_NOT_CONNECTED and nothing is stored, while an entry sent back exactly as stored is kept (with a warning) even when its provider was disconnected since. A browser session is never refused for this; it gets the warnings. For a Google Sheets destination the save also brings row 1 of the spreadsheet in line with the column headers, but only when row 1 is empty or still holds what dForms wrote, and `sheetHeaders` says what happened. The 200 body is the form as saved (secrets masked), plus `warnings`, `sheetHeaders` and `formActivityError` (why the HubSpot form activity could not be synced; the destinations were saved anyway) when they apply.',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         security: [{ hostSession: [] }],
         requestBody: {
@@ -546,7 +546,7 @@ export const openapiSpec = {
             type: 'object',
             required: ['destinations'],
             properties: {
-              destinations: { type: 'array', maxItems: 50, items: { $ref: '#/components/schemas/Destination' } },
+              destinations: { type: 'array', items: { $ref: '#/components/schemas/Destination' } },
             },
           }),
         },
