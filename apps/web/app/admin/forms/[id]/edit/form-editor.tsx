@@ -1078,6 +1078,12 @@ export function FormEditor({
               formId={id}
               initialHasDraft={initialHasDraft}
               saveCount={saveCount}
+              // The DRAFT's own save state, not the combined one the indicator
+              // above shows: integrations save straight to the live form and are
+              // not part of what Publish publishes, so their state (a webhook
+              // with no URL is a standing `partial`) must not hold the pill.
+              saveStatus={autosave.status}
+              hasQuestions={hasQuestions}
               locale={locale}
               flush={autosave.flush}
               getSaveCount={() => saveCountRef.current}
