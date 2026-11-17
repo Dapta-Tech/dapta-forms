@@ -3631,7 +3631,7 @@ export const en: FormsMessages = {
         overrideIsAnyOf: '{field} is any of {bound}',
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
-          'Leave empty to show the thank-you screen. If set, respondents are sent here instead. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out. Keep in mind that an answer placed in the URL, such as an email, ends up in the destination site’s browser history and server logs.',
+          'Leave empty to show the thank-you screen. If set, respondents are sent here instead. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out. Keep in mind that an answer placed in the URL, such as an email, ends up in the destination site’s browser history and server logs. To also send the visitor’s UTM parameters, turn on “Forward UTM parameters” in When the form ends.',
         messageLabel: 'Message shown for this outcome',
         messageHelp:
           'The thank-you body respondents see for this range. Use [field] to insert an answer. Leave empty to use the default message.',
@@ -6441,7 +6441,7 @@ export const es: FormsMessages = {
         overrideIsAnyOf: '{field} es alguno de {bound}',
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
-          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten. Ten en cuenta que una respuesta incluida en la URL, como un correo electrónico, queda en el historial del navegador y en los registros del servidor del sitio de destino.',
+          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten. Ten en cuenta que una respuesta incluida en la URL, como un correo electrónico, queda en el historial del navegador y en los registros del servidor del sitio de destino. Para enviar también los parámetros UTM del visitante, activa «Reenviar parámetros UTM» en Cuando termina el formulario.',
         messageLabel: 'Mensaje mostrado para este resultado',
         messageHelp:
           'El cuerpo de agradecimiento que ven los respondientes en este rango. Usa [campo] para insertar una respuesta. Déjalo vacío para usar el mensaje por defecto.',
