@@ -51,6 +51,7 @@ export const TOOL_GROUPS = {
     'ping_webhook',
     'list_deliveries',
     'list_hubspot_properties',
+    'list_event_types',
     'list_calendly_event_types',
   ],
   account: ['whoami', 'list_my_workspaces', 'get_my_profile', 'get_workspace_link_code'],

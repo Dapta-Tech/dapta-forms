@@ -4,7 +4,7 @@ import { BackendError } from '../backend';
 import { CATALOG } from '../catalog';
 import { bootHarness, errorText, structured, type Harness } from '../__tests__/harness';
 import { TOOLS } from '../tools';
-import { API_ROUTE_EXCLUSIONS, API_ROUTE_TOOLS, PARITY_TOOLS } from './index';
+import { API_ROUTE_EXCLUSIONS, API_ROUTE_TOOLS, PARITY_TOOLS, TOOL_ALIASES } from './index';
 
 /**
  * The tools of the rest of the API reference over the package's fake
@@ -108,6 +108,7 @@ const CASES: Case[] = [
   { tool: 'list_integrations', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'list_webhooks', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'list_hubspot_properties', ok: {}, invalid: { workspace_id: 3 } },
+  { tool: 'list_event_types', ok: { provider: 'calendly' }, invalid: { provider: 'outlook' } },
   { tool: 'list_calendly_event_types', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'get_my_profile', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'get_workspace_link_code', ok: {}, invalid: { workspace_id: 3 } },
@@ -139,7 +140,11 @@ describe('the catalog', () => {
     const names = new Set(CATALOG.map((t) => t.name));
     for (const [route, tool] of Object.entries(API_ROUTE_TOOLS)) expect(names.has(tool), route).toBe(true);
     const mapped = new Set(Object.values(API_ROUTE_TOOLS));
-    for (const t of PARITY_TOOLS) expect(mapped.has(t.name), t.name).toBe(true);
+    for (const t of PARITY_TOOLS) expect(mapped.has(t.name) || mapped.has(TOOL_ALIASES[t.name] ?? ''), t.name).toBe(true);
+    for (const [alias, tool] of Object.entries(TOOL_ALIASES)) {
+      expect(names.has(alias), alias).toBe(true);
+      expect(mapped.has(tool), `${alias} -> ${tool}`).toBe(true);
+    }
     for (const route of Object.keys(API_ROUTE_EXCLUSIONS)) expect(API_ROUTE_TOOLS[route], route).toBeUndefined();
   });
 

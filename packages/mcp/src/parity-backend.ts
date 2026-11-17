@@ -13,7 +13,7 @@
  * issues for a body the route refuses).
  */
 import type { SubmissionFacets, SubmissionsSummary, SummaryAnswer } from '@quill/engine';
-import type { FormDetail, McpCaller, ResponseItem, ResponseStatus } from './backend';
+import type { DestinationWarning, FormDetail, McpCaller, ResponseItem, ResponseStatus } from './backend';
 
 /** One folder of the workspace. */
 export interface FolderItem {
@@ -127,6 +127,13 @@ export interface DestinationsResult {
    * save had no reason to look at row 1. The save itself went through either way.
    */
   sheetHeaders: SheetHeaderRowResult | null;
+  /**
+   * What the save went through with but delivers nothing yet, as the REST
+   * route reports it (`warnings`): an entry whose provider is not connected
+   * (stored as it already was), or a spreadsheet with no sheet or no headed
+   * column. Absent or empty when there is nothing to say.
+   */
+  warnings?: DestinationWarning[];
 }
 
 /** The header-row outcome of a destinations save. See the REST route's `sheetHeaders`. */

@@ -97,6 +97,7 @@ import { AdminService } from './admin.service';
 import { SubmissionService } from './submission.service';
 import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
+import { isAgentPrincipal } from './auth.provider';
 import { createdVia } from './api-keys';
 import { WorkspaceService } from './workspace.service';
 import { EmailEffects } from './email-effects';
@@ -105,6 +106,13 @@ import { UploadService } from './upload.service';
 import { unwrap } from './http';
 import { parse } from './validation';
 import { keyFormBodyIssues, keyNormalizedConfig } from './strict-config';
+import {
+  connectedDestinationProviders,
+  unavailableDestinationProviders,
+  connectionVerdict,
+  INTEGRATION_NOT_CONNECTED,
+  integrationsPageUrl,
+} from './destination-connections';
 import type { ServerEnv } from '@quill/config/env';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
@@ -618,6 +626,35 @@ export class AdminCrudController {
         message: ONE_SALESFORCE_DESTINATION_MESSAGE,
       });
     }
+    // A Sheets or Salesforce destination with no connection behind it would
+    // deliver into nothing, exactly as on PUT /forms/:id/destinations, so the
+    // same rule runs here with nothing stored to compare against: every
+    // enabled entry is new. An agent is refused, a session is warned.
+    // Duplicate is exempt on purpose: it copies a form of the SAME account,
+    // whose connections are the same ones, so the copy promises nothing the
+    // source does not, and the source's entries are stored state, which this
+    // rule never refuses.
+    const sentDestinations = (input.config as { destinations?: unknown } | undefined)?.destinations;
+    const verdict = Array.isArray(sentDestinations)
+      ? connectionVerdict({
+          incoming: sentDestinations,
+          stored: [],
+          connected: await connectedDestinationProviders(this.db, p.accountId, this.env),
+          unavailable: unavailableDestinationProviders(this.env),
+          agent: isAgentPrincipal(p),
+          integrationsUrl: integrationsPageUrl(this.env?.PUBLIC_APP_URL),
+          strip: (e) => e,
+        })
+      : { refusal: null, warnings: [] };
+    if (verdict.refusal) {
+      throw new BadRequestException({
+        error: INTEGRATION_NOT_CONNECTED,
+        message: verdict.refusal.message,
+        provider: verdict.refusal.type,
+        index: verdict.refusal.index,
+        integrationsUrl: verdict.refusal.integrationsUrl,
+      });
+    }
     // New forms are born on-brand: snapshot the workspace brand kit into the
     // initial config's `branding`. Server-side so API-created forms inherit the
     // kit exactly like dashboard-created ones. Caller-supplied branding wins
@@ -648,7 +685,8 @@ export class AdminCrudController {
       await createForm(this.db, p.accountId, { ...input, config, createdVia: via }, p.memberId),
     );
     await this.productAnalytics?.captureForMember('form_created', p, { form_id: created.id, via });
-    return this.formView(p.accountId, created);
+    const view = await this.formView(p.accountId, created);
+    return verdict.warnings.length ? { ...view, warnings: verdict.warnings } : view;
   }
 
   /**

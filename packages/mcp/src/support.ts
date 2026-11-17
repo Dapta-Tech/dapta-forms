@@ -309,6 +309,9 @@ const ACTIONABLE: Record<string, { message?: string; hint: string }> = {
     hint: "The key's owner lacks the role for this. Tell the user; an owner or admin of the workspace can do it.",
   },
   KEY_NOT_ALLOWED: { hint: 'This can only be done in the dForms dashboard. Tell the user.' },
+  INTEGRATION_NOT_CONNECTED: {
+    hint: "The message holds the dForms integrations page. Connecting Google or Salesforce is a consent screen in the user's browser, which no tool can open: the link goes to the user, and once list_integrations shows the provider connected, the same call can be sent again.",
+  },
   MEMBER_NOT_ACTIVE: {
     hint: 'You were removed from this workspace, or your access there was turned off. Call list_my_workspaces to see where you can act, and tell the user.',
   },

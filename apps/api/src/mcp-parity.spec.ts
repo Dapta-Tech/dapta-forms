@@ -16,6 +16,7 @@ import { LinkPageController } from './link-page.controller';
 import { FormDestinationsController, IntegrationsController } from './integrations.controller';
 import { MCP_ANALYTICS_HANDLERS, MCP_FORM_HANDLERS, keyAllowedRoutes } from './mcp.backend';
 import { MCP_PARITY_HANDLERS, cutCsv } from './mcp.backend.parity';
+import { inProcessRequest } from './in-process-principal';
 
 const tools = new Map(CATALOG.map((t) => [t.name, t]));
 
@@ -64,6 +65,18 @@ describe('the MCP against the API reference', () => {
       if (!tool) continue;
       expect(/Owners and admins only/.test(tool.description), `${e.route} -> ${tool.name}`).toBe(e.adminOnly === true);
     }
+  });
+});
+
+describe('dCal event types over the MCP', () => {
+  it('cannot be wired: the route stays off the API-key allowlist, so the boot check refuses it as an MCP handler', () => {
+    expect(() => keyAllowedRoutes(IntegrationsController, ['dcalEventTypes'] as never)).toThrow(/not on the API-key route allowlist/);
+    expect(MCP_PARITY_HANDLERS.integrations).not.toContain('dcalEventTypes' as never);
+  });
+
+  it('would have no session to forward anyway: an in-process request carries no Authorization header', () => {
+    const req = inProcessRequest({ accountId: 'acc', memberId: 'mem' });
+    expect(req.headers).toEqual({});
   });
 });
 

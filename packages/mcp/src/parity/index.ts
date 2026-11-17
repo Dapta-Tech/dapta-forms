@@ -6,7 +6,7 @@ import { deleteForm, duplicateForm, moveForm, setFormSlug } from './forms';
 import { getMyProfile, getWorkspaceLinkCode } from './identity';
 import { createLinkPage, deleteLinkPage, duplicateLinkPage, getLinkPage, listLinkPages, updateLinkPage } from './link-page';
 import { getFormSummary, getResponseFacets, searchAnswers } from './insights';
-import { listCalendlyEventTypes, listHubspotProperties, listIntegrations, listWebhooks } from './integrations';
+import { listCalendlyEventTypes, listEventTypes, listHubspotProperties, listIntegrations, listWebhooks } from './integrations';
 import {
   listFormNotifications,
   listNotifications,
@@ -70,6 +70,7 @@ export const PARITY_TOOLS: readonly ToolDef[] = [
   listIntegrations,
   listWebhooks,
   listHubspotProperties,
+  listEventTypes,
   listCalendlyEventTypes,
   // Identity
   getMyProfile,
@@ -142,11 +143,20 @@ export const API_ROUTE_TOOLS: Readonly<Record<string, string>> = {
   'GET /v1/integrations': 'list_integrations',
   'GET /v1/integrations/webhooks': 'list_webhooks',
   'GET /v1/integrations/hubspot/properties': 'list_hubspot_properties',
-  'GET /v1/integrations/calendly/event-types': 'list_calendly_event_types',
+  'GET /v1/integrations/calendly/event-types': 'list_event_types',
 
   'GET /v1/me': 'whoami',
   'GET /v1/me/profile': 'get_my_profile',
   'GET /v1/vanity': 'get_workspace_link_code',
+};
+
+/**
+ * Tools kept under an earlier name, each with the tool that now serves its
+ * route. An alias answers exactly as it did, so a client that calls it by the
+ * old name keeps working; the route map names the current tool.
+ */
+export const TOOL_ALIASES: Readonly<Record<string, string>> = {
+  list_calendly_event_types: 'list_event_types',
 };
 
 /**

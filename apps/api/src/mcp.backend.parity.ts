@@ -227,6 +227,9 @@ export class ApiMcpBackend extends ApiFormsBackend implements FormsBackend {
         // The route's own header-row outcome, so an agent that changed the
         // columns can tell row 1 was left alone (foreign, stale or failed).
         sheetHeaders: out.sheetHeaders ?? null,
+        // Entries stored that deliver nothing yet (a provider not connected, a
+        // spreadsheet with no sheet), so the agent does not report "done".
+        warnings: out.warnings ?? [],
       };
     });
   }

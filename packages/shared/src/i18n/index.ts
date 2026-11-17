@@ -5156,6 +5156,7 @@ export const en: FormsMessages = {
           ping_webhook: { what: 'Send a test to a webhook.', ask: 'Test the webhook of my lead form' },
           list_deliveries: { what: 'See which responses were delivered and which failed.', ask: 'Did my last responses reach HubSpot?' },
           list_hubspot_properties: { what: 'See the HubSpot fields a question can fill.', ask: 'Which HubSpot fields can I map?' },
+          list_event_types: { what: 'See the Calendly events a scheduler step can book.', ask: 'Which events can my form book?' },
           list_calendly_event_types: { what: 'See the Calendly events a form can book.', ask: 'Which Calendly events can my form book?' },
           whoami: { what: 'Check who is connected and in which workspace.', ask: 'Who am I connected as?' },
           list_my_workspaces: { what: 'See every workspace you can work in.', ask: 'Which workspaces can I use?' },
@@ -5292,7 +5293,7 @@ export const en: FormsMessages = {
         'GET /v1/forms':
           'Lists the workspace’s forms, most recently updated first, with their `publicUrl` and `editorUrl`.',
         'POST /v1/forms':
-          'Creates a form. The config is live at once. It is not idempotent: if a call fails or times out, list the forms before you try again.',
+          'Creates a form. The config is live at once. It is not idempotent: if a call fails or times out, list the forms before you try again. With an API key, an enabled Google Sheets or Salesforce destination in the config whose provider is not connected answers 400 `INTEGRATION_NOT_CONNECTED`, and `warnings` lists a spreadsheet destination with no sheet yet.',
         'GET /v1/forms/:id':
           'One form: the live `config`, the pending `draftConfig` (or `null`), when it was published and the stamp to send back as `expectedUpdatedAt`.',
         'PUT /v1/forms/:id':
@@ -5312,7 +5313,7 @@ export const en: FormsMessages = {
         'PATCH /v1/folders/:id': 'Renames a folder.',
         'DELETE /v1/folders/:id': 'Deletes a folder. Its forms are kept, outside any folder.',
         'PUT /v1/forms/:id/destinations':
-          'Replaces the form’s destinations (webhooks, HubSpot, Google Sheets and Salesforce). Takes effect at once, without publishing. When the change touches a spreadsheet’s columns, row 1 of the sheet is updated to match, unless it holds something dForms did not write, and `sheetHeaders` says what happened.',
+          'Replaces the form’s destinations (webhooks, HubSpot, Google Sheets and Salesforce). Takes effect at once, without publishing. When the change touches a spreadsheet’s columns, row 1 of the sheet is updated to match, unless it holds something dForms did not write, and `sheetHeaders` says what happened. With an API key, a new or changed enabled Google Sheets or Salesforce destination whose provider is not connected answers 400 `INTEGRATION_NOT_CONNECTED` with `integrationsUrl`, the page where it is connected in a browser; an entry sent back exactly as stored is kept, and `warnings` lists every enabled entry that delivers nothing yet.',
         'POST /v1/forms/:id/destinations/webhook/ping':
           'Sends a test event to the form’s webhook and tells you how the endpoint answered.',
         'GET /v1/forms/:id/submissions':
@@ -5354,7 +5355,8 @@ export const en: FormsMessages = {
         'PUT /v1/forms/:id/notifications/:emailKey': 'Gives one form its own version of an email.',
         'POST /v1/forms/:id/notifications/:emailKey/reset':
           'Removes the form’s own version, so it follows the workspace setting again.',
-        'GET /v1/integrations': 'Which integrations the workspace has connected. Never returns a token.',
+        'GET /v1/integrations':
+          'Which integrations the workspace has connected (HubSpot, Calendly, Google Sheets, Salesforce), which ones this deployment cannot connect (`unavailable`), and whether it has dCal (`dcal`). Never returns a token.',
         'GET /v1/integrations/webhooks': 'Every webhook the workspace’s forms send to, with its recent failures.',
         'GET /v1/integrations/hubspot/properties': 'The HubSpot contact properties a destination can map answers to.',
         'GET /v1/integrations/calendly/event-types': 'The Calendly event types a scheduler step can book.',
@@ -7973,6 +7975,7 @@ export const es: FormsMessages = {
           ping_webhook: { what: 'Envía una prueba a un webhook.', ask: 'Prueba el webhook de mi formulario de leads' },
           list_deliveries: { what: 'Mira qué respuestas se entregaron y cuáles fallaron.', ask: '¿Llegaron a HubSpot mis últimas respuestas?' },
           list_hubspot_properties: { what: 'Ve los campos de HubSpot que puede llenar una pregunta.', ask: '¿Qué campos de HubSpot puedo mapear?' },
+          list_event_types: { what: 'Ve los eventos de Calendly que puede agendar un paso de agenda.', ask: '¿Qué eventos puede agendar mi formulario?' },
           list_calendly_event_types: { what: 'Ve los eventos de Calendly que puede agendar un formulario.', ask: '¿Qué eventos de Calendly puede agendar mi formulario?' },
           whoami: { what: 'Revisa quién está conectado y en qué workspace.', ask: '¿Con qué cuenta estoy conectado?' },
           list_my_workspaces: { what: 'Ve todos los workspaces en los que puedes trabajar.', ask: '¿Qué workspaces puedo usar?' },
@@ -8109,7 +8112,7 @@ export const es: FormsMessages = {
         'GET /v1/forms':
           'Lista los forms del workspace, el último editado primero, con su `publicUrl` y su `editorUrl`.',
         'POST /v1/forms':
-          'Crea un form. La config queda publicada de inmediato. No es idempotente: si una llamada falla o se demora demasiado, lista los forms antes de volver a intentar.',
+          'Crea un form. La config queda publicada de inmediato. No es idempotente: si una llamada falla o se demora demasiado, lista los forms antes de volver a intentar. Con una API key, un destino activo de Google Sheets o Salesforce en la config cuyo proveedor no está conectado responde 400 `INTEGRATION_NOT_CONNECTED`, y `warnings` lista un destino de hoja que todavía no tiene hoja.',
         'GET /v1/forms/:id':
           'Un form: la `config` publicada, el borrador pendiente en `draftConfig` (o `null`), cuándo se publicó y el sello que debes mandar como `expectedUpdatedAt`.',
         'PUT /v1/forms/:id':
@@ -8129,7 +8132,7 @@ export const es: FormsMessages = {
         'PATCH /v1/folders/:id': 'Renombra una carpeta.',
         'DELETE /v1/folders/:id': 'Borra una carpeta. Sus forms se quedan, fuera de cualquier carpeta.',
         'PUT /v1/forms/:id/destinations':
-          'Reemplaza los destinos del form (webhooks, HubSpot, Google Sheets y Salesforce). Aplica de inmediato, sin publicar. Si el cambio toca las columnas de una hoja, la fila 1 se actualiza para coincidir, salvo que tenga algo que dForms no escribió, y `sheetHeaders` dice qué pasó.',
+          'Reemplaza los destinos del form (webhooks, HubSpot, Google Sheets y Salesforce). Aplica de inmediato, sin publicar. Si el cambio toca las columnas de una hoja, la fila 1 se actualiza para coincidir, salvo que tenga algo que dForms no escribió, y `sheetHeaders` dice qué pasó. Con una API key, un destino nuevo o cambiado de Google Sheets o Salesforce, activo, cuyo proveedor no está conectado responde 400 `INTEGRATION_NOT_CONNECTED` con `integrationsUrl`, la página donde se conecta desde un navegador; una entrada devuelta tal como está guardada se mantiene, y `warnings` lista cada entrada activa que todavía no entrega nada.',
         'POST /v1/forms/:id/destinations/webhook/ping':
           'Manda un evento de prueba al webhook del form y te dice cómo respondió el endpoint.',
         'GET /v1/forms/:id/submissions':
@@ -8171,7 +8174,8 @@ export const es: FormsMessages = {
         'PUT /v1/forms/:id/notifications/:emailKey': 'Le da a un form su propia versión de un correo.',
         'POST /v1/forms/:id/notifications/:emailKey/reset':
           'Quita la versión propia del form, que vuelve a seguir lo que define el workspace.',
-        'GET /v1/integrations': 'Qué integraciones conectó el workspace. Nunca devuelve un token.',
+        'GET /v1/integrations':
+          'Qué integraciones conectó el workspace (HubSpot, Calendly, Google Sheets, Salesforce), cuáles no puede conectar este despliegue (`unavailable`) y si tiene dCal (`dcal`). Nunca devuelve un token.',
         'GET /v1/integrations/webhooks': 'Todos los webhooks a los que mandan los forms del workspace, con sus fallas recientes.',
         'GET /v1/integrations/hubspot/properties': 'Las propiedades de contacto de HubSpot a las que un destino puede mapear respuestas.',
         'GET /v1/integrations/calendly/event-types': 'Los tipos de evento de Calendly que puede agendar un paso de agenda.',
