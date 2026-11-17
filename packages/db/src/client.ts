@@ -29,7 +29,14 @@ export interface SqliteNative {
   exec(script: string): void;
 }
 
-/** Native Postgres handle for the async atomic path. */
+/**
+ * Native Postgres handle for the async atomic path. Use it ONLY through
+ * `transaction`, with `tx.execute` inside: that is the one entry point that
+ * rethrows the driver error (see `rethrowDriverError`). Its query builders and
+ * its own `execute` throw drizzle's wrapper, whose message carries every bound
+ * parameter value, and so does a `tx.execute` failure caught INSIDE the
+ * callback.
+ */
 export interface PgNative {
   drizzle: PostgresJsDatabase;
 }
@@ -170,25 +177,22 @@ async function createPostgresDb(url: string): Promise<Db> {
   const { drizzle } = await import('drizzle-orm/postgres-js');
   const client = postgres(url, { max: 10 });
   const db = drizzle(client);
-  // Both entry points this package uses: `execute` behind all/get/run, and
-  // `transaction` for the native atomic paths (a failing `tx.execute` inside
-  // the callback propagates out of it). Patched on this one instance only.
-  const execute = db.execute.bind(db);
+  // all/get/run go through `rows`; the native atomic paths go through
+  // `transaction`, patched on this one instance (a failing `tx.execute` inside
+  // the callback propagates out of it). `transaction` already returns a plain
+  // Promise, so the patched one keeps its exact type.
   const transaction = db.transaction.bind(db);
-  db.execute = ((query: Parameters<typeof execute>[0]) =>
-    execute(query).catch(rethrowDriverError)) as typeof db.execute;
   db.transaction = ((...args: Parameters<typeof transaction>) =>
     transaction(...args).catch(rethrowDriverError)) as typeof db.transaction;
+  const rows = async <T>(query: SQL): Promise<T[]> =>
+    (await db.execute(query).catch(rethrowDriverError)) as unknown as T[];
 
   return {
     dialect: 'postgres',
-    all: async <T>(query: SQL) => (await db.execute(query)) as unknown as T[],
-    get: async <T>(query: SQL) => {
-      const rows = (await db.execute(query)) as unknown as T[];
-      return rows[0];
-    },
+    all: <T>(query: SQL) => rows<T>(query),
+    get: async <T>(query: SQL) => (await rows<T>(query))[0],
     run: async (query: SQL) => {
-      await db.execute(query);
+      await rows(query);
     },
     execRaw: async (sqlText: string) => {
       await client.unsafe(sqlText);
