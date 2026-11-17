@@ -278,6 +278,12 @@ export class DestinationEffects {
    * to the wrong place entirely.
    */
   private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
+    if (destination.type === 'gohighlevel') {
+      // Nothing to resolve yet: there is no connection to read and no adapter
+      // to hand it to, so the factory turns this into its named no-op. This is
+      // where the account's credentials and the field types will be read.
+      return { type: 'gohighlevel' };
+    }
     if (destination.type === 'salesforce') {
       // Minted from the account's Client Credentials at DELIVERY time, cached
       // per account. Null when not connected or the org refused, which the

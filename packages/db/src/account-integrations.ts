@@ -28,7 +28,7 @@ import { encryptToken, decryptToken, tokenLast4 } from './crypto';
  * string per account, so the storage contract holds; the caller passes the
  * `last4` to show, since the tail of a JSON string is a closing brace.
  */
-export const integrationProviders = ['hubspot', 'calendly', 'google-sheets', 'salesforce'] as const;
+export const integrationProviders = ['hubspot', 'calendly', 'google-sheets', 'salesforce', 'gohighlevel'] as const;
 export type IntegrationProvider = (typeof integrationProviders)[number];
 
 export interface IntegrationMeta {

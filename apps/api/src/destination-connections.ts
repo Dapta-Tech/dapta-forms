@@ -47,6 +47,9 @@ export const DESTINATION_INCOMPLETE = 'DESTINATION_INCOMPLETE';
 export const CONNECTED_DESTINATIONS = {
   'google-sheets': 'Google Sheets',
   salesforce: 'Salesforce',
+  // Nothing can connect HighLevel yet (there is no connect route), so an
+  // agent's HighLevel entry is always refused here and a browser's is warned.
+  gohighlevel: 'HighLevel',
 } as const;
 export type ConnectedDestinationType = keyof typeof CONNECTED_DESTINATIONS;
 

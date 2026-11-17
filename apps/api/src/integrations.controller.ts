@@ -40,13 +40,12 @@ import {
   formDestinationSchema,
   MAX_SHEET_COLUMNS,
   hasExtraHubspotDestination,
-  hasExtraSalesforceDestination,
+  extraOnePerFormDestination,
   sheetBaselineHeaders,
   sheetCells,
   writtenSheetHeaders,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
-  ONE_SALESFORCE_DESTINATION_MESSAGE,
   type DestinationEvent,
   type FormDestination,
 } from '@quill/types';
@@ -1522,12 +1521,9 @@ export class FormDestinationsController {
         message: ONE_HUBSPOT_DESTINATION_MESSAGE,
       });
     }
-    if (hasExtraSalesforceDestination(destinations, stored)) {
-      throw new BadRequestException({
-        error: 'BAD_REQUEST',
-        message: ONE_SALESFORCE_DESTINATION_MESSAGE,
-      });
-    }
+    // The same rule for every other one-per-form kind (Salesforce, HighLevel).
+    const extra = extraOnePerFormDestination(destinations, stored);
+    if (extra) throw new BadRequestException({ error: 'BAD_REQUEST', message: extra.message });
     // Bring the HubSpot mirror form in line BEFORE storing, so the guid it
     // returns is written in the same request that created it — no window where
     // a form exists in the portal that nothing points at. A HubSpot failure
