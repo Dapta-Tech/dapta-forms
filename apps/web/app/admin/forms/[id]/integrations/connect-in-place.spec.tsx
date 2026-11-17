@@ -171,7 +171,7 @@ describe('the autosave pill', () => {
     expect(fixed().textContent).toBe(m.autosavedPendingSheet);
   });
 
-  it('folds a plain "saved" to its check after a moment, keeping the sentence for screen readers', async () => {
+  it('folds a plain "saved" to a short, flat status after a moment', async () => {
     vi.useFakeTimers();
     try {
       await render(<SaveStatusPill status="saved" detail={null} m={m} />);
@@ -180,10 +180,27 @@ describe('the autosave pill', () => {
         vi.advanceTimersByTime(3000);
       });
       expect(fixed().getAttribute('data-folded')).toBe('true');
-      expect(fixed().getAttribute('title')).toBe(m.autosaved);
-      expect(fixed().querySelector('.sr-only')?.textContent).toBe(m.autosaved);
+      // Its words are on screen (no hover or tap needed), and it is a status:
+      // no shadow, no button role, and taps pass through to what is under it.
+      expect(fixed().textContent).toBe(m.autosavedShort);
+      expect(fixed().getAttribute('role')).toBe('status');
+      expect(fixed().className).toContain('pointer-events-none');
+      expect(fixed().className).not.toContain('shadow');
+      expect(fixed().querySelector('button')).toBeNull();
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it('is short from the start on a phone, so it never sits on a row in view', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q.includes('max-width: 639px'), media: q })) as never;
+    try {
+      await render(<SaveStatusPill status="saved" detail={null} m={m} />);
+      expect(fixed().getAttribute('data-folded')).toBe('true');
+      expect(fixed().textContent).toBe(m.autosavedShort);
+    } finally {
+      window.matchMedia = original;
     }
   });
 

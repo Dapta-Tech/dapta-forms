@@ -8,6 +8,7 @@ import type { SheetColumn } from '@quill/types';
 import { mappableQuestions, type QuestionMeta } from './auto-map';
 import {
   defaultColumns,
+  columnMissing,
   isCompleteColumn,
   moveColumn,
   sameHeaders,
@@ -88,17 +89,27 @@ describe('isCompleteColumn', () => {
 });
 
 describe('storedColumns', () => {
-  it('drops the incomplete rows and trims the rest', () => {
+  it('keeps the incomplete rows (they survive a reload) and trims every row', () => {
     const columns: SheetColumn[] = [
       { header: '  Email  ', source: 'answer', key: ' email ' },
       { header: '', source: 'score' },
-      { header: 'Unfinished', source: 'answer' },
+      { header: 'Unfinished', source: 'answer', key: '  ' },
       { header: 'Score', source: 'score' },
     ];
     expect(storedColumns(columns)).toEqual([
       { header: 'Email', source: 'answer', key: 'email' },
+      { header: '', source: 'score' },
+      { header: 'Unfinished', source: 'answer' },
       { header: 'Score', source: 'score' },
     ]);
+  });
+
+  it('names exactly what an unfinished row still needs', () => {
+    expect(columnMissing({ header: 'booking', source: 'answer' })).toBe('source');
+    expect(columnMissing({ header: '', source: 'answer', key: 'email' })).toBe('header');
+    expect(columnMissing({ header: ' ', source: 'utm' })).toBe('both');
+    expect(columnMissing({ header: '', source: 'score' })).toBe('header');
+    expect(columnMissing({ header: 'Score', source: 'score' })).toBeNull();
   });
 
   it('leaves no key behind on a source that takes none', () => {

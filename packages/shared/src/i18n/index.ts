@@ -1800,6 +1800,8 @@ export interface FormsMessages {
        * which stores nothing: said instead of a plain "saved".
        */
       autosavedPendingSheet: string;
+      /** The folded save pill's label, a word or two. */
+      autosavedShort: string;
       /** V5-QA — saved, except one card that has a problem of its own. */
       autosavedPartial: string;
       saveError: string;
@@ -2131,6 +2133,11 @@ export interface FormsMessages {
          */
         columnPendingOne: string;
         columnPendingMany: string;
+        /** Under one unfinished column row: exactly what it still needs. */
+        rowNeedsAnswer: string;
+        rowNeedsUtm: string;
+        rowNeedsHeader: string;
+        rowNeedsBoth: string;
         /** Row 1 does not match the columns, so nothing was overwritten on its own. */
         headersNotEmpty: string;
         headersFailed: string;
@@ -4279,6 +4286,7 @@ export const en: FormsMessages = {
       saved: 'Integrations saved.',
       autosaved: 'Changes saved automatically',
       autosavedPendingSheet: 'Saved. Google Sheets starts sending once it has a spreadsheet.',
+      autosavedShort: 'Saved',
       autosavedPartial: 'Saved everything except the webhook.',
       saveError: 'Could not save integrations.',
       saveOffline:
@@ -4566,10 +4574,12 @@ export const en: FormsMessages = {
         writeHeaders: 'Update the header row',
         headersWritten: 'Row 1 of the sheet now matches these columns.',
         headersUnchanged: 'Row 1 of the sheet already matches these columns.',
-        columnPendingOne:
-          'Column {cols} is not in the sheet yet: give it a heading and choose what fills it, and it is written to row 1.',
-        columnPendingMany:
-          'Columns {cols} are not in the sheet yet: give each a heading and choose what fills it, and they are written to row 1.',
+        columnPendingOne: 'Column {cols} is saved, and goes into the sheet once it is complete.',
+        columnPendingMany: 'Columns {cols} are saved, and go into the sheet once they are complete.',
+        rowNeedsAnswer: 'Choose which answer fills it to write it to the sheet.',
+        rowNeedsUtm: 'Choose which campaign tag fills it to write it to the sheet.',
+        rowNeedsHeader: 'Give it a heading to write it to the sheet.',
+        rowNeedsBoth: 'Give it a heading and choose what fills it to write it to the sheet.',
         headersNotEmpty: 'Row 1 of the sheet does not match these columns, so it was not changed on its own.',
         headersFailed: 'The header row could not be updated. Your columns are saved.',
         headersColumn: 'Column',
@@ -7040,6 +7050,7 @@ export const es: FormsMessages = {
       saved: 'Integraciones guardadas.',
       autosaved: 'Cambios guardados automáticamente',
       autosavedPendingSheet: 'Guardado. Google Sheets empieza a enviar cuando tenga una hoja.',
+      autosavedShort: 'Guardado',
       autosavedPartial: 'Se guardó todo menos el webhook.',
       saveError: 'No se pudieron guardar las integraciones.',
       saveOffline:
@@ -7330,10 +7341,12 @@ export const es: FormsMessages = {
         writeHeaders: 'Actualizar encabezados en la hoja',
         headersWritten: 'La fila 1 de la hoja quedó igual a estas columnas.',
         headersUnchanged: 'La fila 1 de la hoja ya coincide con estas columnas.',
-        columnPendingOne:
-          'La columna {cols} todavía no está en la hoja: ponle un encabezado y elige qué la llena, y se escribe en la fila 1.',
-        columnPendingMany:
-          'Las columnas {cols} todavía no están en la hoja: ponle a cada una un encabezado y elige qué la llena, y se escriben en la fila 1.',
+        columnPendingOne: 'La columna {cols} quedó guardada y entra en la hoja cuando esté completa.',
+        columnPendingMany: 'Las columnas {cols} quedaron guardadas y entran en la hoja cuando estén completas.',
+        rowNeedsAnswer: 'Elige qué respuesta la llena para escribirla en la hoja.',
+        rowNeedsUtm: 'Elige qué etiqueta de campaña la llena para escribirla en la hoja.',
+        rowNeedsHeader: 'Ponle un encabezado para escribirla en la hoja.',
+        rowNeedsBoth: 'Ponle un encabezado y elige qué la llena para escribirla en la hoja.',
         headersNotEmpty: 'La fila 1 de la hoja no coincide con estas columnas, así que no se cambió sola.',
         headersFailed: 'No se pudo actualizar la fila de encabezados. Tus columnas sí quedaron guardadas.',
         headersColumn: 'Columna',

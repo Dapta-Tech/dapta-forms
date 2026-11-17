@@ -518,8 +518,41 @@ describe('the header row', () => {
     });
     const line = el.querySelector('[data-testid="gsheets-header-sync"]')!;
     expect(line.textContent).toBe(m.gsheets.columnPendingOne.replace('{cols}', 'B'));
+    expect(line.textContent).toMatch(/saved/);
     expect(line.textContent).not.toContain(m.gsheets.headersUnchanged);
     expect(line.getAttribute('data-tone')).toBe('info');
+  });
+
+  it('tells each unfinished row exactly what it still needs', async () => {
+    const { el } = await mount({
+      state: {
+        ...STORED,
+        columns: [
+          ...STORED.columns,
+          { header: 'booking', source: 'answer' },
+          { header: '', source: 'answer', key: 'email' },
+          { header: 'Source', source: 'utm' },
+          { header: '', source: 'answer' },
+        ],
+      },
+      formId: 'form-1',
+    });
+    const hints = [...el.querySelectorAll('[data-testid="gsheets-column-missing"]')].map((h) => h.textContent);
+    expect(hints).toEqual([
+      m.gsheets.rowNeedsAnswer,
+      m.gsheets.rowNeedsHeader,
+      m.gsheets.rowNeedsUtm,
+      m.gsheets.rowNeedsBoth,
+    ]);
+    // Complete rows say nothing.
+    expect(el.querySelectorAll('[data-testid="gsheets-column"]')[0]!.querySelector('[data-testid="gsheets-column-missing"]')).toBeNull();
+  });
+
+  it('shows the row-1 mismatch above the column list', async () => {
+    const { el } = await mount({ state: STORED, formId: 'form-1', headerSync: MISMATCH });
+    const panel = el.querySelector('[data-testid="gsheets-header-mismatch"]')!;
+    const list = el.querySelector('[data-testid="gsheets-column"]')!;
+    expect(panel.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('only promises Google Drive where the Picker is there', async () => {

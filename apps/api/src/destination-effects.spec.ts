@@ -233,6 +233,29 @@ describe('per-event trigger filter (enqueue-time)', () => {
     };
   }
 
+  it('skips a Google Sheets destination stored mid-setup, and enqueues a finished one', async () => {
+    // Stored so the author's switch and half-typed columns survive a reload;
+    // never handed to an adapter that could only log a no-op per submission.
+    const noSheet = { type: 'google-sheets', enabled: true, settings: {}, columns: [] };
+    const unfinished = {
+      type: 'google-sheets',
+      enabled: true,
+      settings: { spreadsheetId: 'sheet-1' },
+      columns: [{ header: 'booking', source: 'answer' }],
+    };
+    const ready = {
+      type: 'google-sheets',
+      enabled: true,
+      settings: { spreadsheetId: 'sheet-1' },
+      columns: [{ header: 'Email', source: 'answer', key: 'email' }, { header: '', source: 'score' }],
+    };
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-gs-1', [noSheet]));
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-gs-2', [unfinished]));
+    expect(await listOutbox(db, { kind: 'google-sheets' })).toHaveLength(0);
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-gs-3', [ready]));
+    expect(await listOutbox(db, { kind: 'google-sheets', subjectUid: 'sub-gs-3' })).toHaveLength(1);
+  });
+
   it("events:['complete'] enqueues on complete but NOT on partial", async () => {
     const dest = {
       type: 'webhook',

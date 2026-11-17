@@ -7,7 +7,7 @@
  * incomplete, what moving a row means) are worth testing without mounting an
  * editor around them.
  */
-import type { SheetColumn, SheetColumnSource } from '@quill/types';
+import { isWritableSheetColumn, type SheetColumn, type SheetColumnSource } from '@quill/types';
 import type { QuestionMeta } from './auto-map';
 
 /** The headers of the columns that are not questions, in the author's language. */
@@ -51,25 +51,34 @@ export function defaultColumns(
   ];
 }
 
-/** Does this row say enough to write a cell? */
+/**
+ * Does this row say enough to write a cell? The API's own rule
+ * (`isWritableSheetColumn`), so the editor, the header row and every
+ * delivered row agree on which columns are in the sheet.
+ */
 export function isCompleteColumn(column: SheetColumn): boolean {
-  if (!column.header.trim()) return false;
-  // `answer` and `utm` name something; every other source is complete alone.
-  if (column.source === 'answer' || column.source === 'utm') return !!column.key?.trim();
-  return true;
+  return isWritableSheetColumn(column);
+}
+
+/** What a column still needs before it goes into the sheet, or null when complete. */
+export function columnMissing(column: SheetColumn): 'header' | 'source' | 'both' | null {
+  const noHeader = !column.header.trim();
+  const noSource = (column.source === 'answer' || column.source === 'utm') && !column.key?.trim();
+  return noHeader && noSource ? 'both' : noHeader ? 'header' : noSource ? 'source' : null;
 }
 
 /**
- * The plan as it should be STORED: incomplete rows dropped, headers trimmed.
+ * The plan as it should be STORED: every row, incomplete ones included,
+ * headers trimmed and empty keys left out.
  *
- * Dropping rather than refusing the save is deliberate. The editor autosaves,
- * so a half-typed row exists on the way to every complete one; refusing would
- * mean an author cannot add a column without the screen complaining at them
- * mid-keystroke. A dropped row is still on screen, so nothing disappears from
- * under them: it simply does not reach the spreadsheet until it says something.
+ * Incomplete rows used to be dropped here, which made the save pill's
+ * "saved" a lie about them: a column with a heading and no answer yet was on
+ * screen, called saved, and gone after a reload. Stored, it survives; the
+ * API leaves it out of the sheet (row 1 and every delivered row) until it is
+ * complete, so storing it changes nothing a respondent's row looks like.
  */
 export function storedColumns(columns: SheetColumn[]): SheetColumn[] {
-  return columns.filter(isCompleteColumn).map((c) => ({
+  return columns.map((c) => ({
     header: c.header.trim(),
     source: c.source,
     ...(c.key?.trim() ? { key: c.key.trim() } : {}),

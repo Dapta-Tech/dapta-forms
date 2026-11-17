@@ -23,7 +23,7 @@ import {
   syncSheetHeadersAction,
 } from './actions';
 import { pickSpreadsheet } from './google-picker';
-import { defaultColumns, isCompleteColumn, moveColumn } from './sheet-columns';
+import { columnMissing, defaultColumns, isCompleteColumn, moveColumn } from './sheet-columns';
 import { sheetUrlFor } from './sheet-url';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -505,6 +505,17 @@ export function GoogleSheetsCard({
               </div>
             </div>
 
+            {/* ABOVE the column list: it is about the whole row 1, and on a
+                phone a list of stacked columns would push it out of sight. */}
+            {headerSync?.outcome === 'foreign' ? (
+              <HeaderMismatch
+                sync={headerSync}
+                pending={pending}
+                onReplace={() => void syncHeaders(true)}
+                m={m.gsheets}
+              />
+            ) : null}
+
             {state.columns.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
                 {m.gsheets.noColumns}
@@ -531,6 +542,7 @@ export function GoogleSheetsCard({
                   <ul className="divide-y divide-border">
                     {state.columns.map((column, index) => {
                       const takesKey = column.source === 'answer' || column.source === 'utm';
+                      const missing = columnMissing(column);
                       return (
                         <li
                           key={index}
@@ -625,6 +637,24 @@ export function GoogleSheetsCard({
                               onClick={() => setColumns(state.columns.filter((_, i) => i !== index))}
                             />
                           </div>
+                          {/* What THIS row still needs, exactly: the row is
+                              saved, it is just not in the sheet yet. */}
+                          {missing ? (
+                            <p
+                              data-testid="gsheets-column-missing"
+                              data-missing={missing}
+                              className="col-[1/-1] flex items-start gap-1.5 text-xs text-muted-foreground @2xl:col-[2/-1]"
+                            >
+                              <i aria-hidden className="pi pi-info-circle mt-px shrink-0" style={{ fontSize: 12 }} />
+                              {missing === 'header'
+                                ? m.gsheets.rowNeedsHeader
+                                : missing === 'both'
+                                  ? m.gsheets.rowNeedsBoth
+                                  : column.source === 'utm'
+                                    ? m.gsheets.rowNeedsUtm
+                                    : m.gsheets.rowNeedsAnswer}
+                            </p>
+                          ) : null}
                         </li>
                       );
                     })}
@@ -632,15 +662,6 @@ export function GoogleSheetsCard({
                 </div>
               </div>
             )}
-
-            {headerSync?.outcome === 'foreign' ? (
-              <HeaderMismatch
-                sync={headerSync}
-                pending={pending}
-                onReplace={() => void syncHeaders(true)}
-                m={m.gsheets}
-              />
-            ) : null}
 
             {syncLine ? (
               <p

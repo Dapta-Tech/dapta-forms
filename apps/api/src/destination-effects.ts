@@ -15,6 +15,8 @@ import {
 } from '@quill/destinations';
 import {
   destinationFiresForPhase,
+  destinationIsDeliverable,
+  writableSheetColumns,
   formConfigSchema,
   formDestinationSchema,
   type FormDestination,
@@ -118,6 +120,10 @@ export class DestinationEffects {
       const enabled = destinations
         .map((destination, index) => ({ destination, index }))
         .filter(({ destination }) => destination.enabled !== false)
+        // A destination stored mid-setup (a spreadsheet card switched on with
+        // no spreadsheet or no complete column yet) is skipped here, not
+        // handed to an adapter that could only log a no-op per submission.
+        .filter(({ destination }) => destinationIsDeliverable(destination))
         // Per-event trigger filter: a destination with an `events` list only fires
         // for the phases it names (webhook `events:['complete']` skips partials, and
         // vice versa). Absent/empty `events` fires on BOTH phases (back-compat), and
@@ -318,7 +324,9 @@ export class DestinationEffects {
           accessToken,
           spreadsheetId: destination.settings?.spreadsheetId ?? '',
           sheetTitle: destination.settings?.sheetTitle ?? undefined,
-          columns: destination.columns ?? [],
+          // Only complete columns: the same ones the header row holds, so a
+          // column the author is still filling in shifts nothing.
+          columns: writableSheetColumns(destination.columns),
         },
       };
     }

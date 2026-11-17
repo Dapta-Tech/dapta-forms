@@ -41,6 +41,7 @@ import {
   MAX_SHEET_COLUMNS,
   hasExtraHubspotDestination,
   hasExtraSalesforceDestination,
+  isWritableSheetColumn,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
   ONE_SALESFORCE_DESTINATION_MESSAGE,
@@ -1363,12 +1364,19 @@ interface SheetHeaderSnapshot {
  */
 const SHEETS_SAVE_TIMEOUT_MS = 4_000;
 
-/** The headers a destination's columns put in row 1, in order. */
+/**
+ * The headers a destination's columns put in row 1, in order: the complete
+ * columns only (`isWritableSheetColumn`), the same ones every delivered row
+ * holds, so a column still being filled in shifts nothing in the sheet.
+ */
 function sheetHeadersOf(entry: Record<string, unknown> | undefined): string[] {
   const columns = Array.isArray(entry?.columns) ? entry.columns : [];
   return columns
-    .map((c) => (isRecord(c) && typeof c.header === 'string' ? c.header.trim() : ''))
-    .filter((h) => h !== '');
+    .filter(
+      (c): c is { header: string; source: string; key?: string } =>
+        isRecord(c) && typeof c.header === 'string' && typeof c.source === 'string' && isWritableSheetColumn(c as never),
+    )
+    .map((c) => c.header.trim());
 }
 
 /** Where a destination writes: its spreadsheet and tab (`''` is the first tab). */

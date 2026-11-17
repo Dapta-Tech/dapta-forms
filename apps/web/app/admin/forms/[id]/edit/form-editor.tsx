@@ -65,6 +65,7 @@ import { stepFromGalleryItem, stepListLabel, type GalleryItem } from './_compone
 import { TEMPLATES } from './_components/templates';
 import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
+import { useIntegrationsSave, worseSaveStatus } from '@/lib/integrations-save-status';
 import './_components/builder.css';
 
 const AUTOSAVE_MS = 900;
@@ -445,7 +446,15 @@ export function FormEditor({
     initiallyDirty: config !== initialConfig,
     debounceMs: AUTOSAVE_MS,
   });
-  const status = autosave.status;
+  // The topbar speaks for BOTH saves: the form's, and the Connect tab's
+  // integrations (a separate autosave). Whichever is worse wins, so it never
+  // says "Saved" while the integrations failed to save.
+  const integrationsSave = useIntegrationsSave(id);
+  const status = worseSaveStatus(autosave.status, integrationsSave?.status);
+  const statusDetailText =
+    integrationsSave && integrationsSave.status === status && status !== 'saved'
+      ? (integrationsSave.detail ?? null)
+      : autosave.detail;
 
   // --- Crash recovery: work the backup caught that never reached the server --
   const [recovery, setRecovery] = useState<EditorSnapshot | null>(null);
@@ -986,14 +995,14 @@ export function FormEditor({
           <span
             className={cn(
               'hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground xl:inline-flex',
-              (status === 'error' || status === 'retrying') && autosave.detail ? 'cursor-help' : '',
+              (status === 'error' || status === 'retrying') && statusDetailText ? 'cursor-help' : '',
             )}
             data-testid="editor-save-status"
             data-status={displayStatus}
             // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
             title={
-              (status === 'error' || status === 'retrying') && autosave.detail
-                ? tb(m.saveErrorReason, { reason: autosave.detail })
+              (status === 'error' || status === 'retrying') && statusDetailText
+                ? tb(m.saveErrorReason, { reason: statusDetailText })
                 : undefined
             }
           >

@@ -94,19 +94,18 @@ describe('a stored spreadsheet destination round-trips through the card', () => 
     expect(builtGoogleSheets(state)).toBeNull();
   });
 
-  it('stores nothing while the card is incomplete', () => {
-    // Either half missing means every delivery would degrade to a no-op, which
-    // the author would only discover in a history full of them.
+  it('stores an unfinished card as it stands, so a reload brings it back', () => {
+    // Switched on with no spreadsheet, or a spreadsheet with no column yet:
+    // both are stored. The API never delivers to them (see
+    // `destinationIsDeliverable`); the point is that the switch the save pill
+    // called saved is still on after a reload.
     const noSheet = { ...initialGoogleSheets([sheets()]), spreadsheetId: '' };
-    expect(builtGoogleSheets(noSheet)).toBeNull();
+    expect(builtGoogleSheets(noSheet)).toMatchObject({ type: 'google-sheets', enabled: true, settings: {} });
     const noColumns = { ...initialGoogleSheets([sheets()]), columns: [] };
-    expect(builtGoogleSheets(noColumns)).toBeNull();
+    expect(builtGoogleSheets(noColumns)).toMatchObject({ settings: { spreadsheetId: 'sheet-1' }, columns: [] });
   });
 
-  it('drops a half-typed column instead of refusing the save', () => {
-    // The tab autosaves, so a half-typed row exists on the way to every
-    // complete one. Refusing would mean an author cannot add a column without
-    // the screen complaining at them mid-keystroke.
+  it('keeps a half-typed column instead of dropping it on the way to the server', () => {
     const state = {
       ...initialGoogleSheets([sheets()]),
       columns: [
@@ -115,9 +114,7 @@ describe('a stored spreadsheet destination round-trips through the card', () => 
         { header: 'No question picked', source: 'answer' as const },
       ],
     };
-    expect(builtGoogleSheets(state)).toMatchObject({
-      columns: [{ header: 'Email', source: 'answer', key: 'email' }],
-    });
+    expect(builtGoogleSheets(state)).toMatchObject({ columns: state.columns });
   });
 
   it('leaves the tab out when none was chosen, so the first tab is used', () => {

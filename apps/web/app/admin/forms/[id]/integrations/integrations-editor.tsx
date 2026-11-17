@@ -33,6 +33,7 @@ import type {
 import { TokenConnectForm } from '@/app/admin/integrations/connect-forms';
 import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
 import { trackDestinationWrite } from '@/lib/connect-sync';
+import { publishIntegrationsSave } from '@/lib/integrations-save-status';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
 import {
@@ -281,21 +282,22 @@ export function showsGoogleSheetsCard(
 }
 
 /**
- * The destination to store, or null when there is nothing worth storing.
+ * The destination to store, or null only when the card holds nothing at all.
  *
- * Null covers the two ways this card can be incomplete: no spreadsheet, or no
- * column that says anything. Storing either would put a destination in the
- * config that the factory degrades to a no-op on every submission, which the
- * author would only discover by looking at a delivery history full of them.
+ * A card the author has started (switched on, a spreadsheet, any column, even
+ * a half-filled one) is stored as it stands, so everything the save pill calls
+ * saved survives a reload. An unfinished destination is never delivered to:
+ * the API skips it at enqueue time (`destinationIsDeliverable`) and leaves
+ * incomplete columns out of the sheet, so storing it costs a respondent nothing.
  */
 export function builtGoogleSheets(state: GoogleSheetsState): FormDestination | null {
   const columns = storedColumns(state.columns);
-  if (!state.spreadsheetId || columns.length === 0) return null;
+  if (!state.enabled && !state.spreadsheetId && columns.length === 0) return null;
   return {
     type: 'google-sheets',
     enabled: state.enabled,
     settings: {
-      spreadsheetId: state.spreadsheetId,
+      ...(state.spreadsheetId ? { spreadsheetId: state.spreadsheetId } : {}),
       ...(state.sheetTitle.trim() ? { sheetTitle: state.sheetTitle.trim() } : {}),
     },
     columns,
@@ -764,10 +766,10 @@ export function IntegrationsEditor({
   }, [autosave.status]);
   // This screen sends no lock stamp, so `conflict` cannot happen here; the
   // union still has to be closed, and an error is the honest rendering of it.
-  // The spreadsheet card switched on with no spreadsheet stores nothing (see
-  // `builtGoogleSheets`), so "saved" would promise a switch that comes back
-  // off on reload. Said as what it is instead.
-  const sheetsPending = sheets.enabled && builtGoogleSheets(sheets) === null;
+  // The spreadsheet card switched on with no spreadsheet IS stored (see
+  // `builtGoogleSheets`), but sends nothing yet: "saved" alone would read as
+  // "it works now". Said as what it is instead.
+  const sheetsPending = sheets.enabled && !sheets.spreadsheetId;
   const status: SaveStatus =
     autosave.status === 'saved' && partialBlocked
       ? 'partial'
@@ -780,6 +782,11 @@ export function IntegrationsEditor({
     autosave.status === 'error' || autosave.status === 'retrying'
       ? autosave.detail
       : partialBlocked;
+  // The editor's topbar says "saved" for the form; it must not say so while
+  // the integrations on this tab failed to save. Published here, read there.
+  useEffect(() => {
+    publishIntegrationsSave(id, { status: autosave.status === 'conflict' ? 'error' : autosave.status, detail: statusDetail });
+  }, [id, autosave.status, statusDetail]);
 
   /**
    * Every card edit funnels through these so an edit is marked dirty at the
@@ -922,8 +929,11 @@ const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> 
   },
 };
 
-/** How long a "saved" pill stays spelled out before it folds to its check. */
+/** How long a "saved" pill stays spelled out before it folds to its short form. */
 const PILL_FOLD_MS = 2500;
+
+/** Below `sm`, where a long pill would sit on the controls of the row in view. */
+const NARROW_QUERY = '(max-width: 639px)';
 
 /**
  * The autosave state, as a pill fixed to the bottom-right corner of the window.
@@ -935,12 +945,15 @@ const PILL_FOLD_MS = 2500;
  * window, so it is rendered outside them all. On a phone too, lifted by the
  * safe-area inset; the tab keeps bottom room so the last card scrolls clear.
  *
- * Three things keep it from sitting on content more than it has to:
+ * What keeps it from sitting on content more than it has to:
  *  - it says nothing until there is something to say: no "saved" on a page
  *    nobody has edited yet (`touched`), unless a state needs reading anyway;
- *  - a plain "saved" folds to its green check after a moment, so a pill that
- *    has said its piece is a 36px disc rather than a bar over the text being
- *    scrolled under it (the full sentence stays as its accessible name);
+ *  - a plain "saved" folds to a short, flat label ("Saved" with its check)
+ *    after a moment, and on a phone it is short from the start, so the long
+ *    sentence never covers the row controls in view. The short form is a
+ *    status, not a control: no shadow, no hover, and it lets taps through to
+ *    whatever is underneath. Its words are on screen, so there is nothing to
+ *    hover or tap to read;
  *  - its ground is solid card colour UNDER the tint, so nothing shows through.
  */
 export function SaveStatusPill({
@@ -966,8 +979,16 @@ export function SaveStatusPill({
     return () => document.documentElement.classList.remove('has-save-pill');
   }, [visible]);
   useEffect(() => {
+    if (status !== 'saved') {
+      setFolded(false);
+      return;
+    }
+    const narrow = typeof window !== 'undefined' && window.matchMedia?.(NARROW_QUERY).matches;
+    if (narrow) {
+      setFolded(true);
+      return;
+    }
     setFolded(false);
-    if (status !== 'saved') return;
     const timer = setTimeout(() => setFolded(true), PILL_FOLD_MS);
     return () => clearTimeout(timer);
   }, [status, detail]);
@@ -990,28 +1011,35 @@ export function SaveStatusPill({
       data-testid="integrations-save-status"
       data-status={status}
       data-folded={folded || undefined}
+      role="status"
       aria-live="polite"
-      title={folded ? text : undefined}
       className={cn(
-        'fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-40 max-w-[calc(100vw-2rem)] rounded-[1.25rem] bg-card shadow-lg sm:right-5 sm:bottom-5 sm:max-w-[28rem]',
+        'fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-40 max-w-[calc(100vw-2rem)] rounded-[1.25rem] bg-card sm:right-5 sm:bottom-5 sm:max-w-[28rem]',
+        // The short form is a status: flat, and transparent to taps, so it
+        // can never stand in for a button or block one underneath.
+        folded ? 'pointer-events-none' : 'shadow-lg',
       )}
     >
       <div
         className={cn(
-          'flex items-center gap-2 rounded-[1.25rem] border text-sm font-medium transition-[padding] duration-200',
-          folded ? 'p-1.5' : 'py-1.5 pl-1.5 pr-4',
+          'flex items-center gap-2 rounded-[1.25rem] border text-sm font-medium',
+          folded ? 'py-1 pl-1 pr-3 text-xs' : 'py-1.5 pl-1.5 pr-4',
           tone.box,
         )}
       >
         <span
           aria-hidden
-          className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full', tone.dot)}
+          className={cn(
+            'flex shrink-0 items-center justify-center rounded-full',
+            folded ? 'h-5 w-5' : 'h-6 w-6',
+            tone.dot,
+          )}
         >
-          <i className={cn('pi', tone.icon)} style={{ fontSize: 12 }} />
+          <i className={cn('pi', tone.icon)} style={{ fontSize: folded ? 10 : 12 }} />
         </span>
         {/* Two lines before it clips: a partial save names the card that did
             not go through, and that sentence is the point of the state. */}
-        <span className={cn('line-clamp-2 min-w-0 leading-snug', folded && 'sr-only')}>{text}</span>
+        <span className="line-clamp-2 min-w-0 leading-snug">{folded ? m.autosavedShort : text}</span>
       </div>
     </div>,
     document.body,

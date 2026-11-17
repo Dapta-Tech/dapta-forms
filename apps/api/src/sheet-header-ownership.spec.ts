@@ -262,3 +262,37 @@ describe('a sheet that drifted before snapshots existed (the reported production
     expect(row1).toEqual(next);
   });
 });
+
+describe('columns still being filled in', () => {
+  it('are stored as sent, so a reload brings them back', async () => {
+    await store(fromEditor(OLD));
+    const half = {
+      ...fromEditor(OLD),
+      columns: [...fromEditor(OLD).columns, { header: 'booking', source: 'answer' }, { header: '', source: 'answer', key: 'q9' }],
+    };
+    await controller.putDestinations(asOwner(), formId, { destinations: [half] });
+    const form = await getFormById(db, accountId, formId);
+    const stored = (form!.config as { destinations: { columns: unknown[] }[] }).destinations[0]!.columns;
+    expect(stored).toEqual(half.columns);
+  });
+
+  it('are left out of row 1 until complete, so nothing shifts in the sheet', async () => {
+    await store(fromEditor(OLD));
+    const half = { ...fromEditor(OLD), columns: [...fromEditor(OLD).columns, { header: 'booking', source: 'answer' }] };
+    await controller.putDestinations(asOwner(), formId, { destinations: [half] });
+    // The headings did not change as far as the sheet is concerned: no call.
+    expect(reads).toBe(0);
+    expect(row1).toEqual(OLD);
+  });
+
+  it('keeps a switched-on card with no spreadsheet, and asks Google nothing', async () => {
+    await controller.putDestinations(asOwner(), formId, {
+      destinations: [{ type: 'google-sheets', enabled: true, settings: {}, columns: [] }],
+    });
+    const form = await getFormById(db, accountId, formId);
+    expect((form!.config as { destinations: unknown[] }).destinations).toEqual([
+      { type: 'google-sheets', enabled: true, settings: {}, columns: [] },
+    ]);
+    expect(reads).toBe(0);
+  });
+});

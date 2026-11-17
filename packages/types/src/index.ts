@@ -697,6 +697,29 @@ export const webhookDestinationSchema = z.object({
 });
 export type WebhookDestination = z.infer<typeof webhookDestinationSchema>;
 
+/**
+ * Whether a stored destination can deliver anything at all.
+ *
+ * A Google Sheets destination is stored while the author is still setting it
+ * up (switched on, no spreadsheet yet, or no complete column), so their work
+ * survives a reload. Such a destination is skipped at enqueue time rather
+ * than handed to an adapter that could only record a no-op for every
+ * submission. Every other type is deliverable as stored.
+ */
+export function destinationIsDeliverable(destination: {
+  type: string;
+  settings?: unknown;
+  columns?: unknown;
+}): boolean {
+  if (destination.type !== 'google-sheets') return true;
+  const settings = (destination.settings ?? {}) as { spreadsheetId?: unknown };
+  if (typeof settings.spreadsheetId !== 'string' || !settings.spreadsheetId.trim()) return false;
+  const columns = Array.isArray(destination.columns) ? destination.columns : [];
+  return columns.some(
+    (c) => typeof c === 'object' && c !== null && isWritableSheetColumn(c as { header?: string; source: string; key?: string }),
+  );
+}
+
 /** Submission phases a destination can subscribe to. */
 export const destinationEvents = ['partial', 'complete'] as const;
 export type DestinationEvent = (typeof destinationEvents)[number];
@@ -861,13 +884,37 @@ export const sheetColumnSchema = z.object({
    * The text in the header row. Stored rather than derived, because the author
    * can rename a column without the question changing, and because a sheet that
    * already has data must keep the heading its existing rows were written under.
+   *
+   * May be empty: a column the author is still filling in is stored as it is,
+   * so it survives a reload, and is left out of the sheet (row 1 and every
+   * delivered row alike) until it is complete. See `isWritableSheetColumn`.
    */
-  header: z.string().min(1).max(200),
+  header: z.string().max(200),
   source: z.enum(sheetColumnSource),
   /** The step key (`answer`) or the campaign key (`utm`). Unused by the rest. */
   key: z.string().min(1).max(64).optional(),
 });
 export type SheetColumn = z.infer<typeof sheetColumnSchema>;
+
+/**
+ * A column that goes into the sheet: it has a heading, and the sources that
+ * name something (`answer`, `utm`) name it. The one rule, shared by the
+ * header row, every delivered row and the editor, so the three always agree
+ * on which columns exist and in what order. An incomplete column is stored
+ * (the author's work survives a reload) and simply skipped until it is done.
+ */
+export function isWritableSheetColumn(column: { header?: string; source: string; key?: string }): boolean {
+  if (!column.header?.trim()) return false;
+  if (column.source === 'answer' || column.source === 'utm') return !!column.key?.trim();
+  return true;
+}
+
+/** The columns that go into the sheet, in order. */
+export function writableSheetColumns<T extends { header?: string; source: string; key?: string }>(
+  columns: readonly T[] | undefined,
+): T[] {
+  return (columns ?? []).filter(isWritableSheetColumn);
+}
 
 /**
  * At most this many columns in one row. Well under a sheet's own limit; it
@@ -896,6 +943,9 @@ export const googleSheetsDestinationSchema = z.object({
       spreadsheetId: z.string().min(1).max(200).nullable().optional(),
       /** The tab written to, by its visible name. Absent writes to the first tab. */
       sheetTitle: z.string().max(200).nullable().optional(),
+      // An ABSENT spreadsheet is a destination the author switched on and has
+      // not finished: stored so the switch survives a reload, never delivered
+      // to (see `destinationIsDeliverable`).
       /**
        * The header row dForms last wrote (or found already in place), and
        * where. Bookkeeping the API owns, like HubSpot's `formSignature`: a
