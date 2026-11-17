@@ -1804,6 +1804,27 @@ describe('appendUtm (forward the visitor UTM params to a redirect)', () => {
     });
     expect(long).toBe(`https://example.com/t?utm_medium=${'b'.repeat(200)}`);
   });
+
+  it('counts the 10-key cap after dropping the keys the owner already wrote', () => {
+    // 11 visitor keys, one of them already in the URL: the other 10 all go.
+    const many: Record<string, string> = { utm_source: 'visitor' };
+    for (let i = 1; i <= 10; i++) many[`utm_k${i}`] = 'v';
+    const out = new URL(appendUtm('https://example.com/t?utm_source=newsletter', many));
+    expect(out.searchParams.get('utm_source')).toBe('newsletter');
+    expect([...out.searchParams.keys()]).toEqual([
+      'utm_source',
+      ...Array.from({ length: 10 }, (_, i) => `utm_k${i + 1}`),
+    ]);
+  });
+
+  it('skips a key longer than 64 characters', () => {
+    const longest = `utm_${'k'.repeat(60)}`;
+    const tooLong = `utm_${'k'.repeat(61)}`;
+    expect(longest).toHaveLength(64);
+    expect(appendUtm('https://example.com/t', { [tooLong]: 'x', [longest]: 'y' })).toBe(
+      `https://example.com/t?${longest}=y`,
+    );
+  });
 });
 
 describe('forwardedUtm', () => {
