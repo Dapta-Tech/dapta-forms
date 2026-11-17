@@ -1241,7 +1241,7 @@ export class IntegrationsController {
     @Query('refresh') refresh?: string,
   ): Promise<DcalEventTypesResponse> {
     const p = await this.auth.resolveHost(req);
-    if (!this.dcal) return { enabled: false, reason: 'This deployment has no dCal configured.' };
+    if (!this.dcal) return { enabled: false, code: 'not_configured', reason: 'This deployment has no dCal configured.' };
     return this.dcal.listEventTypes(p.accountId, p.memberId, bearerOf(req), {
       ...(workspaceId?.trim() ? { workspaceId: workspaceId.trim() } : {}),
       refresh: refresh === '1' || refresh === 'true',

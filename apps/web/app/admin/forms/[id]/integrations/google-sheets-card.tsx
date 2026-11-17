@@ -11,7 +11,7 @@ import { useToast } from '@/components/toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { callAction } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
-import type { SheetHeaderSync, SheetTab } from '@/lib/admin-api';
+import type { DeliveryKind, SheetHeaderSync, SheetTab } from '@/lib/admin-api';
 import { GoogleConnectButton } from '@/app/admin/integrations/connect-forms';
 import type { QuestionMeta } from './auto-map';
 import { Card } from './integrations-card';
@@ -26,6 +26,10 @@ import { pickSpreadsheet } from './google-picker';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { columnMissing, defaultColumns, isCompleteColumn, moveColumn, sheetPositions } from './sheet-columns';
 import { sheetUrlFor } from './sheet-url';
+import { DeliveryHistory } from './delivery-history';
+
+/** The outbox kind this card is responsible for. */
+const SHEETS_HISTORY_KINDS: DeliveryKind[] = ['google-sheets'];
 
 type Msgs = FormsMessages['admin']['integrations'];
 
@@ -133,6 +137,7 @@ export function GoogleSheetsCard({
   state,
   setState,
   questions,
+  scoring,
   connected,
   pickerAvailable = false,
   formName = '',
@@ -147,6 +152,11 @@ export function GoogleSheetsCard({
   state: GoogleSheetsState;
   setState: (next: GoogleSheetsState) => void;
   questions: QuestionMeta[];
+  /**
+   * Which of the score and outcome columns the form can fill, for the default
+   * plan (`scoringColumns`). Absent offers both, as before it was passed.
+   */
+  scoring?: { score: boolean; outcome: boolean };
   /** Account-level Google connection. Without it there is nothing to create or list with. */
   connected: boolean;
   /** Whether this deployment can open Google's Picker (it needs a browser key). */
@@ -266,7 +276,7 @@ export function GoogleSheetsCard({
       outcome: m.gsheets.colOutcome,
       formName: m.gsheets.colFormName,
       submissionId: m.gsheets.colSubmissionId,
-    });
+    }, scoring);
 
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
 
@@ -905,6 +915,20 @@ export function GoogleSheetsCard({
           </section>
         </>
       )}
+      {/* Where a refusal surfaces: a spreadsheet that was deleted, or access
+          to it taken away, is skipped for good at delivery time, and this log
+          is the only place that says so. Outside the connected body on
+          purpose: a revoked connection is exactly when it matters. */}
+      {formId ? (
+        <DeliveryHistory
+          formId={formId}
+          kinds={SHEETS_HISTORY_KINDS}
+          title={m.historySheetsTitle}
+          locale={locale === 'es' ? 'es' : 'en'}
+          m={m}
+          testId="google-sheets-history"
+        />
+      ) : null}
       {dialog}
     </Card>
   );

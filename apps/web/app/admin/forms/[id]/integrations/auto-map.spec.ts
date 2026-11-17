@@ -153,6 +153,36 @@ describe('mappableQuestions', () => {
     ]);
   });
 
+  it('shows a question with recall tokens the way a respondent without that answer reads it', () => {
+    const qs = mappableQuestions(
+      [
+        { key: 'name_1', type: 'name', question: 'What is your name?' } as FormStep,
+        { key: 'email', type: 'email', question: 'Nice to meet you, [firstname]! What is your email?' } as FormStep,
+        { key: 'role', type: 'text', question: '[firstname], what is your role?' } as FormStep,
+        { key: 'only', type: 'text', question: '[firstname]' } as FormStep,
+      ],
+      PARTS_EN,
+    );
+    const label = (key: string) => qs.find((q) => q.key === key)?.label;
+    expect(label('email')).toBe('Nice to meet you! What is your email?');
+    expect(label('role')).toBe('What is your role?');
+    // Nothing left but the token: the key keeps the row named.
+    expect(label('only')).toBe('only');
+    for (const q of qs) expect(q.label).not.toMatch(/\[[a-z0-9_]+\]/i);
+  });
+
+  it('leaves out reveal screens, which collect nothing', () => {
+    const qs = mappableQuestions(
+      [
+        { key: 'email', type: 'email', question: 'Email' } as FormStep,
+        { key: 'reveal_1', type: 'reveal', question: 'Your score' } as FormStep,
+        { key: 'intro', type: 'message', question: 'Welcome' } as FormStep,
+      ],
+      PARTS_EN,
+    );
+    expect(qs.map((q) => q.key)).toEqual(['email']);
+  });
+
   it('offers a key once when two questions store the same answer', () => {
     const out = mappableQuestions(
       [

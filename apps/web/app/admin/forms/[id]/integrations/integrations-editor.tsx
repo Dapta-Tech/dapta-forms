@@ -505,6 +505,7 @@ export function IntegrationsEditor({
   googleJustConnected = false,
   formName = '',
   questions,
+  scoring,
   readiness = NOT_READY,
   partialsHeld = false,
   messages: m,
@@ -545,6 +546,11 @@ export function IntegrationsEditor({
   formName?: string;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
+  /**
+   * Which of the score and outcome columns the form can fill (`scoringColumns`),
+   * for the spreadsheet card's default plan. Absent offers both.
+   */
+  scoring?: { score: boolean; outcome: boolean };
   /**
    * Spam protection holds this form's partial answers: saved, delivered to no
    * destination. The cards say so; the stored triggers are left as they are.
@@ -1050,6 +1056,7 @@ export function IntegrationsEditor({
           state={sheets}
           setState={editSheets}
           questions={questions}
+          scoring={scoring}
           connected={googleSheetsConnected}
           pickerAvailable={googlePickerAvailable}
           formName={formName}

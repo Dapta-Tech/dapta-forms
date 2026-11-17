@@ -143,6 +143,50 @@ export function mergeHostUtm(
   return host ? { ...host } : {};
 }
 
+/** Whether two campaigns are the same `utm_*` set (order does not matter). */
+export function sameCampaign(a: Record<string, string>, b: Record<string, string>): boolean {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
+}
+
+/**
+ * The campaign a booking page is handed, as STATE so the embed re-renders
+ * when it changes: the form's own `utm_*` at mount, the landing's as soon as
+ * the host page answers the visit's mount-time ask (`learnHost`, wired into
+ * `useHostVisit`), and whatever each save resolved (`record`, called with the
+ * set `withData` sends). So a scheduler with no save before it still gets the
+ * landing's campaign. It never asks the host page itself; the visit already
+ * does, and an extra ask would change what the saves wait for.
+ *
+ * `own` is the form URL's own set, which is all a preloaded Calendly widget
+ * can carry (its script forwards the page's `utm_*` by itself), so a caller
+ * can tell when a preload would lose the landing's campaign.
+ */
+export function useCampaignUtm(): {
+  utm: Record<string, string>;
+  own: Record<string, string>;
+  record: (utm: Record<string, string>) => void;
+  learnHost: (hostUtm: Record<string, string>) => void;
+} {
+  const [own, setOwn] = useState<Record<string, string>>({});
+  const [utm, setUtm] = useState<Record<string, string>>({});
+  const record = useCallback((next: Record<string, string>) => {
+    setUtm((prev) => (sameCampaign(prev, next) ? prev : next));
+  }, []);
+  // The landing's campaign stands in only when the form's own URL has none,
+  // exactly as `withData` merges it into a submission.
+  const learnHost = useCallback(
+    (hostUtm: Record<string, string>) => record(mergeHostUtm(captureUtm(), hostUtm)),
+    [record],
+  );
+  useEffect(() => {
+    const mine = captureUtm();
+    setOwn(mine);
+    record(mine);
+  }, [record]);
+  return { utm, own, record, learnHost };
+}
+
 /**
  * What the public page tells a renderer about the page it is answered on
  * (#199). Only the public page passes it: without it (the builder preview)
@@ -162,13 +206,22 @@ export interface VisitCapture {
 export function useHostVisit(
   capture: VisitCapture | undefined,
   formTitle: string,
+  /** The landing's campaign, whenever the host answers (see `useCampaignUtm`). */
+  onHostUtm?: (hostUtm: Record<string, string>) => void,
 ): () => Promise<ResolvedVisit | undefined> {
   const visit = useRef<HostVisit | null>(null);
+  // Through a ref: a new callback identity must not restart the visit.
+  const onHostUtmRef = useRef(onHostUtm);
+  onHostUtmRef.current = onHostUtm;
   const enabled = capture !== undefined;
   const hubspotTracking = capture?.hubspotTracking === true;
   useEffect(() => {
     if (!enabled) return;
-    const current = createHostVisit({ hubspotTracking, formTitle });
+    const current = createHostVisit({
+      hubspotTracking,
+      formTitle,
+      onHostUtm: (hostUtm) => onHostUtmRef.current?.(hostUtm),
+    });
     visit.current = current;
     const stop = current.start();
     return () => {

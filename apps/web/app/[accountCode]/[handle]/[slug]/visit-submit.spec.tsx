@@ -53,7 +53,9 @@ vi.mock('@/lib/host-visit', async (importOriginal) => ({
   // The real UTM reader: only the host is played by the test.
   ...(await importOriginal<typeof import('@/lib/host-visit')>()),
   createHostVisit: (opts: { hubspotTracking: boolean; formTitle: string }) => {
-    host.created.push(opts);
+    // The two options this spec is about; the booking campaign's callback is
+    // pinned in campaign-utm.spec.tsx.
+    host.created.push({ hubspotTracking: opts.hubspotTracking, formTitle: opts.formTitle });
     return {
       start: () => {
         host.started += 1;

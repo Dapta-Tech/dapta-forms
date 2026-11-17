@@ -120,9 +120,10 @@ export const serverEnvSchema = z.object({
   // this one client and stores only its own refresh token, so the client secret
   // lives here and never in the database.
   //
-  // The hosted deployment reuses the Dapta platform's existing Google client,
-  // which is already approved for the sensitive `spreadsheets` scope, so this
-  // feature needs no verification round. A fork points these at its own client.
+  // The hosted deployment reuses the Dapta platform's existing Google client.
+  // The app asks it for `drive.file` only (the files dForms creates or is handed
+  // in the Picker), a scope Google classes as non-sensitive, so this feature
+  // needs no verification round. A fork points these at its own client.
   //
   // All three unset = the Google Sheets card stays off: `connect` reports the
   // feature unavailable instead of starting a flow that could not finish.

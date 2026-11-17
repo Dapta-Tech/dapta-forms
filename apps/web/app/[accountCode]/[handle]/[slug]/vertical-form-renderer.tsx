@@ -80,6 +80,7 @@ import {
   useCaptchaGate,
   captchaAborted,
   submitFinal,
+  useCampaignUtm,
   captureUtm,
   captureDefaults,
   withAnswer,
@@ -236,7 +237,9 @@ export function VerticalFormRenderer({
   const sessionId = useSessionId(sessionKey);
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
-  const resolveVisit = useHostVisit(visitCapture, name);
+  // The visitor's campaign for the booking page: the same set the submission carries.
+  const { utm: campaign, record: recordCampaign, learnHost } = useCampaignUtm();
+  const resolveVisit = useHostVisit(visitCapture, name, learnHost);
 
   /**
    * Authorize one upload for a `file` step.
@@ -422,6 +425,7 @@ export function VerticalFormRenderer({
   function withData(a: Answers, resolved?: ResolvedVisit): Record<string, unknown> {
     // The landing's campaign stands in only when the form's own URL has none.
     const utm = mergeHostUtm(utmRef.current, resolved?.hostUtm);
+    recordCampaign(utm);
     return Object.keys(utm).length > 0 ? { ...a, utm } : { ...a };
   }
 
@@ -900,6 +904,7 @@ export function VerticalFormRenderer({
           answers={answersRef.current}
           sessionId={sessionId}
           locale={locale}
+          utm={campaign}
           onBooked={(details) => void handleBooked(details)}
         />
       </PhaseShell>
@@ -980,6 +985,7 @@ export function VerticalFormRenderer({
           answers={answers}
           sessionId={sessionId}
           locale={locale}
+          utm={campaign}
           unconfiguredLabel={m.schedulerUnconfigured}
           onBooked={(details) => void handleSchedulerBooked(step, details)}
         />
@@ -1214,6 +1220,7 @@ function SchedulerQuestion({
   answers,
   sessionId,
   locale,
+  utm,
   unconfiguredLabel,
   onBooked,
 }: {
@@ -1222,6 +1229,8 @@ function SchedulerQuestion({
   answers: Answers;
   sessionId: string;
   locale: string;
+  /** The visitor's campaign, for the booking page (see `useCampaignUtm`). */
+  utm: Record<string, string>;
   unconfiguredLabel: string;
   onBooked: (details: BookingScheduledDetails) => void;
 }) {
@@ -1252,6 +1261,7 @@ function SchedulerQuestion({
         extraCustomAnswers={schedPrefill.customAnswers}
         sessionId={sessionId}
         locale={locale}
+        utm={utm}
         hideHeader
         onBooked={onBooked}
       />
