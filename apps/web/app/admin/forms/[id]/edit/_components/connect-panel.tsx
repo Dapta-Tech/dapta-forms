@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useId, useMemo, useState } from 'react';
-import { contactKeyReadiness, hasScoringSignal, type ContactKeyReadiness, type FormConfig, stepQuestionText } from '@quill/engine';
+import { contactKeyReadiness, hasScoringSignal, type ContactKeyReadiness, type FormConfig } from '@quill/engine';
 import type { FormSpamProtection, FormTracking } from '@quill/types';
 import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { awaitPendingDestinationWrite } from '@/lib/connect-sync';
+import { mappableQuestions } from '../../integrations/auto-map';
 import { IntegrationsEditor, type QuestionMeta } from '../../integrations/integrations-editor';
 import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
 import { ConnectEmailsSection } from './connect-emails-section';
@@ -64,14 +65,11 @@ export function ConnectPanel({
   const im = useMemo(() => getMessages(loc).admin.integrations, [loc]);
 
   // "Map questions" rows come from the LIVE editor state so a question added a
-  // second ago is mappable immediately (no refetch). `message` steps collect no
-  // answer, so they are excluded — mirrors the old integrations page.
+  // second ago is mappable immediately (no refetch). `mappableQuestions` leaves
+  // out `message` steps and offers a `name` question as its two stored answers.
   const questions: QuestionMeta[] = useMemo(
-    () =>
-      config.steps
-        .filter((s) => s.type !== 'message')
-        .map((s) => ({ key: s.key, label: stepQuestionText(s).trim() || s.key, type: s.type })),
-    [config.steps],
+    () => mappableQuestions(config.steps, { first: im.nameFirstPart, last: im.nameLastPart }),
+    [config.steps, im],
   );
 
 

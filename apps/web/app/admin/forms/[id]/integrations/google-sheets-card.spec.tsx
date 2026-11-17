@@ -304,4 +304,25 @@ describe('a form that already has its spreadsheet', () => {
     const { el } = await mount({ state: { ...EMPTY, spreadsheetId: 'gone' } });
     expect(el.textContent).toContain(m.gsheets.sheetNotFound);
   });
+
+  // A column saved on a key the form no longer offers (a `name` question's own
+  // key, from before it was offered as its two answers) must keep showing what
+  // is stored instead of reading as "pick one".
+  it('keeps a stored answer key the form no longer offers selected as itself', async () => {
+    actions.googleSheetsTabsAction.mockResolvedValue({
+      ok: true,
+      data: { enabled: true, spreadsheetTitle: 'Leads', tabs: [{ title: 'Responses', gid: 0 }] },
+    });
+    const { el } = await mount({
+      state: {
+        ...EMPTY,
+        spreadsheetId: 'abc123',
+        sheetTitle: 'Responses',
+        columns: [{ header: 'Full name', source: 'answer', key: 'full_name' }],
+      },
+    });
+    const select = el.querySelector<HTMLSelectElement>(`select[aria-label="${m.gsheets.keyFor}"]`)!;
+    expect(select.value).toBe('full_name');
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'full_name', 'email', 'company']);
+  });
 });
