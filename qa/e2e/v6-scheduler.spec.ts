@@ -59,7 +59,7 @@ async function createForm(
 
 async function openEditor(page: Page, id: string): Promise<void> {
   await page.goto(`/admin/forms/${id}/edit`);
-  await expect(page.getByRole('button', { name: 'Publish', exact: true })).toBeVisible({
+  await expect(page.getByTestId('publish-button')).toBeVisible({
     timeout: 30_000,
   });
 }

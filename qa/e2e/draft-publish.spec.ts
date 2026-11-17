@@ -95,10 +95,10 @@ test('builder edits autosave as a draft: badge arms, public page keeps the old q
 
   // No draft yet → nothing to publish.
   await expect(page.getByText('Unpublished changes')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Publish', exact: true })).toBeDisabled();
+  await expect(page.getByTestId('publish-button')).toBeDisabled();
 
   await editFirstQuestion(page, NEW_Q);
-  await expect(page.getByRole('button', { name: 'Publish', exact: true })).toBeEnabled();
+  await expect(page.getByTestId('publish-button')).toBeEnabled();
 
   // API: live config untouched, draft carries the edit, not yet published.
   const before = await getForm(request, form.id);
@@ -122,11 +122,11 @@ test('publish makes the draft live, clears the badge, and re-editing re-arms it'
   await editFirstQuestion(page, NEW_Q);
 
   // Publish → success toast.
-  const publishBtn = page.getByRole('button', { name: 'Publish', exact: true });
+  const publishBtn = page.getByTestId('publish-button');
   await expect(publishBtn).toBeEnabled();
   await publishBtn.click();
   await expect(
-    page.getByText('Changes published — your form is live.'),
+    page.getByText('Changes published. Your form is live.'),
   ).toBeVisible({ timeout: 15_000 });
 
   // Badge clears and the button disables (nothing left to publish).

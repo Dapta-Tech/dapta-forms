@@ -49,7 +49,7 @@ async function createForm(
 /** Open the builder and wait for the shell (Publish button) to render. */
 async function openEditor(page: Page, id: string): Promise<void> {
   await page.goto(`/admin/forms/${id}/edit`);
-  await expect(page.getByRole('button', { name: 'Publish', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('publish-button')).toBeVisible({ timeout: 20_000 });
 }
 
 /** Read the autosaved DRAFT config back from the admin API. */

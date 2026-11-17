@@ -132,11 +132,13 @@ describe('the Publish pill', () => {
   const main = () => $<HTMLButtonElement>('[data-testid="publish-button"]')!;
   const chevron = () => $<HTMLButtonElement>('[data-testid="publish-menu-button"]')!;
   const classes = (el: Element) => el.className.split(/\s+/).filter(Boolean);
+  /** The label a person sees (and hears) on the main half. */
+  const label = () => main().querySelector('[data-current]')!.textContent;
   /** Classes that would make one half look unlike the other, or washed out. */
   const forbidden = (el: Element) =>
     classes(el).filter(
       (c) =>
-        /^(bg-signal|bg-muted|rounded-full)$/.test(c) ||
+        /^(bg-signal|bg-card|bg-muted|rounded-full)$/.test(c) ||
         /(^|:)(opacity-|border|ring-|brightness|scale-)/.test(c),
     );
 
@@ -153,15 +155,37 @@ describe('the Publish pill', () => {
     expect(classes(chevron())).toContain('rounded-r-full');
     // Same height for both halves: they stretch to the wrapper, which sets it.
     expect(classes(control())).toEqual(expect.arrayContaining(['h-9', 'items-stretch']));
-    // Shared base classes, including the inset focus ring in the label colour.
+    // Shared base classes, including the focus treatment: the outside outline
+    // is suppressed and BOTH halves draw the same fully rounded capsule inside
+    // themselves, so neither ring is square at the divider.
     const shared = classes(main()).filter((c) => classes(chevron()).includes(c));
     expect(shared).toEqual(
       expect.arrayContaining([
         'text-inherit',
-        'focus-visible:!outline-current',
-        'focus-visible:!-outline-offset-4',
+        'focus-visible:!outline-hidden',
+        'after:absolute',
+        'after:inset-[3px]',
+        'after:rounded-full',
+        'focus-visible:after:shadow-[inset_0_0_0_2px_currentColor]',
       ]),
     );
+    for (const half of [main(), chevron()]) {
+      expect(classes(half).filter((c) => /^focus-visible:(?!after:|!outline-hidden$)/.test(c))).toEqual([]);
+    }
+    // Every label is always laid out in one grid cell, so the main half is as
+    // wide as its widest label in every state and the pill never resizes.
+    const stacked = [...main().querySelectorAll('[data-label]')];
+    expect(stacked.map((el) => (el as HTMLElement).dataset.label)).toEqual([
+      'publish',
+      'published',
+      'publishing',
+      'reverting',
+    ]);
+    for (const el of stacked) expect(classes(el)).toEqual(expect.arrayContaining(['col-start-1', 'row-start-1']));
+    const visible = stacked.filter((el) => !classes(el).includes('invisible'));
+    expect(visible).toHaveLength(1);
+    expect(visible[0]!.getAttribute('aria-hidden')).toBeNull();
+    for (const el of stacked) if (el !== visible[0]) expect(el.getAttribute('aria-hidden')).toBe('true');
     // One divider between them, nothing else.
     expect(main().nextElementSibling).toBe($('[data-testid="publish-divider"]'));
     expect($('[data-testid="publish-divider"]')!.nextElementSibling).toBe(chevron());
@@ -175,17 +199,24 @@ describe('the Publish pill', () => {
     );
     expect(main().disabled).toBe(false);
     expect(main().className).not.toMatch(/cursor-not-allowed/);
+    expect(label()).toBe(m.publish);
     expectOnePill();
   });
 
-  it('goes quiet as a whole, not half pale, with nothing to publish', async () => {
+  it('says Published with a check on a solid surface, not a pale button, with nothing to publish', async () => {
     await mount({ hasDraft: false });
     expect(control().dataset.state).toBe('idle');
+    // A solid card with the full-strength text colour and a green rim: never
+    // the muted grey, never an opacity.
     expect(classes(control())).toEqual(
-      expect.arrayContaining(['bg-muted', 'text-muted-foreground']),
+      expect.arrayContaining(['bg-card', 'text-foreground', 'shadow-[inset_0_0_0_1px_var(--signal-edge)]']),
     );
-    expect(classes(control())).not.toContain('bg-signal');
+    expect(classes(control())).not.toEqual(expect.arrayContaining(['bg-signal']));
+    expect(classes(control()).some((c) => /muted/.test(c))).toBe(false);
+    expect(label()).toBe(getMessages('en').admin.forms.statusLive);
+    expect($('[data-current] .pi-check')).not.toBeNull();
     expect(main().disabled).toBe(true);
+    expect(main().getAttribute('title')).toBe(m.noChanges);
     // The menu half stays usable: revert is useful exactly now.
     expect(chevron().disabled).toBe(false);
     expectOnePill();
@@ -200,7 +231,8 @@ describe('the Publish pill', () => {
     expect(classes(control())).toContain('bg-signal');
     expect(main().disabled).toBe(true);
     expect(main().getAttribute('aria-busy')).toBe('true');
-    expect(main().textContent).toBe(m.publishing);
+    expect(label()).toBe(m.publishing);
+    expect($('[data-current] .pi-spin')).not.toBeNull();
     expectOnePill();
     await act(async () =>
       finish({
@@ -212,6 +244,11 @@ describe('the Publish pill', () => {
     );
     expect(control().dataset.state).toBe('idle');
     expectOnePill();
+  });
+
+  it('says Publicado in Spanish', async () => {
+    await mount({ hasDraft: false, locale: 'es' });
+    expect(label()).toBe('Publicado');
   });
 
   it('marks the menu half as pressed while the menu is open', async () => {

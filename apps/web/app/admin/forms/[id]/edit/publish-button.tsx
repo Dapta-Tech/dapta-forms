@@ -17,15 +17,20 @@ import type { FlushResult } from '@/lib/use-autosave';
 
 /**
  * What both halves of the Publish pill share. They are transparent: the pill's
- * fill lives on the wrapper, so a half can only tint itself, never drift. Focus
- * is an INSET ring in the label's colour (ink on the green, 9.7:1): the app's
- * default ring sits 2px outside the element, where the other half paints over
- * it and leaves it open at the seam. `!` because that default is an unlayered
- * `:focus-visible` rule in globals.css, which outranks any layered utility
- * (leading `!`: tailwind-merge v2 does not parse the trailing form).
+ * fill lives on the wrapper, so a half can only tint itself, never drift.
+ *
+ * Focus is a capsule drawn INSIDE the focused half (`after:`, inset 3px, fully
+ * rounded, 2px in the label's colour: ink on the green, 9.7:1), so both halves
+ * get the same shape and neither ring is cut square at the divider or covered
+ * by the other half. The app's default ring is an unlayered `:focus-visible`
+ * outline 2px OUTSIDE the element, which outranks any layered utility, hence
+ * `!outline-hidden` (leading `!`: tailwind-merge v2 does not parse the
+ * trailing form). `outline-hidden` keeps a real outline for forced colours.
  */
 const SEGMENT =
-  'inline-flex shrink-0 items-center justify-center text-inherit transition-colors focus-visible:!outline-current focus-visible:!-outline-offset-4';
+  "relative inline-flex shrink-0 items-center justify-center text-inherit transition-colors focus-visible:!outline-hidden after:pointer-events-none after:absolute after:inset-[3px] after:rounded-full after:content-[''] focus-visible:after:shadow-[inset_0_0_0_2px_currentColor]";
+
+type LabelKey = 'publish' | 'published' | 'publishing' | 'reverting';
 
 /**
  * The editor's explicit Publish control for the draft→publish flow. Autosave
@@ -93,7 +98,8 @@ export function PublishButton({
   /** A revert landed: the row's new stamp, what the server now holds, and whether a draft is pending. */
   onReverted?: (res: Extract<RevertFormResult, { ok: true }>) => void;
 }) {
-  const m = getMessages(locale).admin.publish;
+  const messages = getMessages(locale);
+  const m = messages.admin.publish;
   const toast = useToast();
   const [publishing, setPublishing] = useState(false);
   const [reverting, setReverting] = useState(false);
@@ -202,16 +208,30 @@ export function PublishButton({
   }
 
   const canRevert = previousAt != null && !busy;
-  /** Nothing to publish and nothing in flight: the whole pill goes quiet. */
+  /** Nothing to publish and nothing in flight: the pill says the form is live. */
   const idle = !hasDraft && !busy;
+  const current: LabelKey = publishing ? 'publishing' : reverting ? 'reverting' : idle ? 'published' : 'publish';
+  // Every label the main half can show, stacked in one grid cell so the half is
+  // always as wide as the widest of them: the pill never resizes (and shifts the
+  // topbar) when it flips between states. Only the current one is visible, and
+  // only it is read out. "Published" is the forms list's status word, so the
+  // list and the editor name the state the same way.
+  const labels: { key: LabelKey; text: string; icon?: string }[] = [
+    { key: 'publish', text: m.publish },
+    { key: 'published', text: messages.admin.forms.statusLive, icon: 'pi pi-check' },
+    { key: 'publishing', text: m.publishing, icon: 'pi pi-spinner' },
+    { key: 'reverting', text: m.reverting, icon: 'pi pi-spinner' },
+  ];
 
   return (
-    // ONE pill, two buttons. The fill, the rim (`.bg-signal` in globals.css)
-    // and the radius live on this wrapper only, so the halves can never
-    // disagree: before, each half carried its own fill, its own rim and its own
-    // disabled opacity, which drew a doubled rim plus a border at the seam and
-    // a pale Publish beside a solid chevron. The halves are transparent and
-    // only tint themselves on hover, press and open.
+    // ONE pill, two buttons. The fill, the rim and the radius live on this
+    // wrapper only, so the halves can never disagree: before, each half carried
+    // its own fill, its own rim and its own disabled opacity, which drew a
+    // doubled rim plus a border at the seam and a pale Publish beside a solid
+    // chevron. The halves are transparent and only tint themselves on hover,
+    // press and open. Pending (and in flight) is solid Signal Green with its
+    // `.bg-signal` rim; with nothing to publish it is a solid surface with a
+    // green rim and a check, a status rather than a faded button.
     <div
       data-tour="publish"
       data-testid="publish-control"
@@ -219,7 +239,7 @@ export function PublishButton({
       className={cn(
         'inline-flex h-9 shrink-0 items-stretch rounded-full text-sm font-semibold',
         idle
-          ? 'bg-muted text-muted-foreground shadow-[inset_0_0_0_1px_var(--input)]'
+          ? 'bg-card text-foreground shadow-[inset_0_0_0_1px_var(--signal-edge)]'
           : 'bg-signal text-signal-foreground',
       )}
     >
@@ -232,19 +252,52 @@ export function PublishButton({
         data-testid="publish-button"
         className={cn(
           SEGMENT,
-          'gap-2 whitespace-nowrap rounded-l-full pl-4 pr-3',
+          'whitespace-nowrap rounded-l-full pl-4 pr-3',
           busy
             ? 'cursor-progress'
             : idle
-              ? 'cursor-not-allowed'
+              ? 'cursor-default'
               : 'hover:bg-signal-foreground/10 active:bg-signal-foreground/20',
         )}
       >
-        {busy ? <i aria-hidden className="pi pi-spin pi-spinner" style={{ fontSize: 13 }} /> : null}
-        {publishing ? m.publishing : reverting ? m.reverting : m.publish}
+        <span className="grid">
+          {labels.map((l) => {
+            const on = l.key === current;
+            return (
+              <span
+                key={l.key}
+                data-label={l.key}
+                data-current={on || undefined}
+                aria-hidden={on ? undefined : true}
+                className={cn(
+                  'col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5',
+                  !on && 'invisible',
+                )}
+              >
+                {l.icon ? (
+                  <i
+                    aria-hidden
+                    className={cn(
+                      l.icon,
+                      on && l.icon.includes('spinner') && 'pi-spin',
+                      l.key === 'published' && 'text-signal-ink',
+                    )}
+                    style={{ fontSize: 13 }}
+                  />
+                ) : null}
+                {l.text}
+              </span>
+            );
+          })}
+        </span>
       </button>
-      {/* The seam: a hairline inset from the rim, in the label's own colour. */}
-      <span aria-hidden data-testid="publish-divider" className="my-2 w-px shrink-0 bg-current opacity-30" />
+      {/* The seam: a hairline inset from the rim, in the label's colour on the
+          green and in the rim's colour on the published surface. */}
+      <span
+        aria-hidden
+        data-testid="publish-divider"
+        className={cn('my-2 w-px shrink-0', idle ? 'bg-signal-edge' : 'bg-current opacity-30')}
+      />
       {/* The publish menu. Its own half of the pill, never disabled: what it
           holds is useful exactly when there is nothing new to publish. */}
       <button
@@ -260,7 +313,7 @@ export function PublishButton({
           SEGMENT,
           'w-8 rounded-r-full',
           idle
-            ? 'hover:bg-foreground/10 active:bg-foreground/15 aria-expanded:bg-foreground/15'
+            ? 'hover:bg-foreground/5 active:bg-foreground/10 aria-expanded:bg-foreground/10'
             : 'hover:bg-signal-foreground/10 active:bg-signal-foreground/20 aria-expanded:bg-signal-foreground/15',
         )}
       >
