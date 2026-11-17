@@ -43,25 +43,41 @@ const click = (el: Element | null) => act(async () => (el as HTMLElement).click(
 const flush = vi.fn();
 const onReverted = vi.fn();
 
-async function mount(
-  opts: { previousAt?: number | null; hasDraft?: boolean; locale?: Locale } = {},
-) {
+type SaveStatus = 'saved' | 'saving' | 'partial' | 'retrying' | 'error' | 'conflict';
+interface MountOpts {
+  previousAt?: number | null;
+  hasDraft?: boolean;
+  locale?: Locale;
+  /** The editor's combined save state; `saved` (clean) unless a test says otherwise. */
+  saveStatus?: SaveStatus;
+  hasQuestions?: boolean;
+  /** Successful autosaves so far: each one writes a draft. */
+  saveCount?: number;
+}
+
+const element = (opts: MountOpts) => (
+  <PublishButton
+    formId="form-1"
+    locale={opts.locale ?? 'en'}
+    initialHasDraft={opts.hasDraft ?? false}
+    initialPreviousPublishedAt={opts.previousAt ?? null}
+    saveStatus={opts.saveStatus ?? 'saved'}
+    hasQuestions={opts.hasQuestions ?? true}
+    saveCount={opts.saveCount ?? 0}
+    flush={flush}
+    onReverted={onReverted}
+  />
+);
+
+async function mount(opts: MountOpts = {}) {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
-  await act(async () =>
-    root.render(
-      <PublishButton
-        formId="form-1"
-        locale={opts.locale ?? 'en'}
-        initialHasDraft={opts.hasDraft ?? false}
-        initialPreviousPublishedAt={opts.previousAt ?? null}
-        flush={flush}
-        onReverted={onReverted}
-      />,
-    ),
-  );
+  await act(async () => root.render(element(opts)));
 }
+
+/** The editor re-rendering the pill with new props (an edit, a save landing). */
+const rerender = (opts: MountOpts) => act(async () => root.render(element(opts)));
 
 const when = (ms: number, locale: Locale = 'en') =>
   new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(ms);
@@ -257,6 +273,245 @@ describe('the Publish pill', () => {
     expect(chevron().getAttribute('aria-expanded')).toBe('true');
     expect(classes(chevron()).some((c) => c.startsWith('aria-expanded:bg-'))).toBe(true);
     expectOnePill();
+  });
+});
+
+/**
+ * What the main half is CALLED, state by state. Eight e2e specs located this
+ * button by the name "Publish"; when the idle label became "Published" they
+ * found nothing, and one of them was missed for a release. Pinned here by the
+ * accessible name, so a renamed label fails a unit test before it reaches a
+ * locator, and so the pill can never again claim "Published" over edits the
+ * server does not hold.
+ */
+describe('the accessible name of Publish, by state', () => {
+  const main = () => $<HTMLButtonElement>('[data-testid="publish-button"]')!;
+  const state = () => $('[data-testid="publish-control"]')!.dataset.state;
+  /**
+   * The name a browser computes for a button with no `aria-label`: its text,
+   * minus every subtree hidden from the accessibility tree. (The real thing is
+   * asserted with `getByRole` against Chromium and WebKit in QA; this is the
+   * same rule, small enough to run on every push.)
+   */
+  function accessibleName(el: Element): string {
+    const walk = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+      if (!(node instanceof Element) || node.getAttribute('aria-hidden') === 'true') return '';
+      return [...node.childNodes].map(walk).join('');
+    };
+    return (el.getAttribute('aria-label') ?? walk(el)).replace(/\s+/g, ' ').trim();
+  }
+
+  const en = getMessages('en');
+  const es = getMessages('es');
+  const PUBLISH = en.admin.publish.publish;
+  const PUBLISHED = en.admin.forms.statusLive;
+
+  it('keeps the two words apart, in both languages', () => {
+    // If these ever collapse into one word the states stop being tellable apart.
+    expect(PUBLISH).toBe('Publish');
+    expect(PUBLISHED).toBe('Published');
+    expect(es.admin.publish.publish).toBe('Publicar');
+    expect(es.admin.forms.statusLive).toBe('Publicado');
+  });
+
+  const cases: { name: string; opts: MountOpts; expected: string; disabled: boolean; state: string }[] = [
+    {
+      // Its config is live from creation (the link serves it), with or without
+      // a first press of Publish. `previousAt: null` = no earlier version.
+      name: 'never published through the draft flow, clean, with questions',
+      opts: { hasDraft: false, previousAt: null },
+      expected: PUBLISHED,
+      disabled: true,
+      state: 'idle',
+    },
+    {
+      name: 'never published and with no questions yet',
+      opts: { hasDraft: false, previousAt: null, hasQuestions: false },
+      expected: PUBLISH,
+      disabled: true,
+      state: 'empty',
+    },
+    {
+      name: 'published and clean',
+      opts: { hasDraft: false, previousAt: PREVIOUS_AT },
+      expected: PUBLISHED,
+      disabled: true,
+      state: 'idle',
+    },
+    {
+      // `saving` is what the editor reports from the first keystroke on (the
+      // debounce counts as saving), so this is "dirty" too.
+      name: 'dirty or saving: an edit the server does not hold yet',
+      opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'saving' },
+      expected: PUBLISH,
+      disabled: true,
+      state: 'unsaved',
+    },
+    {
+      name: 'retrying a save (the API is down)',
+      opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'retrying' },
+      expected: PUBLISH,
+      disabled: true,
+      state: 'unsaved',
+    },
+    {
+      name: 'save failed',
+      opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'error' },
+      expected: PUBLISH,
+      disabled: true,
+      state: 'unsaved',
+    },
+    {
+      name: 'save stopped on a conflict',
+      opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'conflict' },
+      expected: PUBLISH,
+      disabled: true,
+      state: 'unsaved',
+    },
+    {
+      name: 'saved except one integration card',
+      opts: { hasDraft: false, previousAt: PREVIOUS_AT, saveStatus: 'partial' },
+      expected: PUBLISH,
+      disabled: true,
+      state: 'unsaved',
+    },
+    {
+      name: 'a draft is pending',
+      opts: { hasDraft: true, previousAt: PREVIOUS_AT },
+      expected: PUBLISH,
+      disabled: false,
+      state: 'pending',
+    },
+    {
+      // Pressing it flushes the save first, so it does not wait for one.
+      name: 'a draft is pending and a newer edit is still saving',
+      opts: { hasDraft: true, previousAt: PREVIOUS_AT, saveStatus: 'saving' },
+      expected: PUBLISH,
+      disabled: false,
+      state: 'pending',
+    },
+    {
+      name: 'a draft is pending and the last save failed',
+      opts: { hasDraft: true, previousAt: PREVIOUS_AT, saveStatus: 'error' },
+      expected: PUBLISH,
+      disabled: false,
+      state: 'pending',
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: "${c.expected}", ${c.disabled ? 'disabled' : 'enabled'}`, async () => {
+      await mount(c.opts);
+      expect(accessibleName(main())).toBe(c.expected);
+      expect(main().disabled).toBe(c.disabled);
+      expect(state()).toBe(c.state);
+      // "All changes are published" is only ever the tooltip of "Published".
+      expect(main().getAttribute('title')).toBe(c.expected === PUBLISHED ? m.noChanges : null);
+    });
+  }
+
+  it('never reads "Published" unless the save state is clean, whatever else is true', async () => {
+    for (const saveStatus of ['saving', 'partial', 'retrying', 'error', 'conflict'] as const) {
+      for (const hasDraft of [false, true]) {
+        for (const hasQuestions of [false, true]) {
+          await mount({ saveStatus, hasDraft, hasQuestions, previousAt: PREVIOUS_AT });
+          expect(accessibleName(main()), `${saveStatus} draft=${hasDraft} questions=${hasQuestions}`).toBe(PUBLISH);
+          expect(document.querySelector('[data-current] .pi-check')).toBeNull();
+          await act(async () => root.unmount());
+          host.remove();
+        }
+      }
+    }
+    await mount();
+  });
+
+  it('while publishing: "Publishing…", disabled', async () => {
+    actions.publishFormAction.mockReturnValue(new Promise(() => {}));
+    await mount({ hasDraft: true });
+    await click(main());
+    expect(accessibleName(main())).toBe(m.publishing);
+    expect(main().disabled).toBe(true);
+    expect(state()).toBe('busy');
+  });
+
+  it('while reverting: "Reverting…", disabled', async () => {
+    actions.revertFormAction.mockReturnValue(new Promise(() => {}));
+    await mount({ previousAt: PREVIOUS_AT });
+    await openMenu();
+    await click(revertItem());
+    await click($('[data-testid="confirm-dialog-confirm"]'));
+    expect(accessibleName(main())).toBe(m.reverting);
+    expect(main().disabled).toBe(true);
+    expect(state()).toBe('busy');
+  });
+
+  it('follows an edit: Published, then Publish (disabled) at the first keystroke, then enabled when the save lands', async () => {
+    await mount({ previousAt: PREVIOUS_AT });
+    expect(accessibleName(main())).toBe(PUBLISHED);
+
+    await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'saving' });
+    expect(accessibleName(main())).toBe(PUBLISH);
+    expect(main().disabled).toBe(true);
+
+    // The API is down: retrying, then failed. Still not "Published".
+    await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'retrying' });
+    expect(accessibleName(main())).toBe(PUBLISH);
+    await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'error' });
+    expect(accessibleName(main())).toBe(PUBLISH);
+    expect(main().disabled).toBe(true);
+
+    // The save lands. The count moves one render before the combined status
+    // does (it is published from an effect): already a pending draft.
+    await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'saving', saveCount: 1 });
+    expect(accessibleName(main())).toBe(PUBLISH);
+    expect(main().disabled).toBe(false);
+    await rerender({ previousAt: PREVIOUS_AT, saveStatus: 'saved', saveCount: 1 });
+    expect(accessibleName(main())).toBe(PUBLISH);
+    expect(main().disabled).toBe(false);
+    expect(state()).toBe('pending');
+  });
+
+  it('keeps the width reserved in the unsaved and empty states too', async () => {
+    for (const opts of [{ saveStatus: 'saving' as const }, { hasQuestions: false }]) {
+      await mount(opts);
+      const stacked = [...main().querySelectorAll('[data-label]')].map((el) => (el as HTMLElement).dataset.label);
+      expect(stacked).toEqual(['publish', 'published', 'publishing', 'reverting']);
+      // They wear the pending look: solid green, never the Published surface.
+      expect($('[data-testid="publish-control"]')!.className).toMatch(/\bbg-signal\b/);
+      await act(async () => root.unmount());
+      host.remove();
+    }
+    await mount();
+  });
+
+  it('speaks Spanish: Publicado, Publicar, Publicando…', async () => {
+    await mount({ locale: 'es', previousAt: PREVIOUS_AT });
+    expect(accessibleName(main())).toBe('Publicado');
+    await rerender({ locale: 'es', previousAt: PREVIOUS_AT, saveStatus: 'saving' });
+    expect(accessibleName(main())).toBe('Publicar');
+    await rerender({ locale: 'es', previousAt: PREVIOUS_AT, saveStatus: 'saved', saveCount: 1 });
+    expect(accessibleName(main())).toBe('Publicar');
+    actions.publishFormAction.mockReturnValue(new Promise(() => {}));
+    await click(main());
+    expect(accessibleName(main())).toBe(es.admin.publish.publishing);
+  });
+});
+
+describe('the revert dialog', () => {
+  it('is rendered beside the pill, not inside it, so it does not take the pill\'s semibold', async () => {
+    await mount({ previousAt: PREVIOUS_AT });
+    await openMenu();
+    await click(revertItem());
+    const dialog = $('[data-testid="confirm-dialog"]')!;
+    expect(dialog).not.toBeNull();
+    const pill = $('[data-testid="publish-control"]')!;
+    expect(pill.contains(dialog)).toBe(false);
+    // No ancestor of the dialog sets a weight, and the card resets it anyway.
+    for (let el = dialog.parentElement; el && el !== document.body; el = el.parentElement) {
+      expect(el.className).not.toMatch(/font-(medium|semibold|bold)/);
+    }
+    expect(dialog.className).toMatch(/\bfont-normal\b/);
   });
 });
 

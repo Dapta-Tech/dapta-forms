@@ -1075,6 +1075,10 @@ export function FormEditor({
               formId={id}
               initialHasDraft={initialHasDraft}
               saveCount={saveCount}
+              // The SAME combined snapshot the indicator above renders, so the
+              // pill cannot say "Published" while that one says anything but saved.
+              saveStatus={status}
+              hasQuestions={hasQuestions}
               locale={locale}
               flush={autosave.flush}
               getSaveCount={() => saveCountRef.current}

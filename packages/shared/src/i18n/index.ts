@@ -5579,7 +5579,10 @@ export const en: FormsMessages = {
         },
         publish: {
           title: 'Publish when you are ready',
-          body: 'Nothing is live until you publish. Then you get a link to share.',
+          // The form is live at its link from the moment it is created; only the
+          // EDITS wait for a publish. This said "Nothing is live until you
+          // publish", under a pill that read "Published".
+          body: "Your edits are saved as a draft. They go live on your form's link when you publish.",
         },
       },
     },
@@ -8361,7 +8364,7 @@ export const es: FormsMessages = {
         },
         publish: {
           title: 'Publica cuando estés listo',
-          body: 'Nada está en línea hasta que publiques. Ahí obtienes el enlace para compartir.',
+          body: 'Tus cambios se guardan como borrador. Salen en el enlace de tu formulario cuando publiques.',
         },
       },
     },

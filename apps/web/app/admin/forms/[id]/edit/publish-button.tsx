@@ -13,6 +13,7 @@ import { AnchoredMenu } from '@/components/ui/anchored-menu';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
+import type { CombinedSaveState } from '@/lib/integrations-save-status';
 import type { FlushResult } from '@/lib/use-autosave';
 
 /**
@@ -49,7 +50,27 @@ type LabelKey = 'publish' | 'published' | 'publishing' | 'reverting';
  *   API: the API publishes the draft the SERVER holds, so a debounced edit
  *   (typed a redirect, pressed Publish in the same gesture) would otherwise be
  *   left out of the published config and land as a fresh draft right after.
+ * - `saveStatus` is the editor's combined save state, the same snapshot the top
+ *   bar's indicator renders (the form's autosave plus the Connect tab's queue).
+ *   A draft only exists once a save LANDS, so between an edit and its save the
+ *   server has no draft yet: without this the pill went on saying "Published"
+ *   over unsaved edits, indefinitely with the API down, and below 1280px (where
+ *   the indicator is hidden) that was the only signal on screen.
+ * - `hasQuestions` is whether the form has anything to answer. A form with no
+ *   questions is served by its link like any other, but there is nothing in it
+ *   to call published, and the save indicator beside the pill reads "Draft".
  * The button disables itself when there is nothing to publish.
+ *
+ * What the main half says, in order:
+ *   publishing / reverting   in flight
+ *   "Publish", enabled       a draft is pending (pressing it flushes first)
+ *   "Publish", disabled      no draft yet, and edits are unsaved, saving,
+ *                            retrying or failed; or the form has no questions
+ *   "Published"              no draft, everything saved, and there is a form
+ * "Published" does not wait for a first press of Publish: a form's config is
+ * live from the moment it is created (the public link serves it, and a revert
+ * dates that first version by its creation), so a form that was never published
+ * through the draft flow is as live as one that was.
  *
  * Beside it, a chevron opens the publish menu, which holds one action today:
  * "Revert to the previous published version". Publishing directly is safe
@@ -66,6 +87,8 @@ export function PublishButton({
   formId,
   initialHasDraft = false,
   saveCount = 0,
+  saveStatus = 'saved',
+  hasQuestions = true,
   locale,
   flush,
   getSaveCount,
@@ -79,6 +102,10 @@ export function PublishButton({
   formId: string;
   initialHasDraft?: boolean;
   saveCount?: number;
+  /** The editor's combined save state (`useCombinedSave`); anything but `saved` is not clean. */
+  saveStatus?: CombinedSaveState['status'];
+  /** Whether the form has at least one question. */
+  hasQuestions?: boolean;
   locale: string;
   /** Push pending autosave edits to the server first; a failure cancels the publish. */
   flush?: () => Promise<FlushResult>;
@@ -208,8 +235,23 @@ export function PublishButton({
   }
 
   const canRevert = previousAt != null && !busy;
-  /** Nothing to publish and nothing in flight: the pill says the form is live. */
-  const idle = !hasDraft && !busy;
+  /**
+   * What the pill is saying. `unsaved`: no draft on the server yet and the
+   * editor is not clean. `empty`: nothing unsaved, but no questions either.
+   * `idle`: the only state that reads "Published".
+   */
+  const state: 'busy' | 'pending' | 'unsaved' | 'empty' | 'idle' = busy
+    ? 'busy'
+    : hasDraft
+      ? 'pending'
+      : saveStatus !== 'saved'
+        ? 'unsaved'
+        : hasQuestions
+          ? 'idle'
+          : 'empty';
+  const idle = state === 'idle';
+  /** The save is on its way (or being retried), as opposed to stopped on a failure. */
+  const saveInFlight = saveStatus === 'saving' || saveStatus === 'retrying';
   const current: LabelKey = publishing ? 'publishing' : reverting ? 'reverting' : idle ? 'published' : 'publish';
   // Every label the main half can show, stacked in one grid cell so the half is
   // always as wide as the widest of them: the pill never resizes (and shifts the
@@ -231,128 +273,134 @@ export function PublishButton({
     // chevron. The halves are transparent and only tint themselves on hover,
     // press and open. Pending (and in flight) is solid Signal Green with its
     // `.bg-signal` rim; with nothing to publish it is a solid surface with a
-    // green rim and a check, a status rather than a faded button.
-    <div
-      data-tour="publish"
-      data-testid="publish-control"
-      data-state={busy ? 'busy' : idle ? 'idle' : 'pending'}
-      className={cn(
-        'inline-flex h-9 shrink-0 items-stretch rounded-full text-sm font-semibold',
-        idle
-          ? 'bg-card text-foreground shadow-[inset_0_0_0_1px_var(--signal-edge)]'
-          : 'bg-signal text-signal-foreground',
-      )}
-    >
-      <button
-        type="button"
-        onClick={publish}
-        disabled={!hasDraft || busy}
-        aria-busy={busy || undefined}
-        title={hasDraft ? undefined : m.noChanges}
-        data-testid="publish-button"
+    // green rim and a check, a status rather than a faded button. The confirm
+    // dialog is a sibling, NOT a child: inside the wrapper it inherited
+    // `font-semibold` and set its body text at 600.
+    <>
+      <div
+        data-tour="publish"
+        data-testid="publish-control"
+        data-state={state}
         className={cn(
-          SEGMENT,
-          'whitespace-nowrap rounded-l-full pl-4 pr-3',
-          busy
-            ? 'cursor-progress'
-            : idle
-              ? 'cursor-default'
-              : 'hover:bg-signal-foreground/10 active:bg-signal-foreground/20',
-        )}
-      >
-        <span className="grid">
-          {labels.map((l) => {
-            const on = l.key === current;
-            return (
-              <span
-                key={l.key}
-                data-label={l.key}
-                data-current={on || undefined}
-                aria-hidden={on ? undefined : true}
-                className={cn(
-                  'col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5',
-                  !on && 'invisible',
-                )}
-              >
-                {l.icon ? (
-                  <i
-                    aria-hidden
-                    className={cn(
-                      l.icon,
-                      on && l.icon.includes('spinner') && 'pi-spin',
-                      l.key === 'published' && 'text-signal-ink',
-                    )}
-                    style={{ fontSize: 13 }}
-                  />
-                ) : null}
-                {l.text}
-              </span>
-            );
-          })}
-        </span>
-      </button>
-      {/* The seam: a hairline inset from the rim, in the label's colour on the
-          green and in the rim's colour on the published surface. */}
-      <span
-        aria-hidden
-        data-testid="publish-divider"
-        className={cn('my-2 w-px shrink-0', idle ? 'bg-signal-edge' : 'bg-current opacity-30')}
-      />
-      {/* The publish menu. Its own half of the pill, never disabled: what it
-          holds is useful exactly when there is nothing new to publish. */}
-      <button
-        ref={menuButtonRef}
-        type="button"
-        onClick={() => setMenuOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-label={m.moreOptions}
-        title={m.moreOptions}
-        data-testid="publish-menu-button"
-        className={cn(
-          SEGMENT,
-          'w-8 rounded-r-full',
+          'inline-flex h-9 shrink-0 items-stretch rounded-full text-sm font-semibold',
           idle
-            ? 'hover:bg-foreground/5 active:bg-foreground/10 aria-expanded:bg-foreground/10'
-            : 'hover:bg-signal-foreground/10 active:bg-signal-foreground/20 aria-expanded:bg-signal-foreground/15',
+            ? 'bg-card text-foreground shadow-[inset_0_0_0_1px_var(--signal-edge)]'
+            : 'bg-signal text-signal-foreground',
         )}
-      >
-        <i aria-hidden className="pi pi-chevron-down" style={{ fontSize: 11 }} />
-      </button>
-      <AnchoredMenu
-        anchorRef={menuButtonRef}
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        label={m.moreOptions}
-        width={288}
-        autoFocus
-        className="p-1.5"
-        testId="publish-menu"
       >
         <button
           type="button"
-          role="menuitem"
-          tabIndex={-1}
-          // aria-disabled, not `disabled`: the item stays focusable, so a
-          // keyboard or screen reader user lands on it and hears why it is
-          // off (the hint below) instead of on an empty menu.
-          aria-disabled={!canRevert}
-          onClick={() => {
-            if (canRevert) void revert();
-          }}
-          data-testid="publish-menu-revert"
-          className="flex w-full items-start gap-2.5 rounded-sm px-2 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-inherit"
+          onClick={publish}
+          disabled={!hasDraft || busy}
+          aria-busy={busy || undefined}
+          title={idle ? m.noChanges : undefined}
+          data-testid="publish-button"
+          className={cn(
+            SEGMENT,
+            'whitespace-nowrap rounded-l-full pl-4 pr-3',
+            state === 'busy' || (state === 'unsaved' && saveInFlight)
+              ? 'cursor-progress'
+              : state === 'idle'
+                ? 'cursor-default'
+                : state === 'pending'
+                  ? 'hover:bg-signal-foreground/10 active:bg-signal-foreground/20'
+                  : 'cursor-not-allowed',
+          )}
         >
-          <i aria-hidden className="pi pi-history mt-0.5 text-muted-foreground" style={{ fontSize: 13 }} />
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span>{m.revert}</span>
-            <span className="text-xs text-muted-foreground" data-testid="publish-menu-revert-hint">
-              {previousAt != null ? t(m.revertAvailable, { date: when(previousAt) }) : m.revertUnavailable}
-            </span>
+          <span className="grid">
+            {labels.map((l) => {
+              const on = l.key === current;
+              return (
+                <span
+                  key={l.key}
+                  data-label={l.key}
+                  data-current={on || undefined}
+                  aria-hidden={on ? undefined : true}
+                  className={cn(
+                    'col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5',
+                    !on && 'invisible',
+                  )}
+                >
+                  {l.icon ? (
+                    <i
+                      aria-hidden
+                      className={cn(
+                        l.icon,
+                        on && l.icon.includes('spinner') && 'pi-spin',
+                        l.key === 'published' && 'text-signal-ink',
+                      )}
+                      style={{ fontSize: 13 }}
+                    />
+                  ) : null}
+                  {l.text}
+                </span>
+              );
+            })}
           </span>
         </button>
-      </AnchoredMenu>
+        {/* The seam: a hairline inset from the rim, in the label's colour on the
+            green and in the rim's colour on the published surface. */}
+        <span
+          aria-hidden
+          data-testid="publish-divider"
+          className={cn('my-2 w-px shrink-0', idle ? 'bg-signal-edge' : 'bg-current opacity-30')}
+        />
+        {/* The publish menu. Its own half of the pill, never disabled: what it
+            holds is useful exactly when there is nothing new to publish. */}
+        <button
+          ref={menuButtonRef}
+          type="button"
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-label={m.moreOptions}
+          title={m.moreOptions}
+          data-testid="publish-menu-button"
+          className={cn(
+            SEGMENT,
+            'w-8 rounded-r-full',
+            idle
+              ? 'hover:bg-foreground/5 active:bg-foreground/10 aria-expanded:bg-foreground/10'
+              : 'hover:bg-signal-foreground/10 active:bg-signal-foreground/20 aria-expanded:bg-signal-foreground/15',
+          )}
+        >
+          <i aria-hidden className="pi pi-chevron-down" style={{ fontSize: 11 }} />
+        </button>
+        <AnchoredMenu
+          anchorRef={menuButtonRef}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          label={m.moreOptions}
+          width={288}
+          autoFocus
+          className="p-1.5"
+          testId="publish-menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            // aria-disabled, not `disabled`: the item stays focusable, so a
+            // keyboard or screen reader user lands on it and hears why it is
+            // off (the hint below) instead of on an empty menu.
+            aria-disabled={!canRevert}
+            onClick={() => {
+              if (canRevert) void revert();
+            }}
+            data-testid="publish-menu-revert"
+            className="flex w-full items-start gap-2.5 rounded-sm px-2 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-inherit"
+          >
+            <i aria-hidden className="pi pi-history mt-0.5 text-muted-foreground" style={{ fontSize: 13 }} />
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span>{m.revert}</span>
+              <span className="text-xs text-muted-foreground" data-testid="publish-menu-revert-hint">
+                {previousAt != null ? t(m.revertAvailable, { date: when(previousAt) }) : m.revertUnavailable}
+              </span>
+            </span>
+          </button>
+        </AnchoredMenu>
+      </div>
       {dialog}
-    </div>
+    </>
   );
 }

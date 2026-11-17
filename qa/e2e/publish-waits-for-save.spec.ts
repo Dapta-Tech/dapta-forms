@@ -55,8 +55,9 @@ async function getForm(
   return (await res.json()) as FormRow;
 }
 
-const publishBtn = (page: Page) =>
-  page.getByRole("button", { name: "Publish", exact: true });
+// By test id, never by name: the button reads "Publish" or "Published"
+// depending on the form's state.
+const publishBtn = (page: Page) => page.getByTestId("publish-button");
 const status = (page: Page) => page.getByTestId("editor-save-status");
 
 /** Open the editor on the Design tab, with ONE save already landed so the
