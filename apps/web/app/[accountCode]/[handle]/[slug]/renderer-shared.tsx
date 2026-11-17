@@ -144,6 +144,19 @@ export function mergeHostUtm(
 }
 
 /**
+ * The campaign a booking page is handed: what the last save carried (the
+ * form's own UTMs, else the landing's, see `mergeHostUtm`), or, before any
+ * save, the form's own. Read at render time, so the booking is credited to the
+ * same campaign as the submission it belongs to.
+ */
+export function campaignUtm(
+  submitted: Record<string, string>,
+  own: Record<string, string>,
+): Record<string, string> {
+  return Object.keys(submitted).length > 0 ? submitted : own;
+}
+
+/**
  * What the public page tells a renderer about the page it is answered on
  * (#199). Only the public page passes it: without it (the builder preview)
  * nothing is asked of anyone and no submit carries a visit.

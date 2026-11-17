@@ -73,6 +73,7 @@ export function BookingScreen({
   hideHeader = false,
   extraCustomAnswers,
   preloadKey,
+  utm,
 }: {
   booking: OutcomeBooking;
   answers: Record<string, unknown>;
@@ -93,6 +94,12 @@ export function BookingScreen({
    * instead of a new one.
    */
   preloadKey?: string;
+  /**
+   * The visitor's campaign `utm_*` (the form's own, else the landing's), the
+   * same set the submission carries. Calendly and dCal record it on the
+   * booking, so the booking is credited to the campaign the visitor came from.
+   */
+  utm?: Record<string, string>;
 }) {
   const m = getMessages(locale).renderer.booking;
 
@@ -100,9 +107,16 @@ export function BookingScreen({
   const [embedDomain] = useState(() =>
     typeof window === 'undefined' ? '' : window.location.host,
   );
+  // Keyed by content: the callers hand a fresh object on every render.
+  const utmKey = JSON.stringify(utm ?? {});
   const embedUrl = useMemo(
-    () => buildBookingEmbedUrl(booking, answers, sessionId, embedDomain, extraCustomAnswers),
-    [booking, answers, sessionId, embedDomain, extraCustomAnswers],
+    () =>
+      buildBookingEmbedUrl(booking, answers, {
+        embedDomain,
+        customAnswers: extraCustomAnswers,
+        utm: JSON.parse(utmKey) as Record<string, string>,
+      }),
+    [booking, answers, embedDomain, extraCustomAnswers, utmKey],
   );
   /**
    * The one origin a dCal "booked" message may come from: the booking page this

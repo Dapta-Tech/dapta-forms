@@ -68,6 +68,7 @@ import {
   useCaptchaGate,
   captchaAborted,
   submitFinal,
+  campaignUtm,
   captureUtm,
   captureDefaults,
   withAnswer,
@@ -317,6 +318,8 @@ export function FormRenderer({
   // The UTMs this run submitted (form's own, else the landing's), kept for the
   // redirects that fire after `finalize` (deferred, post-booking).
   const redirectUtm = useRef<Record<string, string>>({});
+  // The campaign the last save carried (see `withData`), for the booking page.
+  const submittedUtm = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const startSent = useRef(false); // one `start` per session, whichever path emits it
@@ -580,6 +583,7 @@ export function FormRenderer({
   function withData(a: Answers, resolved?: ResolvedVisit): Record<string, unknown> {
     // The landing's campaign stands in only when the form's own URL has none.
     const utm = mergeHostUtm(utmRef.current, resolved?.hostUtm);
+    submittedUtm.current = utm;
     return Object.keys(utm).length > 0 ? { ...a, utm } : { ...a };
   }
 
@@ -1135,6 +1139,7 @@ export function FormRenderer({
           answers={answersRef.current}
           sessionId={sessionId}
           locale={locale}
+          utm={campaignUtm(submittedUtm.current, utmRef.current)}
           preloadKey={booking.outcome.booking.url}
           onBooked={(details) => void handleBooked(details)}
         />
@@ -1502,6 +1507,7 @@ export function FormRenderer({
                     extraCustomAnswers={schedPrefill.customAnswers}
                     sessionId={sessionId}
                     locale={locale}
+                    utm={campaignUtm(submittedUtm.current, utmRef.current)}
                     hideHeader
                     preloadKey={step.scheduler ? schedulerToBooking(step.scheduler)?.url : undefined}
                     onBooked={(details) => void handleSchedulerBooked(step, details)}
