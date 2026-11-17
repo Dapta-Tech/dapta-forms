@@ -59,9 +59,12 @@ export const OUTBOX_KINDS = [
 ] as const;
 export type OutboxKind = (typeof OUTBOX_KINDS)[number];
 /**
- * `skipped` = deliberately not performed (e.g. an email row whose tenant
- * context is unrecoverable on a transport that requires it) — recorded ONCE
- * with a reason, never retried. Distinct from `failed` (exhausted retries).
+ * `skipped` = deliberately not performed, or permanently refused: an email row
+ * whose tenant context is unrecoverable on a transport that requires it, or a
+ * destination whose provider answered with a refusal no retry can fix (a
+ * Salesforce validation error, a sheet that no longer exists, a CRM that is not
+ * connected). Recorded ONCE with a reason, never retried, and never shown as
+ * delivered. Distinct from `failed` (exhausted retries).
  */
 export const OUTBOX_STATUSES = ['pending', 'done', 'failed', 'skipped'] as const;
 export type OutboxStatus = (typeof OUTBOX_STATUSES)[number];
@@ -390,22 +393,31 @@ export async function markOutboxRetry(
 }
 
 /**
- * Deliberately not performed — terminal on the FIRST decision (no retry
- * schedule burned), with the reason kept as the log record. Returns false if it
+ * Deliberately not performed, or refused for good: terminal on the FIRST
+ * decision (no retry schedule burned), with the reason kept as the log record.
+ *
+ * `transcript` is what crossed the wire when the skip followed a real request:
+ * a provider that answered HTTP 400 is skipped, and what it answered is the
+ * one thing that tells the author what to fix. Absent leaves the stored
+ * transcript alone, exactly as on the other settlements. Returns false if it
  * lost the lease.
  */
 export async function markOutboxSkipped(
   db: Db,
   id: string,
-  args: { reason: string; now?: number },
+  args: { reason: string; now?: number; transcript?: DeliveryTranscript },
   claim: OutboxClaim,
 ): Promise<boolean> {
   const now = args.now ?? Date.now();
+  const sets = [
+    sql`status = 'skipped'`,
+    sql`last_error = ${args.reason.slice(0, 1000)}`,
+    sql`updated_at = ${now}`,
+    ...transcriptSets(args.transcript),
+  ];
   return settlementApplied(
     db,
-    sql`UPDATE outbox
-        SET status = 'skipped', last_error = ${args.reason.slice(0, 1000)}, updated_at = ${now}
-        WHERE ${claimedPendingWhere(id, claim)}
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
         RETURNING id`,
   );
 }

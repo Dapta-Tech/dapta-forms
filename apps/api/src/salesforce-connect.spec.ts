@@ -37,6 +37,7 @@ import { LocalAuthProvider, type ReqLike } from './auth.provider';
 import { normalizeSalesforceDomain, SalesforceAccessTokens } from './salesforce-auth';
 import { SalesforceFieldsService } from './salesforce-fields';
 import { DestinationEffects } from './destination-effects';
+import { OutboxSkipError } from './email-effects';
 
 const ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
 const DOMAIN = 'https://acme.my.salesforce.com';
@@ -345,19 +346,21 @@ describe('delivering a submission', () => {
     });
   });
 
-  it('degrades to a named no-op when the workspace never connected Salesforce', async () => {
+  it('degrades to a named skip when the workspace never connected Salesforce', async () => {
     const org = fakeOrg();
     build(org.fetchImpl);
     const effects = new DestinationEffects(db, env(), undefined, undefined, tokens, fields);
     effects.fetchImpl = org.fetchImpl;
-    const transcript = await effects.deliver(
+    const delivery = effects.deliver(
       'complete',
       JSON.stringify({
         destination: { type: 'salesforce', enabled: true, fieldMappings: { email: 'Email' }, utmMappings: {} },
         ctx: ctx(await accountId()),
       }),
     );
-    expect(transcript.responseStatus).toBeUndefined();
+    // A skip, never a success: the worker records it as not delivered.
+    await expect(delivery).rejects.toBeInstanceOf(OutboxSkipError);
+    await expect(delivery).rejects.toThrow('salesforce destination has no usable connection (reconnect Salesforce)');
     expect(org.calls).toHaveLength(0);
   });
 });

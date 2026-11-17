@@ -21,6 +21,7 @@ import {
   type SubmissionVisit,
 } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
+import { OutboxSkipError } from './email-effects';
 import { fileLinksFor } from './file-link';
 import { GoogleSheetsAccessTokens } from './google-sheets-token';
 import { SalesforceAccessTokens } from './salesforce-auth';
@@ -198,13 +199,21 @@ export class DestinationEffects {
   }
 
   /**
-   * The worker's executor for a destination outbox row (kind webhook/hubspot).
-   * Rebuilds the destination (injecting the server-side HubSpot token at delivery
-   * time — it is never stored in the payload) and delivers. A THROWN transport
-   * error propagates so the worker retries; a permanent no-op (delivered:false)
-   * resolves so the row is marked done.
+   * The worker's executor for a destination outbox row (every destination kind).
+   * Rebuilds the destination (injecting the server-side token at delivery time,
+   * never stored in the payload) and delivers. Returns what crossed the wire,
+   * for the queue to record on the `done` row.
+   *
+   * Three outcomes, one per settlement:
+   *   - delivered: returns, and the row is marked `done`;
+   *   - THROWN transport error: propagates, and the worker retries;
+   *   - `delivered:false`, a permanent refusal or a no-op the adapter resolved
+   *     (Salesforce answering 400, a sheet that is gone, no email to key on, a
+   *     CRM that is not connected): throws `OutboxSkipError` with the adapter's
+   *     reason and transcript, so the row ends `skipped`, is never retried, and
+   *     is never shown as delivered. It used to return like a success, and the
+   *     history told the author a lead had arrived when the CRM had refused it.
    */
-  /** Returns what crossed the wire, for the queue to record. */
   async deliver(action: string, payloadJson: string): Promise<DeliveryTranscript> {
     const { destination, ctx } = JSON.parse(payloadJson) as DestinationOutboxPayload;
     // ctx.accountId is the form's account — resolve that account's HubSpot token
@@ -212,22 +221,23 @@ export class DestinationEffects {
     const spec = await this.toSpec(destination, ctx.accountId);
     const dest = createDestination(spec, this.fetchImpl);
     const result = await dest.deliver(ctx);
-    if (!result.delivered) {
-      this.log.warn(
-        `destination ${destination.type} (${ctx.submissionId}/${action}) no-op via ${result.driver}` +
-          (result.detail ? `: ${result.detail}` : ''),
-      );
-    } else {
-      this.log.log(
-        `destination ${destination.type} (${ctx.submissionId}/${action}) delivered` +
-          (result.detail ? `: ${result.detail}` : ''),
-      );
-    }
-    return {
+    const transcript: DeliveryTranscript = {
       requestBody: result.requestBody,
       responseStatus: result.responseStatus,
       responseBody: result.responseBody,
     };
+    if (!result.delivered) {
+      // Logged by the worker when it settles the row as skipped.
+      throw new OutboxSkipError(
+        result.detail?.trim() || `${destination.type} did not accept the delivery (${result.driver})`,
+        transcript,
+      );
+    }
+    this.log.log(
+      `destination ${destination.type} (${ctx.submissionId}/${action}) delivered` +
+        (result.detail ? `: ${result.detail}` : ''),
+    );
+    return transcript;
   }
 
   /**
