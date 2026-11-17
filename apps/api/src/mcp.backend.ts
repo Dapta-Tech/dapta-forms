@@ -510,6 +510,7 @@ export function toBackendError(error: unknown): unknown {
   if (typeof record.updatedAt === 'number') details.updatedAt = record.updatedAt;
   if (typeof record.retryAfterSec === 'number') details.retryAfterSec = record.retryAfterSec;
   if (typeof record.integrationsUrl === 'string') details.integrationsUrl = record.integrationsUrl;
+  if (typeof record.unavailable === 'boolean') details.unavailable = record.unavailable;
   return new BackendError(status, code, message, issues, details);
 }
 

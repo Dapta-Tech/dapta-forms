@@ -41,6 +41,39 @@ describe('set_destinations and a provider that is not connected', () => {
     }
   });
 
+  it('gives a provider this deployment cannot connect at all its own hint: no page, no retry', async () => {
+    const message =
+      'Destination 1 is a new or changed Google Sheets destination, and this dForms deployment cannot connect Google Sheets at all (it has no OAuth client for it), so it would deliver nothing.';
+    const h = await bootHarness({
+      backend: {
+        setDestinations: async () => {
+          throw new BackendError(400, 'INTEGRATION_NOT_CONNECTED', message, [], { integrationsUrl: URL, unavailable: true });
+        },
+      },
+    });
+    try {
+      const c = await h.connect(h.key('owner'));
+      const text = errorText(
+        await c.callTool({
+          name: 'set_destinations',
+          arguments: {
+            form_id: 'form-1',
+            destinations: [{ type: 'google-sheets', enabled: true, settings: { spreadsheetId: 's1' }, columns: [] }],
+          },
+        }),
+      );
+      expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Google Sheets destination/);
+      // Neither half of the usual hint holds here: the message has no page, and connecting is impossible.
+      expect(text).not.toMatch(/holds the dForms integrations page/);
+      expect(text).not.toMatch(/can be sent again/);
+      expect(text).not.toContain(URL);
+      expect(text).toMatch(/whoever runs this dForms deployment has to set it up first/);
+      expect(text).toMatch(/unavailable/);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('reports every warning of the save, and an empty list when there is none', async () => {
     const h = await bootHarness({
       backend: {
@@ -128,6 +161,31 @@ describe('create_form and destinations that deliver nothing yet', () => {
       expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Salesforce destination/);
       expect(text).toContain(URL);
       expect(text).toMatch(/browser/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('gives create_form the same no-page hint when the deployment cannot connect the provider', async () => {
+    const message =
+      'Destination 1 is a new or changed Google Sheets destination, and this dForms deployment cannot connect Google Sheets at all (it has no OAuth client for it), so it would deliver nothing.';
+    const h = await bootHarness({
+      backend: {
+        createForm: async () => {
+          throw new BackendError(400, 'INTEGRATION_NOT_CONNECTED', message, [], { integrationsUrl: URL, unavailable: true });
+        },
+      },
+    });
+    try {
+      const c = await h.connect(h.key('owner'));
+      const text = errorText(
+        await c.callTool({
+          name: 'create_form',
+          arguments: { name: 'Leads', config: { version: 1, steps: [{ key: 'email', type: 'email', question: 'Email?' }] } },
+        }),
+      );
+      expect(text).not.toMatch(/holds the dForms integrations page/);
+      expect(text).toMatch(/whoever runs this dForms deployment has to set it up first/);
     } finally {
       await h.close();
     }
@@ -282,6 +340,34 @@ describe('list_event_types', () => {
       const c = await h.connect(h.key('member'));
       const out = structured<Record<string, unknown>>(await c.callTool({ name: 'list_event_types', arguments: { provider: 'dcal' } }));
       expect(out).toMatchObject({ provider: 'dcal', enabled: false, reason: 'This dForms deployment has no dCal configured.', create_event_url: null });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('requires provider, with no default: a call without it is refused, not read as Calendly', async () => {
+    const asked: string[] = [];
+    const h = await bootHarness({
+      backend: {
+        calendlyEventTypes: async () => {
+          asked.push('calendly');
+          return calendly;
+        },
+      },
+    });
+    try {
+      const c = await h.connect(h.key('owner'));
+      const listed = (await c.listTools()).tools.find((t) => t.name === 'list_event_types')!;
+      expect((listed.inputSchema as { required?: string[] }).required).toContain('provider');
+      expect(JSON.stringify(listed.inputSchema)).not.toContain('"default"');
+      const res = await c.callTool({ name: 'list_event_types', arguments: {} });
+      expect(res.isError).toBe(true);
+      expect(errorText(res)).toMatch(/provider/);
+      expect(asked).toEqual([]);
+      // The alias keeps its old contract: no provider argument, Calendly.
+      const alias = structured<Record<string, unknown>>(await c.callTool({ name: 'list_calendly_event_types', arguments: {} }));
+      expect(alias).toMatchObject({ enabled: true, event_types: calendly.eventTypes });
+      expect(asked).toEqual(['calendly']);
     } finally {
       await h.close();
     }

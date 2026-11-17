@@ -221,6 +221,30 @@ describe('a destination whose provider is not connected', () => {
       expect(body).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'google-sheets' });
       // The page cannot connect Google here, so the message does not send anyone to it.
       expect(body.message).toMatch(/this dForms deployment cannot connect Google Sheets at all/);
+      // And the body says so as a field, so a client (the MCP) can tell "connect it" from "nothing to connect".
+      expect(body.unavailable).toBe(true);
+      const created = await refusal(
+        new AdminCrudController(
+          db,
+          as,
+          new AdminService(db),
+          new SubmissionService(db, new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db)),
+          new AnalyticsService(db),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { PUBLIC_APP_URL: APP } as ServerEnv,
+        ).createForm(req(), { name: 'No Google here', config: { version: 1, steps: [{ key: 'email', type: 'email', question: 'Your email?' }], destinations: [SHEET] } }),
+      );
+      expect(created).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'google-sheets', unavailable: true });
+    });
+
+    it('marks a refusal the workspace can fix by connecting as not unavailable', async () => {
+      const body = await refusal(controller(via).putDestinations(req(), formId, { destinations: [SALESFORCE] }));
+      expect(body).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'salesforce', integrationsUrl: PAGE, unavailable: false });
+      const sheet = await refusal(controller(via).putDestinations(req(), formId, { destinations: [SHEET] }));
+      expect(sheet).toMatchObject({ provider: 'google-sheets', unavailable: false });
     });
 
     it('keeps a stored entry whose editor-only drafts the agent did not send back', async () => {

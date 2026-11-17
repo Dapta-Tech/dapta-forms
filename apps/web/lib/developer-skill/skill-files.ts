@@ -76,7 +76,7 @@ Authorization: Bearer $DFORMS_API_KEY
 5. **On a 429, wait.** Sleep the number of seconds in the \`Retry-After\` header (also \`retryAfterSec\` in the body), then continue. The limit is 120 requests per minute per key.
 6. **Fix every issue at once.** A 400 lists all problems in \`issues[]\`. Each \`path\` is the field's dot path inside the request body, so it starts with the body's own key: \`config.steps.2.flowGroup\` on \`POST /v1/forms\` and \`PUT /v1/forms/{id}\`, \`destinations.0.settings.timeoutMs\` on \`PUT /v1/forms/{id}/destinations\`. Correct all of them before sending again.
 7. **Respect other people's edits.** A 409 \`STALE\` means someone saved the form since you read it. Take the form from \`current\` in the error body, apply your change again on top of it, and retry with its \`updatedAt\`. Never drop their changes.
-8. **Destinations have their own route.** Webhooks and HubSpot are set with \`PUT /v1/forms/{id}/destinations\`. \`PUT /v1/forms/{id}\` ignores \`destinations\` inside the config: they are not saved, and the live ones stay as they are.
+8. **Destinations have their own route.** Webhooks, HubSpot, Google Sheets and Salesforce are set with \`PUT /v1/forms/{id}/destinations\`. \`PUT /v1/forms/{id}\` ignores \`destinations\` inside the config: they are not saved, and the live ones stay as they are.
 
 ## Step types
 
@@ -271,7 +271,7 @@ Every error is JSON with a stable \`error\` code and an English \`message\`:
 |---|---|---|
 | 400 | \`BAD_REQUEST\` | Read \`issues[]\`, fix every entry, send again. |
 | 400 | \`STEPS_REQUIRED\` | A \`PUT /v1/forms/{id}\` config without \`steps\`. Send the full \`steps\` array. |
-| 400 | \`INTEGRATION_NOT_CONNECTED\` | A new or changed Google Sheets or Salesforce destination, switched on, for a provider the workspace has not connected (on \`PUT /v1/forms/{id}/destinations\` or in the config of \`POST /v1/forms\`). An entry sent back exactly as stored is kept. Give the user \`integrationsUrl\`: connecting happens in their browser. Then send the destinations again. |
+| 400 | \`INTEGRATION_NOT_CONNECTED\` | A new or changed Google Sheets or Salesforce destination, switched on, for a provider the workspace has not connected (on \`PUT /v1/forms/{id}/destinations\` or in the config of \`POST /v1/forms\`). An entry sent back exactly as stored is kept. Give the user \`integrationsUrl\`: connecting happens in their browser. Then send the destinations again. With \`unavailable: true\` this dForms deployment cannot connect the provider at all: there is nothing to connect and the same call is refused again, so leave that destination out or switched off and tell the user whoever runs the deployment has to set it up. |
 | 401 | \`INVALID_API_KEY\` | The key is unknown, revoked, or its owner is no longer in the workspace. Ask the user for a new key. |
 | 403 | \`KEY_NOT_ALLOWED\` | This route is dashboard only. Tell the user to do it in dForms. |
 | 403 | \`WORKSPACE_FORBIDDEN\` | You sent a workspace header for another workspace. Drop the header. |

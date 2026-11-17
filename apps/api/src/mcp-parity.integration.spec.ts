@@ -577,6 +577,10 @@ describe('destinations and integrations the workspace has not connected, over th
     );
     // The harness has no Google OAuth client, so the deployment itself cannot connect Google.
     expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Google Sheets destination, and this dForms deployment cannot connect Google Sheets at all/);
+    // The hint fits the case: no page to hand over and no retry, unlike a provider the workspace can connect.
+    expect(text).not.toMatch(/holds the dForms integrations page/);
+    expect(text).not.toMatch(/the same set_destinations call can be sent again/);
+    expect(text).toMatch(/whoever runs this dForms deployment has to set it up first/);
     // Nothing was stored.
     const form = structured<{ destinations: unknown[] }>(await c.callTool({ name: 'get_form', arguments: { form_id: id } }));
     expect(form.destinations).toEqual([]);
@@ -592,6 +596,30 @@ describe('destinations and integrations the workspace has not connected, over th
       }),
     );
     expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Salesforce destination/);
+    // Salesforce can be connected here: the hint sends the page to the user and the call again after.
+    expect(text).toMatch(/holds the dForms integrations page/);
+    expect(text).not.toMatch(/whoever runs this dForms deployment/);
+  });
+
+  it('refuses create_form with a spreadsheet destination on a deployment with no Google client, with no page to send', async () => {
+    const c = await owner();
+    const text = errorText(
+      await c.callTool({
+        name: 'create_form',
+        arguments: {
+          name: `Sheets form ${randomUUID().slice(0, 8)}`,
+          config: {
+            ...CONFIG,
+            destinations: [
+              { type: 'google-sheets', enabled: true, settings: { spreadsheetId: 'sheet-1' }, columns: [{ header: 'Email', source: 'answer', key: 'email' }] },
+            ],
+          },
+        },
+      }),
+    );
+    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Google Sheets destination, and this dForms deployment cannot connect Google Sheets at all/);
+    expect(text).not.toMatch(/holds the dForms integrations page/);
+    expect(text).toMatch(/whoever runs this dForms deployment has to set it up first/);
   });
 
   it('keeps a stored entry whose connection is gone through an unrelated webhook edit, and says so', async () => {

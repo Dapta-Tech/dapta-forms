@@ -97,7 +97,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   'branding.density':
     'One page layout only. "compact" removes the lines between questions and spaces fields 16 px apart, like a regular web form; "comfortable" (the default when absent) is the original spacing. Ignored on slides.',
   'steps.[].scheduler.provider':
-    'calendly, hubspot_meetings or dcal (Dapta\'s own scheduler). A scheduler step the dForms editor adds is born with dcal; absent means calendly, so a step stored before dCal existed still reads as Calendly. Calendly event types come from list_event_types (provider calendly). dCal event types cannot be listed over MCP: the event is picked in the form editor, and a step left without a url asks for it there.',
+    'calendly, hubspot_meetings or dcal (Dapta\'s own scheduler). A scheduler step the dForms editor adds is born with dcal; absent means calendly, so a step stored before dCal existed still reads as Calendly. Calendly event types come from list_event_types with provider calendly (provider is required). dCal event types cannot be listed over MCP: the event is picked in the form editor, and a step left without a url asks for it there.',
   'branding.buttonTextColor':
     'Text color of the solid button (buttonStyle "solid"). Leave it out for the automatic color that contrasts with primaryColor. Ignored when buttonStyle is "outline" or "soft".',
 };
