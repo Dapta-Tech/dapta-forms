@@ -28,6 +28,7 @@ import {
   type AnalyticsQuery,
   type CoreFormsBackend,
   type CreateFormInput,
+  type DestinationWarning,
   type FormAnalytics,
   type FormDetail,
   type FormListItem,
@@ -607,7 +608,14 @@ export class ApiFormsBackend implements CoreFormsBackend {
   }
 
   createForm(caller: McpCaller, input: CreateFormInput): Promise<FormDetail> {
-    return run(async () => detailOf(await this.handlers().forms.createForm(reqOf(caller), input)));
+    return run(async () => {
+      const out = await this.handlers().forms.createForm(reqOf(caller), input);
+      // The route's own destination warnings. An MCP call is an agent, so a
+      // provider that is not connected was refused already; what is left is a
+      // spreadsheet entry with no sheet or no headed column yet.
+      const warnings = (out as { warnings?: DestinationWarning[] }).warnings;
+      return { ...detailOf(out), ...(warnings?.length ? { destinationWarnings: warnings } : {}) };
+    });
   }
 
   updateForm(caller: McpCaller, formId: string, input: UpdateFormInput): Promise<FormDetail> {

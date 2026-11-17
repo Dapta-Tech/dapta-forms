@@ -13,7 +13,7 @@
  * issues for a body the route refuses).
  */
 import type { SubmissionFacets, SubmissionsSummary, SummaryAnswer } from '@quill/engine';
-import type { FormDetail, McpCaller, ResponseItem, ResponseStatus } from './backend';
+import type { DestinationWarning, FormDetail, McpCaller, ResponseItem, ResponseStatus } from './backend';
 
 /** One folder of the workspace. */
 export interface FolderItem {
@@ -134,17 +134,6 @@ export interface DestinationsResult {
    * column. Absent or empty when there is nothing to say.
    */
   warnings?: DestinationWarning[];
-}
-
-/** One warning of a destinations save. See the REST route's `warnings`. */
-export interface DestinationWarning {
-  code: 'INTEGRATION_NOT_CONNECTED' | 'DESTINATION_INCOMPLETE';
-  /** The entry's position in the list that was sent. */
-  index: number;
-  type: string;
-  message: string;
-  /** Where the provider is connected, for `INTEGRATION_NOT_CONNECTED`. */
-  integrationsUrl?: string;
 }
 
 /** The header-row outcome of a destinations save. See the REST route's `sheetHeaders`. */

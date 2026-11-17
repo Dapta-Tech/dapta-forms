@@ -648,6 +648,7 @@ const createForm: ToolDef = {
     `A minimal config: ${JSON.stringify(LEAD_CONFIG)}`,
     'A refused config answers VALIDATION_FAILED with every problem and its path, so you can fix them all in one retry. Unknown fields, repeated step keys or option values and references to steps that do not exist are refused, never silently changed.',
     'Without `branding`, dForms fills it in (the workspace brand kit, or the default look); get_form returns it, and update_form expects it back as read.',
+    "An enabled Google Sheets or Salesforce destination in the config needs its provider connected in the workspace (list_integrations); otherwise the create is refused with INTEGRATION_NOT_CONNECTED, whose message holds the page where the user connects it in a browser. A spreadsheet entry with no sheet yet comes back in warnings.",
   ].join(' '),
   write: true,
   workspace: 'required',
@@ -667,6 +668,8 @@ const createForm: ToolDef = {
       ...(args.folder_id !== undefined ? { folderId: args.folder_id } : {}),
     });
     const warnings = [...review.warnings];
+    // Destinations saved but delivering nothing yet, as the route reports them.
+    for (const w of f.destinationWarnings ?? []) warnings.push(`Destination ${w.index + 1} (${w.type}): ${w.message}`);
     if (!('branding' in args.config) && isObject(f.config) && isObject(f.config.branding)) {
       warnings.push(
         'dForms filled config.branding for you (the workspace brand kit, or the default look). Keep branding exactly as get_form returns it whenever you send update_form, or the draft loses that look.',

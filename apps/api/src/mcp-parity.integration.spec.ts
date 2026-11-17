@@ -556,7 +556,7 @@ describe('integrations, read only', () => {
 });
 
 describe('destinations and integrations the workspace has not connected, over the real handlers', () => {
-  it('refuses a new spreadsheet destination with INTEGRATION_NOT_CONNECTED and the absolute integrations page', async () => {
+  it('refuses a new spreadsheet destination with INTEGRATION_NOT_CONNECTED, saying this deployment cannot connect Google', async () => {
     const c = await owner();
     const id = await newForm(c);
     const text = errorText(
@@ -575,8 +575,8 @@ describe('destinations and integrations the workspace has not connected, over th
         },
       }),
     );
-    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Google Sheets is not connected/);
-    expect(text).toContain(`${APP_URL.replace(/\/+$/, '')}/admin/integrations`);
+    // The harness has no Google OAuth client, so the deployment itself cannot connect Google.
+    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Google Sheets destination, and this dForms deployment cannot connect Google Sheets at all/);
     // Nothing was stored.
     const form = structured<{ destinations: unknown[] }>(await c.callTool({ name: 'get_form', arguments: { form_id: id } }));
     expect(form.destinations).toEqual([]);
@@ -591,7 +591,7 @@ describe('destinations and integrations the workspace has not connected, over th
         arguments: { form_id: id, destinations: [{ type: 'salesforce', enabled: true, fieldMappings: { email: 'Email' } }] },
       }),
     );
-    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Salesforce is not connected/);
+    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Salesforce destination/);
   });
 
   it('keeps a stored entry whose connection is gone through an unrelated webhook edit, and says so', async () => {
@@ -618,6 +618,28 @@ describe('destinations and integrations the workspace has not connected, over th
     ]);
   });
 
+  it('refuses create_form with a destination whose provider is not connected, and creates nothing', async () => {
+    const c = await owner();
+    const name = `Salesforce form ${randomUUID().slice(0, 8)}`;
+    const text = errorText(
+      await c.callTool({
+        name: 'create_form',
+        arguments: {
+          name,
+          config: {
+            ...CONFIG,
+            destinations: [{ type: 'salesforce', enabled: true, fieldMappings: { email: 'Email' } }],
+          },
+        },
+      }),
+    );
+    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Salesforce destination/);
+    expect(text).toContain(`${APP_URL.replace(/\/+$/, '')}/admin/integrations`);
+    expect(text).toMatch(/browser/);
+    const listed = structured<{ forms: Array<{ name: string }> }>(await c.callTool({ name: 'list_forms', arguments: {} }));
+    expect(listed.forms.map((f) => f.name)).not.toContain(name);
+  });
+
   it('answers dCal event types with the specific reason and never reaches the dCal route', async () => {
     const out = structured<{ provider: string; enabled: boolean; reason: string }>(
       await member.callTool({ name: 'list_event_types', arguments: { provider: 'dcal' } }),
@@ -628,7 +650,10 @@ describe('destinations and integrations the workspace has not connected, over th
     const integrations = structured<{ not_connected: string[]; unavailable: string[] }>(
       await member.callTool({ name: 'list_integrations', arguments: {} }),
     );
-    expect(integrations.not_connected).toEqual(expect.arrayContaining(['google-sheets', 'salesforce']));
+    // The harness has no Google OAuth client: Google Sheets is unavailable here, never "not connected".
+    expect(integrations.unavailable).toContain('google-sheets');
+    expect(integrations.not_connected).toContain('salesforce');
+    expect(integrations.not_connected).not.toContain('google-sheets');
   });
 });
 

@@ -482,7 +482,10 @@ describe('POST /v1/forms drops the Google Sheets header bookkeeping', () => {
     destinations: [
       {
         type: 'google-sheets',
-        enabled: true,
+        // Switched off: this account has no Google connection, and an agent's
+        // enabled Sheets entry would be refused before anything is stored
+        // (INTEGRATION_NOT_CONNECTED). The bookkeeping is dropped either way.
+        enabled: false,
         settings: {
           spreadsheetId: 'sheet-1',
           headerSnapshot: state,

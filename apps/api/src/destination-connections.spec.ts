@@ -35,11 +35,24 @@ import { FormDestinationsController } from './integrations.controller';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type HostPrincipal, type PrincipalVia, type ReqLike } from './auth.provider';
 import { connectionVerdict, integrationsPageUrl } from './destination-connections';
+import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
+import { AdminCrudController } from './admin-crud.controller';
+import { AdminService } from './admin.service';
+import { SubmissionService } from './submission.service';
+import { EmailEffects } from './email-effects';
+import { AnalyticsService } from './analytics.service';
 
 const KEY = Buffer.alloc(32, 5).toString('base64');
 const APP = 'https://app.example.test';
 const PAGE = `${APP}/admin/integrations`;
 const req = (): ReqLike => ({ headers: {} });
+/** A deployment with a Google OAuth client, so a Google connection row can deliver. */
+const ENV = {
+  PUBLIC_APP_URL: `${APP}/`,
+  GOOGLE_OAUTH_CLIENT_ID: 'client-id',
+  GOOGLE_OAUTH_CLIENT_SECRET: 'client-secret',
+  GOOGLE_OAUTH_REDIRECT_URI: `${APP}/v1/integrations/google-sheets/callback`,
+} as ServerEnv;
 
 const SHEET = {
   type: 'google-sheets',
@@ -83,8 +96,20 @@ describe('a destination whose provider is not connected', () => {
   const controller = (via: PrincipalVia): FormDestinationsController => {
     const as = Object.create(auth) as AuthService;
     as.resolveHost = async (r: ReqLike): Promise<HostPrincipal> => ({ ...(await auth.resolveHost(r)), via });
-    return new FormDestinationsController(db, as, { PUBLIC_APP_URL: `${APP}/` } as ServerEnv);
+    return new FormDestinationsController(db, as, ENV);
   };
+  /** POST /v1/forms, through the real create handler, as `via`. */
+  const creator = (via: PrincipalVia): AdminCrudController => {
+    const as = Object.create(auth) as AuthService;
+    as.resolveHost = async (r: ReqLike): Promise<HostPrincipal> => ({ ...(await auth.resolveHost(r)), via });
+    const submissions = new SubmissionService(db, new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db));
+    return new AdminCrudController(db, as, new AdminService(db), submissions, new AnalyticsService(db), undefined, undefined, undefined, undefined, ENV);
+  };
+  const newForm = (via: PrincipalVia, destinations: unknown[]) =>
+    creator(via).createForm(req(), {
+      name: `Form ${Math.random().toString(36).slice(2, 8)}`,
+      config: { version: 1, steps: [{ key: 'email', type: 'email', question: 'Your email?' }], destinations },
+    }) as Promise<Record<string, unknown>>;
   const stored = async () => ((await getFormById(db, accountId, formId))!.config as { destinations?: unknown[] }).destinations ?? [];
   const refusal = async (work: Promise<unknown>) => {
     const err = await work.then(
@@ -123,6 +148,9 @@ describe('a destination whose provider is not connected', () => {
       expect(body).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'google-sheets', index: 1, integrationsUrl: PAGE });
       expect(body.message).toContain(PAGE);
       expect(body.message).toMatch(/Google Sheets is not connected/);
+      // Says why this entry was refused when a stored one would not be.
+      expect(body.message).toMatch(/^Destination 2 is a new or changed Google Sheets destination/);
+      expect(body.message).toMatch(/sent back exactly as the form stores it is kept/);
       expect(await stored()).toEqual(before);
     });
 
@@ -184,6 +212,91 @@ describe('a destination whose provider is not connected', () => {
       expect(await stored()).toHaveLength(3);
     });
 
+    it('treats a Google connection as missing when the deployment has no Google OAuth client', async () => {
+      await connect('google-sheets');
+      const as = Object.create(auth) as AuthService;
+      as.resolveHost = async (r: ReqLike): Promise<HostPrincipal> => ({ ...(await auth.resolveHost(r)), via });
+      const noClient = new FormDestinationsController(db, as, { PUBLIC_APP_URL: APP } as ServerEnv);
+      const body = await refusal(noClient.putDestinations(req(), formId, { destinations: [SHEET] }));
+      expect(body).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'google-sheets' });
+      // The page cannot connect Google here, so the message does not send anyone to it.
+      expect(body.message).toMatch(/this dForms deployment cannot connect Google Sheets at all/);
+    });
+
+    it('keeps a stored entry whose editor-only drafts the agent did not send back', async () => {
+      const stored = { ...SALESFORCE, drafts: { mappings: [{ key: 'company', field: '' }] } };
+      await updateFormDestinations(db, accountId, formId, [stored] as never);
+      const out = await controller(via).putDestinations(req(), formId, { destinations: [SALESFORCE, WEBHOOK] });
+      expect(out.warnings?.[0]).toMatchObject({ code: 'INTEGRATION_NOT_CONNECTED', index: 0 });
+    });
+
+    it('keeps a stored entry sent back with null where the store has nothing, or the reverse', async () => {
+      const sheetNoTitle = { ...SHEET, settings: { spreadsheetId: 'sheet-1' } };
+      const sheetNullTitle = { ...SHEET, settings: { spreadsheetId: 'sheet-1', sheetTitle: null } };
+      // Stored with null, sent back without the key.
+      await updateFormDestinations(db, accountId, formId, [sheetNullTitle, { ...SALESFORCE, scoreField: null }] as never);
+      const a = await controller(via).putDestinations(req(), formId, { destinations: [sheetNoTitle, SALESFORCE, WEBHOOK] });
+      expect(a.warnings?.map((w) => w.index)).toEqual([0, 1]);
+      // Stored without the key, sent back with null.
+      await updateFormDestinations(db, accountId, formId, [sheetNoTitle, SALESFORCE] as never);
+      const b = await controller(via).putDestinations(req(), formId, {
+        destinations: [sheetNullTitle, { ...SALESFORCE, scoreField: null }, WEBHOOK],
+      });
+      expect(b.warnings?.map((w) => w.index)).toEqual([0, 1]);
+    });
+
+    it('keeps a stored mapping written as one field when it comes back as a list of one, and the reverse', async () => {
+      await updateFormDestinations(db, accountId, formId, [SALESFORCE] as never);
+      const asList = { ...SALESFORCE, fieldMappings: { email: ['Email'] } };
+      const out = await controller(via).putDestinations(req(), formId, { destinations: [asList, WEBHOOK] });
+      expect(out.warnings?.[0]).toMatchObject({ code: 'INTEGRATION_NOT_CONNECTED', index: 0 });
+      await updateFormDestinations(db, accountId, formId, [asList] as never);
+      const back = await controller(via).putDestinations(req(), formId, { destinations: [SALESFORCE] });
+      expect(back.warnings?.[0]).toMatchObject({ code: 'INTEGRATION_NOT_CONNECTED', index: 0 });
+    });
+
+    it('still refuses a mapping that really changed', async () => {
+      await updateFormDestinations(db, accountId, formId, [SALESFORCE] as never);
+      const body = await refusal(
+        controller(via).putDestinations(req(), formId, { destinations: [{ ...SALESFORCE, fieldMappings: { email: ['Email', 'Work_Email__c'] } }] }),
+      );
+      expect(body.error).toBe('INTEGRATION_NOT_CONNECTED');
+    });
+
+    it('refuses a form created with a destination of a provider not connected, and creates nothing', async () => {
+      const before = (await listForms(db, accountId)).length;
+      const err = await newForm(via, [SHEET]).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toMatchObject({
+        error: 'INTEGRATION_NOT_CONNECTED',
+        provider: 'google-sheets',
+        integrationsUrl: PAGE,
+      });
+      const sf = await newForm(via, [SALESFORCE]).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect((sf as BadRequestException).getResponse()).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'salesforce' });
+      expect((await listForms(db, accountId)).length).toBe(before);
+    });
+
+    it('creates a form with connected destinations, with no warnings', async () => {
+      await connect('google-sheets');
+      await connect('salesforce');
+      const out = await newForm(via, [SHEET, SALESFORCE, WEBHOOK]);
+      expect(out).not.toHaveProperty('warnings');
+    });
+
+    it('duplicates a form whose destinations lost their connection: a copy in the same account promises nothing new', async () => {
+      await updateFormDestinations(db, accountId, formId, [SHEET, SALESFORCE] as never);
+      const copy = (await creator(via).duplicateForm(req(), formId)) as { id: string };
+      const copied = ((await getFormById(db, accountId, copy.id))!.config as { destinations?: unknown[] }).destinations ?? [];
+      expect(copied.map((d) => (d as { type: string }).type)).toEqual(['google-sheets', 'salesforce']);
+    });
+
     it('warns about a connected spreadsheet entry with no spreadsheet yet', async () => {
       await connect('google-sheets');
       const out = await controller(via).putDestinations(req(), formId, { destinations: [EDITOR.sheetsSwitchedOn] });
@@ -208,6 +321,18 @@ describe('a destination whose provider is not connected', () => {
       const out = await controller('session').putDestinations(req(), formId, { destinations: [SHEET, SALESFORCE] });
       expect(out.warnings).toHaveLength(2);
     });
+  });
+
+  it('creates a form for a browser session with a destination not connected, and says so in warnings', async () => {
+    const out = await newForm('session', [SHEET, SALESFORCE]);
+    expect(out.warnings).toEqual([
+      expect.objectContaining({ code: 'INTEGRATION_NOT_CONNECTED', index: 0, type: 'google-sheets', integrationsUrl: PAGE }),
+      expect.objectContaining({ code: 'INTEGRATION_NOT_CONNECTED', index: 1, type: 'salesforce' }),
+    ]);
+  });
+
+  it('creates a form with only webhooks exactly as before, for an agent', async () => {
+    expect(await newForm('api_key', [WEBHOOK])).not.toHaveProperty('warnings');
   });
 
   it('leaves a form with only webhooks exactly as before: no warnings key at all', async () => {

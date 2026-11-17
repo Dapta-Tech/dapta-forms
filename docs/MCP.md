@@ -121,7 +121,7 @@ owners and admins see such keys marked as created by Dapta staff.
 | `list_my_workspaces` | read | The workspaces this connection can act in: id, name, account name, role and access, plus what to do next. `search` filters them by name; for staff it searches every workspace dForms knows (see [Staff](#staff)). `limit` caps the list (default: all); `truncated` says when more applied. With a key, the key's one workspace. |
 | `list_forms` | read | Forms, most recently updated first, with id, `public_url`, whether edits are unpublished and `is_live` (false when the live version has no steps, so the link opens an empty form). Filter by name, ignoring case and accents; page with `limit`/`offset`. |
 | `get_form` | read | One form: `public_url`, publish state, `is_live` and the config to edit (the pending draft when there is one). `destinations` are left out of the config and listed apart (the live form's, with their ids, secrets masked): the list `set_destinations` starts from. |
-| `create_form` | write | Creates a form from a full config. It is live at once; the result carries its `public_url`, and a warning when dForms filled `branding` in. Not idempotent. |
+| `create_form` | write | Creates a form from a full config. It is live at once; the result carries its `public_url`, and a warning when dForms filled `branding` in. Not idempotent. An enabled Google Sheets or Salesforce destination whose provider is not connected is refused with `INTEGRATION_NOT_CONNECTED`, as on `set_destinations`. |
 | `update_form` | write | Saves a new config as an unpublished draft (and can rename). Requires `expected_updated_at`; a form saved elsewhere since answers `STALE`. |
 | `publish_form` | **destructive** | Makes the draft live, replacing what respondents see. The replaced version is kept for `revert_form`. A retry after the publish went through answers `nothing_published`, not `STALE`. |
 | `revert_form` | **destructive** | Puts the previously published version back live; a second revert undoes the first. It rolls back a publish, never unpublished edits. |
@@ -174,7 +174,7 @@ its REST route, with the same role rule and the same masking.
 | Notifications | `GET /v1/forms/:id/notifications` | `list_form_notifications` | read, owners and admins |
 | Notifications | `PUT /v1/forms/:id/notifications/:emailKey` | `update_form_notification` | write, owners and admins |
 | Notifications | `POST /v1/forms/:id/notifications/:emailKey/reset` | `reset_form_notification` | **destructive**, owners and admins |
-| Integrations | `GET /v1/integrations` | `list_integrations` | read (HubSpot, Calendly, Google Sheets and Salesforce, with `not_connected`, `unavailable` and whether the deployment has dCal) |
+| Integrations | `GET /v1/integrations` | `list_integrations` | read (HubSpot, Calendly, Google Sheets and Salesforce, with `not_connected`, `unavailable` and whether the deployment has dCal; a provider in `unavailable` is reported there only) |
 | Integrations | `GET /v1/integrations/webhooks` | `list_webhooks` | read |
 | Integrations | `GET /v1/integrations/hubspot/properties` | `list_hubspot_properties` | read (calls HubSpot) |
 | Integrations | `GET /v1/integrations/calendly/event-types` | `list_event_types` (`provider: calendly`) | read (calls Calendly). `list_calendly_event_types` is the same tool under its first name, kept for clients that call it (`TOOL_ALIASES`). `provider: dcal` answers `enabled: false` with the reason: dCal reads the person's own Dapta session, which no MCP credential is, so a dCal event is picked in the editor |

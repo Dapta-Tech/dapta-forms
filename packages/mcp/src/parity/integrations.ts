@@ -25,14 +25,16 @@ const PROVIDERS = ['hubspot', 'calendly', 'google-sheets', 'salesforce'] as cons
 export const listIntegrations: ToolDef = {
   name: 'list_integrations',
   title: 'List the integrations',
-  description: `Which providers (HubSpot, Calendly, Google Sheets, Salesforce) this workspace is connected to, with a label and the last 4 characters of the credential (never the credential), which ones are not connected, which ones the deployment itself supplies a token for (server_provided, HubSpot and Calendly only), which ones this deployment cannot connect at all (unavailable: Google Sheets when the deployment has no Google OAuth client), and whether the server can store credentials. A Google Sheets or Salesforce destination delivers only while its provider is connected. dCal is not a connection: it reads the signed-in person's own Dapta session, so dcal says only whether this deployment has dCal, and where event types are created. ${DASHBOARD_ONLY}`,
+  description: `Which providers (HubSpot, Calendly, Google Sheets, Salesforce) this workspace is connected to, with a label and the last 4 characters of the credential (never the credential), which ones are not connected, which ones the deployment itself supplies a token for (server_provided, HubSpot and Calendly only), which ones this deployment cannot connect at all (unavailable: Google Sheets when the deployment has no Google OAuth client; such a provider is listed there only, never as connected or not_connected, even when a connection from before remains), and whether the server can store credentials. A Google Sheets or Salesforce destination delivers only while its provider is connected. dCal is not a connection: it reads the signed-in person's own Dapta session, so dcal says only whether this deployment has dCal, and where event types are created. ${DASHBOARD_ONLY}`,
   write: false,
   workspace: 'required',
   annotations: READ,
   input,
   output: z.object({
-    providers: z.array(z.record(z.string(), z.unknown())).describe('The connected providers, one entry each.'),
-    not_connected: z.array(z.enum(PROVIDERS)).describe('The providers this workspace has not connected and the deployment does not supply.'),
+    providers: z.array(z.record(z.string(), z.unknown())).describe('The connected providers that can deliver here, one entry each.'),
+    not_connected: z
+      .array(z.enum(PROVIDERS))
+      .describe('The providers this workspace has not connected, which the deployment does not supply and can connect.'),
     server_provided: z.array(z.string()).describe('Providers that work through a token the deployment supplies, connected here or not.'),
     unavailable: z.array(z.string()).describe('Providers this deployment cannot connect at all, whoever asks.'),
     encryption_available: z.boolean(),
@@ -43,11 +45,18 @@ export const listIntegrations: ToolDef = {
   }),
   async run(_args: Input, ctx) {
     const v = await ctx.backend.listIntegrations(actingAs(ctx));
-    const providers = (v['providers'] as Array<Record<string, unknown>> | undefined) ?? [];
     const serverProvided = (v['serverProvided'] as string[] | undefined) ?? [];
     const unavailable = (v['unavailable'] as string[] | undefined) ?? [];
+    // A provider the deployment cannot connect cannot deliver either, even
+    // with a connection left from before (Google Sheets once its OAuth client
+    // is removed): it is reported in `unavailable` only.
+    const providers = ((v['providers'] as Array<Record<string, unknown>> | undefined) ?? []).filter(
+      (p) => !unavailable.includes(String(p['provider'])),
+    );
     const connected = providers.filter((p) => p['connected']).map((p) => String(p['provider']));
-    const notConnected = PROVIDERS.filter((p) => !connected.includes(p) && !serverProvided.includes(p));
+    const notConnected = PROVIDERS.filter(
+      (p) => !connected.includes(p) && !serverProvided.includes(p) && !unavailable.includes(p),
+    );
     const dcalRaw = v['dcal'] as { createEventUrl?: unknown } | null | undefined;
     const dcal = dcalRaw && typeof dcalRaw.createEventUrl === 'string' ? { create_event_url: dcalRaw.createEventUrl } : null;
     return {

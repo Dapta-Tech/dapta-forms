@@ -73,7 +73,7 @@ export const GOOGLE_STATE_MAX_LENGTH = 512;
 
 const B64URL_RE = /^[A-Za-z0-9_-]+$/;
 
-type GoogleOAuthEnv = Partial<
+export type GoogleOAuthEnv = Partial<
   Pick<
     ServerEnv,
     | 'GOOGLE_OAUTH_CLIENT_ID'

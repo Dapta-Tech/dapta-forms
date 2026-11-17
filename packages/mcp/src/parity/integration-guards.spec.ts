@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BackendError } from '../backend';
 import { CATALOG } from '../catalog';
-import { bootHarness, errorText, structured } from '../__tests__/harness';
+import { bootHarness, errorText, form, structured } from '../__tests__/harness';
 
 /**
  * What the MCP says about integrations the workspace cannot deliver through:
@@ -103,13 +103,79 @@ describe('set_destinations and a provider that is not connected', () => {
   });
 });
 
+describe('create_form and destinations that deliver nothing yet', () => {
+  it('passes the refusal through with its code, the page and what to do', async () => {
+    const message =
+      'Destination 1 is a new or changed Salesforce destination, and Salesforce is not connected in this workspace, so it would deliver nothing.';
+    const h = await bootHarness({
+      backend: {
+        createForm: async () => {
+          throw new BackendError(400, 'INTEGRATION_NOT_CONNECTED', `${message} Open ${URL}.`, [], { integrationsUrl: URL });
+        },
+      },
+    });
+    try {
+      const c = await h.connect(h.key('owner'));
+      const text = errorText(
+        await c.callTool({
+          name: 'create_form',
+          arguments: {
+            name: 'Leads',
+            config: { version: 1, steps: [{ key: 'email', type: 'email', question: 'Email?' }] },
+          },
+        }),
+      );
+      expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed Salesforce destination/);
+      expect(text).toContain(URL);
+      expect(text).toMatch(/browser/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('reports the create warnings the route returns', async () => {
+    const h = await bootHarness({
+      backend: {
+        createForm: async (_c, input) =>
+          form({
+            id: 'form-new',
+            name: input.name,
+            destinationWarnings: [
+              { code: 'DESTINATION_INCOMPLETE', index: 0, type: 'google-sheets', message: 'No spreadsheet yet.' },
+            ],
+          }),
+      },
+    });
+    try {
+      const c = await h.connect(h.key('owner'));
+      const out = structured<{ warnings?: string[] }>(
+        await c.callTool({
+          name: 'create_form',
+          arguments: { name: 'Leads', config: { version: 1, steps: [{ key: 'email', type: 'email', question: 'Email?' }] } },
+        }),
+      );
+      expect(out.warnings).toContain('Destination 1 (google-sheets): No spreadsheet yet.');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('describes the connection rule', () => {
+    expect(CATALOG.find((t) => t.name === 'create_form')!.description).toContain('INTEGRATION_NOT_CONNECTED');
+  });
+});
+
 describe('list_integrations', () => {
   it('names the four providers, the ones not connected, the ones the deployment cannot connect, and dCal', async () => {
     const h = await bootHarness({
       backend: {
         listIntegrations: async () => ({
           encryptionAvailable: true,
-          providers: [{ provider: 'salesforce', connected: true, last4: 'ab12', label: 'Acme org', connectedAt: 1 }],
+          providers: [
+            { provider: 'salesforce', connected: true, last4: 'ab12', label: 'Acme org', connectedAt: 1 },
+            // Left from before the deployment lost its Google OAuth client.
+            { provider: 'google-sheets', connected: true, last4: 'cd34', label: 'ops@example.test', connectedAt: 1 },
+          ],
           serverProvided: ['hubspot'],
           unavailable: ['google-sheets'],
           googlePicker: false,
@@ -120,7 +186,9 @@ describe('list_integrations', () => {
     try {
       const c = await h.connect(h.key('member'));
       const out = structured<Record<string, unknown>>(await c.callTool({ name: 'list_integrations', arguments: {} }));
-      expect(out['not_connected']).toEqual(['calendly', 'google-sheets']);
+      // Google Sheets cannot be connected here: it is in unavailable only, never connected nor not_connected.
+      expect(out['not_connected']).toEqual(['calendly']);
+      expect((out['providers'] as Array<{ provider: string }>).map((p) => p.provider)).toEqual(['salesforce']);
       expect(out['unavailable']).toEqual(['google-sheets']);
       expect(out['server_provided']).toEqual(['hubspot']);
       expect(out['dcal']).toEqual({ create_event_url: 'https://cal.example.test/admin/event-types' });

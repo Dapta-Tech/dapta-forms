@@ -5293,7 +5293,7 @@ export const en: FormsMessages = {
         'GET /v1/forms':
           'Lists the workspace’s forms, most recently updated first, with their `publicUrl` and `editorUrl`.',
         'POST /v1/forms':
-          'Creates a form. The config is live at once. It is not idempotent: if a call fails or times out, list the forms before you try again.',
+          'Creates a form. The config is live at once. It is not idempotent: if a call fails or times out, list the forms before you try again. With an API key, an enabled Google Sheets or Salesforce destination in the config whose provider is not connected answers 400 `INTEGRATION_NOT_CONNECTED`, and `warnings` lists a spreadsheet destination with no sheet yet.',
         'GET /v1/forms/:id':
           'One form: the live `config`, the pending `draftConfig` (or `null`), when it was published and the stamp to send back as `expectedUpdatedAt`.',
         'PUT /v1/forms/:id':
@@ -8112,7 +8112,7 @@ export const es: FormsMessages = {
         'GET /v1/forms':
           'Lista los forms del workspace, el último editado primero, con su `publicUrl` y su `editorUrl`.',
         'POST /v1/forms':
-          'Crea un form. La config queda publicada de inmediato. No es idempotente: si una llamada falla o se demora demasiado, lista los forms antes de volver a intentar.',
+          'Crea un form. La config queda publicada de inmediato. No es idempotente: si una llamada falla o se demora demasiado, lista los forms antes de volver a intentar. Con una API key, un destino activo de Google Sheets o Salesforce en la config cuyo proveedor no está conectado responde 400 `INTEGRATION_NOT_CONNECTED`, y `warnings` lista un destino de hoja que todavía no tiene hoja.',
         'GET /v1/forms/:id':
           'Un form: la `config` publicada, el borrador pendiente en `draftConfig` (o `null`), cuándo se publicó y el sello que debes mandar como `expectedUpdatedAt`.',
         'PUT /v1/forms/:id':
