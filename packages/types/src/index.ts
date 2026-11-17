@@ -1265,8 +1265,8 @@ const goHighLevelStandardTargetSchema = z.object({
 /**
  * A custom field of the location. `dataType` is any type GHL reports, not only
  * the mappable ones: which type a mapping may target is an AUTHORING rule
- * (`goHighLevelSlotAccepts`, checked by the API on save and by the adapter at
- * delivery), so narrowing it later never makes a stored config stop parsing.
+ * (`goHighLevelSlotAccepts`, which the API is to check on save and the adapter
+ * at delivery), so narrowing it later never makes a stored config stop parsing.
  */
 export const goHighLevelCustomFieldTargetSchema = z.object({
   kind: z.literal('custom'),
@@ -1307,8 +1307,8 @@ export type GoHighLevelStaticField = z.infer<typeof goHighLevelStaticFieldSchema
  * submitted date and the UTMs go to custom fields only. Which custom-field
  * types each mapping may target (`goHighLevelSlotAccepts`) and whether a
  * standard field suits a question's type (`GOHIGHLEVEL_STANDARD_FIELDS`
- * `sources`) are authoring rules the API checks on save, not parse rules, so
- * a stored config keeps parsing if either list changes.
+ * `sources`) are authoring rules the API is to check on save, not parse
+ * rules, so a stored config keeps parsing if either list changes.
  *
  * Precedence when two sources write one field: the mappings, then the UTMs,
  * then the date and the score; `staticFields` only fill what is still empty.

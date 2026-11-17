@@ -130,8 +130,9 @@ export type GoHighLevelCustomFieldDataType = (typeof GOHIGHLEVEL_CUSTOM_FIELD_DA
  *
  * Left out on purpose: `TEXTBOX_LIST`, `SIGNATURE` and `FILE_UPLOAD` (the
  * upsert does not take them), and `FLOAT` and `TIME` (how the upsert takes
- * their value is not confirmed). The fields route never offers them, the API
- * refuses a mapping to one on save, and the adapter leaves such a value out.
+ * their value is not confirmed). The fields route will never offer them, the
+ * API will refuse a mapping to one on save, and the adapter will leave such a
+ * value out (none of the three exists yet).
  * The schema itself accepts every known type (see
  * {@link GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES}), so moving a type out of this
  * list later can never stop a stored config from parsing.
@@ -167,8 +168,9 @@ export function isGoHighLevelMappableDataType(type: unknown): type is GoHighLeve
 /**
  * The custom-field types each kind of mapping may target: any mappable type
  * for an answer or a fixed value, a number for the score, a date for the
- * submitted day, free text for a UTM. The editor offers only these, the API
- * refuses anything else on save, and the adapter skips anything else.
+ * submitted day, free text for a UTM. The editor will offer only these, the
+ * API will refuse anything else on save, and the adapter will skip anything
+ * else; this is the one check all three are to call.
  */
 export const GOHIGHLEVEL_SLOT_DATA_TYPES = {
   field: GOHIGHLEVEL_MAPPABLE_DATA_TYPES,

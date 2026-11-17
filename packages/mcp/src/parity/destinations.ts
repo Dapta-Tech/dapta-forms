@@ -1,6 +1,6 @@
 import * as z from 'zod4';
 import { actingAs, workspaceId, type ToolDef } from '../tools';
-import { INTEGRATION_UNAVAILABLE_HINT, isUnavailableProvider, untrusted } from '../support';
+import { isUnavailableProvider, unavailableProviderHint, untrusted } from '../support';
 import { CONFIRM_FIRST, FORM_MISSING, attempt, formIdArg, plural } from './shared';
 
 /** Where a form's responses go: its webhooks, its HubSpot destination and its spreadsheet. */
@@ -96,7 +96,7 @@ export const setDestinations: ToolDef = {
   async run(args: z.infer<typeof setDestinationsInput>, ctx) {
     const out = await attempt(ctx.backend.setDestinations(actingAs(ctx), args.form_id, args.destinations), FORM_MISSING, {
       // A provider this deployment cannot connect at all has no page and no retry.
-      INTEGRATION_NOT_CONNECTED: (e) => (isUnavailableProvider(e) ? INTEGRATION_UNAVAILABLE_HINT : NOT_CONNECTED_HINT),
+      INTEGRATION_NOT_CONNECTED: (e) => (isUnavailableProvider(e) ? unavailableProviderHint(e) : NOT_CONNECTED_HINT),
     });
     const warnings = (out.warnings ?? []).map((w) => ({
       code: w.code,
