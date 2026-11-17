@@ -88,6 +88,24 @@ describe('createHostVisit: embedded, with the host script on the page', () => {
     expect(w.posted).toHaveLength(2); // it answered: no third ask
   });
 
+  it("hands the landing's campaign to onHostUtm when the host answers the mount ask", () => {
+    const w = stubWindow({ framed: true });
+    const seen: Record<string, string>[] = [];
+    createHostVisit({ hubspotTracking: false, formTitle: FORM_TITLE, onHostUtm: (u) => seen.push(u) }).start();
+    w.answer(hostFields);
+    // No submit, no extra ask: the mount ask is enough.
+    expect(w.posted).toHaveLength(1);
+    expect(seen).toEqual([{ utm_source: 'facebook', utm_medium: 'paid_social' }]);
+  });
+
+  it('says nothing to onHostUtm once the page switched the context off', () => {
+    const w = stubWindow({ framed: true });
+    const seen: Record<string, string>[] = [];
+    createHostVisit({ hubspotTracking: false, formTitle: FORM_TITLE, onHostUtm: (u) => seen.push(u) }).start();
+    w.answer({ off: true });
+    expect(seen).toEqual([]);
+  });
+
   it('asks afresh at submit and sends what the host says NOW, with its campaign', async () => {
     const w = stubWindow({ framed: true });
     const visit = createHostVisit({ hubspotTracking: false, formTitle: FORM_TITLE });

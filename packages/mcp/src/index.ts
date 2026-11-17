@@ -64,4 +64,4 @@ export {
 } from './support';
 export { METRIC_DEFINITIONS, TOOLS, type ToolContext, type ToolDef, type ToolResult } from './tools';
 export { CATALOG } from './catalog';
-export { API_ROUTE_EXCLUSIONS, API_ROUTE_TOOLS, PARITY_TOOLS } from './parity/index';
+export { API_ROUTE_EXCLUSIONS, API_ROUTE_TOOLS, PARITY_TOOLS, TOOL_ALIASES } from './parity/index';

@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/toast';
 import { awaitPendingDestinationWrite } from '@/lib/connect-sync';
 import { mappableQuestions } from '../../integrations/auto-map';
+import { scoringColumns } from '../../integrations/sheet-columns';
 import { IntegrationsEditor, type QuestionMeta } from '../../integrations/integrations-editor';
 import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
 import { ConnectEmailsSection } from './connect-emails-section';
@@ -67,7 +68,8 @@ export function ConnectPanel({
 
   // "Map questions" rows come from the LIVE editor state so a question added a
   // second ago is mappable immediately (no refetch). `mappableQuestions` leaves
-  // out `message` steps and offers a `name` question as its two stored answers.
+  // out the steps that collect nothing and offers a `name` question as its two
+  // stored answers.
   const questions: QuestionMeta[] = useMemo(
     () => mappableQuestions(config.steps, { first: im.nameFirstPart, last: im.nameLastPart }),
     [config.steps, im],
@@ -283,6 +285,7 @@ function IntegrationsSection({
           googleJustConnected={googleJustConnected}
           formName={state.data.formName}
           questions={questions}
+          scoring={scoringColumns(config)}
           readiness={readiness}
           partialsHeld={partialsHeld}
           messages={im}

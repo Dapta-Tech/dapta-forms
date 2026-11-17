@@ -309,14 +309,32 @@ const ACTIONABLE: Record<string, { message?: string; hint: string }> = {
     hint: "The key's owner lacks the role for this. Tell the user; an owner or admin of the workspace can do it.",
   },
   KEY_NOT_ALLOWED: { hint: 'This can only be done in the dForms dashboard. Tell the user.' },
+  INTEGRATION_NOT_CONNECTED: {
+    hint: "The message holds the dForms integrations page. Connecting Google or Salesforce is a consent screen in the user's browser, which no tool can open: the link goes to the user, and once list_integrations shows the provider connected, the same call can be sent again.",
+  },
   MEMBER_NOT_ACTIVE: {
     hint: 'You were removed from this workspace, or your access there was turned off. Call list_my_workspaces to see where you can act, and tell the user.',
   },
   INVALID_API_KEY: {
     message: 'The API key stopped working: it was revoked, or its owner left the workspace.',
-    hint: 'Ask the user for a new key (dForms, MCP, API keys).',
+    hint: 'Ask the user for a new key, one their workspace already has: dForms no longer creates keys in the dashboard. Without one, the user can connect through the dForms MCP sign-in instead (Connect your agent, in the dForms menu), which needs no key.',
   },
 };
+
+/**
+ * The hint for an `INTEGRATION_NOT_CONNECTED` refusal whose provider this
+ * DEPLOYMENT cannot connect at all (the route says so with `unavailable: true`;
+ * Google Sheets without a Google OAuth client). The message then holds no
+ * page, nobody in the workspace can connect it, and the same call keeps being
+ * refused, so the usual "send the link, then retry" would send the model in
+ * circles.
+ */
+export const INTEGRATION_UNAVAILABLE_HINT =
+  'Nobody in this workspace can connect this provider here: this dForms deployment has no way to connect it, so there is no page to send the user to, and the same call is refused again. list_integrations lists it in unavailable. Tell the user that whoever runs this dForms deployment has to set it up first; until then, send the call again without this destination, or with it switched off (enabled false).';
+
+/** Whether a refusal is about a provider the deployment cannot connect at all, as the route flags it. */
+export const isUnavailableProvider = (error: BackendError): boolean =>
+  error.code === 'INTEGRATION_NOT_CONNECTED' && error.details['unavailable'] === true;
 
 const CONNECTION: Record<string, { message?: string; hint: string }> = {
   FORBIDDEN: {
@@ -350,7 +368,9 @@ export function toFailure(error: unknown, credential: CredentialKind = 'key', to
       );
     }
     if (error.status >= 500) return internalError();
-    const known = (credential === 'connection' ? CONNECTION[error.code] : undefined) ?? ACTIONABLE[error.code];
+    const known = isUnavailableProvider(error)
+      ? { hint: INTEGRATION_UNAVAILABLE_HINT }
+      : ((credential === 'connection' ? CONNECTION[error.code] : undefined) ?? ACTIONABLE[error.code]);
     let message = known?.message ?? error.message;
     if (error.code === 'STALE' && typeof error.details['updatedAt'] === 'number')
       message = `${message} Its updated_at is now ${error.details['updatedAt']}.`;

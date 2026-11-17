@@ -205,6 +205,21 @@ export interface FormListItem {
 }
 
 /** One form in full. Secrets in the config (webhook signing secrets) arrive masked. */
+/**
+ * An enabled destination that was saved but delivers nothing yet, as the REST
+ * routes that store destinations report it (`warnings`): its provider is not
+ * connected, or a spreadsheet entry has no sheet or no headed column.
+ */
+export interface DestinationWarning {
+  code: 'INTEGRATION_NOT_CONNECTED' | 'DESTINATION_INCOMPLETE';
+  /** The entry's position in the list that was sent. */
+  index: number;
+  type: string;
+  message: string;
+  /** Where the provider is connected, for `INTEGRATION_NOT_CONNECTED`. */
+  integrationsUrl?: string;
+}
+
 export interface FormDetail extends FormListItem {
   /** The live config: what respondents see now. */
   config: unknown;
@@ -214,6 +229,8 @@ export interface FormDetail extends FormListItem {
   publishedAt: number | null;
   /** When the config a revert would bring back went live, or null when there is nothing to revert to. */
   previousPublishedAt: number | null;
+  /** On a create: the destinations of the config that were saved but deliver nothing yet. */
+  destinationWarnings?: DestinationWarning[];
 }
 
 export interface CreateFormInput {

@@ -1,6 +1,6 @@
 import * as z from 'zod4';
 import { actingAs, workspaceId, type ToolDef } from '../tools';
-import { untrusted } from '../support';
+import { INTEGRATION_UNAVAILABLE_HINT, isUnavailableProvider, untrusted } from '../support';
 import { CONFIRM_FIRST, FORM_MISSING, attempt, formIdArg, plural } from './shared';
 
 /** Where a form's responses go: its webhooks, its HubSpot destination and its spreadsheet. */
@@ -8,8 +8,12 @@ import { CONFIRM_FIRST, FORM_MISSING, attempt, formIdArg, plural } from './share
 const destination = z
   .record(z.string(), z.unknown())
   .describe(
-    'One destination. A webhook: { "type": "webhook", "id"?, "enabled": true, "events"?: ["partial", "complete"], "settings": { "url": "https://...", "secret"?, "signatureHeader"? } }. HubSpot: { "type": "hubspot", "enabled": true, "settings": { ... } }, at most one per form. Google Sheets: { "type": "google-sheets", "enabled": true, "settings": { "spreadsheetId", "sheetTitle"? }, "columns": [{ "header", "source", "key"? }] }, one row per response; a column goes into the sheet once it has a header.',
+    'One destination. A webhook: { "type": "webhook", "id"?, "enabled": true, "events"?: ["partial", "complete"], "settings": { "url": "https://...", "secret"?, "signatureHeader"? } }. HubSpot: { "type": "hubspot", "enabled": true, "settings": { ... } }, at most one per form. Google Sheets: { "type": "google-sheets", "enabled": true, "settings": { "spreadsheetId", "sheetTitle"? }, "columns": [{ "header", "source", "key"? }] }, one row per response; a column goes into the sheet once it has a header. Salesforce: { "type": "salesforce", "enabled": true, "fieldMappings": { "step_key": "LeadField" or ["LeadField", "OtherField"] }, "utmMappings"?: { "utm_source": "LeadField" }, "scoreField"?, "dateField"?, "dayTimezone"?, "staticFields"?: { "LeadSource": "Web" } }, at most one per form; it updates the Contact or open Lead with the same Email, else creates a Lead.',
   );
+
+/** What an agent can do about a destination whose provider is not connected. */
+const NOT_CONNECTED_HINT =
+  "The message holds the dForms integrations page. Connecting is a consent screen in the user's browser, which no tool can open for them: the link goes to the user, and once they say it is connected, list_integrations confirms it and the same set_destinations call can be sent again.";
 
 /** A cell or a heading read back for the model: a spreadsheet's text is a third party's. */
 const HEADER_CELL_MAX = 200;
@@ -29,10 +33,11 @@ export const setDestinations: ToolDef = {
   name: 'set_destinations',
   title: 'Set where responses go',
   description: [
-    "Replace a form's destinations (webhooks and HubSpot) with this list. It applies to the live form at once, with no publish step.",
+    "Replace a form's destinations (webhooks, HubSpot, Google Sheets and Salesforce) with this list. It applies to the live form at once, with no publish step.",
     "The list usually starts from get_form's `destinations` (the live form's, with ids, secrets masked), keeping every entry that is not being changed, with its id.",
     'Signing secrets come back masked. A masked secret sent back unchanged keeps the stored one; a new string replaces it; null removes it.',
     'A webhook URL needs https. ping_webhook sends one test delivery.',
+    "Google Sheets and Salesforce deliver through the workspace's own connection (list_integrations shows it). A new or changed enabled entry for a provider that is not connected is refused with INTEGRATION_NOT_CONNECTED, whose message holds the dForms integrations page: connecting Google or Salesforce is a consent screen that only works in the person's browser, so the link goes to the user and the save is tried again afterwards. On a deployment that cannot connect the provider at all (list_integrations lists it in unavailable), the refusal says so instead: there is no page and no retry, and the entry is left out or switched off until whoever runs the deployment sets the provider up. An entry sent back exactly as get_form returned it is kept even when its provider was disconnected since, and `warnings` names it. A spreadsheet entry only writes to a spreadsheet dForms created or the user picked in the dashboard (Google's drive.file access), so `spreadsheetId` comes from get_form, not from a link the user pastes.",
     "For a Google Sheets destination, the save also brings row 1 of the spreadsheet in line with the columns' headers, but only when row 1 is empty or still holds what dForms wrote there. `sheet_header_row` says what happened: `foreign` means row 1 holds something else and was left untouched (the responses still go in, under whatever row 1 says), `failed` means Google could not be reached or refused, and neither undoes the save. Replacing a row 1 that is not dForms' own is done by the author in the dashboard, behind a confirmation.",
     CONFIRM_FIRST,
   ].join(' '),
@@ -69,9 +74,37 @@ export const setDestinations: ToolDef = {
       .describe(
         "What the save did to row 1 of the Google Sheets destination's spreadsheet. Null when the form has no spreadsheet destination or the save had no reason to look at row 1 (the headers did not change). The destinations were saved in every case.",
       ),
+    warnings: z
+      .array(
+        z.object({
+          code: z
+            .enum(['INTEGRATION_NOT_CONNECTED', 'DESTINATION_INCOMPLETE'])
+            .describe(
+              'INTEGRATION_NOT_CONNECTED: the entry was kept as it was stored, but its provider is not connected, so it delivers nothing until someone connects it. DESTINATION_INCOMPLETE: a spreadsheet entry with no spreadsheet or no column with a header yet, so no row is written.',
+            ),
+          index: z.number().describe('The position of the entry in the list that was sent.'),
+          type: z.string(),
+          message: z.string(),
+          integrations_url: z
+            .string()
+            .nullable()
+            .describe('Where the provider is connected (a browser page), for INTEGRATION_NOT_CONNECTED. Null otherwise.'),
+        }),
+      )
+      .describe('Enabled entries that were saved but deliver nothing yet. Empty when every enabled entry can deliver.'),
   }),
   async run(args: z.infer<typeof setDestinationsInput>, ctx) {
-    const out = await attempt(ctx.backend.setDestinations(actingAs(ctx), args.form_id, args.destinations), FORM_MISSING);
+    const out = await attempt(ctx.backend.setDestinations(actingAs(ctx), args.form_id, args.destinations), FORM_MISSING, {
+      // A provider this deployment cannot connect at all has no page and no retry.
+      INTEGRATION_NOT_CONNECTED: (e) => (isUnavailableProvider(e) ? INTEGRATION_UNAVAILABLE_HINT : NOT_CONNECTED_HINT),
+    });
+    const warnings = (out.warnings ?? []).map((w) => ({
+      code: w.code,
+      index: w.index,
+      type: w.type,
+      message: w.message,
+      integrations_url: w.integrationsUrl ?? null,
+    }));
     // HubSpot's own words: a third party's text, cleaned and cut like any other.
     const hubspotError = out.formActivityError == null ? null : untrusted(out.formActivityError, 300);
     // The header-row outcome the route reports, with the spreadsheet's own
@@ -93,6 +126,7 @@ export const setDestinations: ToolDef = {
         destinations: out.destinations as Array<Record<string, unknown>>,
         hubspot_activity_error: hubspotError,
         sheet_header_row: sheetRow,
+        warnings,
       },
       summary: `Form ${out.formId} has ${plural(out.destinations.length, 'destination')} now.${
         hubspotError ? ` HubSpot form activity could not be synced: ${hubspotError}` : ''
@@ -104,7 +138,7 @@ export const setDestinations: ToolDef = {
             : sheetRow?.outcome === 'stale'
               ? " The spreadsheet's header row is out of date; the next save brings it in line."
               : ''
-      }`,
+      }${warnings.map((w) => ` Destination ${w.index + 1} (${w.type}) delivers nothing yet: ${w.message}`).join('')}`,
       affected: [out.formId],
     };
   },

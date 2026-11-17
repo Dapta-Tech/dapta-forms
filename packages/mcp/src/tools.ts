@@ -575,7 +575,7 @@ const getForm: ToolDef = {
   name: 'get_form',
   title: 'Get a form',
   description:
-    'One form with its public_url, publish state and config. `config` is the editable version: the unpublished draft when there is one (config_source "draft"), else the live config. update_form takes an edited copy of all of `config`, with expected_updated_at = updated_at. When is_live is false the public link opens an empty form, so it is not ready to share. Webhooks and HubSpot are not part of the config: they are listed apart in `destinations` (with their ids, secrets masked) and changed with set_destinations.',
+    'One form with its public_url, publish state and config. `config` is the editable version: the unpublished draft when there is one (config_source "draft"), else the live config. update_form takes an edited copy of all of `config`, with expected_updated_at = updated_at. When is_live is false the public link opens an empty form, so it is not ready to share. Destinations (webhooks, HubSpot, Google Sheets and Salesforce) are not part of the config: they are listed apart in `destinations` (with their ids, secrets masked) and changed with set_destinations.',
   write: false,
   workspace: 'required',
   annotations: READ,
@@ -591,11 +591,11 @@ const getForm: ToolDef = {
       .describe('Only when a draft is pending: what respondents see right now.'),
     connected_destinations: z
       .number()
-      .describe('How many webhooks and HubSpot connections the form has (the length of destinations).'),
+      .describe('How many destinations (webhooks, HubSpot, Google Sheets, Salesforce) the form has (the length of destinations).'),
     destinations: z
       .array(z.record(z.string(), z.unknown()))
       .describe(
-        'Where responses go now (webhooks and HubSpot), as stored on the live form, each with its id; signing secrets masked. The list set_destinations starts from: send it back whole with your change, a masked secret unchanged to keep it.',
+        'Where responses go now (webhooks, HubSpot, Google Sheets and Salesforce), as stored on the live form, each with its id; signing secrets masked. The list set_destinations starts from: send it back whole with your change, a masked secret unchanged to keep it.',
       ),
   }),
   async run(args: z.infer<typeof getFormInput>, ctx) {
@@ -648,6 +648,7 @@ const createForm: ToolDef = {
     `A minimal config: ${JSON.stringify(LEAD_CONFIG)}`,
     'A refused config answers VALIDATION_FAILED with every problem and its path, so you can fix them all in one retry. Unknown fields, repeated step keys or option values and references to steps that do not exist are refused, never silently changed.',
     'Without `branding`, dForms fills it in (the workspace brand kit, or the default look); get_form returns it, and update_form expects it back as read.',
+    "An enabled Google Sheets or Salesforce destination in the config needs its provider connected in the workspace (list_integrations); otherwise the create is refused with INTEGRATION_NOT_CONNECTED, whose message holds the page where the user connects it in a browser (or, when this deployment cannot connect the provider at all, says so: there is no page and no retry). A spreadsheet entry with no sheet yet comes back in warnings.",
   ].join(' '),
   write: true,
   workspace: 'required',
@@ -667,6 +668,8 @@ const createForm: ToolDef = {
       ...(args.folder_id !== undefined ? { folderId: args.folder_id } : {}),
     });
     const warnings = [...review.warnings];
+    // Destinations saved but delivering nothing yet, as the route reports them.
+    for (const w of f.destinationWarnings ?? []) warnings.push(`Destination ${w.index + 1} (${w.type}): ${w.message}`);
     if (!('branding' in args.config) && isObject(f.config) && isObject(f.config.branding)) {
       warnings.push(
         'dForms filled config.branding for you (the workspace brand kit, or the default look). Keep branding exactly as get_form returns it whenever you send update_form, or the draft loses that look.',
@@ -698,7 +701,7 @@ const updateForm: ToolDef = {
   name: 'update_form',
   title: 'Edit a form (save a draft)',
   description:
-    'Save a new config as an unpublished draft (and optionally rename the form). The public form does not change until publish_form. It typically follows get_form, with that updated_at as expected_updated_at: if someone saved the form since, this answers STALE instead of overwriting their work. The config replaces the whole draft, so it carries every step, not only the changed one, and `branding` as read (leaving it out is refused when the form has one; null removes it). Webhooks and HubSpot destinations are not changed here. discard_draft throws a draft away instead.',
+    'Save a new config as an unpublished draft (and optionally rename the form). The public form does not change until publish_form. It typically follows get_form, with that updated_at as expected_updated_at: if someone saved the form since, this answers STALE instead of overwriting their work. The config replaces the whole draft, so it carries every step, not only the changed one, and `branding` as read (leaving it out is refused when the form has one; null removes it). Destinations (webhooks, HubSpot, Google Sheets and Salesforce) are not changed here. discard_draft throws a draft away instead.',
   write: true,
   workspace: 'required',
   // Replaces the whole draft: steps left out of the config are gone from it.
@@ -748,7 +751,7 @@ const updateForm: ToolDef = {
       warnings.push(...review.warnings);
       if ('destinations' in config) {
         warnings.push(
-          'config.destinations was ignored: update_form never changes webhooks or HubSpot. Leave destinations out of the config; use set_destinations, starting from get_form\'s destinations.',
+          'config.destinations was ignored: update_form never changes destinations. Leave destinations out of the config; use set_destinations, starting from get_form\'s destinations.',
         );
       }
     }

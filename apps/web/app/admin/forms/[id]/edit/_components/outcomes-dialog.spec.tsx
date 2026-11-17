@@ -356,3 +356,24 @@ describe('OutcomesDialog — the fields the Playwright specs drive', () => {
     expect(((textarea.props as AnyProps).tokens as { key: string }[]).map((t) => t.key)).toContain('email');
   });
 });
+
+describe('OutcomesDialog: a range redirect and the form-wide UTM switch', () => {
+  const text = (el: ReactElement | undefined): string => {
+    const kids = (el?.props as AnyProps | undefined)?.children;
+    return (Array.isArray(kids) ? kids : [kids]).filter((k) => typeof k === 'string').join('');
+  };
+
+  it('points to Forward UTM parameters while the switch is off', () => {
+    const els = render({ config: cfg([outcome('hot', 0, { redirectUrl: 'https://example.com/hot' })]) });
+    expect(text(byTestId(els, 'outcome-redirect-utm'))).toContain(rm.redirectUtmOff);
+  });
+
+  it('says the UTMs ride along once the switch is on', () => {
+    const config = { ...cfg([outcome('hot', 0, { redirectUrl: 'https://example.com/hot' })]), ending: { forwardUtm: true } };
+    expect(text(byTestId(render({ config }), 'outcome-redirect-utm'))).toContain(rm.redirectUtmOn);
+  });
+
+  it('says nothing on a range with no redirect of its own', () => {
+    expect(byTestId(render({ config: cfg([outcome('hot', 0)]) }), 'outcome-redirect-utm')).toBeUndefined();
+  });
+});

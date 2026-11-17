@@ -88,10 +88,9 @@ describe('buildHubSpotMeetingsUrl', () => {
 });
 
 describe('buildCalendlyEmbedUrl', () => {
-  it('appends embed params, prefill params, and the sessionId as utm_content', () => {
+  it('appends embed params and prefill params', () => {
     const url = new URL(
       buildCalendlyEmbedUrl('https://calendly.com/dapta/intro', ANSWERS, {
-        sessionId: 'sess-1',
         embedDomain: 'forms.example.com',
       }),
     );
@@ -103,14 +102,15 @@ describe('buildCalendlyEmbedUrl', () => {
     expect(url.searchParams.get('name')).toBe('Ada Lovelace');
     expect(url.searchParams.get('email')).toBe('ada@example.com');
     expect(url.searchParams.get('a1')).toBe('+57 300 123 4567');
-    expect(url.searchParams.get('utm_content')).toBe('sess-1');
+    // Nothing of the form's own rides in a campaign parameter.
+    expect(url.searchParams.has('utm_content')).toBe(false);
   });
 
   it('keeps an existing query and overwrites duplicates instead of appending', () => {
     const out = buildCalendlyEmbedUrl(
       'https://calendly.com/dapta/intro?month=2026-08&name=Old',
       ANSWERS,
-      { sessionId: 'sess-2', embedDomain: 'x.test' },
+      { embedDomain: 'x.test' },
     );
     const url = new URL(out);
     expect(url.searchParams.get('month')).toBe('2026-08');
@@ -121,14 +121,39 @@ describe('buildCalendlyEmbedUrl', () => {
     const url = new URL(
       buildCalendlyEmbedUrl('https://calendly.com/dapta/intro', ANSWERS, {
         prefill: false,
-        sessionId: 'sess-3',
         embedDomain: 'x.test',
+        utm: { utm_content: 'ad-3' },
       }),
     );
     expect(url.searchParams.get('embed_type')).toBe('Inline');
     expect(url.searchParams.has('email')).toBe(false);
     expect(url.searchParams.has('name')).toBe(false);
-    expect(url.searchParams.get('utm_content')).toBe('sess-3');
+    // The campaign is not an answer: prefill off does not drop it.
+    expect(url.searchParams.get('utm_content')).toBe('ad-3');
+  });
+
+  it('carries the visitor campaign, utm_content included, instead of a session id', () => {
+    const url = new URL(
+      buildCalendlyEmbedUrl('https://calendly.com/dapta/intro', ANSWERS, {
+        embedDomain: 'x.test',
+        utm: { utm_source: 'linkedin', utm_content: 'carousel-2', ref: 'x' },
+      }),
+    );
+    expect(url.searchParams.get('utm_source')).toBe('linkedin');
+    expect(url.searchParams.get('utm_content')).toBe('carousel-2');
+    // Only the five campaign keys travel.
+    expect(url.searchParams.has('ref')).toBe(false);
+  });
+
+  it('keeps a utm_* the author wrote into the booking link', () => {
+    const url = new URL(
+      buildCalendlyEmbedUrl('https://calendly.com/dapta/intro?UTM_CONTENT=booking-link', ANSWERS, {
+        utm: { utm_content: 'carousel-2', utm_medium: 'paid' },
+      }),
+    );
+    expect(url.searchParams.getAll('UTM_CONTENT')).toEqual(['booking-link']);
+    expect(url.searchParams.has('utm_content')).toBe(false);
+    expect(url.searchParams.get('utm_medium')).toBe('paid');
   });
 
   it('omits embed_domain and utm_content when they are not provided', () => {
@@ -159,22 +184,20 @@ describe('buildBookingEmbedUrl', () => {
     const out = buildBookingEmbedUrl(
       { provider: 'hubspot_meetings', url: 'https://meetings.hubspot.com/d/x' },
       ANSWERS,
-      'sess-9',
     );
     const url = new URL(out);
     expect(url.searchParams.get('embed')).toBe('true');
     expect(url.searchParams.get('email')).toBe('ada@example.com');
   });
 
-  it('routes calendly to the calendly builder with sessionId + embed domain', () => {
+  it('routes calendly to the calendly builder with the campaign + embed domain', () => {
     const out = buildBookingEmbedUrl(
       { provider: 'calendly', url: 'https://calendly.com/dapta/intro' },
       ANSWERS,
-      'sess-9',
-      'forms.example.com',
+      { embedDomain: 'forms.example.com', utm: { utm_content: 'hero' } },
     );
     const url = new URL(out);
-    expect(url.searchParams.get('utm_content')).toBe('sess-9');
+    expect(url.searchParams.get('utm_content')).toBe('hero');
     expect(url.searchParams.get('embed_domain')).toBe('forms.example.com');
     expect(url.searchParams.get('email')).toBe('ada@example.com');
   });
@@ -183,8 +206,7 @@ describe('buildBookingEmbedUrl', () => {
     const out = buildBookingEmbedUrl(
       { provider: 'calendly', url: 'https://calendly.com/dapta/intro', prefill: false },
       ANSWERS,
-      'sess-9',
-      'x.test',
+      { embedDomain: 'x.test' },
     );
     expect(new URL(out).searchParams.has('email')).toBe(false);
   });
@@ -420,8 +442,17 @@ describe('buildDcalEmbedUrl', () => {
     expect(q.get('answer_phone')).toBe('+57 300');
   });
 
-  it('carries the sessionId as utm_content, which dCal keeps on the booking', () => {
-    expect(url(DCAL_URL, ANSWERS, { sessionId: 'sess_42' }).get('utm_content')).toBe('sess_42');
+  it('carries the visitor campaign utm_content, which dCal keeps on the booking', () => {
+    const q = url(DCAL_URL, ANSWERS, { utm: { utm_campaign: 'launch', utm_content: 'video-a' } });
+    expect(q.get('utm_campaign')).toBe('launch');
+    expect(q.get('utm_content')).toBe('video-a');
+  });
+
+  it('never writes anything of its own into utm_content', () => {
+    expect(url(DCAL_URL, ANSWERS).get('utm_content')).toBeNull();
+    expect(url(`${DCAL_URL}?utm_content=link-tag`, ANSWERS, { utm: { utm_content: 'video-a' } }).get('utm_content')).toBe(
+      'link-tag',
+    );
   });
 
   it('keeps embed mode but sends no values when prefill is off', () => {
@@ -459,14 +490,12 @@ describe('buildBookingEmbedUrl: dcal', () => {
       buildBookingEmbedUrl(
         { provider: 'dcal', url: DCAL_URL, prefill: true },
         ANSWERS,
-        'sess_1',
-        'forms.example.test',
-        { company: 'Example Co' },
+        { embedDomain: 'forms.example.test', customAnswers: { company: 'Example Co' }, utm: { utm_content: 'ad-1' } },
       ),
     ).searchParams;
     expect(q.get('embed')).toBe('1');
     expect(q.get('answer_company')).toBe('Example Co');
-    expect(q.get('utm_content')).toBe('sess_1');
+    expect(q.get('utm_content')).toBe('ad-1');
     // Calendly's parameter has no meaning here and must not be sent.
     expect(q.get('embed_domain')).toBeNull();
   });

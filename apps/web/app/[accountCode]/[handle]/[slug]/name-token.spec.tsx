@@ -43,6 +43,22 @@ vi.mock('@/lib/top-navigate', async (importOriginal) => ({
   navigateTop: nav.navigateTop,
 }));
 
+/**
+ * The host page's answer, when a test plays one (the landing's UTMs on an
+ * embedded form). Unset, the real `createHostVisit` runs untouched.
+ */
+const host = vi.hoisted(() => ({ answer: undefined as unknown }));
+vi.mock('@/lib/host-visit', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/host-visit')>();
+  return {
+    ...real,
+    createHostVisit: (...args: Parameters<typeof real.createHostVisit>) => {
+      const visit = real.createHostVisit(...args);
+      return host.answer === undefined ? visit : { ...visit, resolve: async () => host.answer };
+    },
+  };
+});
+
 import { FormRenderer } from './form-renderer';
 import { VerticalFormRenderer } from './vertical-form-renderer';
 
@@ -82,6 +98,7 @@ beforeEach(() => {
   window.sessionStorage.clear();
   window.history.replaceState(null, '', '/acme/f/quote');
   nav.navigateTop.mockReset();
+  host.answer = undefined;
   actions.submitForm.mockReset();
   actions.submitForm.mockImplementation(async () => ({ ok: true, score: 0, outcome: 'all' }));
 });
@@ -257,8 +274,14 @@ describe('the redirect carries answers only on a standalone form', () => {
     path: 'immediate' | 'delayed' | 'booking',
     layout: 'slides' | 'vertical',
     embedded: boolean,
-    opts: { utm?: string; forwardUtm?: boolean } = {},
+    opts: { utm?: string; forwardUtm?: boolean; landingUtm?: Record<string, string> } = {},
   ): Promise<string> {
+    if (opts.landingUtm) {
+      host.answer = {
+        visit: { pageUri: 'https://landing.example.com/offer', embedded: true },
+        hostUtm: opts.landingUtm,
+      };
+    }
     const query = [embedded ? 'embed=1' : '', opts.utm ?? ''].filter(Boolean).join('&');
     window.history.replaceState(null, '', query ? `/acme/f/quote?${query}` : '/acme/f/quote');
     const Renderer = layout === 'vertical' ? VerticalFormRenderer : FormRenderer;
@@ -269,6 +292,7 @@ describe('the redirect carries answers only on a standalone form', () => {
         name="Quote"
         config={configFor(path, layout, opts.forwardUtm)}
         locale="en"
+        {...(opts.landingUtm ? { visitCapture: { hubspotTracking: false } } : {})}
       />,
     );
     await (layout === 'vertical' ? answerOnePage() : answerSlides());
@@ -327,6 +351,21 @@ describe('the redirect carries answers only on a standalone form', () => {
 
       it(`${layout}, ${path}: without forwardUtm the UTMs stay behind`, async () => {
         expect(await run(path, layout, false, { utm: UTM })).toBe(FILLED);
+      });
+
+      // Embedded with no UTMs on the iframe `src`: the landing page's campaign
+      // is the one forwarded, and a bracket key from it never makes it out.
+      const LANDING = { utm_source: 'facebook', 'utm_source[]': 'x', utm_medium: 'paid_social' };
+      it(`${layout}, ${path}: forwardUtm embedded forwards the landing page's UTMs`, async () => {
+        expect(await run(path, layout, true, { forwardUtm: true, landingUtm: LANDING })).toBe(
+          'https://example.com/welcome?src=form&utm_source=facebook&utm_medium=paid_social#top',
+        );
+      });
+
+      it(`${layout}, ${path}: the iframe src UTMs win over the landing's, all or nothing`, async () => {
+        expect(
+          await run(path, layout, true, { utm: UTM, forwardUtm: true, landingUtm: LANDING }),
+        ).toBe(`https://example.com/welcome?src=form&${UTM}#top`);
       });
     }
   }

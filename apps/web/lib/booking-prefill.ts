@@ -1,8 +1,8 @@
 /**
  * Pure URL builders for the outcome booking embed (HubSpot Meetings / Calendly).
  *
- * No I/O, no browser globals — every input (answers, sessionId, embed domain)
- * is passed in explicitly so these are unit-testable and safe to call anywhere
+ * No I/O, no browser globals: every input (answers, campaign UTMs, embed
+ * domain) is passed in explicitly so these are unit-testable and safe to call anywhere
  * (client, server, tests). `URLSearchParams.set` is used throughout, so params
  * never double-append even when the configured booking URL already carries a
  * query string.
@@ -158,6 +158,34 @@ function setParam(url: URL, key: string, value: string): void {
   if (value) url.searchParams.set(key, value);
 }
 
+/** The five campaign keys a scheduling page records on the booking it creates. */
+const CAMPAIGN_UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
+
+/**
+ * Carry the visitor's campaign onto the booking page, so the booking it
+ * creates is credited to the campaign the visitor arrived with.
+ *
+ * A `utm_*` key the author already wrote into the booking URL wins (compared
+ * case-insensitively), the same rule `appendUtm` applies to a redirect: an
+ * owner who tagged their booking link on purpose keeps that tag. Only the five
+ * standard keys are sent, and an empty value is no parameter.
+ *
+ * This is also why nothing of ours rides in `utm_content` any more. The form
+ * used to put its session id there, which overwrote the campaign's own
+ * `utm_content` on every booking, and nothing ever read it back: the booking
+ * is tied to its submission by the renderer's own callback, which carries the
+ * session id itself (see `bookingCallbackSchema`).
+ */
+function setCampaignUtm(url: URL, utm: Record<string, string> | undefined): void {
+  if (!utm) return;
+  const written = new Set([...url.searchParams.keys()].map((k) => k.toLowerCase()));
+  for (const key of CAMPAIGN_UTM_KEYS) {
+    if (written.has(key)) continue;
+    const value = typeof utm[key] === 'string' ? utm[key].trim() : '';
+    if (value) url.searchParams.set(key, value);
+  }
+}
+
 /**
  * HubSpot Meetings embed URL: `embed=true` plus CRM-internal-name contact
  * params (`firstname`/`lastname`/`email`/`phone`) when prefill is on.
@@ -182,13 +210,15 @@ export function buildHubSpotMeetingsUrl(
 /**
  * Calendly inline-embed URL. `embed_domain` is REQUIRED for the widget's
  * `calendly.event_scheduled` postMessage to reach the parent window — pass the
- * host the page is served from (`window.location.host`). `utm_content` carries
- * the form sessionId so the booking can be tied back to the submission.
+ * host the page is served from (`window.location.host`). `utm` is the
+ * visitor's campaign (see `setCampaignUtm`); Calendly's own widget forwards the
+ * host page's UTMs the same way, so passing them here only makes an embedded
+ * form's landing campaign reach it too.
  */
 export function buildCalendlyEmbedUrl(
   baseUrl: string,
   answers: Record<string, unknown>,
-  options?: { prefill?: boolean; sessionId?: string; embedDomain?: string },
+  options?: { prefill?: boolean; embedDomain?: string; utm?: Record<string, string> },
 ): string {
   const url = new URL(baseUrl);
   const embedDomain = options?.embedDomain?.trim() ?? '';
@@ -203,8 +233,7 @@ export function buildCalendlyEmbedUrl(
     setParam(url, 'email', email);
     setParam(url, 'a1', phone);
   }
-  const sessionId = options?.sessionId?.trim() ?? '';
-  if (sessionId) url.searchParams.set('utm_content', sessionId);
+  setCampaignUtm(url, options?.utm);
   return url.toString();
 }
 
@@ -218,16 +247,17 @@ export function buildCalendlyEmbedUrl(
  *
  * The form's own answers fill `name`, `email` and `notes`; each of the event
  * type's own questions is prefilled under `answer_<fieldName>`, the parameter
- * dCal reads it by. `utm_content` carries the form sessionId exactly as it does
- * for Calendly, and dCal keeps the five `utm_*` on the booking it creates, so
- * the booking can be tied back to the submission from either side.
+ * dCal reads it by. dCal keeps the five `utm_*` on the booking it creates, so
+ * the visitor's campaign is passed on (see `setCampaignUtm`). The booking is
+ * tied to its submission by the `uid` dCal posts back, never by a URL param.
  */
 export function buildDcalEmbedUrl(
   baseUrl: string,
   answers: Record<string, unknown>,
   options?: {
     prefill?: boolean;
-    sessionId?: string;
+    /** The visitor's campaign `utm_*` (the form's own, else the landing's). */
+    utm?: Record<string, string>;
     /** fieldName -> value, from `resolveSchedulerPrefill` under `provider: 'dcal'`. */
     customAnswers?: Record<string, string>;
   },
@@ -245,8 +275,7 @@ export function buildDcalEmbedUrl(
       setParam(url, `answer_${field}`, value);
     }
   }
-  const sessionId = options?.sessionId?.trim() ?? '';
-  if (sessionId) url.searchParams.set('utm_content', sessionId);
+  setCampaignUtm(url, options?.utm);
   return url.toString();
 }
 
@@ -303,17 +332,21 @@ export function calendlyPrefillMessagePayload(
 export function buildBookingEmbedUrl(
   booking: OutcomeBooking,
   answers: Record<string, unknown>,
-  sessionId: string,
-  embedDomain?: string,
-  /** dCal only: its event type's own questions, keyed by field name. */
-  customAnswers?: Record<string, string>,
+  options: {
+    embedDomain?: string;
+    /** dCal only: its event type's own questions, keyed by field name. */
+    customAnswers?: Record<string, string>;
+    /** The visitor's campaign `utm_*`, for the providers that record it. */
+    utm?: Record<string, string>;
+  } = {},
 ): string {
   const prefill = booking.prefill !== false;
+  const { embedDomain, customAnswers, utm } = options;
   if (booking.provider === 'hubspot_meetings') {
     return buildHubSpotMeetingsUrl(booking.url, answers, { prefill });
   }
   if (booking.provider === 'dcal') {
-    return buildDcalEmbedUrl(booking.url, answers, { prefill, sessionId, customAnswers });
+    return buildDcalEmbedUrl(booking.url, answers, { prefill, customAnswers, utm });
   }
-  return buildCalendlyEmbedUrl(booking.url, answers, { prefill, sessionId, embedDomain });
+  return buildCalendlyEmbedUrl(booking.url, answers, { prefill, embedDomain, utm });
 }

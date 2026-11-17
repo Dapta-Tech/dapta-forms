@@ -2363,8 +2363,26 @@ export function forwardedUtm(
 }
 
 /**
- * Append the visitor's `utm_*` params to a redirect URL. Only keys starting
- * with `utm_` are taken from `utm`; any other key is ignored. A `utm_*` key
+ * A key `appendUtm` forwards: `utm_` and then letters, digits or `_` only. A
+ * bracket key such as `utm_source[]` is left out, because PHP reads it as an
+ * array that wins over the owner's own `utm_source`.
+ */
+const FORWARDED_UTM_KEY = /^utm_[a-z0-9_]+$/i;
+/** A visitor UTM key longer than this, `utm_` included, is not forwarded. */
+const MAX_FORWARDED_UTM_KEY_LENGTH = 64;
+/**
+ * At most this many visitor UTMs are appended to one redirect, counted after
+ * the keys the owner already wrote in the URL are dropped.
+ */
+const MAX_FORWARDED_UTM_KEYS = 10;
+/** A visitor UTM value longer than this is not forwarded at all, never cut. */
+const MAX_FORWARDED_UTM_VALUE_LENGTH = 200;
+
+/**
+ * Append the visitor's `utm_*` params to a redirect URL. Only plain `utm_*`
+ * keys are taken from `utm` (see `FORWARDED_UTM_KEY`); any other key is
+ * ignored, as is a key over 64 characters or a value over 200, and at most 10
+ * are appended, in the order given. A `utm_*` key
  * already in the URL wins over the visitor's (compared case-insensitively), so
  * an owner who hardcoded `utm_source=newsletter` keeps it. The existing query
  * and the `#hash` are preserved. When nothing would be appended, or the URL
@@ -2376,9 +2394,14 @@ export function forwardedUtm(
  * query included, untouched, and the visitor's UTMs go before the `#`.
  */
 export function appendUtm(url: string, utm: Record<string, string>): string {
-  const entries = Object.entries(utm).filter(
-    ([key, value]) => key.toLowerCase().startsWith('utm_') && typeof value === 'string',
-  );
+  const entries = Object.entries(utm)
+    .filter(
+      ([key, value]) =>
+        key.length <= MAX_FORWARDED_UTM_KEY_LENGTH &&
+        FORWARDED_UTM_KEY.test(key) &&
+        typeof value === 'string' &&
+        value.length <= MAX_FORWARDED_UTM_VALUE_LENGTH,
+    );
   if (entries.length === 0) return url;
   const trimmed = url.trim();
   let parsed: URL;
@@ -2390,6 +2413,7 @@ export function appendUtm(url: string, utm: Record<string, string>): string {
   const present = new Set([...parsed.searchParams.keys()].map((k) => k.toLowerCase()));
   const pairs: string[] = [];
   for (const [key, value] of entries) {
+    if (pairs.length === MAX_FORWARDED_UTM_KEYS) break;
     if (present.has(key.toLowerCase())) continue;
     pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
     present.add(key.toLowerCase());

@@ -8,6 +8,7 @@ import type { SheetColumn } from '@quill/types';
 import { mappableQuestions, type QuestionMeta } from './auto-map';
 import {
   defaultColumns,
+  scoringColumns,
   columnMissing,
   sheetLetters,
   isCompleteColumn,
@@ -30,6 +31,31 @@ const QUESTIONS: QuestionMeta[] = [
 ];
 
 describe('defaultColumns', () => {
+  it('adds the score and the outcome only when the form can produce them', () => {
+    expect(defaultColumns(QUESTIONS, LABELS, { score: false, outcome: false }).map((c) => c.source)).toEqual([
+      'submitted_at',
+      'answer',
+      'answer',
+    ]);
+    expect(defaultColumns(QUESTIONS, LABELS, { score: true, outcome: false }).map((c) => c.source)).toEqual([
+      'submitted_at',
+      'answer',
+      'answer',
+      'score',
+    ]);
+  });
+
+  it('never makes a column of a reveal screen', () => {
+    const questions = mappableQuestions(
+      [
+        { key: 'email', type: 'email', question: 'Email' } as FormStep,
+        { key: 'reveal_1', type: 'reveal', question: 'Your result' } as FormStep,
+      ],
+      { first: 'First', last: 'Last' },
+    );
+    expect(defaultColumns(questions, LABELS).map((c) => c.key ?? c.source)).not.toContain('reveal_1');
+  });
+
   it('gives a name question two columns, one per stored answer, not one that stays empty', () => {
     const questions = mappableQuestions(
       [
@@ -162,5 +188,28 @@ describe('sameHeaders', () => {
     expect(sameHeaders(a, b)).toBe(true);
     expect(sameHeaders(a, [{ header: 'Address', source: 'answer', key: 'email' }])).toBe(false);
     expect(sameHeaders(a, [...a, { header: 'Score', source: 'score' }])).toBe(false);
+  });
+});
+
+describe('scoringColumns', () => {
+  const steps = [{ key: 'q', type: 'multiple_choice', question: 'Q', options: [{ label: 'A', value: 'a', points: 5 }] }] as FormStep[];
+  const plain = [{ key: 'email', type: 'email', question: 'Email' }] as FormStep[];
+
+  it('offers neither on a form with no scoring at all', () => {
+    expect(scoringColumns({ version: 1, steps: plain })).toEqual({ score: false, outcome: false });
+  });
+
+  it('offers the score once there are points, and the outcome once there are ranges', () => {
+    expect(scoringColumns({ version: 1, steps })).toEqual({ score: true, outcome: false });
+    expect(scoringColumns({ version: 1, steps, outcomes: [{ id: 'p1', label: 'Hot', minScore: 0 }] })).toEqual({
+      score: true,
+      outcome: true,
+    });
+  });
+
+  it('offers neither while scoring is switched off', () => {
+    expect(
+      scoringColumns({ version: 1, steps, scoring: { enabled: false }, outcomes: [{ id: 'p1', label: 'Hot', minScore: 0 }] }),
+    ).toEqual({ score: false, outcome: false });
   });
 });
