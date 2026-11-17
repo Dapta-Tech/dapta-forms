@@ -109,6 +109,8 @@ const CASES: Case[] = [
   { tool: 'list_webhooks', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'list_hubspot_properties', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'list_event_types', ok: { provider: 'calendly' }, invalid: { provider: 'outlook' } },
+  // provider has no default: leaving it out is refused, never read as calendly.
+  { tool: 'list_event_types', ok: { provider: 'dcal' }, invalid: {} },
   { tool: 'list_calendly_event_types', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'get_my_profile', ok: {}, invalid: { workspace_id: 3 } },
   { tool: 'get_workspace_link_code', ok: {}, invalid: { workspace_id: 3 } },

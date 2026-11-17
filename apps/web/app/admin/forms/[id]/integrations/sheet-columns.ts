@@ -7,6 +7,7 @@
  * incomplete, what moving a row means) are worth testing without mounting an
  * editor around them.
  */
+import { hasScoringSignal, type FormConfig } from '@quill/engine';
 import { isWritableSheetColumn, sheetCells, type SheetColumn, type SheetColumnSource } from '@quill/types';
 import type { QuestionMeta } from './auto-map';
 
@@ -31,10 +32,16 @@ export interface StandardColumnLabels {
  * UTM columns are deliberately NOT here. Five more columns on every sheet, for
  * something most forms never set, is noise in the common case; an author who
  * runs campaigns adds the one or two they actually use.
+ *
+ * The score and the outcome follow the same rule: they are offered only when
+ * the form can produce them (`scoring`), since on a form without scoring every
+ * cell under them would be empty. Absent means "unknown" and keeps both, which
+ * is what every caller got before the form's scoring was passed in.
  */
 export function defaultColumns(
   questions: QuestionMeta[],
   labels: StandardColumnLabels,
+  scoring: { score: boolean; outcome: boolean } = { score: true, outcome: true },
 ): SheetColumn[] {
   return [
     { header: labels.submittedAt, source: 'submitted_at' },
@@ -46,9 +53,20 @@ export function defaultColumns(
       source: 'answer' as SheetColumnSource,
       key: q.key,
     })),
-    { header: labels.score, source: 'score' },
-    { header: labels.outcome, source: 'outcome' },
+    ...(scoring.score ? [{ header: labels.score, source: 'score' as SheetColumnSource }] : []),
+    ...(scoring.outcome ? [{ header: labels.outcome, source: 'outcome' as SheetColumnSource }] : []),
   ];
+}
+
+/**
+ * Which of the score and outcome columns a form can fill: a score once it
+ * carries any scoring signal and scoring is not switched off, an outcome only
+ * when it also has a range to land in. The same signal the API uses before it
+ * stores a score at all (`hasScoringSignal`).
+ */
+export function scoringColumns(config: FormConfig): { score: boolean; outcome: boolean } {
+  const score = config.scoring?.enabled !== false && hasScoringSignal(config);
+  return { score, outcome: score && (config.outcomes ?? []).length > 0 };
 }
 
 /**

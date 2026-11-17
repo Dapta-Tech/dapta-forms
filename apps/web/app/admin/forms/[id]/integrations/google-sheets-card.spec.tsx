@@ -19,6 +19,7 @@ const actions = vi.hoisted(() => ({
   googleSheetsPickerAction: vi.fn(),
   googleSheetsTabsAction: vi.fn(),
   syncSheetHeadersAction: vi.fn(),
+  loadDeliveryHistoryAction: vi.fn(),
 }));
 vi.mock('./actions', () => actions);
 
@@ -62,6 +63,7 @@ beforeAll(() => {
 beforeEach(() => {
   // The card looks at row 1 once when it opens on a spreadsheet.
   actions.syncSheetHeadersAction.mockResolvedValue({ ok: true, data: { ok: true, outcome: 'unchanged' } });
+  actions.loadDeliveryHistoryAction.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -82,6 +84,7 @@ async function mount(
     formId?: string;
     access?: ConnectAccess;
     headerSync?: SheetHeaderSync | null;
+    scoring?: { score: boolean; outcome: boolean };
   } = {},
 ) {
   const box = { state: opts.state ?? EMPTY };
@@ -98,6 +101,7 @@ async function mount(
         state={box.state}
         setState={setState}
         questions={QUESTIONS}
+        scoring={opts.scoring}
         connected={opts.connected ?? true}
         pickerAvailable={opts.pickerAvailable ?? false}
         formName={opts.formName ?? 'Lead form'}
@@ -962,5 +966,60 @@ describe('the header row', () => {
       headerSync: { outcome: 'failed', reason: 'unavailable' },
     });
     expect(el.querySelector('[data-testid="gsheets-header-sync"]')?.getAttribute('data-tone')).toBe('error');
+  });
+});
+
+describe('the delivery history', () => {
+  const REFUSED = {
+    id: 'd1',
+    kind: 'google-sheets',
+    status: 'skipped',
+    action: 'complete',
+    lastError: 'HTTP 404: Requested entity was not found.',
+    attempts: 1,
+    createdAt: 1_700_000_000_000,
+    updatedAt: 1_700_000_000_000,
+    requestBody: null,
+    responseStatus: 404,
+    responseBody: 'Requested entity was not found.',
+  };
+
+  it('has one, like the Salesforce card, reading only this card’s kind', async () => {
+    actions.loadDeliveryHistoryAction.mockResolvedValue([REFUSED]);
+    const { el } = await mount({ state: STORED_FOR_MEMBER, formId: 'form-1' });
+    const history = el.querySelector('[data-testid="google-sheets-history"]');
+    expect(history?.textContent).toContain(m.historySheetsTitle);
+    expect(actions.loadDeliveryHistoryAction).toHaveBeenCalledWith('form-1', ['google-sheets']);
+    // A spreadsheet that is gone is the alarm this card never raised.
+    expect(history?.getAttribute('data-failures')).toBe('1');
+  });
+
+  it('keeps it while Google is disconnected, which is when a revoked access shows up', async () => {
+    const { el } = await mount({ state: STORED_FOR_MEMBER, formId: 'form-1', connected: false });
+    expect(el.querySelector('[data-testid="google-sheets-history"]')).not.toBeNull();
+  });
+
+  it('has no note about test deliveries, since this card sends none', async () => {
+    const { el } = await mount({ state: STORED_FOR_MEMBER, formId: 'form-1' });
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="google-sheets-history-open"]')!.click());
+    expect(document.body.textContent).not.toContain(m.historyPingNote);
+  });
+});
+
+describe('the default plan', () => {
+  const useQuestions = (el: HTMLElement) =>
+    [...el.querySelectorAll('button')].find((b) => b.getAttribute('data-testid') === 'gsheets-fill-from-form');
+
+  it('leaves out score and outcome on a form without scoring', async () => {
+    const { el, setState } = await mount({
+      state: { ...EMPTY, spreadsheetId: 'sheet-1' },
+      scoring: { score: false, outcome: false },
+    });
+    const btn = useQuestions(el);
+    expect(btn, 'use-questions button').toBeDefined();
+    await act(async () => btn!.click());
+    const columns = (setState.mock.calls.at(-1)?.[0] as GoogleSheetsState).columns;
+    expect(columns.map((c) => c.source)).not.toContain('score');
+    expect(columns.map((c) => c.source)).not.toContain('outcome');
   });
 });

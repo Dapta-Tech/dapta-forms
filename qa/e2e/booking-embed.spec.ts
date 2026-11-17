@@ -291,11 +291,15 @@ test('booked event persists a booking_event row and enqueues a booking_sync outb
 
     // The stored id is released once the complete is confirmed (a new load
     // starts a new response), but the mounted renderer keeps it for the
-    // booking, and the embed carries it as `utm_content`: read it there.
-    const fallbackLink = page.locator('.pf-booking__fallback a');
-    await expect(fallbackLink).toBeVisible({ timeout: 15_000 });
-    const href = await fallbackLink.getAttribute('href');
-    sessionId = href ? new URL(href).searchParams.get('utm_content') : null;
+    // booking. The embed no longer carries it (`utm_content` is the visitor's
+    // campaign), so read it from the complete this attempt just saved.
+    await expect(page.locator('.pf-booking__fallback a')).toBeVisible({ timeout: 15_000 });
+    const saved = queryOne(
+      `SELECT session_id FROM submission WHERE form_id = ? AND completed_at IS NOT NULL
+        ORDER BY completed_at DESC LIMIT 1`,
+      formId,
+    );
+    sessionId = typeof saved?.session_id === 'string' ? saved.session_id : null;
     expect(sessionId, 'renderer sessionId').toBeTruthy();
 
     await page.evaluate(() => {

@@ -958,6 +958,12 @@ export interface FormsMessages {
         redirectHelp2: string;
         redirectLabel: string;
         redirectHelp: string;
+        /**
+         * Under a range's redirect: the visitor's UTMs ride only when the form's
+         * own switch is on, and that switch lives in "When the form ends".
+         */
+        redirectUtmOff: string;
+        redirectUtmOn: string;
         /** Label for the per-outcome thank-you body textarea. */
         messageLabel: string;
         messageHelp: string;
@@ -2027,9 +2033,13 @@ export interface FormsMessages {
       historyWebhookTitle: string;
       historyHubspotTitle: string;
       historySalesforceTitle: string;
+      historySheetsTitle: string;
       historyEmailTitle: string;
       historyHelp: string;
-      /** How a test delivery differs from a real one, since both are listed. */
+      /**
+       * How a test delivery differs from a real one, since both are listed.
+       * Only shown under a card that can send a test (the webhook's).
+       */
       historyPingNote: string;
       /** Marks a row the "Send test" button produced. */
       historyTestBadge: string;
@@ -2048,7 +2058,12 @@ export interface FormsMessages {
       historyClose: string;
       /** Header chips. `{n}` = a row count within the window that was read. */
       historyCount: string;
-      historyFailedCount: string;
+      /**
+       * The red chip: the rows painted red in the dialog, which are the ones
+       * that failed AND the ones a provider refused ("Not delivered"). Neither
+       * "failed" nor "not delivered" names both, so the chip says neither.
+       */
+      historyAttentionCount: string;
       // Row status labels.
       historyDelivered: string;
       historyRetrying: string;
@@ -2057,6 +2072,47 @@ export interface FormsMessages {
       /** `{n}` = delivery attempts, shown only past the first. */
       historyAttempts: string;
       historyNoReason: string;
+      /**
+       * The lifecycle moment that enqueued a row, by the queue's own action
+       * name. An action missing here is shown as its raw name.
+       */
+      historyActions: {
+        complete: string;
+        partial: string;
+        crm_update: string;
+        submission_received: string;
+        submission_confirmed: string;
+        member_invited: string;
+      };
+      /** Who a reason is about, inside the sentences below. */
+      historyProviders: {
+        webhook: string;
+        hubspot: string;
+        salesforce: string;
+        googleSheets: string;
+        other: string;
+      };
+      /**
+       * dForms' own half of a delivery reason, translated; the provider's half
+       * (`{detail}`, an HTTP status) is always kept as the provider wrote it.
+       */
+      historyReasons: {
+        /** A retryable failure. `{provider}` `{detail}`. */
+        deliveryFailed: string;
+        /** A permanent refusal with no text. `{provider}` `{status}`. */
+        providerAnswered: string;
+        /** A permanent refusal, with the provider's text. `{provider}` `{status}` `{detail}`. */
+        providerAnsweredDetail: string;
+        noEmail: string;
+        sheetsNotConnected: string;
+        sheetsNoSpreadsheet: string;
+        sheetsNoColumns: string;
+        salesforceNotConnected: string;
+        hubspotNotConnected: string;
+        webhookNoUrl: string;
+        /** HubSpot refused the booking properties a booking update wrote. `{status}`. */
+        bookingRejected: string;
+      };
       salesforce: {
         title: string;
         desc: string;
@@ -2232,6 +2288,10 @@ export interface FormsMessages {
       dcalName: string;
       dcalDesc: string;
       dcalIncluded: string;
+      /** The badge where this deployment has no dCal: never "Included" there. */
+      dcalUnavailable: string;
+      /** The card's button: it opens the steps, it connects nothing. */
+      dcalHow: string;
       dcalHowTitle: string;
       dcalSteps: string[];
       dcalOpen: string;
@@ -3631,7 +3691,11 @@ export const en: FormsMessages = {
         overrideIsAnyOf: '{field} is any of {bound}',
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
-          'Leave empty to show the thank-you screen. If set, respondents are sent here instead. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out. Keep in mind that an answer placed in the URL, such as an email, ends up in the destination site’s browser history and server logs. To also send the visitor’s UTM parameters, turn on “Forward UTM parameters” in When the form ends.',
+          'Leave empty to show the thank-you screen. If set, respondents are sent here instead. Use [field] to add an answer to the URL, such as ?name=[name]. When the form is embedded, answers are not sent and those parameters are left out. Keep in mind that an answer placed in the URL, such as an email, ends up in the destination site’s browser history and server logs.',
+        redirectUtmOff:
+          'To also send the visitor’s UTM parameters to this URL, turn on Forward UTM parameters in When the form ends.',
+        redirectUtmOn:
+          'The visitor’s UTM parameters are added to this URL (Forward UTM parameters, in When the form ends).',
         messageLabel: 'Message shown for this outcome',
         messageHelp:
           'The thank-you body respondents see for this range. Use [field] to insert an answer. Leave empty to use the default message.',
@@ -4134,7 +4198,7 @@ export const en: FormsMessages = {
         spamModeStrictHelp: 'Use it if spam still gets through. It adds a visible step for everyone.',
         integrationsTitle: 'Integrations',
         integrationsSubtitle:
-          'Send each submission to your CRM or a webhook. Delivery is durable and retried.',
+          'Send each submission to your CRM, a spreadsheet or a webhook. Delivery is durable and retried.',
         integrationsLoadError: 'Could not load integrations.',
         retry: 'Retry',
         trackingTitle: 'Tracking & pixels',
@@ -4554,6 +4618,7 @@ export const en: FormsMessages = {
       historyWebhookTitle: 'Webhook history',
       historyHubspotTitle: 'HubSpot history',
       historySalesforceTitle: 'Salesforce history',
+      historySheetsTitle: 'Google Sheets history',
       historyEmailTitle: 'Email history',
       historyHelp: 'The last deliveries this form made, newest first. Open one to see what was sent.',
       historyPingNote:
@@ -4569,13 +4634,42 @@ export const en: FormsMessages = {
       historyOpen: 'View history',
       historyClose: 'Close',
       historyCount: '{n} deliveries',
-      historyFailedCount: '{n} failed',
+      historyAttentionCount: 'Needs attention: {n}',
       historyDelivered: 'Delivered',
       historyRetrying: 'In progress',
       historyFailed: 'Failed',
       historySkipped: 'Not delivered',
       historyAttempts: '{n} attempts',
       historyNoReason: 'No reason was recorded.',
+      historyActions: {
+        complete: 'Complete response',
+        partial: 'Partial response',
+        crm_update: 'Booking update',
+        submission_received: 'New response notice',
+        submission_confirmed: 'Confirmation to the respondent',
+        member_invited: 'Invitation',
+      },
+      historyProviders: {
+        webhook: 'your endpoint',
+        hubspot: 'HubSpot',
+        salesforce: 'Salesforce',
+        googleSheets: 'Google Sheets',
+        other: 'the destination',
+      },
+      historyReasons: {
+        deliveryFailed: 'Delivery to {provider} failed: {detail}',
+        providerAnswered: 'Refused by {provider} with HTTP {status}.',
+        providerAnsweredDetail: 'Refused by {provider} with HTTP {status}: {detail}',
+        noEmail: 'This response has no email to match a contact by.',
+        sheetsNotConnected:
+          'Google Sheets is not connected, or its access was taken away. Connect it again to keep adding rows.',
+        sheetsNoSpreadsheet: 'No spreadsheet is chosen for this form.',
+        sheetsNoColumns: 'No column is set up for this spreadsheet.',
+        salesforceNotConnected: 'Salesforce is not connected. Connect it again to keep sending leads.',
+        hubspotNotConnected: 'HubSpot is not connected.',
+        webhookNoUrl: 'The webhook has no URL.',
+        bookingRejected: 'HubSpot refused the booking update with HTTP {status}. Check the booking properties.',
+      },
       salesforce: {
         title: 'Salesforce',
         desc: 'Send each completed response to Salesforce as a Lead.',
@@ -4717,7 +4811,7 @@ export const en: FormsMessages = {
     connections: {
       title: 'Integrations',
       subtitle:
-        'Connect each service to your account once. Then map fields for each form from its integrations tab.',
+        'Connect each service to your account once. Then map fields for each form from its Connect tab.',
       hubspotName: 'HubSpot',
       hubspotDesc: 'Sync respondents to HubSpot contacts and map questions to contact properties.',
       calendlyName: 'Calendly',
@@ -4726,6 +4820,8 @@ export const en: FormsMessages = {
       dcalDesc:
         'Dapta’s scheduler. Respondents book a meeting inside your form, with what they already answered filled in.',
       dcalIncluded: 'Included',
+      dcalUnavailable: 'Not available here',
+      dcalHow: 'How it works',
       dcalHowTitle: 'Nothing to connect: dCal uses your Dapta sign-in.',
       dcalSteps: [
         'Create your event types in dCal.',
@@ -4803,10 +4899,10 @@ export const en: FormsMessages = {
       encryptionOffBody:
         'The server needs a FORMS_ENCRYPTION_KEY to store credentials securely. Set it and restart the API to enable connections.',
       loadError: 'Could not load your connections.',
-      perFormNote: 'Field mapping is configured per form, from each form’s integrations tab.',
+      perFormNote: 'Field mapping is configured per form, from each form’s Connect tab.',
       unavailableTitle: 'Not available on this deployment',
       unavailableBody:
-        '{provider} needs configuration only the operator of this deployment can add. It works where that is set up, such as production.',
+        '{provider} needs settings that only whoever runs this deployment can add. Once they are added, it can be used here.',
       serverProvided: 'Provided by the server',
       serverProvidedTitle: 'Already working, using the server’s token',
       serverProvidedBody:
@@ -5104,7 +5200,7 @@ export const en: FormsMessages = {
           brandKit: { title: 'Brand kit', body: 'Read and edit the brand kit and apply it to your forms.' },
           linkPage: { title: 'Link pages', body: 'Read, add and edit the workspace’s public pages with your forms and links.' },
           notifications: { title: 'Emails', body: 'Edit the notification emails of the workspace and of each form.' },
-          integrations: { title: 'Integrations', body: 'Webhooks, HubSpot and Calendly: where responses go, tests and deliveries.' },
+          integrations: { title: 'Integrations', body: 'Webhooks, HubSpot, Google Sheets and Salesforce: where responses go, tests and deliveries, plus Calendly and dCal events.' },
           account: { title: 'Account and workspaces', body: 'Who is connected, the workspaces you can work in and your profile.' },
         },
         items: {
@@ -5150,13 +5246,13 @@ export const en: FormsMessages = {
           list_form_notifications: { what: 'See the emails one form sends.', ask: 'Which emails does my lead form send?' },
           update_form_notification: { what: 'Edit an email for one form.', ask: 'Send the lead form notices to sales@example.com' },
           reset_form_notification: { what: 'Put a form\'s email back to the workspace default.', ask: 'Reset the emails of my survey' },
-          list_integrations: { what: 'See which apps are connected, like HubSpot or Calendly.', ask: 'Is HubSpot connected?' },
-          set_destinations: { what: 'Choose where a form\'s responses go: webhooks or HubSpot.', ask: 'Send every lead from my form to HubSpot' },
+          list_integrations: { what: 'See which apps are connected (HubSpot, Calendly, Google Sheets or Salesforce) and whether dCal is available.', ask: 'Is HubSpot connected?' },
+          set_destinations: { what: 'Choose where a form\'s responses go: webhooks, HubSpot, Google Sheets or Salesforce.', ask: 'Send every lead from my form to HubSpot' },
           list_webhooks: { what: 'See a form\'s webhooks.', ask: 'Which webhooks does my lead form have?' },
           ping_webhook: { what: 'Send a test to a webhook.', ask: 'Test the webhook of my lead form' },
           list_deliveries: { what: 'See which responses were delivered and which failed.', ask: 'Did my last responses reach HubSpot?' },
           list_hubspot_properties: { what: 'See the HubSpot fields a question can fill.', ask: 'Which HubSpot fields can I map?' },
-          list_event_types: { what: 'See the Calendly events a scheduler step can book.', ask: 'Which events can my form book?' },
+          list_event_types: { what: 'See the Calendly events a scheduler step can book. dCal events are picked in the form editor.', ask: 'Which Calendly events can my booking step offer?' },
           list_calendly_event_types: { what: 'See the Calendly events a form can book.', ask: 'Which Calendly events can my form book?' },
           whoami: { what: 'Check who is connected and in which workspace.', ask: 'Who am I connected as?' },
           list_my_workspaces: { what: 'See every workspace you can work in.', ask: 'Which workspaces can I use?' },
@@ -6441,7 +6537,11 @@ export const es: FormsMessages = {
         overrideIsAnyOf: '{field} es alguno de {bound}',
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
-          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten. Ten en cuenta que una respuesta incluida en la URL, como un correo electrónico, queda en el historial del navegador y en los registros del servidor del sitio de destino. Para enviar también los parámetros UTM del visitante, activa «Reenviar parámetros UTM» en Cuando termina el formulario.',
+          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes. Usa [campo] para agregar una respuesta a la URL, como ?nombre=[name]. Si el formulario está incrustado, no se envían respuestas y esos parámetros se omiten. Ten en cuenta que una respuesta incluida en la URL, como un correo electrónico, queda en el historial del navegador y en los registros del servidor del sitio de destino.',
+        redirectUtmOff:
+          'Para enviar también los parámetros UTM del visitante a esta URL, activa Reenviar parámetros UTM en Cuando termina el formulario.',
+        redirectUtmOn:
+          'Los parámetros UTM del visitante se agregan a esta URL (Reenviar parámetros UTM, en Cuando termina el formulario).',
         messageLabel: 'Mensaje mostrado para este resultado',
         messageHelp:
           'El cuerpo de agradecimiento que ven los respondientes en este rango. Usa [campo] para insertar una respuesta. Déjalo vacío para usar el mensaje por defecto.',
@@ -6946,7 +7046,7 @@ export const es: FormsMessages = {
         spamModeStrictHelp: 'Úsalo si sigue entrando spam. Agrega un paso visible para todos.',
         integrationsTitle: 'Integraciones',
         integrationsSubtitle:
-          'Envía cada respuesta a tu CRM o a un webhook. La entrega es duradera y con reintentos.',
+          'Envía cada respuesta a tu CRM, a una hoja de cálculo o a un webhook. La entrega es duradera y con reintentos.',
         integrationsLoadError: 'No se pudieron cargar las integraciones.',
         retry: 'Reintentar',
         trackingTitle: 'Seguimiento y píxeles',
@@ -7267,7 +7367,7 @@ export const es: FormsMessages = {
         'Esta pantalla solo edita la primera, así que la otra es invisible acá: y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
       carriedWebhooksTitle: 'Este formulario tiene {count} webhook(s) más',
       carriedWebhooksBody:
-        'Esta tarjeta edita el primero. Los demás siguen funcionando igual y se guardan sin tocarlos: solo que no se editan desde acá. Los ves todos en Integraciones.',
+        'Esta tarjeta edita el primero. Los demás siguen funcionando igual y se guardan sin tocarlos: solo que no se editan desde aquí. Los ves todos en Integraciones.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'Pega un token de app privada de HubSpot para conectar este espacio de trabajo. Una vez conectado, cada formulario de aquí puede asignar sus preguntas a propiedades de contacto.',
@@ -7369,6 +7469,7 @@ export const es: FormsMessages = {
       historyWebhookTitle: 'Historial del webhook',
       historyHubspotTitle: 'Historial de HubSpot',
       historySalesforceTitle: 'Historial de Salesforce',
+      historySheetsTitle: 'Historial de Google Sheets',
       historyEmailTitle: 'Historial de correos',
       historyHelp:
         'Las últimas entregas que hizo este formulario, de la más reciente a la más antigua. Abre una para ver qué se envió.',
@@ -7385,13 +7486,42 @@ export const es: FormsMessages = {
       historyOpen: 'Ver historial',
       historyClose: 'Cerrar',
       historyCount: '{n} entregas',
-      historyFailedCount: '{n} con error',
+      historyAttentionCount: 'Para revisar: {n}',
       historyDelivered: 'Entregada',
       historyRetrying: 'En curso',
       historyFailed: 'Falló',
       historySkipped: 'No entregada',
       historyAttempts: '{n} intentos',
       historyNoReason: 'No se registró un motivo.',
+      historyActions: {
+        complete: 'Respuesta completa',
+        partial: 'Respuesta parcial',
+        crm_update: 'Actualización por agendamiento',
+        submission_received: 'Aviso de nueva respuesta',
+        submission_confirmed: 'Confirmación a quien respondió',
+        member_invited: 'Invitación',
+      },
+      historyProviders: {
+        webhook: 'tu endpoint',
+        hubspot: 'HubSpot',
+        salesforce: 'Salesforce',
+        googleSheets: 'Google Sheets',
+        other: 'el destino',
+      },
+      historyReasons: {
+        deliveryFailed: 'Falló la entrega a {provider}: {detail}',
+        providerAnswered: 'Rechazada por {provider} con HTTP {status}.',
+        providerAnsweredDetail: 'Rechazada por {provider} con HTTP {status}: {detail}',
+        noEmail: 'Esta respuesta no tiene un correo con el cual identificar al contacto.',
+        sheetsNotConnected:
+          'Google Sheets no está conectado, o se le quitó el acceso. Conéctalo de nuevo para seguir agregando filas.',
+        sheetsNoSpreadsheet: 'Este formulario no tiene una hoja de cálculo elegida.',
+        sheetsNoColumns: 'Esta hoja de cálculo no tiene columnas configuradas.',
+        salesforceNotConnected: 'Salesforce no está conectado. Conéctalo de nuevo para seguir enviando leads.',
+        hubspotNotConnected: 'HubSpot no está conectado.',
+        webhookNoUrl: 'El webhook no tiene URL.',
+        bookingRejected: 'HubSpot rechazó la actualización del agendamiento con HTTP {status}. Revisa las propiedades del agendamiento.',
+      },
       salesforce: {
         title: 'Salesforce',
         desc: 'Envía cada respuesta completa a Salesforce como Lead.',
@@ -7533,7 +7663,7 @@ export const es: FormsMessages = {
     connections: {
       title: 'Integraciones',
       subtitle:
-        'Conecta cada servicio a tu cuenta una sola vez. Luego asigna los campos de cada formulario desde su pestaña de integraciones.',
+        'Conecta cada servicio a tu cuenta una sola vez. Luego asigna los campos de cada formulario desde su pestaña Conectar.',
       hubspotName: 'HubSpot',
       hubspotDesc: 'Sincroniza respuestas con contactos de HubSpot y asigna preguntas a propiedades de contacto.',
       calendlyName: 'Calendly',
@@ -7542,6 +7672,8 @@ export const es: FormsMessages = {
       dcalDesc:
         'El agendador de Dapta. Las personas agendan una reunión dentro de tu formulario, con lo que ya respondieron prellenado.',
       dcalIncluded: 'Incluido',
+      dcalUnavailable: 'No disponible aquí',
+      dcalHow: 'Cómo funciona',
       dcalHowTitle: 'No hay nada que conectar: dCal usa tu cuenta de Dapta.',
       dcalSteps: [
         'Crea tus tipos de evento en dCal.',
@@ -7584,7 +7716,7 @@ export const es: FormsMessages = {
         unreachable: 'Salesforce no respondió. Vuelve a intentar en un momento.',
         timeout:
           'Salesforce tardó demasiado en responder. Vuelve a intentar; si sigue pasando, puede que este servidor no tenga permitido conectarse a Salesforce.',
-        forbidden: 'Solo los admins y owners del workspace pueden conectar integraciones.',
+        forbidden: 'Solo un propietario o un administrador del espacio de trabajo puede conectar integraciones.',
       },
       googleConnected: 'Google Sheets quedó conectado.',
       googleCancelled: 'Google Sheets no se conectó.',
@@ -7619,10 +7751,10 @@ export const es: FormsMessages = {
       encryptionOffBody:
         'El servidor necesita una FORMS_ENCRYPTION_KEY para guardar credenciales de forma segura. Configúrala y reinicia la API para habilitar las conexiones.',
       loadError: 'No se pudieron cargar tus conexiones.',
-      perFormNote: 'La asignación de campos se configura por formulario, desde la pestaña de integraciones de cada uno.',
-      unavailableTitle: 'No disponible en este deployment',
+      perFormNote: 'La asignación de campos se configura por formulario, desde la pestaña Conectar de cada uno.',
+      unavailableTitle: 'No disponible en esta instalación',
       unavailableBody:
-        '{provider} necesita una configuración que solo puede agregar quien opera este deployment. Funciona donde está configurado, como en producción.',
+        '{provider} necesita una configuración que solo puede agregar quien administra esta instalación. Cuando la agregue, se podrá usar aquí.',
       serverProvided: 'La da el servidor',
       serverProvidedTitle: 'Ya funciona, con el token del servidor',
       serverProvidedBody:
@@ -7923,7 +8055,7 @@ export const es: FormsMessages = {
           brandKit: { title: 'Kit de marca', body: 'Lee y edita el kit de marca y aplícalo a tus formularios.' },
           linkPage: { title: 'Páginas del workspace', body: 'Lee, agrega y edita las páginas públicas del workspace con tus formularios y enlaces.' },
           notifications: { title: 'Correos', body: 'Edita los correos de notificación del workspace y de cada formulario.' },
-          integrations: { title: 'Integraciones', body: 'Webhooks, HubSpot y Calendly: a dónde van las respuestas, pruebas y entregas.' },
+          integrations: { title: 'Integraciones', body: 'Webhooks, HubSpot, Google Sheets y Salesforce: a dónde van las respuestas, pruebas y entregas, y los eventos de Calendly y dCal.' },
           account: { title: 'Cuenta y workspaces', body: 'Quién está conectado, en qué workspaces puedes trabajar y tu perfil.' },
         },
         items: {
@@ -7969,13 +8101,13 @@ export const es: FormsMessages = {
           list_form_notifications: { what: 'Ve los correos que envía un formulario.', ask: '¿Qué correos envía mi formulario de leads?' },
           update_form_notification: { what: 'Edita un correo de un formulario.', ask: 'Envía los avisos del formulario de leads a ventas@example.com' },
           reset_form_notification: { what: 'Devuelve el correo de un formulario a la versión del workspace.', ask: 'Restablece los correos de mi encuesta' },
-          list_integrations: { what: 'Ve qué apps están conectadas, como HubSpot o Calendly.', ask: '¿Está conectado HubSpot?' },
-          set_destinations: { what: 'Elige a dónde van las respuestas de un formulario: webhooks o HubSpot.', ask: 'Manda cada lead de mi formulario a HubSpot' },
+          list_integrations: { what: 'Ve qué apps están conectadas (HubSpot, Calendly, Google Sheets o Salesforce) y si dCal está disponible.', ask: '¿Está conectado HubSpot?' },
+          set_destinations: { what: 'Elige a dónde van las respuestas de un formulario: webhooks, HubSpot, Google Sheets o Salesforce.', ask: 'Manda cada lead de mi formulario a HubSpot' },
           list_webhooks: { what: 'Ve los webhooks de un formulario.', ask: '¿Qué webhooks tiene mi formulario de leads?' },
           ping_webhook: { what: 'Envía una prueba a un webhook.', ask: 'Prueba el webhook de mi formulario de leads' },
           list_deliveries: { what: 'Mira qué respuestas se entregaron y cuáles fallaron.', ask: '¿Llegaron a HubSpot mis últimas respuestas?' },
           list_hubspot_properties: { what: 'Ve los campos de HubSpot que puede llenar una pregunta.', ask: '¿Qué campos de HubSpot puedo mapear?' },
-          list_event_types: { what: 'Ve los eventos de Calendly que puede agendar un paso de agenda.', ask: '¿Qué eventos puede agendar mi formulario?' },
+          list_event_types: { what: 'Ve los eventos de Calendly que puede agendar un paso de agenda. Los eventos de dCal se eligen en el editor del formulario.', ask: '¿Qué eventos de Calendly puede ofrecer mi paso de agenda?' },
           list_calendly_event_types: { what: 'Ve los eventos de Calendly que puede agendar un formulario.', ask: '¿Qué eventos de Calendly puede agendar mi formulario?' },
           whoami: { what: 'Revisa quién está conectado y en qué workspace.', ask: '¿Con qué cuenta estoy conectado?' },
           list_my_workspaces: { what: 'Ve todos los workspaces en los que puedes trabajar.', ask: '¿Qué workspaces puedo usar?' },

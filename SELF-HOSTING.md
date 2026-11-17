@@ -323,6 +323,11 @@ date, or a sunset before the deprecation refuses to boot.
 | `HUBSPOT_PRIVATE_APP_TOKEN` | _(unset)_ | to enable the HubSpot destination (else it reports a disabled state) | yes |
 | `DCAL_API_BASE_URL` | _(unset)_ | to offer dCal as a scheduler (needs `DCAL_APP_URL` too) | no |
 | `DCAL_APP_URL` | _(unset)_ | to offer dCal as a scheduler (needs `DCAL_API_BASE_URL` too) | no |
+| `GOOGLE_OAUTH_CLIENT_ID` | _(unset)_ | to offer Google Sheets as a destination: the OAuth client you register in Google Cloud (a "Web application" client, Google Sheets API enabled), set together with the secret and the redirect URI, and with `FORMS_ENCRYPTION_KEY`. Missing (or any of the three missing): Google Sheets is not offered anywhere, `GET /v1/integrations` lists it in `unavailable`, an API key or MCP agent's new spreadsheet destination is refused with `INTEGRATION_NOT_CONNECTED` and `unavailable: true`, and a spreadsheet destination saved earlier delivers nothing | no |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | _(unset)_ | with `GOOGLE_OAUTH_CLIENT_ID`; missing has the same effect as a missing client id | yes |
+| `GOOGLE_OAUTH_REDIRECT_URI` | _(unset)_ | with `GOOGLE_OAUTH_CLIENT_ID`: this API's own `/v1/integrations/google-sheets/callback`, character for character the one on the client. Missing has the same effect as a missing client id; one that does not match makes Google refuse the consent screen | no |
+| `GOOGLE_PICKER_API_KEY` | _(unset)_ | optional, with Google Sheets on: lets an author write into a spreadsheet that already exists, chosen with the Google Picker (enable the Google Picker API in the same project; a browser key restricted by HTTP referrer to the web app's origin, which reaches the browser by design). Missing: authors can only create a new spreadsheet from the form, and `GET /v1/integrations` answers `googlePicker: false` | no |
+| `GOOGLE_PICKER_APP_ID` | _(read off `GOOGLE_OAUTH_CLIENT_ID`)_ | the Cloud project NUMBER, when the client id does not start with it. Missing and not readable off the client id: the same as a missing picker key | no |
 
 Webhook destinations are configured **per form in the admin UI** (URL + optional
 HMAC secret) — no environment variable.

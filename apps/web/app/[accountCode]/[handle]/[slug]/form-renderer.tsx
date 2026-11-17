@@ -68,6 +68,8 @@ import {
   useCaptchaGate,
   captchaAborted,
   submitFinal,
+  useCampaignUtm,
+  sameCampaign,
   captureUtm,
   captureDefaults,
   withAnswer,
@@ -208,7 +210,9 @@ export function FormRenderer({
   useCalendlyPreload(calendlyPreloadKeys, sessionId);
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
-  const resolveVisit = useHostVisit(visitCapture, name);
+  // The visitor's campaign for the booking page: the same set the submission carries.
+  const { utm: campaign, own: ownUtm, record: recordCampaign, learnHost } = useCampaignUtm();
+  const resolveVisit = useHostVisit(visitCapture, name, learnHost);
 
   /**
    * Authorize one upload for a `file` step.
@@ -580,6 +584,7 @@ export function FormRenderer({
   function withData(a: Answers, resolved?: ResolvedVisit): Record<string, unknown> {
     // The landing's campaign stands in only when the form's own URL has none.
     const utm = mergeHostUtm(utmRef.current, resolved?.hostUtm);
+    recordCampaign(utm);
     return Object.keys(utm).length > 0 ? { ...a, utm } : { ...a };
   }
 
@@ -1135,7 +1140,10 @@ export function FormRenderer({
           answers={answersRef.current}
           sessionId={sessionId}
           locale={locale}
-          preloadKey={booking.outcome.booking.url}
+          utm={campaign}
+          // A preloaded widget carries only this page's own UTMs (Calendly's
+          // script forwards them), so it is used only when that IS the campaign.
+          preloadKey={sameCampaign(campaign, ownUtm) ? booking.outcome.booking.url : undefined}
           onBooked={(details) => void handleBooked(details)}
         />
       </PhaseShell>
@@ -1502,8 +1510,13 @@ export function FormRenderer({
                     extraCustomAnswers={schedPrefill.customAnswers}
                     sessionId={sessionId}
                     locale={locale}
+                    utm={campaign}
                     hideHeader
-                    preloadKey={step.scheduler ? schedulerToBooking(step.scheduler)?.url : undefined}
+                    preloadKey={
+                      step.scheduler && sameCampaign(campaign, ownUtm)
+                        ? schedulerToBooking(step.scheduler)?.url
+                        : undefined
+                    }
                     onBooked={(details) => void handleSchedulerBooked(step, details)}
                   />
                 ) : (

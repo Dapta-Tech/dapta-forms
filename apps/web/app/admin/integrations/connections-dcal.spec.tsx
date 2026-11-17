@@ -4,8 +4,9 @@
  *
  * dCal is not a connection (it uses the author's Dapta sign-in), so its card
  * is about presence: it sits right above Calendly, shows only on a deployment
- * that has dCal, and its "Connect" opens the steps to use it rather than a
- * credential form.
+ * that has dCal, and its "How it works" opens the steps to use it rather than
+ * a credential form. It never says "Connect" (there is nothing to connect) and
+ * it never says "Included" where the deployment has no dCal.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
@@ -61,12 +62,32 @@ describe('the dCal card', () => {
     expect(names.indexOf(m.dcalName)).toBe(names.indexOf(m.calendlyName) - 1);
   });
 
+  it('names what its button does, and never offers to connect', async () => {
+    const card = (await mount({ createEventUrl: URL_ })).querySelector('[data-testid="dcal-card"]')!;
+    const labels = [...card.querySelectorAll('button')].map((b) => b.textContent?.trim());
+    expect(labels).toContain(m.dcalHow);
+    expect(labels).not.toContain(m.connect);
+  });
+
+  it('says Included only where the deployment has dCal', async () => {
+    const withDcal = (await mount({ createEventUrl: URL_ })).querySelector('[data-testid="dcal-card"] [data-testid="connection-status"]')!;
+    expect(withDcal.getAttribute('data-state')).toBe('included');
+    expect(withDcal.textContent).toContain(m.dcalIncluded);
+    act(() => root?.unmount());
+    container?.remove();
+
+    const without = (await mount(null)).querySelector('[data-testid="dcal-card"] [data-testid="connection-status"]')!;
+    expect(without.getAttribute('data-state')).toBe('unavailable');
+    expect(without.textContent).toContain(m.dcalUnavailable);
+    expect(without.textContent).not.toContain(m.dcalIncluded);
+  });
+
   it('still shows on a deployment without dCal, with the steps, a note and no link', async () => {
     const el = await mount(null);
     const names = cardNames(el);
     expect(names.indexOf(m.dcalName)).toBe(names.indexOf(m.calendlyName) - 1);
     const card = el.querySelector('[data-testid="dcal-card"]')!;
-    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.connect))!;
+    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.dcalHow))!;
     await act(async () => connect.click());
     const dialog = document.querySelector('[data-testid="dcal-steps"]')!;
     expect(dialog).not.toBeNull();
@@ -78,7 +99,7 @@ describe('the dCal card', () => {
     const el = await mount({ createEventUrl: URL_ });
     const card = el.querySelector('[data-testid="dcal-card"]')!;
     expect(card.querySelector('input')).toBeNull();
-    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.connect))!;
+    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.dcalHow))!;
     await act(async () => connect.click());
     // Outside the card: steps opened in place stretched the neighbouring card
     // in the same grid row.
@@ -98,7 +119,7 @@ describe('closing the dCal steps', () => {
   it('closes on Escape and gives focus back to the button that opened it', async () => {
     const el = await mount({ createEventUrl: URL_ });
     const card = el.querySelector('[data-testid="dcal-card"]')!;
-    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.connect))!;
+    const connect = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes(m.dcalHow))!;
     connect.focus();
     await act(async () => connect.click());
     expect(document.querySelector('[data-testid="dcal-steps"]')).not.toBeNull();

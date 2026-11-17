@@ -653,6 +653,7 @@ export class AdminCrudController {
         provider: verdict.refusal.type,
         index: verdict.refusal.index,
         integrationsUrl: verdict.refusal.integrationsUrl,
+        unavailable: verdict.refusal.unavailable,
       });
     }
     // New forms are born on-brand: snapshot the workspace brand kit into the

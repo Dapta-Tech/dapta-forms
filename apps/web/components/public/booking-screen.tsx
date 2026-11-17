@@ -73,6 +73,7 @@ export function BookingScreen({
   hideHeader = false,
   extraCustomAnswers,
   preloadKey,
+  utm,
 }: {
   booking: OutcomeBooking;
   answers: Record<string, unknown>;
@@ -93,6 +94,12 @@ export function BookingScreen({
    * instead of a new one.
    */
   preloadKey?: string;
+  /**
+   * The visitor's campaign `utm_*` (the form's own, else the landing's), the
+   * same set the submission carries. Calendly and dCal record it on the
+   * booking, so the booking is credited to the campaign the visitor came from.
+   */
+  utm?: Record<string, string>;
 }) {
   const m = getMessages(locale).renderer.booking;
 
@@ -100,9 +107,16 @@ export function BookingScreen({
   const [embedDomain] = useState(() =>
     typeof window === 'undefined' ? '' : window.location.host,
   );
+  // Keyed by content: the callers hand a fresh object on every render.
+  const utmKey = JSON.stringify(utm ?? {});
   const embedUrl = useMemo(
-    () => buildBookingEmbedUrl(booking, answers, sessionId, embedDomain, extraCustomAnswers),
-    [booking, answers, sessionId, embedDomain, extraCustomAnswers],
+    () =>
+      buildBookingEmbedUrl(booking, answers, {
+        embedDomain,
+        customAnswers: extraCustomAnswers,
+        utm: JSON.parse(utmKey) as Record<string, string>,
+      }),
+    [booking, answers, embedDomain, extraCustomAnswers, utmKey],
   );
   /**
    * The one origin a dCal "booked" message may come from: the booking page this
@@ -130,7 +144,7 @@ export function BookingScreen({
   const stablePrefill = useMemo(() => calendlyPrefill, [calendlyPrefillKey]);
 
   // Decided at mount; it only ever flips to the cold embed (the widget turned
-  // out to be held by another screen).
+  // out to be held by another screen, or the caller withdrew the key).
   const [preloaded, setPreloaded] = useState(
     () =>
       booking.provider === 'calendly' &&
@@ -186,6 +200,15 @@ export function BookingScreen({
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [booking.provider, dcalOrigin]);
+
+  // The caller withdrew (or changed) the key after mount, e.g. the landing's
+  // campaign arrived and a preloaded widget can no longer carry it. The adopted
+  // widget's effect lets it go; without this the cold embed would wait on
+  // `preloaded` forever and the screen would stay blank.
+  const [adoptedKey] = useState(preloadKey);
+  useEffect(() => {
+    if (preloaded && preloadKey !== adoptedKey) setPreloaded(false);
+  }, [preloaded, preloadKey, adoptedKey]);
 
   // Adopted widget: shown over the slot (and prefilled) while this screen lives.
   useEffect(() => {

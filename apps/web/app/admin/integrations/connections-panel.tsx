@@ -468,10 +468,16 @@ function ConnectedView({
  * dCal's card. Not a connection: the scheduler picker forwards the author's
  * own Dapta session to dCal, so there is no credential to paste and nothing to
  * disconnect. The card is here for presence, beside the provider it replaces,
- * and its "Connect" opens the three steps it takes to use it instead.
+ * and its button opens the three steps it takes to use it instead, so it is
+ * labelled for that ("How it works"), never "Connect".
+ *
+ * "Included" only where this deployment actually has dCal (`createEventUrl`
+ * is null otherwise): elsewhere the badge says it is not available, and the
+ * steps say why.
  */
 function DcalCard({ createEventUrl, m }: { createEventUrl: string | null; m: Msgs }) {
   const [showSteps, setShowSteps] = useState(false);
+  const available = createEventUrl !== null;
   return (
     <section className="flex flex-col rounded-xl border border-border bg-card p-5" data-testid="dcal-card">
       <header className="flex items-start justify-between gap-3">
@@ -487,19 +493,35 @@ function DcalCard({ createEventUrl, m }: { createEventUrl: string | null; m: Msg
             <p className="mt-0.5 text-sm text-muted-foreground">{m.dcalDesc}</p>
           </div>
         </div>
-        <span
-          data-testid="connection-status"
-          data-state="included"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-signal-edge/40 bg-signal/15 px-2.5 py-1 text-xs font-medium text-foreground"
-        >
-          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-signal-edge" />
-          {m.dcalIncluded}
-        </span>
+        {available ? (
+          <span
+            data-testid="connection-status"
+            data-state="included"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-signal-edge/40 bg-signal/15 px-2.5 py-1 text-xs font-medium text-foreground"
+          >
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-signal-edge" />
+            {m.dcalIncluded}
+          </span>
+        ) : (
+          <span
+            data-testid="connection-status"
+            data-state="unavailable"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+          >
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+            {m.dcalUnavailable}
+          </span>
+        )}
       </header>
       <div className="mt-auto pt-4">
-        <Button onClick={() => setShowSteps(true)} className="self-start">
-          <i aria-hidden className="pi pi-link" style={{ fontSize: 12 }} />
-          {m.connect}
+        <Button
+          onClick={() => setShowSteps(true)}
+          variant={available ? 'default' : 'outline'}
+          className="self-start"
+          data-testid="dcal-how"
+        >
+          <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 12 }} />
+          {m.dcalHow}
         </Button>
       </div>
       {/* In a dialog, not inside the card: every card in a grid row is as tall
