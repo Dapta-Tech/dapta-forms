@@ -20,7 +20,7 @@ import {
 
 export type ConnectResult =
   | { ok: true; status: IntegrationStatus }
-  | { ok: false; code?: string; message?: string };
+  | { ok: false; code?: string; status?: number; message?: string };
 
 export async function connectIntegrationAction(
   provider: IntegrationProvider,
@@ -32,7 +32,7 @@ export async function connectIntegrationAction(
     return { ok: true, status };
   } catch (e) {
     unstable_rethrow(e);
-    if (e instanceof ApiError) return { ok: false, code: e.code, message: e.message };
+    if (e instanceof ApiError) return { ok: false, code: e.code, status: e.status, message: e.message };
     return { ok: false };
   }
 }
@@ -49,7 +49,7 @@ export async function connectSalesforceAction(input: {
   consumerSecret: string;
 }): Promise<
   | { ok: true; status: IntegrationStatus }
-  | { ok: false; reason?: SalesforceConnectError; status?: number; message?: string; cause?: string }
+  | { ok: false; reason?: SalesforceConnectError; status?: number; code?: string; message?: string; cause?: string }
 > {
   try {
     const status = await adminApi.connectSalesforce(input);
@@ -66,6 +66,7 @@ export async function connectSalesforceAction(input: {
         ok: false,
         reason: typeof reason === 'string' ? (reason as SalesforceConnectError) : undefined,
         status: e.status,
+        code: e.code,
         message: e.message,
         cause: typeof e.body?.cause === 'string' ? e.body.cause : undefined,
       };
@@ -84,7 +85,7 @@ export async function connectSalesforceAction(input: {
  * the server action's own fetch rather than by the browser.
  */
 export async function startGoogleSheetsAuthAction(returnTo?: string): Promise<
-  { ok: true; authUrl: string } | { ok: false; message?: string }
+  { ok: true; authUrl: string } | { ok: false; code?: string; status?: number; message?: string }
 > {
   try {
     // `returnTo` is the dashboard path to land on afterwards (a form's editor).
@@ -94,7 +95,9 @@ export async function startGoogleSheetsAuthAction(returnTo?: string): Promise<
     return { ok: true, authUrl };
   } catch (e) {
     unstable_rethrow(e);
-    if (e instanceof ApiError) return { ok: false, message: e.message };
+    // The code and the status travel so the button can say WHY in the
+    // author's language. The message is the API's own English, for logs.
+    if (e instanceof ApiError) return { ok: false, code: e.code, status: e.status, message: e.message };
     return { ok: false };
   }
 }

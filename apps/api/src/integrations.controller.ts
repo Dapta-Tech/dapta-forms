@@ -1781,6 +1781,16 @@ export class FormDestinationsController {
 
     const owned: string[][] = [];
     if (forThis(storedSnapshot)) owned.push(storedSnapshot!.headers);
+    // THE RULE, stated plainly because it is a decision and not an accident:
+    // a row 1 that is exactly equal to the columns this form had stored for
+    // this same spreadsheet and tab FOLLOWS THE CONFIGURATION, whoever typed
+    // it. That includes a sheet picked under an earlier release (no snapshot
+    // recorded) whose row 1 the author wrote by hand to match the columns:
+    // the first rename in dForms rewrites that row, with no confirmation.
+    // dForms cannot tell that row from one its own create call wrote, and the
+    // two mean the same thing to the author (the headings of these columns),
+    // so both are kept in step. A row 1 that differs from the stored columns
+    // in any cell is never touched without the confirmed replace.
     if (sameTarget && storedHeaders.length > 0) owned.push(storedHeaders);
 
     let token = '';

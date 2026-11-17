@@ -65,9 +65,15 @@ export function ConnectionsPanel({
   dcal = null,
   loadError,
   oauthOutcome = null,
+  canManage = true,
   messages: m,
   locale,
 }: {
+  /**
+   * Owners and admins. The API refuses a connect or a disconnect from anyone
+   * else, so a member sees what is connected and a sentence, no buttons.
+   */
+  canManage?: boolean;
   initialProviders: IntegrationStatus[];
   encryptionAvailable: boolean;
   /** Providers the deployment already supplies a token for. */
@@ -171,6 +177,7 @@ export function ConnectionsPanel({
             encryptionAvailable={encryptionAvailable}
             serverProvided={serverProvided.includes(meta.id)}
             unavailable={isUnavailable(meta.id)}
+            canManage={canManage}
             onStatusChange={(s) => setStatuses((prev) => ({ ...prev, [meta.id]: s }))}
             m={m}
             locale={locale}
@@ -189,10 +196,13 @@ function ProviderCard({
   encryptionAvailable,
   serverProvided = false,
   unavailable = false,
+  canManage = true,
   onStatusChange,
   m,
   locale,
 }: {
+  /** See `ConnectionsPanel`. */
+  canManage?: boolean;
   meta: ProviderMeta;
   status: IntegrationStatus | null;
   encryptionAvailable: boolean;
@@ -273,10 +283,18 @@ function ProviderCard({
               <p className="mt-1 text-xs text-muted-foreground">{m.encryptionOffBody}</p>
             </div>
           </div>
+        ) : !canManage && !connected ? (
+          <div className="flex flex-col gap-3">
+            {serverProvided ? <ServerProvidedNote providerName={meta.name} m={m} /> : null}
+            <p className="text-sm text-muted-foreground" data-testid="provider-admin-only">
+              {fill(m.manageAdminOnly, { provider: meta.name })}
+            </p>
+          </div>
         ) : connected && status ? (
           <ConnectedView
             status={status}
-            onDisconnect={disconnect}
+            onDisconnect={canManage ? disconnect : null}
+            adminOnly={canManage ? null : fill(m.manageAdminOnly, { provider: meta.name })}
             pending={pending}
             m={m}
             locale={locale}
@@ -387,13 +405,17 @@ function StatusBadge({
 function ConnectedView({
   status,
   onDisconnect,
+  adminOnly = null,
   pending,
   m,
   locale,
   note,
 }: {
   status: IntegrationStatus;
-  onDisconnect: () => void;
+  /** Null for a member: the API would refuse, so there is no button. */
+  onDisconnect: (() => void) | null;
+  /** The sentence a member reads where the button would be. */
+  adminOnly?: string | null;
   pending: boolean;
   m: Msgs;
   locale: Locale;
@@ -422,10 +444,17 @@ function ConnectedView({
             {fill(m.connectedOn, { date })}
           </dd>
         </dl>
-        <Button variant="destructive" size="sm" onClick={onDisconnect} disabled={pending}>
-          {pending ? m.disconnecting : m.disconnect}
-        </Button>
+        {onDisconnect ? (
+          <Button variant="destructive" size="sm" onClick={onDisconnect} disabled={pending}>
+            {pending ? m.disconnecting : m.disconnect}
+          </Button>
+        ) : null}
       </div>
+      {adminOnly ? (
+        <p className="text-xs text-muted-foreground" data-testid="provider-admin-only">
+          {adminOnly}
+        </p>
+      ) : null}
       {note ? (
         <p className="text-xs text-muted-foreground" data-testid="connection-scope-note">
           {note}

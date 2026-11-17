@@ -44,6 +44,12 @@ const QUESTIONS: QuestionMeta[] = [
   { key: 'company', label: 'Company', type: 'short_text' },
 ];
 const EMPTY: GoogleSheetsState = { enabled: true, spreadsheetId: '', sheetTitle: '', columns: [] };
+const STORED_FOR_MEMBER: GoogleSheetsState = {
+  enabled: true,
+  spreadsheetId: 'sheet-1',
+  sheetTitle: 'Responses',
+  columns: [{ header: 'Email', source: 'answer', key: 'email' }],
+};
 
 let root: Root | null = null;
 let container: HTMLElement | null = null;
@@ -329,6 +335,37 @@ describe('choosing a spreadsheet from Google Drive', () => {
     await act(async () => button(el, m.gsheets.chooseSheet)!.click());
     expect(setState).not.toHaveBeenCalled();
     expect(toasts.error).toHaveBeenCalledWith(m.gsheets.pickerFailed);
+  });
+});
+
+/**
+ * What a plain member is offered. Google's Picker needs an access token the
+ * API hands to owners and admins only, so "Choose from Google Drive" could
+ * only fail for a member (it answered with a generic toast). Creating a
+ * spreadsheet, the tab list and the header row are open to every role.
+ */
+describe('what a member is offered on the card', () => {
+  const MEMBER: ConnectAccess = { canConnect: false, encryptionAvailable: true };
+
+  it('has no "Choose from Google Drive" button, and says an owner or admin has to', async () => {
+    const { el } = await mount({ pickerAvailable: true, access: MEMBER });
+    expect(button(el, m.gsheets.chooseSheet)).toBeUndefined();
+    expect(el.querySelector('[data-testid="gsheets-choose-admin-only"]')?.textContent).toBe(m.gsheets.chooseAdminOnly);
+    // And the help line does not promise Drive either.
+    expect(el.textContent).toContain(m.gsheets.sheetHelpCreateOnly);
+    expect(el.textContent).not.toContain(m.gsheets.sheetHelp);
+  });
+
+  it('keeps what the API lets a member do: create a sheet and update the header row', async () => {
+    const { el } = await mount({ pickerAvailable: true, access: MEMBER, state: STORED_FOR_MEMBER, formId: 'form-1' });
+    expect(button(el, m.gsheets.createSheet)).toBeDefined();
+    expect(el.querySelector<HTMLButtonElement>('[data-testid="gsheets-sync-headers"]')?.disabled).toBe(false);
+  });
+
+  it('shows an owner or admin the button, and no such sentence', async () => {
+    const { el } = await mount({ pickerAvailable: true });
+    expect(button(el, m.gsheets.chooseSheet)).toBeDefined();
+    expect(el.querySelector('[data-testid="gsheets-choose-admin-only"]')).toBeNull();
   });
 });
 

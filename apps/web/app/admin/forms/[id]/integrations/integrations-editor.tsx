@@ -997,6 +997,7 @@ export function IntegrationsEditor({
         // refetches the live config every time it is opened, so this is as
         // fresh as the array the card was seeded from.
         carriedCount={carriedWebhooks(initialDestinations).length}
+        canTest={access.canConnect}
         partialsHeld={partialsHeld}
         locale={locale}
         m={m}
@@ -1904,11 +1905,14 @@ export function WebhookCard({
   formId,
   carriedCount,
   partialsHeld = false,
+  canTest = true,
   locale,
   m,
 }: {
   state: WebhookState;
   onChange: (s: WebhookState) => void;
+  /** Owners and admins: the API refuses a test delivery from anyone else. */
+  canTest?: boolean;
   urlError: string | null;
   clearUrlError: () => void;
   /** Spam protection holds partials: the Partial trigger is paused, not fired. */
@@ -2013,13 +2017,16 @@ export function WebhookCard({
             variant="outline"
             size="sm"
             onClick={ping}
-            disabled={pinging || !state.url.trim()}
+            // The API sends a test for owners and admins only.
+            disabled={pinging || !state.url.trim() || !canTest}
             data-testid="webhook-ping"
           >
             <i aria-hidden className="pi pi-send" style={{ fontSize: 12 }} />
             {pinging ? m.pingSending : m.pingWebhook}
           </Button>
-          <span className="text-xs text-muted-foreground">{m.pingHelp}</span>
+          <span className="text-xs text-muted-foreground" data-testid={canTest ? undefined : 'webhook-ping-admin-only'}>
+            {canTest ? m.pingHelp : m.pingAdminOnly}
+          </span>
         </div>
       </Field>
       <Field label={m.webhookSecret} help={m.webhookSecretHelp}>

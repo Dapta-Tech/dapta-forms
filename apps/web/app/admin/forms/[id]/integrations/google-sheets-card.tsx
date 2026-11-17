@@ -458,7 +458,7 @@ export function GoogleSheetsCard({
               <>
                 {/* Only promise Google Drive where the Picker button is really there. */}
                 <p className="text-sm text-muted-foreground">
-                  {pickerAvailable ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
+                  {pickerAvailable && access.canConnect ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
                 </p>
                 {/* The switch is on and stored, but nothing can be sent yet.
                     Said here, on the card, not in the floating save pill. */}
@@ -476,13 +476,21 @@ export function GoogleSheetsCard({
                 <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
                 {m.gsheets.createSheet}
               </Button>
-              {pickerAvailable ? (
+              {/* Google's Picker needs an access token only an owner or admin
+                  may ask the API for: a member gets the sentence below, not a
+                  button that could only fail. */}
+              {pickerAvailable && access.canConnect ? (
                 <Button variant="soft" size="sm" className={SOFT_DISABLED} onClick={chooseSheet} disabled={pending}>
                   <i aria-hidden className="pi pi-folder" style={{ fontSize: 11 }} />
                   {m.gsheets.chooseSheet}
                 </Button>
               ) : null}
             </div>
+            {pickerAvailable && !access.canConnect ? (
+              <p className="text-xs text-muted-foreground" data-testid="gsheets-choose-admin-only">
+                {m.gsheets.chooseAdminOnly}
+              </p>
+            ) : null}
           </section>
 
           {state.spreadsheetId ? (
