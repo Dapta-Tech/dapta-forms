@@ -108,7 +108,7 @@ describe('how a spreadsheet reaches a form', () => {
   it('offers to create one, and has no field to paste a link into', async () => {
     const { el } = await mount();
     expect(button(el, m.gsheets.createSheet)).toBeDefined();
-    expect(el.textContent).toContain(m.gsheets.sheetHelp);
+    expect(el.textContent).toContain(m.gsheets.sheetHelpCreateOnly);
     // Every text input left on the card belongs to a column row, and there are
     // none yet: nothing here takes a spreadsheet address.
     expect(el.querySelectorAll('input[type="text"], input:not([type])')).toHaveLength(0);
@@ -425,15 +425,59 @@ describe('the header row', () => {
     actions.syncSheetHeadersAction.mockResolvedValueOnce({ ok: true, data: { ok: true, outcome: 'written' } });
     const { el, onHeaderSync } = await mount({ state: STORED, formId: 'form-1' });
     await act(async () => button(el, m.gsheets.writeHeaders)!.click());
-    expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1');
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1', false);
     expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'written' });
   });
 
-  it('explains a row 1 it left alone, instead of saying nothing', async () => {
-    const { el } = await mount({ state: STORED, formId: 'form-1', headerSync: { outcome: 'foreign' } });
-    const line = el.querySelector('[data-testid="gsheets-header-sync"]')!;
-    expect(line.textContent).toBe(m.gsheets.headersNotEmpty);
-    expect(line.getAttribute('data-tone')).toBe('warn');
+  const MISMATCH = {
+    outcome: 'foreign' as const,
+    current: ['Submitted', 'Email', 'Company'],
+    headers: ['Submitted', 'Work email'],
+  };
+
+  it('says plainly that row 1 does not match, and shows it beside what would be written', async () => {
+    const { el } = await mount({ state: STORED, formId: 'form-1', headerSync: MISMATCH });
+    const panel = el.querySelector('[data-testid="gsheets-header-mismatch"]')!;
+    expect(panel.textContent).toContain(m.gsheets.headersNotEmpty);
+    // Never the old, false claim about who wrote it.
+    expect(panel.textContent).not.toMatch(/did not write/);
+    const rows = [...panel.querySelectorAll('tbody tr')];
+    expect(rows.map((r) => [...r.querySelectorAll('td')].map((td) => td.textContent))).toEqual([
+      ['A', 'Submitted', 'Submitted'],
+      ['B', 'Email', 'Work email'],
+      ['C', 'Company', m.gsheets.headersEmptyCell],
+    ]);
+    expect(panel.querySelector('[data-testid="gsheets-replace-row"]')?.textContent).toBe(m.gsheets.replaceRow);
+  });
+
+  it('replaces row 1 only after the author confirms', async () => {
+    actions.syncSheetHeadersAction.mockResolvedValue({ ok: true, data: { ok: true, outcome: 'written' } });
+    const { el, onHeaderSync } = await mount({ state: STORED, formId: 'form-1', headerSync: MISMATCH });
+    const dialogButton = (which: 'cancel' | 'confirm') =>
+      el.querySelector<HTMLButtonElement>(`[data-testid="confirm-dialog-${which}"]`);
+
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-replace-row"]')!.click());
+    expect(document.body.textContent).toContain(m.gsheets.replaceTitle);
+    await act(async () => dialogButton('cancel')!.click());
+    expect(actions.syncSheetHeadersAction).not.toHaveBeenCalled();
+
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-replace-row"]')!.click());
+    await act(async () => dialogButton('confirm')!.click());
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1', true);
+    expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'written' });
+  });
+
+  it('only promises Google Drive where the Picker is there', async () => {
+    const without = await mount({ pickerAvailable: false });
+    expect(without.el.textContent).toContain(m.gsheets.sheetHelpCreateOnly);
+    expect(without.el.textContent).not.toContain(m.gsheets.sheetHelp);
+  });
+
+  it('gives a disabled header button a disabled look', async () => {
+    const { el } = await mount({ state: { ...EMPTY, columns: STORED.columns }, formId: 'form-1' });
+    const b = el.querySelector<HTMLButtonElement>('[data-testid="gsheets-sync-headers"]')!;
+    expect(b.disabled).toBe(true);
+    expect(b.className).toContain('disabled:opacity-45');
   });
 
   it('says so in the destructive tone when the update failed', async () => {

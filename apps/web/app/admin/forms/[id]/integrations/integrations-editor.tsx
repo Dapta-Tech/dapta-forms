@@ -488,6 +488,11 @@ export function IntegrationsEditor({
     // spreadsheet is chosen, and choosing one is an edit that saves itself.
     return googleJustConnected && !initial.spreadsheetId ? { ...initial, enabled: true } : initial;
   });
+  // Back from Google: put the card the author left from in front of them.
+  useEffect(() => {
+    if (!googleJustConnected) return;
+    document.getElementById('gsheets-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [googleJustConnected]);
   const [sf, setSf] = useState<SalesforceState>(() => initialSalesforce(initialDestinations));
   const [formActivityError, setFormActivityError] = useState<string | null>(null);
   /** What the last save (or the header button) did to the sheet's row 1. */
@@ -753,12 +758,18 @@ export function IntegrationsEditor({
   const { markDirty } = autosave;
   // This screen sends no lock stamp, so `conflict` cannot happen here; the
   // union still has to be closed, and an error is the honest rendering of it.
-  const status: 'saved' | 'saving' | 'retrying' | 'error' | 'partial' =
+  // The spreadsheet card switched on with no spreadsheet stores nothing (see
+  // `builtGoogleSheets`), so "saved" would promise a switch that comes back
+  // off on reload. Said as what it is instead.
+  const sheetsPending = sheets.enabled && builtGoogleSheets(sheets) === null;
+  const status: SaveStatus =
     autosave.status === 'saved' && partialBlocked
       ? 'partial'
-      : autosave.status === 'conflict'
-        ? 'error'
-        : autosave.status;
+      : autosave.status === 'saved' && sheetsPending
+        ? 'pending'
+        : autosave.status === 'conflict'
+          ? 'error'
+          : autosave.status;
   const statusDetail =
     autosave.status === 'error' || autosave.status === 'retrying'
       ? autosave.detail
@@ -883,7 +894,7 @@ export function IntegrationsEditor({
   );
 }
 
-type SaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'partial';
+type SaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'partial' | 'pending';
 
 /** The pill's look for each save state. Tokens only, so both themes follow. */
 const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> = {
@@ -896,6 +907,8 @@ const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> 
   saving: { box: 'border-border bg-card text-muted-foreground', icon: 'pi-spinner pi-spin', dot: 'text-muted-foreground' },
   retrying: { box: 'border-warning/50 bg-warning/10 text-foreground', icon: 'pi-sync pi-spin', dot: 'text-warning-ink' },
   partial: { box: 'border-warning/50 bg-warning/10 text-foreground', icon: 'pi-exclamation-circle', dot: 'text-warning-ink' },
+  // Saved, with one card waiting on something only the author can give it.
+  pending: { box: 'border-border bg-card text-foreground', icon: 'pi-info-circle', dot: 'text-muted-foreground' },
   error: {
     box: 'border-destructive/60 bg-destructive/10 text-destructive',
     icon: 'pi-exclamation-triangle',
@@ -929,7 +942,12 @@ export function SaveStatusPill({
   m: Msgs;
 }) {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    // Lets the toast stack start above the pill (globals.css).
+    document.documentElement.classList.add('has-save-pill');
+    return () => document.documentElement.classList.remove('has-save-pill');
+  }, []);
   const tone = PILL_TONE[status];
   const text =
     status === 'saved'
@@ -938,9 +956,11 @@ export function SaveStatusPill({
         ? (detail ?? m.saveError)
         : status === 'partial'
           ? `${m.autosavedPartial} ${detail ?? ''}`.trim()
-          : status === 'retrying'
-            ? m.saveRetrying
-            : m.saving;
+          : status === 'pending'
+            ? m.autosavedPendingSheet
+            : status === 'retrying'
+              ? m.saveRetrying
+              : m.saving;
   const pill = (fixed: boolean) => (
     <div
       data-testid={fixed ? 'integrations-save-status' : 'integrations-save-status-inline'}

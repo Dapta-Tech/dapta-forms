@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { IntegrationMark } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { callAction } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
 import type { SheetHeaderSync, SheetTab } from '@/lib/admin-api';
@@ -61,7 +62,8 @@ function headerSyncLine(
     case 'unchanged':
       return { text: g.headersUnchanged, tone: 'ok' };
     case 'foreign':
-      return { text: g.headersNotEmpty, tone: 'warn' };
+      // Drawn by `HeaderMismatch` instead, with the side-by-side and the way out.
+      return null;
     default:
       // Not connected says nothing here: the card is already showing the
       // connect prompt in that case.
@@ -285,11 +287,29 @@ export function GoogleSheetsCard({
     });
   }
 
-  function syncHeaders() {
+  const { confirm: confirmDialog, dialog } = useConfirmDialog();
+
+  /**
+   * Bring row 1 in line with the saved columns. `replace` is the author's
+   * explicit way out of a row 1 that does not match (headings written before
+   * dForms recorded them, or edited in the sheet): asked for behind a confirm,
+   * because it overwrites cells dForms cannot prove are its own.
+   */
+  async function syncHeaders(replace = false) {
     if (!formId || !state.spreadsheetId) return;
+    if (replace) {
+      const ok = await confirmDialog({
+        title: m.gsheets.replaceTitle,
+        message: m.gsheets.replaceBody,
+        confirmLabel: m.gsheets.replaceRow,
+        cancelLabel: m.gsheets.replaceCancel,
+        destructive: true,
+      });
+      if (!ok) return;
+    }
     start(async () => {
       await beforeHeaderSync?.();
-      const res = await callAction(() => syncSheetHeadersAction(formId));
+      const res = await callAction(() => syncSheetHeadersAction(formId, replace));
       if (!res.ok) {
         onHeaderSync?.({ outcome: 'failed', reason: 'unavailable' });
         return;
@@ -339,6 +359,7 @@ export function GoogleSheetsCard({
       onToggle={(enabled) => patch({ enabled })}
       m={m}
       logo="google-sheets"
+      id="gsheets-card"
     >
       {!connected ? (
         <ConnectInPlace
@@ -370,12 +391,16 @@ export function GoogleSheetsCard({
                 <i aria-hidden className="pi pi-external-link text-muted-foreground" style={{ fontSize: 11 }} />
               </a>
             ) : (
-              <p className="text-sm text-muted-foreground">{m.gsheets.sheetHelp}</p>
+              // Only promise Google Drive where the Picker button is really there.
+              <p className="text-sm text-muted-foreground">
+                {pickerAvailable ? m.gsheets.sheetHelp : m.gsheets.sheetHelpCreateOnly}
+              </p>
             )}
             <div className="flex flex-wrap gap-2">
               <Button
                 variant={state.spreadsheetId ? 'soft' : 'default'}
                 size="sm"
+                className={SOFT_DISABLED}
                 onClick={createSheet}
                 disabled={pending}
               >
@@ -383,7 +408,7 @@ export function GoogleSheetsCard({
                 {m.gsheets.createSheet}
               </Button>
               {pickerAvailable ? (
-                <Button variant="soft" size="sm" onClick={chooseSheet} disabled={pending}>
+                <Button variant="soft" size="sm" className={SOFT_DISABLED} onClick={chooseSheet} disabled={pending}>
                   <i aria-hidden className="pi pi-folder" style={{ fontSize: 11 }} />
                   {m.gsheets.chooseSheet}
                 </Button>
@@ -418,15 +443,16 @@ export function GoogleSheetsCard({
                 <p className="mt-0.5 text-xs text-muted-foreground">{m.gsheets.columnsHelp}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="soft" size="sm" onClick={() => setColumns(defaults())}>
+                <Button variant="soft" size="sm" className={SOFT_DISABLED} onClick={() => setColumns(defaults())}>
                   {m.gsheets.fillFromForm}
                 </Button>
                 {formId ? (
                   <Button
                     variant="soft"
                     size="sm"
-                    onClick={syncHeaders}
+                    onClick={() => void syncHeaders()}
                     disabled={pending || !state.spreadsheetId || state.columns.length === 0}
+                    className={SOFT_DISABLED}
                     data-testid="gsheets-sync-headers"
                   >
                     <i aria-hidden className="pi pi-refresh" style={{ fontSize: 11 }} />
@@ -466,13 +492,13 @@ export function GoogleSheetsCard({
                         <li
                           key={index}
                           data-testid="gsheets-column"
-                          className="grid grid-cols-[1.75rem_minmax(0,1fr)_6.5rem] items-center gap-x-2 gap-y-2 px-3 py-2.5 @2xl:grid-cols-[1.75rem_minmax(0,1.15fr)_10rem_minmax(0,1fr)_6.5rem]"
+                          className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-2 gap-y-2 px-3 py-2.5 @2xl:grid-cols-[1.75rem_minmax(0,1.15fr)_10rem_minmax(0,1fr)_6.5rem]"
                         >
                           {/* The sheet's own column letter: what the author
                               will see above this heading in Google Sheets. */}
                           <span
                             aria-hidden
-                            className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-semibold tabular-nums text-muted-foreground"
+                            className="col-start-1 row-start-1 flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-semibold tabular-nums text-muted-foreground"
                           >
                             {sheetColumnLetter(index)}
                           </span>
@@ -480,19 +506,22 @@ export function GoogleSheetsCard({
                             value={column.header}
                             aria-label={m.gsheets.headerFor}
                             placeholder={m.gsheets.headerFor}
-                            className="h-9"
+                            // Narrow: a line of its own under the letter and
+                            // the actions. Wide: the second cell of the row.
+                            className="col-span-2 row-start-2 h-9 @2xl:col-span-1 @2xl:col-start-2 @2xl:row-start-1"
                             onChange={(e) => {
                               const next = [...state.columns];
                               next[index] = { ...column, header: e.target.value };
                               setColumns(next);
                             }}
                           />
-                          <div className="col-span-2 col-start-2 row-start-2 grid grid-cols-2 gap-2 @2xl:contents">
+                          <div className="col-span-2 row-start-3 grid grid-cols-1 gap-2 @md:grid-cols-2 @2xl:contents">
                             <Select
                               value={column.source}
                               ariaLabel={m.gsheets.sourceFor}
                               options={sourceOptions}
-                              className="h-9"
+                              className="min-h-9 py-1.5"
+                              labelClassName="line-clamp-2 break-words"
                               locale={locale}
                               onChange={(value) => {
                                 const source = value as SheetColumnSource;
@@ -518,7 +547,8 @@ export function GoogleSheetsCard({
                                     : UTM_KEYS.map((k) => ({ value: k, label: k }))
                                 }
                                 searchable={column.source === 'answer'}
-                                className="h-9"
+                                className="min-h-9 py-1.5"
+                                labelClassName="line-clamp-2 break-words"
                                 locale={locale}
                                 onChange={(key) => {
                                   const next = [...state.columns];
@@ -529,10 +559,11 @@ export function GoogleSheetsCard({
                             ) : (
                               // The slot is HELD when this source takes no key,
                               // so the actions sit in the same place on every row.
-                              <span aria-hidden />
+                              // Stacked (one picker per line) it would only add a gap.
+                              <span aria-hidden className="hidden @md:block" />
                             )}
                           </div>
-                          <div className="col-start-3 row-start-1 flex justify-end gap-1 @2xl:col-start-auto @2xl:row-start-auto">
+                          <div className="col-start-2 row-start-1 flex justify-end gap-1 @2xl:col-start-5">
                             <RowIconButton
                               icon="pi-arrow-up"
                               label={m.gsheets.moveUp}
@@ -558,6 +589,15 @@ export function GoogleSheetsCard({
                 </div>
               </div>
             )}
+
+            {headerSync?.outcome === 'foreign' ? (
+              <HeaderMismatch
+                sync={headerSync}
+                pending={pending}
+                onReplace={() => void syncHeaders(true)}
+                m={m.gsheets}
+              />
+            ) : null}
 
             {syncLine ? (
               <p
@@ -597,6 +637,93 @@ export function GoogleSheetsCard({
           </section>
         </>
       )}
+      {dialog}
     </Card>
+  );
+}
+
+/**
+ * The base button greys a disabled soft pill to the same grey it already is,
+ * so a disabled one looked exactly like an enabled one. Faded instead.
+ */
+const SOFT_DISABLED = 'disabled:bg-muted disabled:opacity-45';
+
+/**
+ * Row 1 does not match the columns: say so plainly, show what is in the sheet
+ * beside what would be written, and offer the one explicit way out.
+ *
+ * Plain, not "dForms did not write this": a sheet whose headings were written
+ * before dForms kept a record (or renamed since) is the common case, and that
+ * claim would be false about it. The automatic sync stays conservative; this
+ * is where an author who knows the row is theirs to replace can say so.
+ */
+function HeaderMismatch({
+  sync,
+  pending,
+  onReplace,
+  m,
+}: {
+  sync: { current: string[]; headers: string[] };
+  pending: boolean;
+  onReplace: () => void;
+  m: Msgs['gsheets'];
+}) {
+  const width = Math.max(sync.current.length, sync.headers.length);
+  const cell = (text: string | undefined) =>
+    text ? <span>{text}</span> : <span className="italic text-muted-foreground">{m.headersEmptyCell}</span>;
+  return (
+    <div
+      role="status"
+      data-testid="gsheets-header-mismatch"
+      className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+    >
+      <p className="flex items-start gap-2 text-foreground">
+        <i aria-hidden className="pi pi-exclamation-circle mt-0.5 shrink-0 text-warning-ink" style={{ fontSize: 13 }} />
+        <span>{m.headersNotEmpty}</span>
+      </p>
+      <div className="max-h-64 overflow-auto rounded-md border border-border bg-card">
+        <table className="w-full text-left text-xs">
+          <thead className="sticky top-0 bg-card text-muted-foreground">
+            <tr className="border-b border-border">
+              <th scope="col" className="w-16 px-3 py-2 font-medium">
+                {m.headersColumn}
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium">
+                {m.headersInSheet}
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium">
+                {m.headersToWrite}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: width }, (_, i) => {
+              const same = (sync.current[i] ?? '') === (sync.headers[i] ?? '');
+              return (
+                <tr key={i} data-same={same} className="border-b border-border last:border-0">
+                  <td className="px-3 py-1.5 font-semibold tabular-nums text-muted-foreground">
+                    {sheetColumnLetter(i)}
+                  </td>
+                  <td className={cn('break-words px-3 py-1.5', !same && 'text-muted-foreground line-through decoration-muted-foreground/50')}>
+                    {cell(sync.current[i])}
+                  </td>
+                  <td className={cn('break-words px-3 py-1.5', !same && 'font-medium')}>{cell(sync.headers[i])}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Button
+        variant="destructive"
+        size="sm"
+        className="self-start"
+        onClick={onReplace}
+        disabled={pending}
+        data-testid="gsheets-replace-row"
+      >
+        {m.replaceRow}
+      </Button>
+    </div>
   );
 }

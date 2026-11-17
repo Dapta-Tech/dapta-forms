@@ -1795,6 +1795,11 @@ export interface FormsMessages {
       saved: string;
       /** V5-A4 — steady-state autosave status (the Save button is gone). */
       autosaved: string;
+      /**
+       * Saved, but the spreadsheet card is switched on with no spreadsheet yet,
+       * which stores nothing: said instead of a plain "saved".
+       */
+      autosavedPendingSheet: string;
       /** V5-QA — saved, except one card that has a problem of its own. */
       autosavedPartial: string;
       saveError: string;
@@ -2086,6 +2091,8 @@ export interface FormsMessages {
         sheetLabel: string;
         /** Shown before any spreadsheet is chosen: the two ways to get one. */
         sheetHelp: string;
+        /** The same, where the Picker is not available and creating is the only way. */
+        sheetHelpCreateOnly: string;
         createSheet: string;
         chooseSheet: string;
         sheetCreated: string;
@@ -2118,9 +2125,19 @@ export interface FormsMessages {
         headersWritten: string;
         /** Row 1 already read exactly these headings. */
         headersUnchanged: string;
-        /** Row 1 held something dForms did not write, so nothing was overwritten. */
+        /** Row 1 does not match the columns, so nothing was overwritten on its own. */
         headersNotEmpty: string;
         headersFailed: string;
+        /** The side-by-side shown when row 1 does not match. */
+        headersColumn: string;
+        headersInSheet: string;
+        headersToWrite: string;
+        headersEmptyCell: string;
+        /** The explicit, confirmed way out of a row 1 that does not match. */
+        replaceRow: string;
+        replaceTitle: string;
+        replaceBody: string;
+        replaceCancel: string;
         /** Default headings for the columns that are not questions. */
         colSubmittedAt: string;
         colScore: string;
@@ -2169,6 +2186,8 @@ export interface FormsMessages {
       salesforceDomainPlaceholder: string;
       salesforceKeyLabel: string;
       salesforceSecretLabel: string;
+      /** Under the Salesforce form: what happens to the key and secret. */
+      salesforceSecretHelp: string;
       /** What the Salesforce admin has to set up first, as a short checklist. */
       salesforceSetupTitle: string;
       salesforceSetupSteps: string[];
@@ -4253,6 +4272,7 @@ export const en: FormsMessages = {
       saving: 'Saving…',
       saved: 'Integrations saved.',
       autosaved: 'Changes saved automatically',
+      autosavedPendingSheet: 'Saved. Google Sheets starts sending once it has a spreadsheet.',
       autosavedPartial: 'Saved everything except the webhook.',
       saveError: 'Could not save integrations.',
       saveOffline:
@@ -4509,6 +4529,7 @@ export const en: FormsMessages = {
         sheetLabel: 'Spreadsheet',
         sheetHelp:
           'Create a new spreadsheet for this form, or choose one you already have in Google Drive.',
+        sheetHelpCreateOnly: 'Create a new spreadsheet for this form in your Google Drive.',
         createSheet: 'Create a new spreadsheet',
         chooseSheet: 'Choose from Google Drive',
         sheetCreated: 'The spreadsheet was created in your Google Drive.',
@@ -4529,8 +4550,8 @@ export const en: FormsMessages = {
         noColumns: 'No columns yet. Nothing is sent until you add one.',
         addColumn: 'Add a column',
         removeColumn: 'Remove this column',
-        moveUp: 'Move this column left',
-        moveDown: 'Move this column right',
+        moveUp: 'Move this column up',
+        moveDown: 'Move this column down',
         headerFor: 'Column heading',
         sourceFor: 'What fills this column',
         keyFor: 'Which one',
@@ -4539,9 +4560,17 @@ export const en: FormsMessages = {
         writeHeaders: 'Update the header row',
         headersWritten: 'Row 1 of the sheet now matches these columns.',
         headersUnchanged: 'Row 1 of the sheet already matches these columns.',
-        headersNotEmpty:
-          'Row 1 of this tab has headings dForms did not write, so it was left as it is. Edit them in the sheet, or clear row 1 and press Update the header row.',
+        headersNotEmpty: 'Row 1 of the sheet does not match these columns, so it was not changed on its own.',
         headersFailed: 'The header row could not be updated. Your columns are saved.',
+        headersColumn: 'Column',
+        headersInSheet: 'In the sheet now',
+        headersToWrite: 'Will be written',
+        headersEmptyCell: 'empty',
+        replaceRow: 'Replace row 1',
+        replaceTitle: 'Replace row 1 of the sheet?',
+        replaceBody:
+          'Row 1 is overwritten with the headings of these columns. What those cells hold now is replaced, and only the sheet’s version history in Google keeps it. From then on, dForms keeps row 1 in line with your columns by itself.',
+        replaceCancel: 'Cancel',
         colSubmittedAt: 'Submitted',
         colScore: 'Score',
         colOutcome: 'Outcome',
@@ -4589,6 +4618,8 @@ export const en: FormsMessages = {
       salesforceDomainPlaceholder: 'yourcompany.my.salesforce.com',
       salesforceKeyLabel: 'Consumer Key',
       salesforceSecretLabel: 'Consumer Secret',
+      salesforceSecretHelp:
+        'The Consumer Key and Secret are checked with Salesforce, encrypted and stored on the server. The secret is never shown again.',
       salesforceSetupTitle: 'Before you connect, a Salesforce admin sets this up once:',
       salesforceSetupSteps: [
         'In Setup, create an External Client App with OAuth enabled.',
@@ -6569,7 +6600,7 @@ export const es: FormsMessages = {
         bannerScopeForm: 'Todas las pantallas',
         bannerScopeCover: 'Solo la portada',
         bannerColor: 'Color del banner',
-        bannerColorHint: 'Vacío usa un tinte suave del acento; elegí un color para que la franja se note.',
+        bannerColorHint: 'Vacío usa un tinte suave del acento; elige un color para que la franja se note.',
         bannerTextColor: 'Color del texto del banner',
         bannerSize: 'Alto del banner',
         bannerSizeSm: 'Fina',
@@ -6998,6 +7029,7 @@ export const es: FormsMessages = {
       saving: 'Guardando…',
       saved: 'Integraciones guardadas.',
       autosaved: 'Cambios guardados automáticamente',
+      autosavedPendingSheet: 'Guardado. Google Sheets empieza a enviar cuando tenga una hoja.',
       autosavedPartial: 'Se guardó todo menos el webhook.',
       saveError: 'No se pudieron guardar las integraciones.',
       saveOffline:
@@ -7112,7 +7144,7 @@ export const es: FormsMessages = {
         'Manda cada respuesta a una propiedad de contacto de HubSpot. No mapees nada a «email»: lo aporta la agenda, y un mapeo acá lo reemplaza y apaga la sincronización.',
       emailMappingConflictTitle: 'Este mapeo apaga la sincronización',
       emailMappingConflictBody:
-        'La agenda ya aporta el correo. Una pregunta mapeada a «email» pasa a ser la llave del contacto, así que las respuestas dejan de llegar a HubSpot después de agendar. Quitá el mapeo en: {keys}.',
+        'La agenda ya aporta el correo. Una pregunta mapeada a «email» pasa a ser la llave del contacto, así que las respuestas dejan de llegar a HubSpot después de agendar. Quita el mapeo en: {keys}.',
       pingWebhook: 'Enviar prueba',
       pingSending: 'Enviando…',
       pingOk: 'Prueba entregada: tu endpoint la aceptó.',
@@ -7128,12 +7160,12 @@ export const es: FormsMessages = {
       pingRejectedBody: 'Leyó la petición y rechazó el cuerpo.',
       pingUnauthorized: 'Rechazó la petición por falta de autorización: revisa el token o secreto que espera.',
       pingNotFound: 'No hay nada en esa URL.',
-      pingRateLimited: 'Nos está limitando por frecuencia; probá de nuevo en un momento.',
+      pingRateLimited: 'Nos está limitando por frecuencia; prueba de nuevo en un momento.',
       pingServerError: 'Falló de su lado.',
       pingRedirect: 'Respondió con una redirección, y nunca las seguimos. Usa la URL final directamente.',
       pingBlocked:
         'Bloqueado antes de enviar: esa dirección es privada, reservada o interna, y nunca publicamos hacia ahí.',
-      pingUnreachable: 'Nadie respondió en esa URL: revisá que el host esté accesible y no expire.',
+      pingUnreachable: 'Nadie respondió en esa URL: revisa que el host esté accesible y no expire.',
       pingUnknown: 'La entrega falló por un motivo que no pudimos identificar.',
       connectedBadge: 'HubSpot conectado',
       propertiesUnavailable:
@@ -7257,6 +7289,7 @@ export const es: FormsMessages = {
         sheetLabel: 'Hoja de cálculo',
         sheetHelp:
           'Crea una hoja nueva para este formulario o elige una que ya tengas en Google Drive.',
+        sheetHelpCreateOnly: 'Crea una hoja nueva para este formulario en tu Google Drive.',
         createSheet: 'Crear una hoja nueva',
         chooseSheet: 'Elegir de Google Drive',
         sheetCreated: 'La hoja se creó en tu Google Drive.',
@@ -7277,8 +7310,8 @@ export const es: FormsMessages = {
         noColumns: 'Todavía no hay columnas. No se envía nada hasta que agregues una.',
         addColumn: 'Agregar una columna',
         removeColumn: 'Quitar esta columna',
-        moveUp: 'Mover esta columna a la izquierda',
-        moveDown: 'Mover esta columna a la derecha',
+        moveUp: 'Subir esta columna',
+        moveDown: 'Bajar esta columna',
         headerFor: 'Encabezado de la columna',
         sourceFor: 'Qué llena esta columna',
         keyFor: 'Cuál',
@@ -7287,9 +7320,17 @@ export const es: FormsMessages = {
         writeHeaders: 'Actualizar encabezados en la hoja',
         headersWritten: 'La fila 1 de la hoja quedó igual a estas columnas.',
         headersUnchanged: 'La fila 1 de la hoja ya coincide con estas columnas.',
-        headersNotEmpty:
-          'La fila 1 de esta pestaña tiene encabezados que no escribió dForms, así que no se tocó. Edítalos en la hoja, o borra la fila 1 y pulsa Actualizar encabezados en la hoja.',
+        headersNotEmpty: 'La fila 1 de la hoja no coincide con estas columnas, así que no se cambió sola.',
         headersFailed: 'No se pudo actualizar la fila de encabezados. Tus columnas sí quedaron guardadas.',
+        headersColumn: 'Columna',
+        headersInSheet: 'En la hoja ahora',
+        headersToWrite: 'Se escribirá',
+        headersEmptyCell: 'vacía',
+        replaceRow: 'Reemplazar la fila 1',
+        replaceTitle: '¿Reemplazar la fila 1 de la hoja?',
+        replaceBody:
+          'La fila 1 se sobrescribe con los encabezados de estas columnas. Lo que tienen ahora esas celdas se reemplaza y solo queda en el historial de versiones de la hoja en Google. Desde ese momento, dForms mantiene la fila 1 al día con tus columnas por sí solo.',
+        replaceCancel: 'Cancelar',
         colSubmittedAt: 'Enviada',
         colScore: 'Puntaje',
         colOutcome: 'Resultado',
@@ -7337,6 +7378,8 @@ export const es: FormsMessages = {
       salesforceDomainPlaceholder: 'tuempresa.my.salesforce.com',
       salesforceKeyLabel: 'Consumer Key',
       salesforceSecretLabel: 'Consumer Secret',
+      salesforceSecretHelp:
+        'La Consumer Key y el Consumer Secret se verifican con Salesforce, se cifran y se guardan en el servidor. El secret no se vuelve a mostrar.',
       salesforceSetupTitle: 'Antes de conectar, un admin de Salesforce configura esto una sola vez:',
       salesforceSetupSteps: [
         'En Setup, crea una External Client App con OAuth activado.',

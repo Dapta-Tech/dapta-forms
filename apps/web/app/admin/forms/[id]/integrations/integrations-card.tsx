@@ -24,6 +24,7 @@ export function Card({
   badge,
   logo,
   notice,
+  id,
   children,
 }: {
   title: string;
@@ -42,10 +43,12 @@ export function Card({
    * itself an edit, and the autosave it triggers is what does the destroying.
    */
   notice?: React.ReactNode;
+  /** An anchor, for a caller that scrolls the card into view. */
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-5">
+    <section id={id} className="scroll-mt-24 rounded-xl border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">

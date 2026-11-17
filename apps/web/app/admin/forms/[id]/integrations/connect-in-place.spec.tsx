@@ -170,11 +170,26 @@ describe('the autosave pill', () => {
     ['retrying', 'bg-warning/10'],
     ['partial', 'bg-warning/10'],
     ['saving', 'bg-card'],
+    ['pending', 'pi-info-circle'],
   ] as const)('gives %s its own tone, from tokens', async (status, tone) => {
     await render(<SaveStatusPill status={status} detail={null} m={m} />);
     expect(fixed().getAttribute('data-status')).toBe(status);
     expect(fixed().innerHTML).toContain(tone);
     expect(fixed().innerHTML).not.toMatch(/#[0-9a-f]{3,6}\b/i);
+  });
+
+  it('does not claim a switch-on it could not store as saved', async () => {
+    await render(<SaveStatusPill status="pending" detail={null} m={m} />);
+    expect(fixed().textContent).toBe(m.autosavedPendingSheet);
+    expect(fixed().innerHTML).not.toContain('bg-signal');
+  });
+
+  it('lifts the toasts above itself while it is on screen', async () => {
+    await render(<SaveStatusPill status="saved" detail={null} m={m} />);
+    expect(document.documentElement.classList.contains('has-save-pill')).toBe(true);
+    act(() => root?.unmount());
+    root = null;
+    expect(document.documentElement.classList.contains('has-save-pill')).toBe(false);
   });
 
   it('shows the error detail in the destructive tone', async () => {

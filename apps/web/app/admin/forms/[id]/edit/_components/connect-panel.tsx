@@ -91,7 +91,9 @@ export function ConnectPanel({
     // same order.
     <div
       data-testid="connect-panel"
-      className="mx-auto grid w-full max-w-[900px] items-start gap-4 xl:max-w-[1320px] xl:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]"
+      // Bottom room from `sm` up, where the save pill is fixed to the corner:
+      // without it the last card of either column ends under the pill.
+      className="mx-auto grid w-full max-w-[900px] items-start gap-4 sm:pb-20 xl:max-w-[1320px] xl:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]"
     >
       <IntegrationsSection
         formId={formId}

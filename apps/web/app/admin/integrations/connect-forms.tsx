@@ -240,7 +240,7 @@ export function SalesforceConnectForm({
       })}
       {field('sf-key', m.salesforceKeyLabel, consumerKey, setConsumerKey)}
       {field('sf-secret', m.salesforceSecretLabel, consumerSecret, setConsumerSecret, { secret: true })}
-      <p className="text-xs text-muted-foreground">{m.tokenHelp}</p>
+      <p className="text-xs text-muted-foreground">{m.salesforceSecretHelp}</p>
       {problem ? (
         <p role="alert" data-testid="salesforce-connect-problem" className="text-sm text-destructive">
           {problem}

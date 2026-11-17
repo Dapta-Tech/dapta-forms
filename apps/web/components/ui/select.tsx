@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getMessages } from '@quill/shared';
 import { cn } from '@/lib/cn';
 
@@ -23,8 +23,12 @@ import { cn } from '@/lib/cn';
  * `locale` like the reference (defaults to English so a bare fork renders).
  *
  * `className` styles the trigger button (matching the `Input`/`TextField`
- * convention in this app); control width is set by the parent container, and the
- * panel matches the trigger width.
+ * convention in this app); control width is set by the parent container. The
+ * panel is at least as wide as the trigger and grows to fit its longest option
+ * (up to a cap, past which an option WRAPS): an option is never ellipsized,
+ * because a list of five that all read "Where should we send the..." gives the
+ * person nothing to choose between. It opens leftward when growing rightward
+ * would leave the window.
  */
 
 export interface SelectOption {
@@ -43,6 +47,7 @@ export function Select({
   id,
   ariaLabel,
   className,
+  labelClassName,
   locale = 'en',
 }: {
   /** The selected option's value. */
@@ -58,6 +63,11 @@ export function Select({
   ariaLabel?: string;
   /** Applied to the trigger button (matches the Input/TextField convention). */
   className?: string;
+  /**
+   * Replaces the trigger label's default `truncate`, for a caller whose labels
+   * must stay readable in a narrow slot (e.g. `line-clamp-2 break-words`).
+   */
+  labelClassName?: string;
   /** 'en' | 'es' — resolves the search / no-results copy. */
   locale?: string;
 }) {
@@ -69,6 +79,9 @@ export function Select({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  /** Which edge of the trigger the panel hangs from (see the layout effect). */
+  const [alignEnd, setAlignEnd] = useState(false);
 
   const filtered = useMemo(() => {
     if (!searchable) return options;
@@ -109,6 +122,18 @@ export function Select({
     else listRef.current?.focus();
     return () => document.removeEventListener('mousedown', onDown);
   }, [open, searchable]);
+
+  // The panel grows to its content, so it can run past the window's right edge
+  // when the trigger sits near it. Measured before paint and flipped to hang
+  // from the trigger's right edge instead, so it never opens half off-screen.
+  useLayoutEffect(() => {
+    if (!open) {
+      setAlignEnd(false);
+      return;
+    }
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (rect && rect.right > window.innerWidth - 8) setAlignEnd(true);
+  }, [open]);
 
   // Keep the active option scrolled into view while arrowing through the list.
   useEffect(() => {
@@ -164,13 +189,19 @@ export function Select({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        // Inline, like the panel's own `outline: none`: the app-wide focus
+        // outline in globals.css is unlayered and outranks any utility.
+        style={open ? { outline: '2px solid var(--focus)', outlineOffset: 2 } : undefined}
         onClick={() => (open ? setOpen(false) : openPanel())}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm transition-colors hover:border-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60',
+          // Focus is the app-wide green outline from globals.css, the same one
+          // every input gets; an open select wears it too, so the control the
+          // menu belongs to is never ambiguous.
+          'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm transition-[border-color,background-color] hover:border-muted-foreground/60 disabled:cursor-not-allowed disabled:opacity-60',
           className,
         )}
       >
-        <span className={cn('truncate', !selected && 'text-muted-foreground')}>
+        <span className={cn(labelClassName ?? 'truncate', !selected && 'text-muted-foreground')}>
           {selected ? selected.label : (placeholder ?? '')}
         </span>
         <svg
@@ -192,7 +223,11 @@ export function Select({
 
       {open ? (
         <div
-          className="absolute left-0 right-0 top-full z-50 mt-1 flex flex-col overflow-hidden rounded-md border border-border bg-popover shadow-lg"
+          ref={panelRef}
+          className={cn(
+            'absolute top-full z-50 mt-1 flex w-max min-w-full max-w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-md border border-border bg-popover shadow-lg',
+            alignEnd ? 'right-0' : 'left-0',
+          )}
           onKeyDown={onKeyDown}
         >
           {searchable ? (
@@ -205,7 +240,11 @@ export function Select({
               }}
               placeholder={m.search}
               aria-label={m.search}
-              className="border-b border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none"
+              // Inline, because the global `:focus-visible` outline is unlayered
+              // and beats any utility. Inside an open menu the active option is
+              // the one indicator; a second ring on the filter read as two.
+              style={{ outline: 'none' }}
+              className="border-b border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground"
             />
           ) : null}
           <ul
@@ -213,7 +252,8 @@ export function Select({
             role="listbox"
             aria-label={ariaLabel}
             tabIndex={-1}
-            className="max-h-64 overflow-y-auto p-1 focus:outline-none"
+            style={{ outline: 'none' }}
+            className="max-h-64 overflow-y-auto p-1"
           >
             {filtered.map((o, i) => {
               const isSelected = o.value === value;
@@ -249,7 +289,7 @@ export function Select({
                             : 'hover:bg-muted',
                     )}
                   >
-                    <span className="truncate">{o.label}</span>
+                    <span className="min-w-0 whitespace-normal break-words">{o.label}</span>
                   </button>
                 </li>
               );

@@ -240,6 +240,9 @@ describe('the card', () => {
     expect(prompt.querySelector('[data-testid="salesforce-connect-form"]')).not.toBeNull();
     expect(prompt.textContent).toContain(cm.salesforceSetupTitle);
     expect([...prompt.querySelectorAll('input')].map((i) => i.type)).toEqual(['text', 'text', 'password']);
+    // There is no token here: the sentence names the key and secret.
+    expect(prompt.textContent).toContain(cm.salesforceSecretHelp);
+    expect(prompt.textContent).not.toContain(cm.tokenHelp);
     expect(prompt.querySelector('a[href="/admin/integrations"]')).toBeNull();
     expect(el.querySelector('[data-testid="salesforce-mapping"]')).toBeNull();
   });
