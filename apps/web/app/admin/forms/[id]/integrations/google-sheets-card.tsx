@@ -6,7 +6,7 @@ import { sheetColumnSource, type SheetColumn, type SheetColumnSource } from '@qu
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { IntegrationMark } from '@/components/ui/provider-logo';
+import { GOOGLE_SHEETS_BUTTON } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { callAction } from '@/lib/call-action';
@@ -268,6 +268,75 @@ export function GoogleSheetsCard({
       submissionId: m.gsheets.colSubmissionId,
     });
 
+  const { confirm: confirmDialog, dialog } = useConfirmDialog();
+
+  /**
+   * Which of the two "get a spreadsheet" actions is running, if any.
+   *
+   * `busyRef` is the guard, `busy` is what the buttons show. The ref is set
+   * synchronously, before anything is awaited: a double click lands twice in
+   * the same tick, before React has rendered the disabled button, and without
+   * it each click created its own spreadsheet in the author's Drive.
+   */
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState<'create' | 'choose' | null>(null);
+  /** With a sheet attached: whether "Change sheet" has revealed its options. */
+  const [changing, setChanging] = useState(false);
+
+  /**
+   * With a sheet already attached, another one is a CHANGE of where responses
+   * go, so it is asked for first, in plain words, before anything is created
+   * or attached. Cancel leaves everything as it was: no spreadsheet is created
+   * and the Picker never opens.
+   */
+  async function confirmChange(kind: 'create' | 'choose'): Promise<boolean> {
+    if (!state.spreadsheetId) return true;
+    return confirmDialog({
+      title: m.gsheets.changeTitle,
+      message: (kind === 'create' ? m.gsheets.changeBodyCreate : m.gsheets.changeBodyChoose).replace(
+        '{name}',
+        sheetName || m.gsheets.attachedUnnamed,
+      ),
+      confirmLabel: kind === 'create' ? m.gsheets.changeConfirmCreate : m.gsheets.changeConfirmChoose,
+      cancelLabel: m.gsheets.replaceCancel,
+    });
+  }
+
+  /** Run one of the two actions, never two at once. */
+  function runExclusive(kind: 'create' | 'choose', work: () => Promise<void>) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    const run = (async () => {
+      try {
+        if (!(await confirmChange(kind))) return;
+        setBusy(kind);
+        // Registered as a write to this form: the spreadsheet is created in
+        // the author's Drive whether or not they are still on this tab, and a
+        // Connect tab opened again before Google answers must wait for it
+        // (and for the save that attaches it) instead of loading a form
+        // without it. Only the work itself, never the question before it: a
+        // confirmation left open on a tab that was closed would hold every
+        // later visit to this tab waiting for an answer nobody can give.
+        const working = work();
+        if (formId) trackDestinationWrite(formId, working);
+        await working;
+      } finally {
+        busyRef.current = false;
+        setBusy(null);
+      }
+    })();
+    start(async () => {
+      await run;
+    });
+  }
+
+  /** The card now points at another spreadsheet: what was known about the old one's row 1 goes. */
+  function attach(next: Partial<GoogleSheetsState>) {
+    onHeaderSync?.(null);
+    setChanging(false);
+    patch({ ...next, writtenHeaders: null });
+  }
+
   /**
    * Create the spreadsheet, tab and header row in one go.
    *
@@ -276,10 +345,10 @@ export function GoogleSheetsCard({
    * arrange columns keeps exactly those.
    */
   function createSheet() {
-    const columns = state.columns.some(isCompleteColumn) ? state.columns : defaults();
-    const headers = columns.filter(isCompleteColumn).map((c) => c.header.trim());
-    const title = m.gsheets.newSheetTitle.replace('{form}', formName.trim() || m.gsheets.title);
-    const work = async () => {
+    runExclusive('create', async () => {
+      const columns = state.columns.some(isCompleteColumn) ? state.columns : defaults();
+      const headers = columns.filter(isCompleteColumn).map((c) => c.header.trim());
+      const title = m.gsheets.newSheetTitle.replace('{form}', formName.trim() || m.gsheets.title);
       const res = await callAction(() =>
         googleSheetsCreateAction({ title, sheetTitle: m.gsheets.defaultTab, headers }),
       );
@@ -292,23 +361,14 @@ export function GoogleSheetsCard({
         return;
       }
       setSheetName(res.data.spreadsheetTitle);
-      patch({ spreadsheetId: res.data.spreadsheetId, sheetTitle: res.data.sheetTitle, columns, writtenHeaders: null });
+      attach({ spreadsheetId: res.data.spreadsheetId, sheetTitle: res.data.sheetTitle, columns });
       success(m.gsheets.sheetCreated);
-    };
-    start(async () => {
-      // Registered as a write to this form: the spreadsheet is created in the
-      // author's Drive whether or not they are still on this tab, and a
-      // Connect tab opened again before Google answers must wait for it (and
-      // for the save that attaches it) instead of loading a form without it.
-      const run = work();
-      if (formId) trackDestinationWrite(formId, run);
-      await run;
     });
   }
 
   /** Choose an existing spreadsheet in Google's Picker. */
   function chooseSheet() {
-    start(async () => {
+    runExclusive('choose', async () => {
       const res = await callAction(() => googleSheetsPickerAction());
       if (!res.ok || !res.data.enabled) {
         error(m.gsheets.pickerFailed);
@@ -332,11 +392,10 @@ export function GoogleSheetsCard({
       // The tab is cleared, not kept: it named a tab of the PREVIOUS
       // spreadsheet, and a stale name would be matched against this one's tabs
       // at delivery time and miss.
-      patch({ spreadsheetId: picked.id, sheetTitle: '', writtenHeaders: null });
+      attach({ spreadsheetId: picked.id, sheetTitle: '' });
     });
   }
 
-  const { confirm: confirmDialog, dialog } = useConfirmDialog();
 
   /**
    * Bring row 1 in line with the saved columns. `replace` is the author's
@@ -412,6 +471,9 @@ export function GoogleSheetsCard({
           tone: 'info',
         }
       : syncResult;
+  // The tab named in "where responses go": the chosen one, or the first tab's
+  // own name once the tab list has arrived.
+  const attachedTab = state.sheetTitle.trim() || tabs?.[0]?.title || '';
   const cm = getMessages(locale ?? 'en').admin.connections;
   const returnTo = formId ? `/admin/forms/${formId}/edit` : undefined;
 
@@ -439,21 +501,95 @@ export function GoogleSheetsCard({
         </ConnectInPlace>
       ) : (
         <>
-          <section className="flex flex-col gap-2">
+          <section className="flex flex-col gap-3">
             <h3 className="text-sm font-semibold">{m.gsheets.sheetLabel}</h3>
             {state.spreadsheetId ? (
-              <a
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-fit max-w-full')}
-                data-testid="gsheets-current"
-                href={sheetUrlFor(state.spreadsheetId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={m.gsheets.openSheet}
-              >
-                <IntegrationMark provider="google-sheets" size={14} />
-                <span className="truncate">{sheetName || m.gsheets.openSheet}</span>
-                <i aria-hidden className="pi pi-external-link text-muted-foreground" style={{ fontSize: 11 }} />
-              </a>
+              <>
+                {/* ONE block that answers "where do my responses go?": the
+                    spreadsheet by name, the tab in a sentence, and the way to
+                    open it. No Sheets logo here: the card's header already
+                    shows it once, and the button's own green says "Google
+                    Sheets". Creating or choosing another one is a change of
+                    that answer, so it is not a sibling button: it sits behind
+                    "Change sheet" and a confirmation. */}
+                <div
+                  data-testid="gsheets-attached"
+                  className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-border bg-card p-4"
+                >
+                  <div className="min-w-0 flex-1 basis-56">
+                    <p
+                      data-testid="gsheets-attached-name"
+                      className="truncate text-base font-semibold leading-snug text-foreground"
+                      title={sheetName || undefined}
+                    >
+                      {sheetName || m.gsheets.attachedUnnamed}
+                    </p>
+                    <p data-testid="gsheets-attached-where" className="mt-0.5 text-sm text-muted-foreground">
+                      {attachedTab
+                        ? m.gsheets.attachedInTab.replace('{tab}', attachedTab)
+                        : m.gsheets.attachedFirstTab}
+                    </p>
+                  </div>
+                  <a
+                    className={cn(buttonVariants({ variant: 'default', size: 'default' }), GOOGLE_SHEETS_BUTTON, 'shrink-0')}
+                    data-testid="gsheets-current"
+                    href={sheetUrlFor(state.spreadsheetId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {m.gsheets.openSheetButton}
+                    <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
+                  </a>
+                </div>
+                {changing ? (
+                  <div
+                    data-testid="gsheets-change-options"
+                    className="flex flex-col gap-3 rounded-xl border border-dashed border-input p-4"
+                  >
+                    <p className="text-sm text-foreground">{m.gsheets.changeHelp}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <ActionButton
+                        testId="gsheets-create"
+                        icon="pi-plus"
+                        label={m.gsheets.createSheet}
+                        busyLabel={m.gsheets.creatingSheet}
+                        busy={busy === 'create'}
+                        disabled={pending || busy !== null}
+                        onClick={createSheet}
+                      />
+                      {pickerAvailable && access.canConnect ? (
+                        <ActionButton
+                          testId="gsheets-choose"
+                          icon="pi-folder"
+                          label={m.gsheets.chooseSheet}
+                          busy={busy === 'choose'}
+                          disabled={pending || busy !== null}
+                          onClick={chooseSheet}
+                        />
+                      ) : null}
+                      <Button variant="ghost" size="sm" onClick={() => setChanging(false)} disabled={busy !== null}>
+                        {m.gsheets.changeKeep}
+                      </Button>
+                    </div>
+                    {pickerAvailable && !access.canConnect ? (
+                      <p className="text-xs text-muted-foreground" data-testid="gsheets-choose-admin-only">
+                        {m.gsheets.chooseAdminOnly}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(SECONDARY_BUTTON, 'self-start')}
+                    onClick={() => setChanging(true)}
+                    data-testid="gsheets-change"
+                  >
+                    <i aria-hidden className="pi pi-sync" style={{ fontSize: 11 }} />
+                    {m.gsheets.changeSheet}
+                  </Button>
+                )}
+              </>
             ) : (
               <>
                 {/* Only promise Google Drive where the Picker button is really there. */}
@@ -463,34 +599,41 @@ export function GoogleSheetsCard({
                 {/* The switch is on and stored, but nothing can be sent yet.
                     Said here, on the card, not in the floating save pill. */}
                 <CardAdvisory testId="gsheets-no-sheet-yet" text={m.gsheetsNoSheetYet} />
+                {/* The first step, with one obvious way forward: create is
+                    the whole job in a click (primary), choosing an existing
+                    one is the alternative (secondary). */}
+                <div className="flex flex-wrap gap-2">
+                  <ActionButton
+                    primary
+                    testId="gsheets-create"
+                    icon="pi-plus"
+                    label={m.gsheets.createSheet}
+                    busyLabel={m.gsheets.creatingSheet}
+                    busy={busy === 'create'}
+                    disabled={pending || busy !== null}
+                    onClick={createSheet}
+                  />
+                  {/* Google's Picker needs an access token only an owner or
+                      admin may ask the API for: a member gets the sentence
+                      below, not a button that could only fail. */}
+                  {pickerAvailable && access.canConnect ? (
+                    <ActionButton
+                      testId="gsheets-choose"
+                      icon="pi-folder"
+                      label={m.gsheets.chooseSheet}
+                      busy={busy === 'choose'}
+                      disabled={pending || busy !== null}
+                      onClick={chooseSheet}
+                    />
+                  ) : null}
+                </div>
+                {pickerAvailable && !access.canConnect ? (
+                  <p className="text-xs text-muted-foreground" data-testid="gsheets-choose-admin-only">
+                    {m.gsheets.chooseAdminOnly}
+                  </p>
+                ) : null}
               </>
             )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={state.spreadsheetId ? 'soft' : 'default'}
-                size="sm"
-                className={SOFT_DISABLED}
-                onClick={createSheet}
-                disabled={pending}
-              >
-                <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
-                {m.gsheets.createSheet}
-              </Button>
-              {/* Google's Picker needs an access token only an owner or admin
-                  may ask the API for: a member gets the sentence below, not a
-                  button that could only fail. */}
-              {pickerAvailable && access.canConnect ? (
-                <Button variant="soft" size="sm" className={SOFT_DISABLED} onClick={chooseSheet} disabled={pending}>
-                  <i aria-hidden className="pi pi-folder" style={{ fontSize: 11 }} />
-                  {m.gsheets.chooseSheet}
-                </Button>
-              ) : null}
-            </div>
-            {pickerAvailable && !access.canConnect ? (
-              <p className="text-xs text-muted-foreground" data-testid="gsheets-choose-admin-only">
-                {m.gsheets.chooseAdminOnly}
-              </p>
-            ) : null}
           </section>
 
           {state.spreadsheetId ? (
@@ -520,19 +663,26 @@ export function GoogleSheetsCard({
                 <p className="mt-0.5 text-xs text-muted-foreground">{m.gsheets.columnsHelp}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="soft" size="sm" className={SOFT_DISABLED} onClick={() => setColumns(defaults())}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={SECONDARY_BUTTON}
+                  onClick={() => setColumns(defaults())}
+                  data-testid="gsheets-fill-from-form"
+                >
+                  <i aria-hidden className="pi pi-list" style={{ fontSize: 11 }} />
                   {m.gsheets.fillFromForm}
                 </Button>
                 {formId ? (
                   <Button
-                    variant="soft"
+                    variant="outline"
                     size="sm"
                     // On a row 1 already known not to match, the plain sync
                     // can only find that again and write nothing: the button
                     // goes to the confirmed replace instead of doing nothing.
                     onClick={() => void syncHeaders(headerSync?.outcome === 'foreign')}
                     disabled={pending || !state.spreadsheetId || state.columns.length === 0}
-                    className={SOFT_DISABLED}
+                    className={SECONDARY_BUTTON}
                     data-testid="gsheets-sync-headers"
                   >
                     <i aria-hidden className="pi pi-refresh" style={{ fontSize: 11 }} />
@@ -745,8 +895,9 @@ export function GoogleSheetsCard({
             <Button
               variant="outline"
               size="sm"
-              className="self-start"
+              className={cn(SECONDARY_BUTTON, 'self-start')}
               onClick={() => setColumns([...state.columns, { header: '', source: 'answer' }])}
+              data-testid="gsheets-add-column"
             >
               <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
               {m.gsheets.addColumn}
@@ -760,10 +911,64 @@ export function GoogleSheetsCard({
 }
 
 /**
- * The base button greys a disabled soft pill to the same grey it already is,
- * so a disabled one looked exactly like an enabled one. Faded instead.
+ * The card's secondary button: the `outline` variant on the card surface, with
+ * the stronger `--input` rim the topbar's Preview button uses.
+ *
+ * The buttons here were the grey `soft` pill, which on a white card reads as a
+ * disabled control or an afterthought. An outlined button with ink text is a
+ * button. Disabled, it takes the base grey fill AND fades, so the two states
+ * cannot be mistaken for each other.
  */
-const SOFT_DISABLED = 'disabled:bg-muted disabled:opacity-45';
+const SECONDARY_BUTTON = 'border-input bg-card text-foreground hover:bg-muted disabled:opacity-50';
+
+/**
+ * "Create a new spreadsheet" / "Choose from Google Drive".
+ *
+ * While its request is in flight it shows a spinner and cannot be pressed
+ * (and neither can its sibling): a slow Google answer must not leave a button
+ * that looks ready to create a second spreadsheet.
+ */
+function ActionButton({
+  primary = false,
+  icon,
+  label,
+  busyLabel,
+  busy,
+  disabled,
+  onClick,
+  testId,
+}: {
+  primary?: boolean;
+  icon: string;
+  label: string;
+  busyLabel?: string;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <Button
+      variant={primary ? 'default' : 'outline'}
+      size={primary ? 'default' : 'sm'}
+      // The primary is the app's own (`default`, the ink fill): only the
+      // button that opens the spreadsheet takes Google Sheets green. While it
+      // runs it keeps its fill, faded, rather than the base grey disabled
+      // one: it is working, not unavailable.
+      className={cn(
+        primary ? '' : SECONDARY_BUTTON,
+        primary && busy && 'disabled:bg-primary disabled:text-primary-foreground disabled:opacity-70',
+      )}
+      onClick={onClick}
+      disabled={disabled}
+      aria-busy={busy || undefined}
+      data-testid={testId}
+    >
+      <i aria-hidden className={cn('pi', busy ? 'pi-spinner pi-spin' : icon)} style={{ fontSize: primary ? 13 : 11 }} />
+      {busy && busyLabel ? busyLabel : label}
+    </Button>
+  );
+}
 
 /** A quiet, persistent note on the card about what is not being sent yet. */
 function CardAdvisory({ text, testId }: { text: string; testId: string }) {
@@ -806,7 +1011,7 @@ function StaleRowNotice({
       <Button
         variant="outline"
         size="sm"
-        className="self-start"
+        className={cn(SECONDARY_BUTTON, 'self-start')}
         onClick={onUpdate}
         disabled={pending}
         data-testid="gsheets-update-stale"

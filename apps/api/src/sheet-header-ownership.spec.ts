@@ -728,3 +728,118 @@ describe('MCP set_destinations reports what the save did to row 1', () => {
     expect(second.sheetHeaders).toBeNull();
   });
 });
+
+/**
+ * Attaching a DIFFERENT spreadsheet (the card's "Change sheet").
+ *
+ * What dForms knows about row 1 (`headerSnapshot`, `headerForeign`,
+ * `headerBroken`) is knowledge about one spreadsheet and tab. It used to be
+ * carried along when the destination was pointed at another spreadsheet and
+ * the new one's row turned out to be someone else's, or Google failed: the old
+ * sheet's snapshot stayed stored beside the new sheet's id. The new sheet must
+ * start clean, and its row 1 is written (empty) or looked at (it may be
+ * somebody's own) exactly once, by the save that attaches it.
+ */
+describe('attaching a different spreadsheet', () => {
+  const NEW = 'sheet-new';
+  const onOld = (extra: Record<string, unknown> = {}) => ({
+    ...fromEditor(OLD),
+    settings: {
+      spreadsheetId: SHEET,
+      sheetTitle: 'Responses',
+      headerSnapshot: { spreadsheetId: SHEET, sheetTitle: 'Responses', headers: OLD },
+      ...extra,
+    },
+  });
+  const toNew = () => fromEditor(OLD, { spreadsheetId: NEW });
+  const storedSettings = async () => {
+    const list = ((await getFormById(db, accountId, formId))!.config as { destinations: Record<string, unknown>[] })
+      .destinations;
+    return list.find((d) => d.type === 'google-sheets')!.settings as Record<string, unknown>;
+  };
+
+  it('writes the header row of a new, empty spreadsheet once, and records it for the NEW sheet only', async () => {
+    await store(onOld());
+    row1 = []; // the spreadsheet just picked has nothing in row 1
+    reads = 0;
+    writes = [];
+    const out = await controller.putDestinations(asOwner(), formId, { destinations: [toNew()] });
+    expect((out as { sheetHeaders?: unknown }).sheetHeaders).toEqual({ outcome: 'written' });
+    expect(reads).toBe(1);
+    expect(writes).toEqual([OLD]);
+    const settings = await storedSettings();
+    expect(settings.spreadsheetId).toBe(NEW);
+    expect(settings.headerSnapshot).toEqual({ spreadsheetId: NEW, sheetTitle: 'Responses', headers: OLD });
+    expect(settings).not.toHaveProperty('headerForeign');
+    expect(settings).not.toHaveProperty('headerBroken');
+  });
+
+  it('only looks at a spreadsheet the create call already headed: one read, no write', async () => {
+    await store(onOld());
+    row1 = [...OLD]; // "Create a new spreadsheet" wrote the headings at creation
+    reads = 0;
+    writes = [];
+    const out = await controller.putDestinations(asOwner(), formId, { destinations: [toNew()] });
+    expect((out as { sheetHeaders?: unknown }).sheetHeaders).toEqual({ outcome: 'unchanged' });
+    expect(reads).toBe(1);
+    expect(writes).toEqual([]);
+    expect((await storedSettings()).headerSnapshot).toEqual({ spreadsheetId: NEW, sheetTitle: 'Responses', headers: OLD });
+  });
+
+  it('leaves a picked spreadsheet with its own row 1 alone, and forgets the old sheet\'s snapshot', async () => {
+    await store(onOld());
+    row1 = ['Name', 'Phone']; // chosen from Drive, with somebody's own headings
+    reads = 0;
+    writes = [];
+    const out = await controller.putDestinations(asOwner(), formId, { destinations: [toNew()] });
+    expect((out as { sheetHeaders?: { outcome: string } }).sheetHeaders?.outcome).toBe('foreign');
+    expect(reads).toBe(1);
+    expect(writes).toEqual([]);
+    expect(row1).toEqual(['Name', 'Phone']);
+    const settings = await storedSettings();
+    // The old sheet's snapshot is not kept beside the new sheet's id.
+    expect(settings).not.toHaveProperty('headerSnapshot');
+    expect(settings.headerForeign).toEqual({ spreadsheetId: NEW, sheetTitle: 'Responses', headers: OLD });
+  });
+
+  it('drops the old sheet\'s foreign and failure marks too, also when Google cannot be reached', async () => {
+    const mark = { spreadsheetId: SHEET, sheetTitle: 'Responses', headers: OLD };
+    await store({
+      ...fromEditor(OLD),
+      settings: {
+        spreadsheetId: SHEET,
+        sheetTitle: 'Responses',
+        headerForeign: mark,
+        headerBroken: { ...mark, reason: 'forbidden', at: Date.now() },
+      },
+    });
+    controller.fetchImpl = (async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
+    const out = await controller.putDestinations(asOwner(), formId, { destinations: [toNew()] });
+    expect((out as { sheetHeaders?: unknown }).sheetHeaders).toEqual({ outcome: 'failed', reason: 'unavailable' });
+    const settings = await storedSettings();
+    expect(settings.spreadsheetId).toBe(NEW);
+    expect(settings).not.toHaveProperty('headerSnapshot');
+    expect(settings).not.toHaveProperty('headerForeign');
+    expect(settings).not.toHaveProperty('headerBroken');
+  });
+
+  it('does not look again on the next unrelated save: once is once', async () => {
+    await store(onOld());
+    row1 = [];
+    await controller.putDestinations(asOwner(), formId, { destinations: [toNew()] });
+    reads = 0;
+    writes = [];
+    await controller.putDestinations(asOwner(), formId, { destinations: [{ ...toNew(), enabled: false }] });
+    expect(reads).toBe(0);
+    expect(writes).toEqual([]);
+  });
+
+  it('forgets everything when the spreadsheet is removed from the destination', async () => {
+    await store(onOld());
+    await controller.putDestinations(asOwner(), formId, {
+      destinations: [{ ...fromEditor(OLD), settings: {} }],
+    });
+    const settings = await storedSettings();
+    expect(settings).not.toHaveProperty('headerSnapshot');
+  });
+});
