@@ -209,6 +209,13 @@ export function SalesforceCard({
   const questionOptions = questions
     .filter((q) => q.type !== 'file')
     .map((q) => ({ value: q.key, label: q.label }));
+  // A stored key the form no longer offers (a deleted question, or a `name`
+  // question's own key, saved before it was offered as its two answers) stays
+  // on screen as itself, like a field the org no longer lists.
+  const keyOptions = (current: string) =>
+    current && !questionOptions.some((o) => o.value === current)
+      ? [{ value: current, label: current }, ...questionOptions]
+      : questionOptions;
   const warnings = useMemo(
     () => salesforceWarnings(state, contact, questions.some((q) => q.key === 'email')),
     [state, contact, questions],
@@ -263,7 +270,7 @@ export function SalesforceCard({
                   onChange={(key) =>
                     patch({ mappings: state.mappings.map((r, j) => (j === i ? { ...r, key } : r)) })
                   }
-                  options={questionOptions}
+                  options={keyOptions(row.key)}
                   placeholder={sm.questionPlaceholder}
                   ariaLabel={sm.questionPlaceholder}
                   searchable

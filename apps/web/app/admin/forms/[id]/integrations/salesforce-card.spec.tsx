@@ -14,7 +14,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { getMessages } from '@quill/shared';
 import type { FormDestination } from '@quill/types';
 import type { SalesforceFieldsResponse } from '@/lib/admin-api';
-import type { QuestionMeta } from './auto-map';
+import type { FormStep } from '@quill/engine';
+import { mappableQuestions, type QuestionMeta } from './auto-map';
 
 const actions = vi.hoisted(() => ({ salesforceFieldsAction: vi.fn() }));
 vi.mock('./actions', () => actions);
@@ -225,6 +226,38 @@ describe('the card', () => {
       return mount(base({ statics: [{ field: 'Seats__c', value: '' }] }));
     })();
     expect(plain.querySelector('[data-testid="salesforce-static"] input')).not.toBeNull();
+  });
+
+  // The trigger of row `i`'s question picker, and the options it opens.
+  async function questionOptionsOf(el: HTMLElement, i = 0): Promise<{ trigger: HTMLButtonElement; options: string[] }> {
+    const row = el.querySelectorAll('[data-testid="salesforce-row"]')[i]!;
+    const trigger = row.querySelector<HTMLButtonElement>(`button[aria-label="${m.salesforce.questionPlaceholder}"]`)!;
+    await act(async () => trigger.click());
+    const options = [...row.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? '');
+    return { trigger, options };
+  }
+
+  it('offers a name question as its first and last name, the keys its answer is stored under', async () => {
+    const questions = mappableQuestions(
+      [{ key: 'full_name', type: 'name', question: 'Nombre y Apellido' } as FormStep],
+      { first: 'Nombre', last: 'Apellido' },
+    );
+    const el = await mount(base({ mappings: [{ key: '', field: 'LastName' }] }), { questions });
+    const { options } = await questionOptionsOf(el);
+    expect(options).toEqual(['Nombre y Apellido · Nombre', 'Nombre y Apellido · Apellido']);
+  });
+
+  it('still shows a stored key the form no longer offers, as itself', async () => {
+    // Saved before a name question was offered as its two answers: the row
+    // must keep reading what is stored, not fall back to the placeholder.
+    const questions = mappableQuestions(
+      [{ key: 'full_name', type: 'name', question: 'Nombre y Apellido' } as FormStep],
+      { first: 'Nombre', last: 'Apellido' },
+    );
+    const el = await mount(base({ mappings: [{ key: 'full_name', field: 'LastName' }] }), { questions });
+    const { trigger, options } = await questionOptionsOf(el);
+    expect(trigger.textContent).toBe('full_name');
+    expect(options).toEqual(['full_name', 'Nombre y Apellido · Nombre', 'Nombre y Apellido · Apellido']);
   });
 
   it('re-reads the org on refresh', async () => {

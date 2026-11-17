@@ -224,6 +224,15 @@ export function GoogleSheetsCard({
   }
 
   const setColumns = (columns: SheetColumn[]) => patch({ columns });
+  // A stored key the form no longer offers (a deleted question, or a `name`
+  // question's own key, saved before it was offered as its two answers) stays
+  // selected as itself instead of the select falling back to "pick one".
+  const answerOptions = (current: string | undefined) => {
+    const options = questions.map((q) => ({ value: q.key, label: q.label || q.key }));
+    return current && !options.some((o) => o.value === current)
+      ? [{ value: current, label: current }, ...options]
+      : options;
+  };
 
   return (
     <Card
@@ -378,7 +387,7 @@ export function GoogleSheetsCard({
                       >
                         <option value="">{m.gsheets.pickOne}</option>
                         {(column.source === 'answer'
-                          ? questions.map((q) => ({ value: q.key, label: q.label || q.key }))
+                          ? answerOptions(column.key)
                           : UTM_KEYS.map((k) => ({ value: k, label: k }))
                         ).map((option) => (
                           <option key={option.value} value={option.value}>

@@ -3,8 +3,9 @@
  * before it is stored.
  */
 import { describe, expect, it } from 'vitest';
+import type { FormStep } from '@quill/engine';
 import type { SheetColumn } from '@quill/types';
-import type { QuestionMeta } from './auto-map';
+import { mappableQuestions, type QuestionMeta } from './auto-map';
 import {
   defaultColumns,
   isCompleteColumn,
@@ -27,6 +28,24 @@ const QUESTIONS: QuestionMeta[] = [
 ];
 
 describe('defaultColumns', () => {
+  it('gives a name question two columns, one per stored answer, not one that stays empty', () => {
+    const questions = mappableQuestions(
+      [
+        { key: 'email', type: 'email', question: 'Email' } as FormStep,
+        { key: 'full_name', type: 'name', question: 'Nombre y Apellido' } as FormStep,
+      ],
+      { first: 'Nombre', last: 'Apellido' },
+    );
+    expect(defaultColumns(questions, LABELS)).toEqual([
+      { header: 'Submitted', source: 'submitted_at' },
+      { header: 'Email', source: 'answer', key: 'email' },
+      { header: 'Nombre y Apellido · Nombre', source: 'answer', key: 'firstname' },
+      { header: 'Nombre y Apellido · Apellido', source: 'answer', key: 'lastname' },
+      { header: 'Score', source: 'score' },
+      { header: 'Outcome', source: 'outcome' },
+    ]);
+  });
+
   it('puts the date first, then the questions in the form’s order', () => {
     // A sheet is sorted by its first column, and what people sort submissions
     // by is when they arrived.

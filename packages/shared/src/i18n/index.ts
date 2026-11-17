@@ -1956,6 +1956,13 @@ export interface FormsMessages {
       inviteeName: string;
       inviteeFirstName: string;
       inviteeLastName: string;
+      /**
+       * A `name` question stores two answers, so the mapping pickers offer it as
+       * two entries, "{question} · {part}". The part comes from the step's own
+       * sub-field label when it has one, else from these.
+       */
+      nameFirstPart: string;
+      nameLastPart: string;
       inviteePhone: string;
       /** The meeting slot itself — the scheduler step's own answer. */
       bookingStart: string;
@@ -4391,6 +4398,8 @@ export const en: FormsMessages = {
       inviteeName: 'Booking: full name',
       inviteeFirstName: 'Booking: first name',
       inviteeLastName: 'Booking: last name',
+      nameFirstPart: 'First name',
+      nameLastPart: 'Last name',
       inviteePhone: 'Booking: phone',
       bookingStart: 'Booking: meeting time',
       keyCustomBack: 'Back to list',
@@ -7129,6 +7138,8 @@ export const es: FormsMessages = {
       inviteeName: 'Agenda: nombre completo',
       inviteeFirstName: 'Agenda: nombre',
       inviteeLastName: 'Agenda: apellido',
+      nameFirstPart: 'Nombre',
+      nameLastPart: 'Apellido',
       inviteePhone: 'Agenda: teléfono',
       bookingStart: 'Agenda: hora de la reunión',
       keyCustomBack: 'Volver a la lista',
