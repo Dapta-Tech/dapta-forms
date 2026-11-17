@@ -17,9 +17,16 @@ const actions = vi.hoisted(() => ({
   googleSheetsCreateAction: vi.fn(),
   googleSheetsPickerAction: vi.fn(),
   googleSheetsTabsAction: vi.fn(),
-  googleSheetsHeaderRowAction: vi.fn(),
+  syncSheetHeadersAction: vi.fn(),
 }));
 vi.mock('./actions', () => actions);
+
+const connectActions = vi.hoisted(() => ({
+  startGoogleSheetsAuthAction: vi.fn(),
+  connectIntegrationAction: vi.fn(),
+  connectSalesforceAction: vi.fn(),
+}));
+vi.mock('@/app/admin/integrations/actions', () => connectActions);
 
 const picker = vi.hoisted(() => ({ pickSpreadsheet: vi.fn() }));
 vi.mock('./google-picker', () => picker);
@@ -27,7 +34,9 @@ vi.mock('./google-picker', () => picker);
 const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
 
-import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
+import { GoogleSheetsCard, sheetColumnLetter, type GoogleSheetsState } from './google-sheets-card';
+import type { ConnectAccess } from './connect-in-place';
+import type { SheetHeaderSync } from '@/lib/admin-api';
 
 const m = getMessages('en').admin.integrations;
 const QUESTIONS: QuestionMeta[] = [
@@ -58,12 +67,16 @@ async function mount(
     connected?: boolean;
     pickerAvailable?: boolean;
     formName?: string;
+    formId?: string;
+    access?: ConnectAccess;
+    headerSync?: SheetHeaderSync | null;
   } = {},
 ) {
   const box = { state: opts.state ?? EMPTY };
   const setState = vi.fn((next: GoogleSheetsState) => {
     box.state = next;
   });
+  const onHeaderSync = vi.fn();
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -76,12 +89,16 @@ async function mount(
         connected={opts.connected ?? true}
         pickerAvailable={opts.pickerAvailable ?? false}
         formName={opts.formName ?? 'Lead form'}
+        formId={opts.formId}
+        access={opts.access}
+        headerSync={opts.headerSync ?? null}
+        onHeaderSync={onHeaderSync}
         locale="en"
         m={m}
       />,
     );
   });
-  return { el: container, setState, box };
+  return { el: container, setState, box, onHeaderSync };
 }
 
 const button = (el: HTMLElement, text: string): HTMLButtonElement | undefined =>
@@ -91,7 +108,7 @@ describe('how a spreadsheet reaches a form', () => {
   it('offers to create one, and has no field to paste a link into', async () => {
     const { el } = await mount();
     expect(button(el, m.gsheets.createSheet)).toBeDefined();
-    expect(el.textContent).toContain(m.gsheets.sheetHelp);
+    expect(el.textContent).toContain(m.gsheets.sheetHelpCreateOnly);
     // Every text input left on the card belongs to a column row, and there are
     // none yet: nothing here takes a spreadsheet address.
     expect(el.querySelectorAll('input[type="text"], input:not([type])')).toHaveLength(0);
@@ -112,6 +129,38 @@ describe('how a spreadsheet reaches a form', () => {
     expect(el.querySelector('[data-testid="gsheets-not-connected"]')).not.toBeNull();
     expect(button(el, m.gsheets.createSheet)).toBeUndefined();
     expect(button(el, m.gsheets.chooseSheet)).toBeUndefined();
+  });
+});
+
+describe('connecting Google from the card itself', () => {
+  const cm = getMessages('en').admin.connections;
+  const assign = vi.fn();
+  beforeAll(() => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, assign },
+    });
+  });
+
+  it('starts Google’s consent flow and asks to come back to this form', async () => {
+    const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?state=v2.p.s';
+    connectActions.startGoogleSheetsAuthAction.mockResolvedValueOnce({ ok: true, authUrl });
+    const { el } = await mount({ connected: false, formId: 'form-1' });
+    expect(el.querySelector('a[href="/admin/integrations"]')).toBeNull();
+    await act(async () => button(el, cm.connectWithGoogle)!.click());
+    expect(connectActions.startGoogleSheetsAuthAction).toHaveBeenCalledWith('/admin/forms/form-1/edit');
+    expect(assign).toHaveBeenCalledWith(authUrl);
+  });
+
+  it('tells a plain member an admin has to connect it, and offers no button', async () => {
+    const { el } = await mount({
+      connected: false,
+      formId: 'form-1',
+      access: { canConnect: false, encryptionAvailable: true },
+    });
+    expect(el.querySelector('[data-testid="connect-admin-only"]')?.textContent).toContain('Google Sheets');
+    expect(el.querySelector('button')?.getAttribute('role')).toBe('switch');
+    expect(button(el, cm.connectWithGoogle)).toBeUndefined();
   });
 });
 
@@ -292,6 +341,11 @@ describe('a form that already has its spreadsheet', () => {
     const link = el.querySelector<HTMLAnchorElement>('[data-testid="gsheets-current"]')!;
     expect(link.textContent).toContain('Leads 2026');
     expect(link.href).toBe('https://docs.google.com/spreadsheets/d/abc123/edit');
+    // A button, not a stray underlined link, and it never hands Google this tab.
+    expect(link.className).toContain('rounded-full');
+    expect(link.className).not.toContain('underline');
+    expect(link.target).toBe('_blank');
+    expect(link.rel.split(' ').sort()).toEqual(['noopener', 'noreferrer']);
   });
 
   // Under drive.file, this is what a spreadsheet the app was never handed looks
@@ -321,8 +375,117 @@ describe('a form that already has its spreadsheet', () => {
         columns: [{ header: 'Full name', source: 'answer', key: 'full_name' }],
       },
     });
-    const select = el.querySelector<HTMLSelectElement>(`select[aria-label="${m.gsheets.keyFor}"]`)!;
-    expect(select.value).toBe('full_name');
-    expect([...select.options].map((o) => o.value)).toEqual(['', 'full_name', 'email', 'company']);
+    const trigger = el.querySelector<HTMLButtonElement>(`button[aria-label="${m.gsheets.keyFor}"]`)!;
+    expect(trigger.textContent).toBe('full_name');
+    await act(async () => trigger.click());
+    const options = [...el.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => o.textContent);
+    expect(options).toEqual(['full_name', 'Work email', 'Company']);
+  });
+});
+
+describe('the column rows', () => {
+  const COLUMNS = [
+    { header: 'Submitted', source: 'submitted_at' as const },
+    { header: 'Email', source: 'answer' as const, key: 'email' },
+  ];
+
+  it('uses the app’s own pickers, never a browser-default select', async () => {
+    actions.googleSheetsTabsAction.mockResolvedValue({
+      ok: true,
+      data: { enabled: true, spreadsheetTitle: 'Leads', tabs: [{ title: 'Responses', gid: 0 }] },
+    });
+    const { el } = await mount({
+      state: { ...EMPTY, spreadsheetId: 'abc123', sheetTitle: 'Responses', columns: COLUMNS },
+    });
+    expect(el.querySelectorAll('select')).toHaveLength(0);
+    expect(el.querySelector(`button[aria-label="${m.gsheets.tabLabel}"]`)?.textContent).toBe('Responses');
+    expect(el.querySelectorAll(`button[aria-label="${m.gsheets.sourceFor}"]`)).toHaveLength(2);
+  });
+
+  it('labels each row with the sheet’s column letter and gives its actions names', async () => {
+    const { el } = await mount({ state: { ...EMPTY, spreadsheetId: 'abc123', columns: COLUMNS } });
+    const rows = el.querySelectorAll('[data-testid="gsheets-column"]');
+    expect([...rows].map((r) => r.firstElementChild?.textContent)).toEqual(['A', 'B']);
+    expect(rows[0]!.querySelector(`button[aria-label="${m.gsheets.moveUp}"]`)?.hasAttribute('disabled')).toBe(true);
+    expect(rows[1]!.querySelector(`button[aria-label="${m.gsheets.moveDown}"]`)?.hasAttribute('disabled')).toBe(true);
+    expect(sheetColumnLetter(0)).toBe('A');
+    expect(sheetColumnLetter(26)).toBe('AA');
+  });
+});
+
+describe('the header row', () => {
+  const STORED = { ...EMPTY, spreadsheetId: 'abc123', sheetTitle: 'Responses', columns: [{ header: 'Email', source: 'answer' as const, key: 'email' }] };
+
+  it('names what the button does', async () => {
+    const { el } = await mount({ state: STORED, formId: 'form-1' });
+    expect(button(el, 'Update the header row')).toBeDefined();
+  });
+
+  it('syncs the form’s STORED columns, and reports what happened', async () => {
+    actions.syncSheetHeadersAction.mockResolvedValueOnce({ ok: true, data: { ok: true, outcome: 'written' } });
+    const { el, onHeaderSync } = await mount({ state: STORED, formId: 'form-1' });
+    await act(async () => button(el, m.gsheets.writeHeaders)!.click());
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1', false);
+    expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'written' });
+  });
+
+  const MISMATCH = {
+    outcome: 'foreign' as const,
+    current: ['Submitted', 'Email', 'Company'],
+    headers: ['Submitted', 'Work email'],
+  };
+
+  it('says plainly that row 1 does not match, and shows it beside what would be written', async () => {
+    const { el } = await mount({ state: STORED, formId: 'form-1', headerSync: MISMATCH });
+    const panel = el.querySelector('[data-testid="gsheets-header-mismatch"]')!;
+    expect(panel.textContent).toContain(m.gsheets.headersNotEmpty);
+    // Never the old, false claim about who wrote it.
+    expect(panel.textContent).not.toMatch(/did not write/);
+    const rows = [...panel.querySelectorAll('tbody tr')];
+    expect(rows.map((r) => [...r.querySelectorAll('td')].map((td) => td.textContent))).toEqual([
+      ['A', 'Submitted', 'Submitted'],
+      ['B', 'Email', 'Work email'],
+      ['C', 'Company', m.gsheets.headersEmptyCell],
+    ]);
+    expect(panel.querySelector('[data-testid="gsheets-replace-row"]')?.textContent).toBe(m.gsheets.replaceRow);
+  });
+
+  it('replaces row 1 only after the author confirms', async () => {
+    actions.syncSheetHeadersAction.mockResolvedValue({ ok: true, data: { ok: true, outcome: 'written' } });
+    const { el, onHeaderSync } = await mount({ state: STORED, formId: 'form-1', headerSync: MISMATCH });
+    const dialogButton = (which: 'cancel' | 'confirm') =>
+      el.querySelector<HTMLButtonElement>(`[data-testid="confirm-dialog-${which}"]`);
+
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-replace-row"]')!.click());
+    expect(document.body.textContent).toContain(m.gsheets.replaceTitle);
+    await act(async () => dialogButton('cancel')!.click());
+    expect(actions.syncSheetHeadersAction).not.toHaveBeenCalled();
+
+    await act(async () => el.querySelector<HTMLButtonElement>('[data-testid="gsheets-replace-row"]')!.click());
+    await act(async () => dialogButton('confirm')!.click());
+    expect(actions.syncSheetHeadersAction).toHaveBeenCalledWith('form-1', true);
+    expect(onHeaderSync).toHaveBeenCalledWith({ outcome: 'written' });
+  });
+
+  it('only promises Google Drive where the Picker is there', async () => {
+    const without = await mount({ pickerAvailable: false });
+    expect(without.el.textContent).toContain(m.gsheets.sheetHelpCreateOnly);
+    expect(without.el.textContent).not.toContain(m.gsheets.sheetHelp);
+  });
+
+  it('gives a disabled header button a disabled look', async () => {
+    const { el } = await mount({ state: { ...EMPTY, columns: STORED.columns }, formId: 'form-1' });
+    const b = el.querySelector<HTMLButtonElement>('[data-testid="gsheets-sync-headers"]')!;
+    expect(b.disabled).toBe(true);
+    expect(b.className).toContain('disabled:opacity-45');
+  });
+
+  it('says so in the destructive tone when the update failed', async () => {
+    const { el } = await mount({
+      state: STORED,
+      formId: 'form-1',
+      headerSync: { outcome: 'failed', reason: 'unavailable' },
+    });
+    expect(el.querySelector('[data-testid="gsheets-header-sync"]')?.getAttribute('data-tone')).toBe('error');
   });
 });

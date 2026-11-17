@@ -286,12 +286,17 @@ export function QuestionHubspotSection({
           <p role="alert" className="text-xs text-muted-foreground">
             {readiness.blocker === 'no_source' ? m.needsEmail : m.schedulerDisconnected}
           </p>
+          {/* Calendly is connected on the workspace's Integrations page, not
+              on a form, so this one does leave: in a new tab, so the form
+              being built stays where it was. */}
           <Link
             href="/admin/integrations"
+            target="_blank"
+            rel="noopener noreferrer"
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
-            {m.goToConnections}
-            <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 11 }} />
+            {m.goToIntegrations}
+            <i aria-hidden className="pi pi-external-link" style={{ fontSize: 11 }} />
           </Link>
         </div>
       );
@@ -302,14 +307,16 @@ export function QuestionHubspotSection({
       return (
         <div className="flex flex-col items-start gap-2">
           <p className="text-xs text-muted-foreground">{m.notConnected}</p>
-          <Link
-            href="/admin/integrations"
+          {/* HubSpot connects in place on this form's Connect tab now. */}
+          <Button
             data-testid="qs-hubspot-connect-account"
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            variant="outline"
+            size="sm"
+            onClick={onOpenConnect}
           >
-            {m.goToConnections}
+            {m.connectInConnect}
             <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 11 }} />
-          </Link>
+          </Button>
         </div>
       );
     }

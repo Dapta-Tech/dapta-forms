@@ -487,7 +487,9 @@ export interface BuilderMessages {
     configureInConnect: string;
     /** No account-level HubSpot connection at all. */
     notConnected: string;
-    goToConnections: string;
+    goToIntegrations: string;
+    /** No HubSpot connection: it is connected on this form's Connect tab. */
+    connectInConnect: string;
     /** The form has nothing that can identify a contact. */
     needsEmail: string;
     /** A booking would supply the address, but its provider is not connected. */
@@ -997,7 +999,8 @@ const en: BuilderMessages = {
     notEnabled: 'HubSpot isn’t enabled on this form.',
     configureInConnect: 'Set up in Connect',
     notConnected: 'Connect HubSpot to map answers to contact properties.',
-    goToConnections: 'Go to Connections',
+    goToIntegrations: 'Go to Integrations',
+    connectInConnect: 'Connect it in the Connect tab',
     needsEmail:
       'This form asks for no email and books nothing, so HubSpot has no way to identify the contact. Nothing mapped here would sync. Add an email question, or a booking step.',
     schedulerDisconnected:
@@ -1497,14 +1500,15 @@ const es: BuilderMessages = {
     notEnabled: 'HubSpot no está habilitado en este formulario.',
     configureInConnect: 'Configurar en Conectar',
     notConnected: 'Conecta HubSpot para asignar respuestas a propiedades del contacto.',
-    goToConnections: 'Ir a Conexiones',
+    goToIntegrations: 'Ir a Integraciones',
+    connectInConnect: 'Conéctalo en la pestaña Conectar',
     needsEmail:
-      'Este formulario no pide correo ni agenda nada, así que HubSpot no tiene cómo identificar al contacto. Nada de lo que mapees acá se va a sincronizar. Agregá una pregunta de correo, o un paso de agenda.',
+      'Este formulario no pide correo ni agenda nada, así que HubSpot no tiene cómo identificar al contacto. Nada de lo que mapees acá se va a sincronizar. Agrega una pregunta de correo, o un paso de agenda.',
     schedulerDisconnected:
       'El paso de agenda aportaría el correo, pero Calendly no está conectado en esta cuenta: así que no se puede leer al invitado y nada de lo mapeado acá va a llegar a HubSpot.',
-    bookingIntro: 'Una reserva produce estos datos. Mandá cada uno a una propiedad del contacto.',
+    bookingIntro: 'Una reserva produce estos datos. Manda cada uno a una propiedad del contacto.',
     bookingStartHint:
-      'Se envía como texto, tal cual lo reportó la reserva. Para una propiedad de fecha real de HubSpot, usá la sincronización de reservas en Conectar.',
+      'Se envía como texto, tal cual lo reportó la reserva. Para una propiedad de fecha real de HubSpot, usa la sincronización de reservas en Conectar.',
     bookingEmailNote:
       'El correo del invitado es la llave del contacto: lo aporta la reserva, por eso no se mapea acá.',
   },

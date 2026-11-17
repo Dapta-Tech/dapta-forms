@@ -4,6 +4,7 @@ import { unstable_rethrow } from 'next/navigation';
 import {
   adminApi,
   ApiError,
+  isAdminRole,
   type HubSpotPropertiesResponse,
   type SalesforceFieldsResponse,
 } from '@/lib/admin-api';
@@ -57,6 +58,13 @@ export interface ConnectIntegrationsData {
    * Salesforce should not pay a round trip for a card that shows a link.
    */
   salesforceFields: SalesforceFieldsResponse;
+  /**
+   * Whether the viewer may connect an account from the cards (owners and
+   * admins; the API refuses anyone else). A member sees a sentence instead.
+   */
+  canConnect: boolean;
+  /** The server can store a credential at all (it has an encryption key). */
+  encryptionAvailable: boolean;
 }
 
 export async function loadConnectIntegrationsAction(
@@ -95,8 +103,12 @@ export async function loadConnectIntegrationsAction(
   let googleSheetsAvailable = true;
   let googlePickerAvailable = false;
   let salesforceConnected = false;
+  // True until the API says otherwise, like `googleSheetsAvailable`: the API is
+  // the real gate, and a failed lookup must not hide the connect controls.
+  let encryptionAvailable = true;
   try {
     const integrations = await adminApi.listIntegrations();
+    encryptionAvailable = integrations.encryptionAvailable;
     hubspotConnected = integrations.providers.some((p) => p.provider === 'hubspot' && p.connected);
     calendlyConnected = integrations.providers.some(
       (p) => p.provider === 'calendly' && p.connected,
@@ -114,6 +126,15 @@ export async function loadConnectIntegrationsAction(
     hubspotConnected = false;
     calendlyConnected = false;
     googleSheetsConnected = false;
+  }
+
+  // Who is looking: a member gets "ask an admin" in place of a connect button.
+  // A failed lookup offers the button; the API answers a refused role itself.
+  let canConnect = true;
+  try {
+    canConnect = isAdminRole((await adminApi.me()).role);
+  } catch (e) {
+    unstable_rethrow(e);
   }
 
   // Like the HubSpot picker: a failed lookup degrades the card, never the tab.
@@ -140,6 +161,8 @@ export async function loadConnectIntegrationsAction(
       formName: form.name,
       salesforceConnected,
       salesforceFields,
+      canConnect,
+      encryptionAvailable,
     },
   };
 }

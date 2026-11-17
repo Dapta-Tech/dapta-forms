@@ -6,11 +6,11 @@ import {
   emailMappingsConflictingWithScheduler,
   type ContactKeyReadiness,
 } from '@quill/engine';
-import { createContext, useCallback, useContext, useId, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import type { FormsMessages, Locale } from '@quill/shared';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
 import { WEBHOOK_SECRET_MASK, type DestinationEvent, type FormDestination } from '@quill/types';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
@@ -26,9 +26,12 @@ import type {
   DeliveryKind,
   HubSpotPropertiesResponse,
   HubSpotPropertyOption,
+  SheetHeaderSync,
   WebhookPingReason,
   WebhookPingResult,
 } from '@/lib/admin-api';
+import { TokenConnectForm } from '@/app/admin/integrations/connect-forms';
+import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { GoogleSheetsCard, type GoogleSheetsState } from './google-sheets-card';
@@ -48,7 +51,7 @@ import {
   sharedOptionsFor,
   targetPropertiesFor,
 } from './property-options';
-import { pingWebhookAction, saveIntegrationsAction } from './actions';
+import { hubspotPropertiesAction, pingWebhookAction, saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
@@ -416,6 +419,8 @@ export function IntegrationsEditor({
   googlePickerAvailable = false,
   salesforceConnected = false,
   salesforceFields = { enabled: false, reason: 'not_connected' },
+  access = DEFAULT_CONNECT_ACCESS,
+  googleJustConnected = false,
   formName = '',
   questions,
   readiness = NOT_READY,
@@ -442,6 +447,18 @@ export function IntegrationsEditor({
   salesforceConnected?: boolean;
   /** The connected org's fields as the tab loaded them. */
   salesforceFields?: SalesforceFieldsResponse;
+  /**
+   * Whether the viewer can connect an account from these cards (owners and
+   * admins, on a deployment with an encryption key). The cards connect in
+   * place, so nobody has to leave the form to do it.
+   */
+  access?: ConnectAccess;
+  /**
+   * The author just came back from connecting Google on this tab. Their card
+   * was switched on before they left, but a spreadsheet destination with no
+   * spreadsheet is never stored, so without this it would come back closed.
+   */
+  googleJustConnected?: boolean;
   /** Names the spreadsheet the card creates for this form. */
   formName?: string;
   /** The form's mappable questions (from its steps). */
@@ -465,11 +482,21 @@ export function IntegrationsEditor({
   errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
-  const [sheets, setSheets] = useState<GoogleSheetsState>(() =>
-    initialGoogleSheets(initialDestinations),
-  );
+  const [sheets, setSheets] = useState<GoogleSheetsState>(() => {
+    const initial = initialGoogleSheets(initialDestinations);
+    // Opened, not saved: nothing about the destination is storable until a
+    // spreadsheet is chosen, and choosing one is an edit that saves itself.
+    return googleJustConnected && !initial.spreadsheetId ? { ...initial, enabled: true } : initial;
+  });
+  // Back from Google: put the card the author left from in front of them.
+  useEffect(() => {
+    if (!googleJustConnected) return;
+    document.getElementById('gsheets-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [googleJustConnected]);
   const [sf, setSf] = useState<SalesforceState>(() => initialSalesforce(initialDestinations));
   const [formActivityError, setFormActivityError] = useState<string | null>(null);
+  /** What the last save (or the header button) did to the sheet's row 1. */
+  const [sheetHeaderSync, setSheetHeaderSync] = useState<SheetHeaderSync | null>(null);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   // The destinations as the server last accepted them. Seeded from the freshly
   // fetched mount props and advanced on every successful save, so the "protect
@@ -479,12 +506,16 @@ export function IntegrationsEditor({
   // then restored it, and an actual submission was delivered to the old URL.
   const savedDestinations = useRef<FormDestination[]>(initialDestinations);
 
-  const properties = hubspotProps.enabled ? hubspotProps.properties : [];
-  const pickerEnabled = hubspotProps.enabled;
+  // Local copies of the tab's HubSpot load, so connecting HubSpot from its own
+  // card opens the mapping without a reload.
+  const [hubspotData, setHubspotData] = useState<HubSpotPropertiesResponse>(hubspotProps);
+  const [hubspotLive, setHubspotLive] = useState(hubspotConnected);
+  const properties = hubspotData.enabled ? hubspotData.properties : [];
+  const pickerEnabled = hubspotData.enabled;
   // Show the mapping when HubSpot is usable for this account: an explicit
   // account connection, OR the property picker resolved via the server env
   // fallback (self-host). Otherwise prompt the user to connect first.
-  const showMapping = hubspotConnected || pickerEnabled;
+  const showMapping = hubspotLive || pickerEnabled;
 
   /**
    * The destinations to persist, plus a webhook problem to report if there is
@@ -695,6 +726,9 @@ export function IntegrationsEditor({
       // author's mappings because a portal is missing a scope would be worse
       // than the missing activity.
       setFormActivityError(res.formActivityError ?? null);
+      // Only a save that touched the headings or the spreadsheet reports one;
+      // any other save leaves the last outcome on the card.
+      if (res.sheetHeaders) setSheetHeaderSync(res.sheetHeaders);
       // This array is now the server truth — the malformed-URL fallback carries
       // it forward instead of the stale mount snapshot.
       savedDestinations.current = built.destinations;
@@ -724,12 +758,18 @@ export function IntegrationsEditor({
   const { markDirty } = autosave;
   // This screen sends no lock stamp, so `conflict` cannot happen here; the
   // union still has to be closed, and an error is the honest rendering of it.
-  const status: 'saved' | 'saving' | 'retrying' | 'error' | 'partial' =
+  // The spreadsheet card switched on with no spreadsheet stores nothing (see
+  // `builtGoogleSheets`), so "saved" would promise a switch that comes back
+  // off on reload. Said as what it is instead.
+  const sheetsPending = sheets.enabled && builtGoogleSheets(sheets) === null;
+  const status: SaveStatus =
     autosave.status === 'saved' && partialBlocked
       ? 'partial'
-      : autosave.status === 'conflict'
-        ? 'error'
-        : autosave.status;
+      : autosave.status === 'saved' && sheetsPending
+        ? 'pending'
+        : autosave.status === 'conflict'
+          ? 'error'
+          : autosave.status;
   const statusDetail =
     autosave.status === 'error' || autosave.status === 'retrying'
       ? autosave.detail
@@ -792,8 +832,17 @@ export function IntegrationsEditor({
           onChange={editHubspot}
           properties={properties}
           pickerEnabled={pickerEnabled}
-          accountConnected={hubspotConnected}
+          accountConnected={hubspotLive}
           showMapping={showMapping}
+          access={access}
+          locale={locale}
+          onConnected={async () => {
+            setHubspotLive(true);
+            const res = await callAction(() => hubspotPropertiesAction());
+            // A transport failure leaves the picker as it was; the mapping
+            // still opens (the account IS connected) and a reload refills it.
+            if (!isTransportError(res)) setHubspotData(res);
+          }}
           // Legacy shape: this screen edits the FIRST HubSpot destination and
           // saves exactly one, so a stored second silently disappears on the
           // next save. Say so rather than letting it vanish (`buildDestinations`).
@@ -815,6 +864,11 @@ export function IntegrationsEditor({
           connected={googleSheetsConnected}
           pickerAvailable={googlePickerAvailable}
           formName={formName}
+          formId={id}
+          access={access}
+          headerSync={sheetHeaderSync}
+          onHeaderSync={setSheetHeaderSync}
+          beforeHeaderSync={autosave.flush}
           locale={locale}
           m={m}
         />
@@ -828,48 +882,122 @@ export function IntegrationsEditor({
         initialFields={salesforceFields}
         extraStored={initialDestinations.filter((d) => d.type === 'salesforce').length > 1}
         formId={id}
+        access={access}
         locale={locale}
         m={m}
       />
 
-      {/* The Save button is gone (V5-A4) — everything here autosaves, so what
-          belongs in this bar is the state of that save, not an action. */}
+      {/* The Save button is gone (V5-A4): everything here autosaves, so what
+          belongs on screen is the state of that save, not an action. */}
+      <SaveStatusPill status={status} detail={statusDetail} m={m} />
+    </div>
+  );
+}
+
+type SaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'partial' | 'pending';
+
+/** The pill's look for each save state. Tokens only, so both themes follow. */
+const PILL_TONE: Record<SaveStatus, { box: string; icon: string; dot: string }> = {
+  saved: {
+    box: 'border-signal-edge/60 bg-signal/15 text-foreground',
+    icon: 'pi-check',
+    // A solid signal disc carrying the check: the one unmistakable "done".
+    dot: 'bg-signal text-signal-foreground',
+  },
+  saving: { box: 'border-border bg-card text-muted-foreground', icon: 'pi-spinner pi-spin', dot: 'text-muted-foreground' },
+  retrying: { box: 'border-warning/50 bg-warning/10 text-foreground', icon: 'pi-sync pi-spin', dot: 'text-warning-ink' },
+  partial: { box: 'border-warning/50 bg-warning/10 text-foreground', icon: 'pi-exclamation-circle', dot: 'text-warning-ink' },
+  // Saved, with one card waiting on something only the author can give it.
+  pending: { box: 'border-border bg-card text-foreground', icon: 'pi-info-circle', dot: 'text-muted-foreground' },
+  error: {
+    box: 'border-destructive/60 bg-destructive/10 text-destructive',
+    icon: 'pi-exclamation-triangle',
+    dot: 'text-destructive',
+  },
+};
+
+/**
+ * The autosave state, as a pill fixed to the bottom-right corner of the window.
+ *
+ * Fixed, and portalled to `body`, because it is the one answer to "did that
+ * stick?" for the whole tab: a pill at the end of a long list of cards was
+ * found only by scrolling to it. `position: fixed` inside the editor would be
+ * pinned to whichever ancestor opens a stacking context instead of the
+ * window, so it is rendered outside them all.
+ *
+ * Below `sm` it is NOT fixed: on a phone a floating pill sits on top of the
+ * controls it scrolls over. There it is the last thing in the tab, in the
+ * flow, where it covers nothing.
+ *
+ * Its ground is solid card colour UNDER the tint, so whatever scrolls beneath
+ * the fixed pill never shows through it.
+ */
+export function SaveStatusPill({
+  status,
+  detail,
+  m,
+}: {
+  status: SaveStatus;
+  detail: string | null;
+  m: Msgs;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    // Lets the toast stack start above the pill (globals.css).
+    document.documentElement.classList.add('has-save-pill');
+    return () => document.documentElement.classList.remove('has-save-pill');
+  }, []);
+  const tone = PILL_TONE[status];
+  const text =
+    status === 'saved'
+      ? m.autosaved
+      : status === 'error'
+        ? (detail ?? m.saveError)
+        : status === 'partial'
+          ? `${m.autosavedPartial} ${detail ?? ''}`.trim()
+          : status === 'pending'
+            ? m.autosavedPendingSheet
+            : status === 'retrying'
+              ? m.saveRetrying
+              : m.saving;
+  const pill = (fixed: boolean) => (
+    <div
+      data-testid={fixed ? 'integrations-save-status' : 'integrations-save-status-inline'}
+      data-status={status}
+      // Both are live regions; only one is ever displayed (the other is
+      // `display: none` at that width), so a change is announced once.
+      aria-live="polite"
+      className={cn(
+        'rounded-[1.25rem] bg-card shadow-lg',
+        fixed
+          ? 'fixed bottom-5 right-5 z-40 hidden max-w-[min(28rem,calc(100vw-2.5rem))] sm:block'
+          : 'self-end sm:hidden',
+      )}
+    >
       <div
-        data-testid="integrations-save-status"
-        data-status={status}
-        aria-live="polite"
-        // A pill that carries its own ground, not a full-width band painted in
-        // the page colour: this editor sits on a white page in one place and on
-        // the grey work surface in another, and a band can only match one.
-        className="sticky bottom-3 flex w-fit items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm text-muted-foreground"
+        className={cn(
+          'flex items-center gap-2 rounded-[1.25rem] border py-1.5 pl-1.5 pr-4 text-sm font-medium',
+          tone.box,
+        )}
       >
-        <i
+        <span
           aria-hidden
-          className={cn(
-            'pi',
-            status === 'saved'
-              ? 'pi-check text-primary'
-              : status === 'error'
-                ? 'pi-exclamation-triangle text-destructive'
-                : status === 'partial'
-                  ? 'pi-exclamation-circle text-secondary'
-                  : 'pi-sync',
-          )}
-          style={{ fontSize: 12 }}
-        />
-        <span className={cn(status === 'error' && 'text-destructive')}>
-          {status === 'saved'
-            ? m.autosaved
-            : status === 'error'
-              ? (statusDetail ?? m.saveError)
-              : status === 'partial'
-                ? `${m.autosavedPartial} ${statusDetail ?? ''}`.trim()
-                : status === 'retrying'
-                  ? m.saveRetrying
-                  : m.saving}
+          className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full', tone.dot)}
+        >
+          <i className={cn('pi', tone.icon)} style={{ fontSize: 12 }} />
         </span>
+        {/* Two lines before it clips: a partial save names the card that did
+            not go through, and that sentence is the point of the state. */}
+        <span className="line-clamp-2 min-w-0 leading-snug">{text}</span>
       </div>
     </div>
+  );
+  return (
+    <>
+      {pill(false)}
+      {mounted ? createPortal(pill(true), document.body) : null}
+    </>
   );
 }
 
@@ -1655,10 +1783,19 @@ export function HubspotCard({
   questions,
   formId,
   partialsHeld = false,
+  access = DEFAULT_CONNECT_ACCESS,
+  locale: localeProp,
+  onConnected,
   m,
 }: {
   state: HubspotState;
   onChange: (s: HubspotState) => void;
+  /** Who may connect HubSpot from this card (see `ConnectInPlace`). */
+  access?: ConnectAccess;
+  /** For the connect form's copy; falls back to the editor's locale context. */
+  locale?: Locale;
+  /** HubSpot was connected from this card: the caller loads the properties. */
+  onConnected?: () => void | Promise<void>;
   /** Which form's delivery history the card reads. */
   formId: string;
   /** Spam protection holds partials: the contact is written on complete only. */
@@ -1684,7 +1821,9 @@ export function HubspotCard({
   m: Msgs;
 }) {
   const { success, toast } = useToast();
-  const locale = useContext(LocaleContext);
+  const contextLocale = useContext(LocaleContext);
+  const locale = localeProp ?? contextLocale;
+  const cm = getMessages(locale).admin.connections;
   const emailSource = readiness.source;
   const utmValues = useMemo(() => state.utmMappings, [state.utmMappings]);
   const questionKeys = useMemo(() => new Set(questions.map((q) => q.key)), [questions]);
@@ -1787,16 +1926,26 @@ export function HubspotCard({
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
         {extraHubspotNotice}
-        <div className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4">
-          <p className="text-sm font-medium text-foreground">{m.connectPromptTitle}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{m.connectPromptBody}</p>
-          <Link
-            href="/admin/integrations"
-            className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'mt-3')}
+        <div className="mt-4">
+          <ConnectInPlace
+            provider={m.hubspotTitle}
+            title={m.connectPromptTitle}
+            body={m.connectPromptBody}
+            access={access}
+            m={m}
+            cm={cm}
+            testId="hubspot-connect-prompt"
           >
-            {m.connectPromptCta}
-            <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
-          </Link>
+            <TokenConnectForm
+              provider="hubspot"
+              providerName={cm.hubspotName}
+              m={cm}
+              onConnected={() => {
+                success(cm.connectSuccess.replace('{provider}', cm.hubspotName));
+                void onConnected?.();
+              }}
+            />
+          </ConnectInPlace>
         </div>
       </section>
     );

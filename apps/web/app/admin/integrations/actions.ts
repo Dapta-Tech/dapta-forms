@@ -76,18 +76,21 @@ export async function connectSalesforceAction(input: {
 
 /**
  * Start the Google Sheets consent flow and hand back the URL to send the
- * browser to.
+ * browser to. Used by the Integrations page and by a form's Connect tab.
  *
  * The navigation stays with the client on purpose: the account this flow will
  * connect rides in a signed state minted by this call, so the URL has to be
  * followed exactly as returned. A `redirect()` from here would be followed by
  * the server action's own fetch rather than by the browser.
  */
-export async function startGoogleSheetsAuthAction(): Promise<
+export async function startGoogleSheetsAuthAction(returnTo?: string): Promise<
   { ok: true; authUrl: string } | { ok: false; message?: string }
 > {
   try {
-    const { authUrl } = await adminApi.authorizeGoogleSheets();
+    // `returnTo` is the dashboard path to land on afterwards (a form's editor).
+    // The API checks it against its own allowlist and signs it into the state,
+    // so a value it does not accept just means "back to Integrations".
+    const { authUrl } = await adminApi.authorizeGoogleSheets(returnTo);
     return { ok: true, authUrl };
   } catch (e) {
     unstable_rethrow(e);

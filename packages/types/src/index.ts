@@ -896,6 +896,22 @@ export const googleSheetsDestinationSchema = z.object({
       spreadsheetId: z.string().min(1).max(200).nullable().optional(),
       /** The tab written to, by its visible name. Absent writes to the first tab. */
       sheetTitle: z.string().max(200).nullable().optional(),
+      /**
+       * The header row dForms last wrote (or found already in place), and
+       * where. Bookkeeping the API owns, like HubSpot's `formSignature`: a
+       * caller's copy is discarded on every save and this is set from the
+       * stored row and the Sheets call's result. It is what lets a later edit
+       * to the columns rewrite row 1 while a row 1 that holds anything else
+       * is never touched.
+       */
+      headerSnapshot: z
+        .object({
+          spreadsheetId: z.string().min(1).max(200),
+          /** `''` is the first tab, the same as an absent `sheetTitle`. */
+          sheetTitle: z.string().max(200),
+          headers: z.array(z.string().max(200)).max(MAX_SHEET_COLUMNS),
+        })
+        .optional(),
     })
     .default({}),
   /**

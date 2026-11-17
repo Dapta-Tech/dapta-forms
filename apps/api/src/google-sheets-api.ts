@@ -250,3 +250,127 @@ export async function writeHeaderRow(
   if (!res.ok) return { ok: false, reason: reasonFor(res.status) };
   return { ok: true, written: true };
 }
+
+/** What keeping the header row in line with the columns did, or why not. */
+export type HeaderSyncResult =
+  /** Row 1 now reads exactly `headers` (it was written, or already did). */
+  | { ok: true; outcome: 'written' | 'unchanged' }
+  /**
+   * Row 1 holds something dForms cannot prove it wrote. Left exactly as it
+   * was: it may be a customer's own heading or their first row of data, and a
+   * spreadsheet does not remember what used to be in a cell. `current` is what
+   * row 1 holds, so the author can compare it before choosing to replace it.
+   */
+  | { ok: true; outcome: 'foreign'; current: string[] }
+  | { ok: false; reason: 'not_found' | 'forbidden' | 'unavailable' };
+
+const cellText = (cell: unknown): string => String(cell ?? '').trim();
+
+/**
+ * Whether row 1 is dForms' own: every non-empty cell equals the header a
+ * dForms header list puts at that same position.
+ *
+ * Position by position, never "the same set of names": a sheet whose author
+ * moved a column by hand, or typed a heading of their own after ours, holds a
+ * cell that no list of ours has at that place, and that cell is theirs. Empty
+ * cells say nothing either way, so a row that is a prefix of the list (a sheet
+ * created with fewer columns) is still ours, and an empty row is everyone's.
+ */
+export function ownsHeaderRow(row: unknown[], candidate: string[]): boolean {
+  return row.every((cell, i) => {
+    const text = cellText(cell);
+    return text === '' || text === (candidate[i] ?? '').trim();
+  });
+}
+
+/** The A1 range for the whole of row 1, quoted the way `headerRange` quotes. */
+function wholeRowRange(sheetTitle: string | undefined): string {
+  const title = sheetTitle?.trim();
+  return title ? `'${title.replace(/'/g, "''")}'!1:1` : '1:1';
+}
+
+/**
+ * Make row 1 read `headers`, if and only if row 1 is dForms' to change.
+ *
+ * Row 1 may be rewritten when it is empty, or when every non-empty cell of it
+ * matches one of the `owned` lists (the headers dForms last wrote there, or
+ * what the destination's columns said before this edit). `headers` itself
+ * always counts as owned, which is safe by construction: matching it means
+ * every occupied cell already holds the value it is about to be given, so the
+ * write only ever fills empty cells.
+ *
+ * Anything else in row 1 is somebody's, and this returns `foreign` without
+ * writing. That is the safety property the old empty-only writer had, kept:
+ * the overwrite is extended only to content dForms can prove it put there.
+ *
+ * `replace` lifts that rule for ONE call, and only the author's explicit,
+ * confirmed "replace row 1" sends it: a sheet whose headings were written
+ * before dForms kept a record of them (or renamed since) can be brought back
+ * in line, and the caller records the result so later syncs are automatic.
+ *
+ * The WHOLE of row 1 is read, not just as many cells as there are headers,
+ * because a heading the author typed one column past ours is exactly what a
+ * narrower read would miss and a wider write would destroy. The write spans
+ * whichever is longer, the new headers or the old row, padding with blanks,
+ * so removing a column clears its old heading instead of leaving it behind.
+ */
+export async function syncHeaderRow(
+  accessToken: string,
+  spreadsheetId: string,
+  sheetTitle: string | undefined,
+  headers: string[],
+  owned: string[][],
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs: number = SHEETS_ADMIN_TIMEOUT_MS,
+  opts: { replace?: boolean } = {},
+): Promise<HeaderSyncResult> {
+  const wanted = headers.map((h) => h.trim());
+  if (wanted.length === 0) return { ok: true, outcome: 'unchanged' };
+  const valuesBase = `${SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/`;
+
+  let read: Response;
+  try {
+    read = await fetchImpl(valuesBase + encodeURIComponent(wholeRowRange(sheetTitle)), {
+      headers: { authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+  if (!read.ok) return { ok: false, reason: reasonFor(read.status) };
+
+  const current = (await read.json().catch(() => null)) as { values?: unknown } | null;
+  const first = Array.isArray(current?.values) ? current.values[0] : undefined;
+  const row: unknown[] = Array.isArray(first) ? first : [];
+  // Trailing blanks are not content: Sheets trims them on its own, and a row
+  // typed into and cleared can still come back with a few.
+  let used = row.length;
+  while (used > 0 && cellText(row[used - 1]) === '') used -= 1;
+
+  const matches = used === wanted.length && wanted.every((h, i) => cellText(row[i]) === h);
+  if (matches) return { ok: true, outcome: 'unchanged' };
+
+  const ours = [wanted, ...owned].some((candidate) => ownsHeaderRow(row.slice(0, used), candidate));
+  if (!ours && !opts.replace) {
+    return { ok: true, outcome: 'foreign', current: row.slice(0, used).map(cellText) };
+  }
+
+  const width = Math.max(wanted.length, used);
+  const values = Array.from({ length: width }, (_, i) => wanted[i] ?? '');
+  const write = new URL(valuesBase + encodeURIComponent(headerRange(sheetTitle, columnLetter(width))));
+  // RAW, like every other write here: a heading that begins with `=` is text.
+  write.searchParams.set('valueInputOption', 'RAW');
+  let res: Response;
+  try {
+    res = await fetchImpl(write.toString(), {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ values: [values] }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+  if (!res.ok) return { ok: false, reason: reasonFor(res.status) };
+  return { ok: true, outcome: 'written' };
+}

@@ -51,6 +51,7 @@ import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/
 import {
   createSpreadsheet,
   listSheetTabs,
+  syncHeaderRow,
   writeHeaderRow,
   type SheetTabDto,
 } from './google-sheets-api';
@@ -69,6 +70,7 @@ import {
   googleOAuthClient,
   googlePickerConfig,
   googleStateKey,
+  safeGoogleReturnTo,
   grantedSheetsAccess,
   signGoogleState,
   verifyGoogleState,
@@ -494,6 +496,27 @@ export type GoogleSheetsHeaderRowResponse =
   | { ok: true; written: false; reason: 'not_empty' }
   | { ok: false; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
 
+/**
+ * What keeping a form's header row in line with its columns did.
+ *
+ * Reported by the destinations save (when that save changed the headers or
+ * the spreadsheet) and by the form's "update the header row" button. Never a
+ * reason for the save itself to fail: the columns are stored either way.
+ */
+export type SheetHeaderSync =
+  | { outcome: 'written' | 'unchanged' }
+  /**
+   * Row 1 does not match and was left alone. `current` is what it holds and
+   * `headers` what would be written, for the card's side-by-side.
+   */
+  | { outcome: 'foreign'; current: string[]; headers: string[] }
+  | { outcome: 'failed'; reason: 'not_connected' | 'not_found' | 'forbidden' | 'unavailable' };
+
+/** The form-scoped header button's answer. */
+export type FormSheetHeaderRowResponse =
+  | ({ ok: true } & SheetHeaderSync)
+  | { ok: false; reason: 'not_configured' };
+
 /** Narrow a path param to a known provider, or 400 (never echoes the raw input). */
 function parseProvider(raw: string): IntegrationProvider {
   if ((integrationProviders as readonly string[]).includes(raw)) return raw as IntegrationProvider;
@@ -850,9 +873,15 @@ export class IntegrationsController {
    * a redirect answer there would be followed by `fetch`, not by the browser.
    */
   @Post('google-sheets/authorize')
-  async googleAuthorize(@Req() req: ReqLike): Promise<{ authUrl: string }> {
+  async googleAuthorize(@Req() req: ReqLike, @Body() body?: unknown): Promise<{ authUrl: string }> {
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
+    // Where to land afterwards, when the flow starts on a form's Connect tab
+    // instead of this page. Anything that is not one of the allowed dashboard
+    // paths is dropped rather than refused: the flow still works, it just
+    // returns to the connections page, and nothing the caller sends can turn
+    // the callback into an open redirect.
+    const returnTo = safeGoogleReturnTo(isRecord(body) ? body.returnTo : undefined);
 
     const client = googleOAuthClient(this.env);
     if (!client) {
@@ -872,7 +901,9 @@ export class IntegrationsController {
       });
     }
 
-    return { authUrl: googleAuthorizeUrl(client, signGoogleState(p.accountId, key)) };
+    return {
+      authUrl: googleAuthorizeUrl(client, signGoogleState(p.accountId, key, Date.now(), returnTo)),
+    };
   }
 
   /**
@@ -899,19 +930,22 @@ export class IntegrationsController {
     // value; anything else is treated as missing and ends in `error=google`.
     const code = typeof rawCode === 'string' ? rawCode : undefined;
     const state = typeof rawState === 'string' ? rawState : undefined;
+    const client = googleOAuthClient(this.env);
+    const key = googleStateKey(this.env);
+    // Verified up front, even on the paths that end in an error, because the
+    // state is also what says WHERE the operator started: a form's Connect tab
+    // gets its outcome there, not on a page they never opened. Only a verified
+    // state is read for it; an unverified one returns to the connections page.
+    const claims = key && state ? verifyGoogleState(state, key) : null;
     const done = (params: string) => ({
-      url: `${this.connectionsUrl()}?${params}`,
+      url: this.returnUrl(claims?.returnTo, params),
       statusCode: 302,
     });
     // The operator pressed Cancel on the consent screen. Not an error worth a
     // scary toast, and nothing was stored.
     if (denied) return done('google=cancelled');
 
-    const client = googleOAuthClient(this.env);
-    const key = googleStateKey(this.env);
     if (!client || !key || !code || !state) return done('error=google');
-
-    const claims = verifyGoogleState(state, key);
     if (!claims) return done('error=google');
 
     const tokens = await this.exchangeGoogle(client, code);
@@ -1072,10 +1106,20 @@ export class IntegrationsController {
     return result.written ? { ok: true, written: true } : { ok: true, written: false, reason: 'not_empty' };
   }
 
-  /** The admin page a finished consent flow returns to. */
-  private connectionsUrl(): string {
+  /**
+   * The admin page a finished consent flow returns to, with its outcome flag.
+   *
+   * The connections page by default, or the form the flow was started from
+   * when the signed state names one (its Connect tab, so the author lands back
+   * on the card they pressed the button on). The origin is always the
+   * deployment's own `PUBLIC_APP_URL`; the state contributes a path from a
+   * fixed allowlist and nothing else.
+   */
+  private returnUrl(returnTo: string | undefined, params: string): string {
     const base = (this.env.PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '');
-    return `${base}/admin/integrations`;
+    const path = safeGoogleReturnTo(returnTo) ?? '/admin/integrations';
+    const query = path.startsWith('/admin/forms/') ? `tab=connect&${params}` : params;
+    return `${base}${path}?${query}`;
   }
 
   /** Seam for the specs: the one network call the callback makes. */
@@ -1305,6 +1349,58 @@ function mirrorSettingsFor(
   return out;
 }
 
+/** Where a spreadsheet destination writes, and what dForms last put in its row 1. */
+interface SheetHeaderSnapshot {
+  spreadsheetId: string;
+  sheetTitle: string;
+  headers: string[];
+}
+
+/**
+ * Each Sheets Admin call on the SAVE path gets this long, not the ten seconds
+ * the Connect tab's own buttons get: the save waits on it, and the autosave
+ * that sent the save gives up at fifteen.
+ */
+const SHEETS_SAVE_TIMEOUT_MS = 4_000;
+
+/** The headers a destination's columns put in row 1, in order. */
+function sheetHeadersOf(entry: Record<string, unknown> | undefined): string[] {
+  const columns = Array.isArray(entry?.columns) ? entry.columns : [];
+  return columns
+    .map((c) => (isRecord(c) && typeof c.header === 'string' ? c.header.trim() : ''))
+    .filter((h) => h !== '');
+}
+
+/** Where a destination writes: its spreadsheet and tab (`''` is the first tab). */
+function sheetTargetOf(
+  entry: Record<string, unknown> | undefined,
+): { spreadsheetId: string; sheetTitle: string } | null {
+  const settings = isRecord(entry?.settings) ? entry.settings : {};
+  const spreadsheetId = typeof settings.spreadsheetId === 'string' ? settings.spreadsheetId.trim() : '';
+  if (!spreadsheetId) return null;
+  const sheetTitle = typeof settings.sheetTitle === 'string' ? settings.sheetTitle.trim() : '';
+  return { spreadsheetId, sheetTitle };
+}
+
+/** A stored snapshot, duck-typed like `storedMirrorState` so an old row still yields one. */
+function snapshotOf(entry: Record<string, unknown> | undefined): SheetHeaderSnapshot | null {
+  const raw = isRecord(entry?.settings) ? entry.settings.headerSnapshot : undefined;
+  if (!isRecord(raw) || typeof raw.spreadsheetId !== 'string' || !Array.isArray(raw.headers)) return null;
+  return {
+    spreadsheetId: raw.spreadsheetId,
+    sheetTitle: typeof raw.sheetTitle === 'string' ? raw.sheetTitle : '',
+    headers: raw.headers.filter((h): h is string => typeof h === 'string'),
+  };
+}
+
+const sameList = (a: string[], b: string[]): boolean =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
+
+const firstSheetsEntry = (list: unknown): Record<string, unknown> | undefined =>
+  Array.isArray(list)
+    ? (list.find((d) => isRecord(d) && d.type === 'google-sheets') as Record<string, unknown> | undefined)
+    : undefined;
+
 /**
  * Auth-gated PARTIAL config write for the integrations screen: replaces ONLY the
  * `destinations` key, merged against the row's fresh config server-side in one
@@ -1326,6 +1422,10 @@ export class FormDestinationsController {
     @Optional()
     @Inject(HubspotPropertiesService)
     private readonly hubspotProperties?: HubspotPropertiesService,
+    /** The app-wide Google token cache, shared with the delivery path. */
+    @Optional()
+    @Inject(GoogleSheetsAccessTokens)
+    private readonly googleTokens?: GoogleSheetsAccessTokens,
   ) {}
 
   @Put('forms/:id/destinations')
@@ -1360,14 +1460,165 @@ export class FormDestinationsController {
     // never fails the save: an author must be able to edit their mappings while
     // a portal is unreachable or has not granted the scopes.
     const mirror = await this.syncMirror(p.accountId, before.name, destinations, stored);
-    const out = await updateFormDestinations(this.db, p.accountId, id, mirror.destinations);
+    // Same rule for the spreadsheet's header row: brought in line BEFORE
+    // storing, so the snapshot of what was written lands in this same write.
+    const sheets = await this.syncSheetHeaders(p.accountId, mirror.destinations, stored);
+    const out = await updateFormDestinations(this.db, p.accountId, id, sheets.destinations);
     if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     // Never echo the stored webhook secret back to the client (mask on READ).
     return {
       ...out.value,
       config: maskConfigSecrets(out.value.config),
       ...(mirror.error ? { formActivityError: mirror.error } : {}),
+      ...(sheets.result ? { sheetHeaders: sheets.result } : {}),
     };
+  }
+
+  /**
+   * The Connect tab's "update the header row" button: bring row 1 in line with
+   * the columns this form has STORED, now.
+   *
+   * Form-scoped and read from the stored config rather than from a body,
+   * unlike the account-level `google-sheets/header-row` route it replaces in
+   * the editor: the headers, the spreadsheet and the snapshot of what was last
+   * written all come from the row, so nothing the browser sends decides what
+   * gets overwritten. The same rule as the save path decides whether anything
+   * is (see `syncHeaderRow`).
+   */
+  @Post('forms/:id/destinations/google-sheets/header-row')
+  @HttpCode(200)
+  async syncFormSheetHeaders(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+    @Body() body?: unknown,
+  ): Promise<FormSheetHeaderRowResponse> {
+    const p = await this.auth.resolveHost(req);
+    const form = await getFormById(this.db, p.accountId, id);
+    if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    const stored = (form.config as { destinations?: unknown } | null)?.destinations;
+    const entry = firstSheetsEntry(stored);
+    if (!entry || !sheetTargetOf(entry) || sheetHeadersOf(entry).length === 0) {
+      return { ok: false, reason: 'not_configured' };
+    }
+    // `replace: true` is the author's confirmed "replace row 1": the one path
+    // that may overwrite a row 1 dForms cannot prove it wrote. A literal
+    // `true` only; anything else is the ordinary, conservative sync.
+    const replace = isRecord(body) && body.replace === true;
+    const synced = await this.syncSheetHeaders(p.accountId, stored as unknown[], stored, {
+      force: true,
+      replace,
+      timeoutMs: SHEETS_SAVE_TIMEOUT_MS * 2,
+    });
+    const before = snapshotOf(entry);
+    const after = snapshotOf(firstSheetsEntry(synced.destinations));
+    // Written back only when the snapshot moved, so a press that finds row 1
+    // already right (or someone else's) is a read and nothing more.
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      const out = await updateFormDestinations(this.db, p.accountId, id, synced.destinations);
+      if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    }
+    return { ok: true, ...(synced.result ?? { outcome: 'unchanged' }) };
+  }
+
+  /**
+   * Keep the spreadsheet's row 1 in line with the columns, returning the
+   * destinations to store and what the attempt did.
+   *
+   * Runs only when this write CHANGES what row 1 should say: different
+   * headers, or a different spreadsheet or tab. A save that touched something
+   * else (a HubSpot mapping, the switch) costs Google nothing, and a row 1
+   * that was left alone as someone else's is not re-read on every keystroke
+   * after. `force` is the button, which asks regardless.
+   *
+   * `headerSnapshot` is this method's own bookkeeping, sourced from what is
+   * STORED and from the result, never from the caller, for the reason
+   * `syncMirror` gives for the HubSpot guid: it decides what may be
+   * overwritten in somebody's spreadsheet, so a client must not be able to
+   * claim a row 1 dForms never wrote.
+   *
+   * The lists row 1 may match to count as dForms' own are the snapshot (for
+   * this exact spreadsheet and tab) and the headers the STORED columns had
+   * before this edit. The second covers a destination saved before snapshots
+   * existed, whose row 1 was written by the create call, and a snapshot lost
+   * to a racing save. Both are header lists dForms produced for this target,
+   * so neither can make a foreign row look like ours.
+   */
+  private async syncSheetHeaders(
+    accountId: string,
+    destinations: unknown[],
+    stored: unknown,
+    opts: { force?: boolean; replace?: boolean; timeoutMs?: number } = {},
+  ): Promise<{ destinations: unknown[]; result?: SheetHeaderSync }> {
+    const index = destinations.findIndex((d) => isRecord(d) && d.type === 'google-sheets');
+    if (index === -1) return { destinations };
+    const raw = destinations[index] as Record<string, unknown>;
+    const storedEntry = firstSheetsEntry(stored);
+    const storedSnapshot = snapshotOf(storedEntry);
+
+    // Strip-then-set, as `mirrorSettingsFor` does: a caller's snapshot never
+    // survives, and the stored one is carried unless this attempt replaces it.
+    const settings: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(isRecord(raw.settings) ? raw.settings : {})) {
+      if (k !== 'headerSnapshot') settings[k] = v;
+    }
+    const withSnapshot = (snapshot: SheetHeaderSnapshot | null, result?: SheetHeaderSync) => {
+      const next = [...destinations];
+      next[index] = { ...raw, settings: snapshot ? { ...settings, headerSnapshot: snapshot } : settings };
+      return { destinations: next, ...(result ? { result } : {}) };
+    };
+
+    const target = sheetTargetOf({ settings });
+    const headers = sheetHeadersOf(raw);
+    if (!target || headers.length === 0) return withSnapshot(storedSnapshot);
+
+    const storedTarget = sheetTargetOf(storedEntry);
+    const sameTarget =
+      storedTarget?.spreadsheetId === target.spreadsheetId &&
+      storedTarget.sheetTitle === target.sheetTitle;
+    const storedHeaders = sheetHeadersOf(storedEntry);
+    if (!opts.force && sameTarget && sameList(headers, storedHeaders)) {
+      return withSnapshot(storedSnapshot);
+    }
+
+    const owned: string[][] = [];
+    if (
+      storedSnapshot &&
+      storedSnapshot.spreadsheetId === target.spreadsheetId &&
+      storedSnapshot.sheetTitle === target.sheetTitle
+    ) {
+      owned.push(storedSnapshot.headers);
+    }
+    if (sameTarget && storedHeaders.length > 0) owned.push(storedHeaders);
+
+    let token = '';
+    try {
+      token = await this.googleAccessToken(accountId);
+    } catch {
+      return withSnapshot(storedSnapshot, { outcome: 'failed', reason: 'unavailable' });
+    }
+    if (!token) return withSnapshot(storedSnapshot, { outcome: 'failed', reason: 'not_connected' });
+
+    const result = await syncHeaderRow(
+      token,
+      target.spreadsheetId,
+      target.sheetTitle || undefined,
+      headers,
+      owned,
+      this.fetchImpl,
+      opts.timeoutMs ?? SHEETS_SAVE_TIMEOUT_MS,
+      { replace: opts.replace },
+    );
+    if (!result.ok) return withSnapshot(storedSnapshot, { outcome: 'failed', reason: result.reason });
+    if (result.outcome === 'foreign') {
+      return withSnapshot(storedSnapshot, { outcome: 'foreign', current: result.current, headers });
+    }
+    return withSnapshot({ ...target, headers }, { outcome: result.outcome });
+  }
+
+  /** Seam for the specs: the account's Google access token, or `''` without one. */
+  private googleAccessToken(accountId: string): Promise<string> {
+    if (!this.googleTokens) return Promise.resolve('');
+    return this.googleTokens.resolve(this.db, accountId, this.env, this.fetchImpl);
   }
 
   /**
