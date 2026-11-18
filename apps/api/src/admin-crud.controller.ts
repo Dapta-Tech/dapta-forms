@@ -110,6 +110,7 @@ import {
   INTEGRATION_NOT_CONNECTED,
   integrationsPageUrl,
 } from './destination-connections';
+import { goHighLevelMappingIssue } from './gohighlevel-mappings';
 import type { ServerEnv } from '@quill/config/env';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
@@ -614,6 +615,9 @@ export class AdminCrudController {
     // both create a record.
     const extra = extraOnePerFormDestination((input.config as { destinations?: unknown } | undefined)?.destinations);
     if (extra) throw new BadRequestException({ error: 'BAD_REQUEST', message: extra.message });
+    // HighLevel custom-field types, as on PUT /forms/:id/destinations (nothing stored yet).
+    const ghlIssue = goHighLevelMappingIssue((input.config as { destinations?: unknown } | undefined)?.destinations);
+    if (ghlIssue) throw new BadRequestException({ error: 'BAD_REQUEST', message: ghlIssue.message, path: ghlIssue.path });
     // A Sheets or Salesforce destination with no connection behind it would
     // deliver into nothing, exactly as on PUT /forms/:id/destinations, so the
     // same rule runs here with nothing stored to compare against: every

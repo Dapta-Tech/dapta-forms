@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   deletePendingOutbox,
   enqueueOutbox,
+  markIntegrationRejected,
   resolveProviderToken,
   type Db,
   type OutboxKind,
@@ -28,6 +29,8 @@ import { fileLinksFor } from './file-link';
 import { GoogleSheetsAccessTokens } from './google-sheets-token';
 import { SalesforceAccessTokens } from './salesforce-auth';
 import { SalesforceFieldsService } from './salesforce-fields';
+import { readGoHighLevelConnection } from './gohighlevel-api';
+import { GoHighLevelFieldsService } from './gohighlevel-fields';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import { HubspotPropertiesService } from './integrations.controller';
 import { destinationUsesHutk, withoutHutk } from './submission-visit';
@@ -107,6 +110,10 @@ export class DestinationEffects {
     @Optional()
     @Inject(SalesforceFieldsService)
     private readonly salesforceFields?: SalesforceFieldsService,
+    /** HighLevel custom-field types per account, shared with the controller. */
+    @Optional()
+    @Inject(GoHighLevelFieldsService)
+    private readonly goHighLevelFields?: GoHighLevelFieldsService,
   ) {}
 
   /**
@@ -280,10 +287,45 @@ export class DestinationEffects {
    */
   private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
     if (destination.type === 'gohighlevel') {
-      // Nothing to resolve yet: there is no connection to read and no adapter
-      // to hand it to, so the factory turns this into its named no-op. This is
-      // where the account's credentials and the field types will be read.
-      return { type: 'gohighlevel' };
+      // The stored token and Location ID, read at DELIVERY time (never in the
+      // payload). Empty when not connected, which the factory turns into its
+      // named no-op.
+      const conn = await readGoHighLevelConnection(this.db, accountId, this.env?.FORMS_ENCRYPTION_KEY);
+      // Each custom field's type as the location reports it now, so a field
+      // retyped in GHL gets the right shape (or is left out). Unknown is
+      // tolerated: the adapter falls back to the type stored on the mapping.
+      const customFieldTypes = conn ? await this.goHighLevelFields?.fieldTypes(accountId, conn.credentials) : undefined;
+      return {
+        type: 'gohighlevel',
+        gohighlevel: {
+          credentials: conn?.credentials ?? { token: '', locationId: '' },
+          fieldMappings: destination.fieldMappings ?? {},
+          utmMappings: destination.utmMappings ?? {},
+          scoreField: destination.scoreField ?? undefined,
+          dateField: destination.dateField ?? undefined,
+          dayTimezone: destination.dayTimezone,
+          staticFields: destination.staticFields,
+          tags: destination.tags,
+          source: destination.source ?? undefined,
+          customFieldTypes,
+          // A 401 or 403 from GHL: the token was revoked, rotated or lost a
+          // scope. Marked on the stored connection, guarded by the very
+          // ciphertext this delivery read, so a reconnect that happened
+          // meanwhile is never marked; the Connections card then says GHL
+          // stopped accepting the token. Best effort: a failed mark never
+          // changes how the delivery settles.
+          onRejected: conn
+            ? async () => {
+                try {
+                  await markIntegrationRejected(this.db, accountId, 'gohighlevel', conn.encryptedToken);
+                  this.goHighLevelFields?.invalidate(accountId);
+                } catch (err) {
+                  this.log.warn(`could not mark the HighLevel connection rejected: ${String(err)}`);
+                }
+              }
+            : undefined,
+        },
+      };
     }
     if (destination.type === 'salesforce') {
       // Minted from the account's Client Credentials at DELIVERY time, cached
