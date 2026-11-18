@@ -29,6 +29,7 @@ vi.mock('@/lib/product-analytics', () => ({
 }));
 
 import { AdminShell, type ShellAnnouncement } from './admin-shell';
+import { resetAnnouncementLoad } from './announcement/announcement-client';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,7 +38,6 @@ const ANN: ShellAnnouncement = {
   cta: '/admin/integrations',
   railBadge: 'integrations',
   badge: true,
-  card: true,
 };
 
 function shell(opts: { collapsed?: boolean; locale?: Locale; announcement?: ShellAnnouncement | null } = {}) {
@@ -85,11 +85,23 @@ function integrationLinks(html: string) {
   return { desktop: desktop!, drawer: drawer! };
 }
 
+/** The viewport: wide shows the desktop rail, narrow only the drawer. */
+function viewport(wide: boolean) {
+  window.matchMedia = ((q: string) => ({
+    matches: q.includes('min-width') ? wide : false,
+    media: q,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })) as unknown as typeof window.matchMedia;
+}
+
 beforeEach(() => {
   nav.pathname = '/admin';
   calls.actions = [];
   calls.events = [];
   window.sessionStorage.clear();
+  resetAnnouncementLoad();
+  viewport(true);
 });
 afterEach(async () => {
   if (root) await act(async () => root!.unmount());
@@ -190,6 +202,26 @@ describe('AdminShell: what the rail reports', () => {
     nav.pathname = '/admin/integrations/dcal';
     await mount(shell());
     expect(calls.actions).toEqual([['integrations-2026-11', 'clicked']]);
+  });
+
+  it('on a phone, counts a sighting only once the drawer shows the badge', async () => {
+    viewport(false);
+    nav.pathname = '/admin/forms';
+    await mount(shell());
+    expect(calls.actions).toEqual([]);
+    await act(async () => document.querySelector<HTMLElement>('header button[aria-expanded]')!.click());
+    expect(calls.actions).toEqual([['integrations-2026-11', 'seen']]);
+  });
+
+  it('follows a different announcement handed in later', async () => {
+    await mount(shell());
+    nav.pathname = '/admin/integrations';
+    await act(async () => root!.render(shell()));
+    const next = { ...ANN, id: 'next-one' };
+    nav.pathname = '/admin';
+    await act(async () => root!.render(shell({ announcement: next })));
+    expect(document.querySelector('[data-testid="nav-badge"]')).not.toBeNull();
+    expect(calls.actions.at(-1)).toEqual(['next-one', 'seen']);
   });
 
   it('reports nothing from the builder', async () => {

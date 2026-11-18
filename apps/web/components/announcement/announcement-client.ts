@@ -21,6 +21,58 @@ export function reportAnnouncement(id: string, event: AnnouncementEvent): void {
   void callAction(() => recordAnnouncementAction(id, event));
 }
 
+/**
+ * What this page load already knows, kept for as long as the tab lives. The
+ * server's answer can be older than it: Back restores Home from the router's
+ * cache with the card it had, and the layout is not re-rendered on client
+ * navigation. Both surfaces read this before showing anything.
+ */
+const seenThisLoad = new Set<string>();
+const cardClosed = new Set<string>();
+const followed = new Set<string>();
+const listeners = new Set<() => void>();
+const changed = () => listeners.forEach((l) => l());
+
+/** One `seen` per announcement per load of the dashboard, whichever surface reports it first. */
+export function reportAnnouncementSeen(id: string): void {
+  if (seenThisLoad.has(id) || followed.has(id)) return;
+  seenThisLoad.add(id);
+  reportAnnouncement(id, 'seen');
+}
+
+export function markAnnouncementCardClosed(id: string): void {
+  cardClosed.add(id);
+  changed();
+}
+
+export function markAnnouncementFollowed(id: string): void {
+  followed.add(id);
+  changed();
+}
+
+/** Whether the card must stay hidden on this load: closed, or its route already reached. */
+export function isAnnouncementCardClosed(id: string): boolean {
+  return cardClosed.has(id) || followed.has(id);
+}
+
+export function isAnnouncementFollowed(id: string): boolean {
+  return followed.has(id);
+}
+
+/** For `useSyncExternalStore`. */
+export function subscribeAnnouncements(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Tests only: a fresh load. */
+export function resetAnnouncementLoad(): void {
+  seenThisLoad.clear();
+  cardClosed.clear();
+  followed.clear();
+  pendingSurface = null;
+}
+
 /** `forms_announcement_seen`, at most once per browser session for this id and surface. */
 export function captureAnnouncementSeen(id: string, surface: AnnouncementSurface): void {
   const key = `forms.announcement.seen:${id}:${surface}`;

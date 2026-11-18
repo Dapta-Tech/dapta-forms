@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type TransitionEvent as ReactTransitionEvent,
@@ -21,8 +22,12 @@ import { IntegrationLogos } from '@/components/integration-logos';
 import {
   captureAnnouncement,
   captureAnnouncementSeen,
+  isAnnouncementFollowed,
+  markAnnouncementFollowed,
   markAnnouncementSurface,
   reportAnnouncement,
+  reportAnnouncementSeen,
+  subscribeAnnouncements,
   takeAnnouncementSurface,
 } from '@/components/announcement/announcement-client';
 import type { Workspace } from '@/lib/admin-api';
@@ -180,6 +185,24 @@ function navRowClass(collapsed: boolean, state: 'active' | 'idle') {
   ]
     .filter(Boolean)
     .join(' ');
+}
+
+/** Whether the viewport is at least `px` wide, read after mount (false on the server). */
+function useMinWidth(px: number): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    let query: MediaQueryList;
+    try {
+      query = window.matchMedia(`(min-width: ${px}px)`);
+    } catch {
+      return;
+    }
+    const sync = () => setWide(query.matches);
+    sync();
+    query.addEventListener?.('change', sync);
+    return () => query.removeEventListener?.('change', sync);
+  }, [px]);
+  return wide;
 }
 
 /** The "New" mark one rail item carries while an announcement points at it. */
@@ -415,8 +438,6 @@ export interface ShellAnnouncement {
   railBadge: AnnouncementRailItem | null;
   /** Whether the badge shows (false for an announcement without one). */
   badge: boolean;
-  /** Whether the home card shows (false once the person closed it). */
-  card: boolean;
 }
 
 export interface ShellUser {
@@ -482,33 +503,37 @@ export function AdminShell({
   // The layout is not re-rendered on client navigation, so what it read at load
   // is followed here: reaching the announcement's route ends it at once (card
   // and badge), and is stored against the person. The builder shows none of
-  // it, so a load there reports nothing either.
-  const [announcementDone, setAnnouncementDone] = useState(false);
-  const seenReported = useRef(false);
+  // it, so a load there reports nothing either. What this load learned lives
+  // in announcement-client.ts, keyed by id, so the card on a Home restored by
+  // Back agrees with the rail.
   const annId = announcement?.id ?? null;
   const annCta = announcement?.cta ?? null;
   const onAnnouncementRoute = annCta !== null && isNavItemActive(pathname, annCta);
+  const followed = useSyncExternalStore(
+    subscribeAnnouncements,
+    () => (annId ? isAnnouncementFollowed(annId) : false),
+    () => false,
+  );
   useEffect(() => {
-    if (!annId || announcementDone || !onAnnouncementRoute) return;
-    setAnnouncementDone(true);
+    if (!annId || followed || !onAnnouncementRoute) return;
+    markAnnouncementFollowed(annId);
     reportAnnouncement(annId, 'clicked');
     captureAnnouncement('clicked', annId, takeAnnouncementSurface());
-  }, [annId, announcementDone, onAnnouncementRoute]);
+  }, [annId, followed, onAnnouncementRoute]);
   const badgeItem =
-    announcement && announcement.badge && !announcementDone && !studio && !onAnnouncementRoute
+    announcement && announcement.badge && !followed && !studio && !onAnnouncementRoute
       ? announcement.railBadge
       : null;
-  // One sighting per load of the dashboard, which is what the session count is
-  // made of: the API folds sightings closer than its gap into one session. A
-  // sighting needs something on screen: the badge, or the card on the home.
-  const cardOnScreen = !!announcement?.card && pathname === '/admin';
+  // A sighting counts only when the badge is really on screen: the desktop
+  // rail from 768px up, or the drawer once it is opened. Under 768px the rail
+  // is display:none and the drawer sits off screen, so a phone on any page but
+  // Home would otherwise spend a session on nothing. The card reports its own.
+  const railOnScreen = useMinWidth(768) || drawerOpen;
   useEffect(() => {
-    if (!annId || seenReported.current || announcementDone) return;
-    if (!badgeItem && !cardOnScreen) return;
-    seenReported.current = true;
-    reportAnnouncement(annId, 'seen');
-    if (badgeItem) captureAnnouncementSeen(annId, 'rail');
-  }, [annId, announcementDone, badgeItem, cardOnScreen]);
+    if (!annId || !badgeItem || !railOnScreen) return;
+    reportAnnouncementSeen(annId);
+    captureAnnouncementSeen(annId, 'rail');
+  }, [annId, badgeItem, railOnScreen]);
 
   // Persist the desktop rail preference to a cookie so the SERVER renders the
   // correct width on the next load (no flash) — see AdminLayout.

@@ -113,7 +113,6 @@ export default async function AdminLayout({ children }: { children: ReactNode })
                 cta: announcement.cta,
                 railBadge: announcement.railBadge,
                 badge: announcement.badge,
-                card: announcement.card,
               }
             : null
         }

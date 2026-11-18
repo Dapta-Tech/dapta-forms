@@ -23,7 +23,12 @@ vi.mock('@/lib/product-analytics', () => ({
 }));
 
 import { AnnouncementCard } from './announcement-card';
-import { takeAnnouncementSurface } from './announcement-client';
+import {
+  markAnnouncementFollowed,
+  reportAnnouncementSeen,
+  resetAnnouncementLoad,
+  takeAnnouncementSurface,
+} from './announcement-client';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -84,6 +89,7 @@ beforeEach(() => {
   motion(false);
   document.documentElement.setAttribute('data-theme', 'light');
   window.sessionStorage.clear();
+  resetAnnouncementLoad();
   (window as unknown as { IntersectionObserver: unknown }).IntersectionObserver = class {
     private entry: { cb: IntersectionObserverCallback; el?: Element };
     constructor(cb: IntersectionObserverCallback) {
@@ -136,7 +142,10 @@ describe('AnnouncementCard: copy and controls', () => {
     expect(calls.events).toEqual([['announcement_seen', { announcement_id: a.id, surface: 'card' }]]);
     await act(async () => $('[data-testid="home-announcement-close"]')!.click());
     expect($('[data-testid="home-announcement"]')).toBeNull();
-    expect(calls.actions).toEqual([[a.id, 'dismissed']]);
+    expect(calls.actions).toEqual([
+      [a.id, 'seen'],
+      [a.id, 'dismissed'],
+    ]);
     expect(calls.events.at(-1)).toEqual(['announcement_dismissed', { announcement_id: a.id, surface: 'card' }]);
   });
 
@@ -147,6 +156,50 @@ describe('AnnouncementCard: copy and controls', () => {
     await act(async () => cta.click());
     expect(takeAnnouncementSurface()).toBe('card');
     expect(takeAnnouncementSurface()).toBe('page');
+  });
+
+  it('stays closed when Home is shown again on the same load (Back), and after its route was reached', async () => {
+    await mount(card());
+    await act(async () => $('[data-testid="home-announcement-close"]')!.click());
+    await act(async () => root.unmount());
+    host.remove();
+    await mount(card());
+    expect($('[data-testid="home-announcement"]')).toBeNull();
+
+    resetAnnouncementLoad();
+    markAnnouncementFollowed(a.id);
+    await act(async () => root.unmount());
+    host.remove();
+    await mount(card());
+    expect($('[data-testid="home-announcement"]')).toBeNull();
+  });
+
+  it('hands focus to the next control when closed from the keyboard', async () => {
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <>
+          {card()}
+          <section>
+            <a href="/admin/developers/connect" data-testid="next-cta">
+              Connect your agent
+            </a>
+          </section>
+        </>,
+      ),
+    );
+    const close = $('[data-testid="home-announcement-close"]')!;
+    close.focus();
+    await act(async () => close.click());
+    expect(document.activeElement).toBe($('[data-testid="next-cta"]'));
+  });
+
+  it('reports one sighting per load, shared with the rail', async () => {
+    reportAnnouncementSeen(a.id);
+    await mount(card());
+    expect(calls.actions.filter(([, e]) => e === 'seen')).toHaveLength(1);
   });
 
   it('counts "seen" in analytics once per browser session', async () => {

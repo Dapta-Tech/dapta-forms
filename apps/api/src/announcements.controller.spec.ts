@@ -189,6 +189,18 @@ describe('the session cap', () => {
     clock += 1;
     expect((await c.current(asOwner())).announcement).toBeNull();
   });
+
+  it('a closed card leaves a badge the session cap does not end; only the visit does', async () => {
+    const c = controller();
+    await c.record(asOwner(), 'integrations-2026-11', { event: 'dismissed' });
+    for (let i = 0; i < ANNOUNCEMENT_MAX_SESSIONS + 2; i++) {
+      await c.record(asOwner(), 'integrations-2026-11', { event: 'seen' });
+      clock += ANNOUNCEMENT_SESSION_GAP_MS;
+    }
+    expect((await c.current(asOwner())).announcement).toMatchObject({ card: false, badge: true });
+    await c.record(asOwner(), 'integrations-2026-11', { event: 'clicked' });
+    expect((await c.current(asOwner())).announcement).toBeNull();
+  });
 });
 
 describe('one announcement at a time', () => {

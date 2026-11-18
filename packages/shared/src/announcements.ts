@@ -73,7 +73,11 @@ export const ANNOUNCEMENTS: readonly Announcement[] = [
   },
 ];
 
-/** A person who sees an announcement and does nothing stops seeing it after this many sessions. */
+/**
+ * A person who sees an announcement and does nothing stops seeing it after this
+ * many sessions. Closing the card is doing something: the badge left behind
+ * then waits for the visit (or the end date), whatever the count.
+ */
 export const ANNOUNCEMENT_MAX_SESSIONS = 5;
 
 /**
@@ -126,10 +130,11 @@ export function sessionsExhausted(state: AnnouncementUserState | undefined, now:
 /**
  * The one announcement a person gets, if any.
  *
- * Only one at a time. Among the live ones the person has not followed and has
- * sessions left for, the most recent whose card they have not closed wins, card
- * and badge. If every such card is closed, the most recent one with a rail
- * badge keeps its badge alone, since closing the card does not clear it.
+ * Only one at a time. Among the live ones the person has not followed, the most
+ * recent whose card they have not closed (and that has sessions left) wins,
+ * card and badge. If every such card is closed, the most recent closed one
+ * with a rail badge keeps its badge alone: closing the card does not clear it,
+ * only the visit or the end date does.
  */
 export function pickAnnouncement(
   list: readonly Announcement[],
@@ -143,7 +148,9 @@ export function pickAnnouncement(
     .filter(({ a }) => isAnnouncementLive(a, now, opts))
     .filter(({ a }) => {
       const s = byId.get(a.id);
-      return !s?.clickedAt && !sessionsExhausted(s, now);
+      if (s?.clickedAt) return false;
+      // The cap is for the untouched: a closed card's badge outlives it.
+      return Boolean(s?.dismissedAt) || !sessionsExhausted(s, now);
     })
     // Most recent first; for the same start, the one added later.
     .sort((x, y) => y.a.startsAt - x.a.startsAt || y.index - x.index)

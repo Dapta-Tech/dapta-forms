@@ -132,6 +132,12 @@ layer, run this before you push.
    queries are scoped to that account. A new admin route MUST resolve the principal
    and pass its `accountId` — never query across accounts. Role checks live in
    `apps/api/src/permissions.ts`.
+   One deliberate exception: the in-app announcement state
+   (`announcement_state`, `apps/api/src/announcements.controller.ts`) is keyed
+   by the PERSON (the caller's own `member.external_id`, resolved through their
+   account), so an announcement closed in one workspace stays closed in the
+   others. It holds nothing about any account and is never read for anyone
+   but the caller.
 4. **Config is a versioned zod schema — extend, never break v1.** The form config
    contract is `formConfigSchema` in `packages/types/src/index.ts` with
    `version: z.literal(1)`. Add optional fields; do not remove or repurpose

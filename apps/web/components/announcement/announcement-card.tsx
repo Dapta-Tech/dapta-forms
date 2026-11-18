@@ -1,15 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { AnnouncementCopy, AnnouncementVideo } from '@quill/shared';
 import { buttonVariants } from '@/components/ui/button';
 import type { ThemePref } from '@/lib/theme';
 import {
   captureAnnouncement,
   captureAnnouncementSeen,
+  isAnnouncementCardClosed,
+  markAnnouncementCardClosed,
   markAnnouncementSurface,
   reportAnnouncement,
+  reportAnnouncementSeen,
+  subscribeAnnouncements,
 } from './announcement-client';
 import './announcement.css';
 
@@ -41,22 +45,46 @@ export function AnnouncementCard({
   /** The theme the server painted, so the poster matches before any script runs. */
   theme: ThemePref;
 }) {
-  const [closed, setClosed] = useState(false);
+  const box = useRef<HTMLElement>(null);
+  // Closed here or followed elsewhere on this load: a Home restored by Back
+  // still carries the server's older `card: true`.
+  const closed = useSyncExternalStore(
+    subscribeAnnouncements,
+    () => isAnnouncementCardClosed(id),
+    () => false,
+  );
 
   useEffect(() => {
+    if (closed) return;
+    reportAnnouncementSeen(id);
     captureAnnouncementSeen(id, 'card');
-  }, [id]);
+  }, [id, closed]);
 
   if (closed) return null;
 
   const dismiss = () => {
-    setClosed(true);
+    // A keyboard user closing it would otherwise be dropped on <body>: hand
+    // focus to the first control after the card (the agent banner's button).
+    const section = box.current;
+    if (section?.contains(document.activeElement)) {
+      let next = section.nextElementSibling;
+      while (next) {
+        const target = next.matches('a[href],button') ? next : next.querySelector<HTMLElement>('a[href],button');
+        if (target) {
+          (target as HTMLElement).focus();
+          break;
+        }
+        next = next.nextElementSibling;
+      }
+    }
+    markAnnouncementCardClosed(id);
     reportAnnouncement(id, 'dismissed');
     captureAnnouncement('dismissed', id, 'card');
   };
 
   return (
     <section
+      ref={box}
       aria-labelledby="announcement-title"
       data-testid="home-announcement"
       data-announcement={id}
