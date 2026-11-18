@@ -622,7 +622,13 @@ export function AdminShell({
         //
         // The width transition needs no `motion-reduce:` variant: globals.css
         // already zeroes every transition under prefers-reduced-motion.
-        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-sidebar py-4 transition-[width] md:flex md:h-dvh md:overflow-y-auto ${
+        //
+        // The scrollbar is hidden, the scrolling is not. On a short window
+        // (under ~690px collapsed, ~660px expanded) the rail overflows, and a
+        // classic scrollbar drew a gray track down its right edge and took
+        // 11px of a 64px column, shoving every icon left. Wheel, touch and a
+        // Tab into an off-screen link still scroll it. See `.no-scrollbar`.
+        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-sidebar py-4 transition-[width] no-scrollbar md:flex md:h-dvh md:overflow-y-auto ${
           studio ? 'md:fixed md:left-0 md:top-0 md:z-30' : 'md:sticky md:top-0'
         } ${railCollapsed ? 'w-[64px] px-2' : 'w-60 px-4'}`}
       >
@@ -663,7 +669,8 @@ export function AdminShell({
       ) : null}
       <aside
         ref={drawerRef}
-        className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[320px] flex-col gap-6 overflow-y-auto border-r border-border bg-sidebar p-4 transition-transform md:hidden ${
+        // Scrollbar hidden as on the desktop rail; the drawer still scrolls.
+        className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[320px] flex-col gap-6 overflow-y-auto border-r border-border bg-sidebar p-4 transition-transform no-scrollbar md:hidden ${
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         role="dialog"
