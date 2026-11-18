@@ -74,6 +74,31 @@ const stubs: Plugin = {
 };
 
 /**
+ * True when the first statement of `source`, after whitespace and comments,
+ * is the `'use server'` directive. A plain scan instead of one regex with
+ * nested repetition, which can backtrack badly on unusual input.
+ */
+function startsWithUseServer(source: string): boolean {
+  let i = 0;
+  while (i < source.length) {
+    if (/\s/.test(source[i]!)) {
+      i += 1;
+    } else if (source.startsWith('//', i)) {
+      const end = source.indexOf('\n', i);
+      if (end === -1) return false;
+      i = end + 1;
+    } else if (source.startsWith('/*', i)) {
+      const end = source.indexOf('*/', i + 2);
+      if (end === -1) return false;
+      i = end + 2;
+    } else {
+      break;
+    }
+  }
+  return /^['"]use server['"]/.test(source.slice(i, i + 12));
+}
+
+/**
  * Any other `'use server'` module (the shell's theme, sign-out and workspace
  * actions) becomes a module whose exported functions throw when called. The
  * export names are read from the file, so a component that imports an action
@@ -85,7 +110,7 @@ const serverActions: Plugin = {
     b.onLoad({ filter: /apps[\\/]web[\\/].*\.ts$/ }, async (args) => {
       const source = await readFile(args.path, 'utf8');
       // The directive may sit under a doc comment (`app/login/actions.ts` does).
-      if (!/^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*['"]use server['"]/.test(source)) return undefined;
+      if (!startsWithUseServer(source)) return undefined;
       const names = [...source.matchAll(/^export async function (\w+)/gm)].map((m) => m[1]);
       const body = names.map((n) => `export const ${n} = never;`).join('\n');
       return {
