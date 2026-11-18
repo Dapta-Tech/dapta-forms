@@ -168,8 +168,9 @@ export async function upsertIntegration(
  * token and answered after a reconnect must not mark the new one. The
  * ciphertext is the guard because every encryption has its own IV, so a
  * reconnect with the very same token still changes it. Returns whether the
- * mark was written. Leaves `updated_at` alone: nothing about the connection
- * itself changed.
+ * mark is on that credential afterwards (read back, since a reconnect can land
+ * between the read and the write). Leaves `updated_at` alone: nothing about
+ * the connection itself changed.
  */
 export async function markIntegrationRejected(
   db: Db,
@@ -185,7 +186,8 @@ export async function markIntegrationRejected(
     sql`UPDATE account_integration SET meta = ${jsonParam(meta)}
         WHERE account_id = ${accountId} AND provider = ${provider} AND encrypted_token = ${encryptedToken}`,
   );
-  return true;
+  const after = await getIntegration(db, accountId, provider);
+  return after?.encryptedToken === encryptedToken && after.meta?.rejectedAt === at;
 }
 
 /** Disconnect a provider. Idempotent. */

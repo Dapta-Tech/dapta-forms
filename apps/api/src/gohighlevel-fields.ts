@@ -31,6 +31,15 @@ import { DB, ENV } from './tokens';
 
 const FIELDS_CACHE_MS = 5 * 60_000;
 const LIST_TIMEOUT_MS = 10_000;
+/**
+ * How long a delivery skips the read after one failed. During an outage or
+ * with a refused token, every queued delivery would otherwise wait for the
+ * same failing call before its own upsert, spending the location's rate
+ * limit twice. The mapping UI's list is not held back by it.
+ */
+const TYPES_RETRY_MS = 60_000;
+/** A delivery waits less than the mapping UI for the types: they have a fallback. */
+const TYPES_TIMEOUT_MS = 5_000;
 
 /** One item of `GET /locations/{id}/customFields`, as far as dForms reads it. */
 interface GhlCustomField {
@@ -97,6 +106,8 @@ type ReadResult = Loaded | 'rejected' | 'unavailable';
 @Injectable()
 export class GoHighLevelFieldsService {
   private readonly cache = new Map<string, Loaded & { expires: number; fingerprint: string }>();
+  /** accountId -> when a delivery may try the read again, after one failed. */
+  private readonly failedUntil = new Map<string, { until: number; fingerprint: string }>();
   fetchImpl: typeof fetch = fetch;
 
   constructor(
@@ -106,14 +117,15 @@ export class GoHighLevelFieldsService {
 
   invalidate(accountId: string): void {
     this.cache.delete(accountId);
+    this.failedUntil.delete(accountId);
   }
 
-  private async read(creds: GoHighLevelCredentials): Promise<ReadResult> {
+  private async read(creds: GoHighLevelCredentials, timeoutMs: number): Promise<ReadResult> {
     let res: Response;
     try {
       res = await this.fetchImpl(
         `${GOHIGHLEVEL_API_BASE}/locations/${encodeURIComponent(creds.locationId)}/customFields?model=contact`,
-        { headers: goHighLevelHeaders(creds.token), signal: AbortSignal.timeout(LIST_TIMEOUT_MS) },
+        { headers: goHighLevelHeaders(creds.token), signal: AbortSignal.timeout(timeoutMs) },
       );
     } catch {
       return 'unavailable';
@@ -133,15 +145,22 @@ export class GoHighLevelFieldsService {
     creds: GoHighLevelCredentials,
     refresh: boolean,
     now: number,
+    forDelivery = false,
   ): Promise<(Loaded & { cached: boolean }) | 'rejected' | 'unavailable'> {
     const fingerprint = goHighLevelFingerprint(creds);
     const hit = this.cache.get(accountId);
     if (!refresh && hit && hit.expires > now && hit.fingerprint === fingerprint) return { ...hit, cached: true };
-    const read = await this.read(creds);
+    if (forDelivery) {
+      const failed = this.failedUntil.get(accountId);
+      if (failed && failed.until > now && failed.fingerprint === fingerprint) return 'unavailable';
+    }
+    const read = await this.read(creds, forDelivery ? TYPES_TIMEOUT_MS : LIST_TIMEOUT_MS);
     if (read === 'rejected' || read === 'unavailable') {
       this.cache.delete(accountId);
+      this.failedUntil.set(accountId, { until: now + TYPES_RETRY_MS, fingerprint });
       return read;
     }
+    this.failedUntil.delete(accountId);
     this.cache.set(accountId, { ...read, expires: now + FIELDS_CACHE_MS, fingerprint });
     return { ...read, cached: false };
   }
@@ -191,7 +210,7 @@ export class GoHighLevelFieldsService {
     creds: GoHighLevelCredentials,
     now = Date.now(),
   ): Promise<GoHighLevelFieldTypes | undefined> {
-    const loaded = await this.load(accountId, creds, false, now);
+    const loaded = await this.load(accountId, creds, false, now, true);
     return typeof loaded === 'string' ? undefined : loaded.types;
   }
 }

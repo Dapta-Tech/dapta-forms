@@ -20,6 +20,13 @@ import {
   type GoHighLevelMappingSlot,
 } from '@quill/types';
 
+/**
+ * Standard fields a fixed value may never fill: GHL deduplicates on them, so
+ * one constant would merge every respondent into a single contact. The
+ * adapter ignores such an entry; the save refuses it so no editor offers it.
+ */
+const NO_FIXED_VALUE: ReadonlySet<string> = new Set(['email', 'phone']);
+
 export interface GoHighLevelMappingIssue {
   index: number;
   path: string;
@@ -86,7 +93,27 @@ function goHighLevelEntries(list: unknown): Array<{ index: number; entry: GoHigh
 export function goHighLevelMappingIssue(incoming: unknown, stored?: unknown): GoHighLevelMappingIssue | null {
   const kept = new Set<string>();
   for (const { entry } of goHighLevelEntries(stored)) for (const t of targetsOf(entry)) kept.add(signature(t));
+  const keptFixed = new Set<string>();
+  for (const { entry } of goHighLevelEntries(stored)) {
+    (entry.staticFields ?? []).forEach((s, i) => {
+      if (s.target.kind === 'standard') keptFixed.add(`${i}\n${s.target.field}`);
+    });
+  }
   for (const { index, entry } of goHighLevelEntries(incoming)) {
+    const fixed = (entry.staticFields ?? []).findIndex(
+      (s, i) =>
+        s.target.kind === 'standard' &&
+        NO_FIXED_VALUE.has(s.target.field) &&
+        !keptFixed.has(`${i}\n${s.target.field}`),
+    );
+    if (fixed >= 0) {
+      const field = (entry.staticFields![fixed]!.target as { field: string }).field;
+      return {
+        index,
+        path: `destinations.${index}.staticFields.${fixed}.target`,
+        message: `Destination ${index + 1} (HighLevel) gives the ${field} field a fixed value. HighLevel finds contacts by email and phone, so every response would update the same contact. Map ${field} to a question instead.`,
+      };
+    }
     for (const t of targetsOf(entry)) {
       if (goHighLevelSlotAccepts(t.slot, t.target.dataType) || kept.has(signature(t))) continue;
       const field = t.target.key || t.target.id;

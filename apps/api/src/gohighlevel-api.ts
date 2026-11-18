@@ -75,9 +75,13 @@ export function extractGoHighLevelLocationId(raw: string): string | null {
   return id && LOCATION_ID.test(id) ? id : null;
 }
 
-/** Whether a pasted token has the shape of a Private Integration token. */
+/**
+ * Whether a pasted token has the shape of a Private Integration token: the
+ * prefix, then visible ASCII only. Anything else (a space, a line break, a
+ * smart quote from a document) could not even be sent as a header.
+ */
 export function isGoHighLevelToken(token: string): boolean {
-  return token.startsWith(GOHIGHLEVEL_TOKEN_PREFIX) && token.length > GOHIGHLEVEL_TOKEN_PREFIX.length;
+  return token.startsWith(GOHIGHLEVEL_TOKEN_PREFIX) && /^pit-[\x21-\x7e]+$/.test(token);
 }
 
 /** The tail shown on the card: the token's. */
