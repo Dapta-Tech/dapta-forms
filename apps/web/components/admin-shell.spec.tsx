@@ -125,3 +125,51 @@ describe('AdminShell: Connect your agent', () => {
     expect(linkBody(desktop)).toContain('data-testid="mcp-logos"');
   });
 });
+
+/** Every Integrations link, and the first one's whole markup. */
+const integrationLinks = (html: string) => html.match(/<a [^>]*data-testid="nav-integrations"[^>]*>/g) ?? [];
+const integrationBody = (html: string) => html.match(/<a [^>]*data-testid="nav-integrations"[\s\S]*?<\/a>/)?.[0] ?? '';
+
+describe('AdminShell: Integrations', () => {
+  it('rotates the integration marks in both rails, starting on HubSpot, hidden from screen readers', () => {
+    const { desktop, drawer } = rails(render({ pathname: '/admin' }));
+    for (const rail of [desktop, drawer]) {
+      const [a] = integrationLinks(rail);
+      expect(a).toContain('href="/admin/integrations"');
+      const body = integrationBody(rail);
+      expect(body).toMatch(/<span[^>]*aria-hidden="true"[^>]*data-testid="integration-logos"[^>]*style="width:20px;height:20px"/);
+      expect(body).toMatch(/data-logo="hubspot" data-active="true"/);
+      expect(body).not.toContain('pi-link');
+    }
+  });
+
+  it('stays a plain row: no green tint and no glow, so "Connect your agent" is the one invitation', () => {
+    for (const pathname of ['/admin', '/admin/integrations']) {
+      for (const a of integrationLinks(render({ pathname }))) {
+        expect(a).not.toContain('data-prominent');
+        expect(a).not.toContain('rail-pulse');
+        expect(a).not.toContain('ring-signal');
+      }
+    }
+  });
+
+  it('keeps its name in both languages and is marked as the page you are on', () => {
+    for (const locale of ['en', 'es'] as const) {
+      const chrome = getMessages(locale).admin.chrome;
+      const html = render({ pathname: '/admin/integrations', locale });
+      expect(integrationBody(html)).toContain(`>${chrome.nav.integrations}</span>`);
+      for (const a of integrationLinks(html)) {
+        expect(a).toContain('aria-current="page"');
+        expect(a).toContain('before:bg-primary-edge');
+      }
+    }
+  });
+
+  it('on the collapsed rail keeps the label for screen readers and as a tooltip', () => {
+    const { desktop } = rails(render({ pathname: '/admin', collapsed: true }));
+    const label = getMessages('en').admin.chrome.nav.integrations;
+    const [a] = integrationLinks(desktop);
+    expect(a).toContain(`title="${label}"`);
+    expect(integrationBody(desktop)).toContain(`<span class="sr-only">${label}</span>`);
+  });
+});
