@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 import type { Page } from '@playwright/test';
 
 /**
@@ -50,8 +50,31 @@ async function compileCss(): Promise<string> {
   return result.css;
 }
 
+/**
+ * Modules a blank page cannot run, swapped for the stand-ins in `stubs/`:
+ * `next/navigation` needs the App Router, a `'use server'` actions file
+ * needs a server, and `node:crypto` needs Node. Matched by import path, so the component under test is
+ * still bundled exactly as written.
+ */
+const stubs: Plugin = {
+  name: 'qa-stubs',
+  setup(b) {
+    b.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: path.join(here, 'stubs/next-navigation.ts') }));
+    b.onResolve({ filter: /^node:crypto$/ }, () => ({ path: path.join(here, 'stubs/node-crypto.ts') }));
+    // Only the Connections page's actions have a stand-in; any other
+    // `./actions` fails loudly rather than bundling a server module.
+    b.onResolve({ filter: /^\.\/actions$/ }, (args) => {
+      if (!/admin[\\/]integrations$/.test(args.resolveDir)) {
+        return { errors: [{ text: `qa/component has no stub for ./actions in ${args.resolveDir}` }] };
+      }
+      return { path: path.join(here, 'stubs/integration-actions.ts') };
+    });
+  },
+};
+
 async function compileJs(): Promise<string> {
   const result = await build({
+    plugins: [stubs],
     entryPoints: [path.join(here, 'entry.tsx')],
     bundle: true,
     write: false,
