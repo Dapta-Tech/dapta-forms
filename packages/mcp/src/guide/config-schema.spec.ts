@@ -129,7 +129,7 @@ describe('formConfigJsonSchema', () => {
     expect(hasField(schema, 'outcomes.[].message')).toBe(true);
   });
 
-  it('offers no destination the editor has no card for, and no CRM events switch the editor lacks', () => {
+  it('offers no destination the editor has no card for, and the CRM events the cards switch', () => {
     const raw = zodToJsonSchema(formConfigSchema, { $refStrategy: 'none' });
     const typesOf = (root: unknown) =>
       (((root as { properties: { destinations: { items: { anyOf: unknown[] } } } }).properties.destinations.items
@@ -146,8 +146,11 @@ describe('formConfigJsonSchema', () => {
       expect(JSON.stringify(published)).not.toMatch(/gohighlevel/i);
       const variants = typesOf(published);
       for (const type of EVENTS_WITHOUT_CONTROL) expect(variants.find((v) => v.type === type)?.events).toBe(false);
-      // The webhook's trigger has its control and stays.
-      expect(variants.find((v) => v.type === 'webhook')?.events).toBe(true);
+      // The webhook's trigger has its control and stays, and so does the CRM
+      // cards' "send partial responses too" switch.
+      for (const type of ['webhook', 'hubspot', 'salesforce']) {
+        expect(variants.find((v) => v.type === type)?.events, `${audience} ${type}`).toBe(true);
+      }
     }
   });
 
