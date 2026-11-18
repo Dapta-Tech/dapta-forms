@@ -402,6 +402,26 @@ describe('strict rules with an API key', () => {
     ]);
   });
 
+  it('refuses partials only on HubSpot or Salesforce: their switch always sends the complete response', async () => {
+    const body = {
+      destinations: [
+        { type: 'hubspot', enabled: true, events: ['partial'], fieldMappings: { email: 'email' } },
+        { type: 'salesforce', enabled: false, events: ['partial'], fieldMappings: { email: 'Email' } },
+        // Empty is the kind's default, and the webhook keeps its own triggers.
+        { type: 'webhook', enabled: true, events: ['partial'], settings: { url: 'https://example.com/hook' } },
+      ],
+    };
+    const r = await refusal(key.destinations.putDestinations(req(), formId, body));
+    expect(r.issues).toEqual([
+      { path: 'destinations.0.events', code: 'UNSUPPORTED_FIELD', message: expect.stringMatching(/always receives complete/) },
+      { path: 'destinations.1.events', code: 'UNSUPPORTED_FIELD', message: expect.stringMatching(/always receives complete/) },
+    ]);
+    const empty = {
+      destinations: [{ type: 'salesforce', enabled: false, events: [], fieldMappings: { email: 'Email' } }],
+    };
+    await expect(key.destinations.putDestinations(req(), formId, empty)).resolves.toBeTruthy();
+  });
+
   it('still refuses events on a HighLevel destination: its card has no switch yet', async () => {
     const body = {
       destinations: [
