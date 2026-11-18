@@ -16,7 +16,7 @@ import type { IntegrationStatus } from '../../apps/web/lib/admin-api';
  *   <div data-select='{"options":[...],"value":"a","searchable":true}'></div>
  *   <div data-modal-select='{"options":[...]}'></div>
  *   <div data-connections='{"locale":"en","providers":[...],"dcal":true}'></div>
- *   <div data-admin-home='{"locale":"en"}'></div>
+ *   <div data-admin-home='{"locale":"en","collapsed":false}'></div>
  *
  * A `data-select` placeholder is `display: contents`, so the component's own
  * root is what takes part in the surrounding layout (a flex row sizes the
@@ -105,7 +105,7 @@ for (const host of document.querySelectorAll<HTMLElement>('[data-connections]'))
   );
 }
 for (const host of document.querySelectorAll<HTMLElement>('[data-admin-home]')) {
-  const spec = JSON.parse(host.dataset.adminHome ?? '{}') as { locale?: Locale };
+  const spec = JSON.parse(host.dataset.adminHome ?? '{}') as { locale?: Locale; collapsed?: boolean };
   const messages = getMessages(spec.locale ?? 'en').admin;
   const workspace = (accountId: string, accountName: string) => ({
     accountId,
@@ -126,6 +126,7 @@ for (const host of document.querySelectorAll<HTMLElement>('[data-admin-home]')) 
         accountNav={messages.account.nav}
         workspaces={[workspace('acme', 'Acme Inc.'), workspace('globex', 'Globex')]}
         currentAccountId="acme"
+        initialCollapsed={spec.collapsed ?? false}
       >
         <div className="mx-auto max-w-[1520px] px-4 py-8 sm:px-8 sm:py-10">
           {/* Stands in for the greeting and the stats band above the card on
