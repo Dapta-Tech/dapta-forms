@@ -60,6 +60,7 @@ import {
 import type { SalesforceFieldsResponse } from '@/lib/admin-api';
 import { storedColumns } from './sheet-columns';
 import { DeliveryHistory } from './delivery-history';
+import { CrmPartialsSwitch } from './crm-partials-switch';
 import { Card } from './integrations-card';
 import {
   isCustomValue,
@@ -185,6 +186,11 @@ interface HubspotState {
    * never use it.
    */
   dayTimezone: string;
+  /**
+   * The stored phases, untouched until the partials switch is flipped. Absent
+   * = HubSpot's default (both), and stays absent on save (`CrmPartialsSwitch`).
+   */
+  events?: DestinationEvent[];
 }
 
 /** Contact properties stamped when a respondent books a meeting (all optional). */
@@ -451,6 +457,7 @@ export function initialHubspot(destinations: FormDestination[]): HubspotState {
       // The old per-bookingSync zone is the fallback so a config saved before
       // the shared field keeps the zone it was saved with.
       dayTimezone: h.dayTimezone ?? h.bookingSync?.dateTimezone ?? '',
+      ...(h.events ? { events: h.events } : {}),
     }, h.drafts);
   }
   return {
@@ -755,7 +762,8 @@ export function IntegrationsEditor({
       hs.scoreProperty.trim() ||
       hs.dateProperty.trim() ||
       hs.outcomeProperty.trim() ||
-      hs.inferCompanyFromEmail;
+      hs.inferCompanyFromEmail ||
+      hs.events !== undefined;
     if (hasHubspotConfig) {
       // Round-trip any stored HubSpot fields this screen does not manage (e.g.
       // booking-sync settings saved elsewhere) so a save here never clobbers them.
@@ -785,6 +793,9 @@ export function IntegrationsEditor({
         // undefined overrides the stored spread, so finishing the last
         // unfinished row clears them instead of resurrecting them.
         drafts,
+        // As the card holds them: stored, or what the partials switch wrote.
+        // Absent stays absent, so an untouched legacy config is unchanged.
+        ...(hs.events !== undefined ? { events: hs.events } : {}),
       });
     }
     // The spreadsheet destination, when the card says enough to store one.
@@ -1083,6 +1094,7 @@ export function IntegrationsEditor({
       <SalesforceCard
         state={sf}
         setState={editSalesforce}
+        partialsHeld={partialsHeld}
         questions={questions}
         connected={salesforceConnected}
         initialFields={salesforceFields}
@@ -2859,6 +2871,15 @@ export function HubspotCard({
           ) : null}
         </div>
       </Field>
+
+      <CrmPartialsSwitch
+        type="hubspot"
+        events={state.events}
+        onChange={(events) => onChange({ ...state, events })}
+        partialsHeld={partialsHeld}
+        testId="hubspot"
+        m={m}
+      />
 
       <div className="flex items-center justify-between gap-4">
         <div>
