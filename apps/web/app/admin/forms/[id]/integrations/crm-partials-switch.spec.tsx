@@ -163,6 +163,31 @@ describe('HubSpot: send partial responses too', () => {
     expect(q(el, 'hubspot-partials-held')).toBeNull();
   });
 
+  it('reads an empty list as the default and a partials-only list as on, and keeps both as stored', async () => {
+    for (const events of [[], ['partial']]) {
+      written = [];
+      const el = await mount([hubspot({ events })]);
+      expect(isOn(partialsSwitch(el, 'hubspot'))).toBe(true);
+      await act(async () => switchNamed(el, m.createNote).click());
+      await settle();
+      expect(lastSaved('hubspot')?.events).toEqual(events);
+      act(() => root?.unmount());
+      container?.remove();
+    }
+  });
+
+  it('stores a switch flipped on a card with nothing stored yet', async () => {
+    const el = await mount([]);
+    await act(async () => switchNamed(el, m.hubspotTitle).click());
+    await act(async () => partialsSwitch(el, 'hubspot').click());
+    await settle();
+    expect(lastSaved('hubspot')?.events).toEqual(['complete']);
+    // Switched off again, the choice is still stored rather than dropped.
+    await act(async () => switchNamed(el, m.hubspotTitle).click());
+    await settle();
+    expect(lastSaved('hubspot')).toMatchObject({ enabled: false, events: ['complete'] });
+  });
+
   it('says nothing about holding when protection is off', async () => {
     const el = await mount([hubspot()]);
     expect(isOn(partialsSwitch(el, 'hubspot'))).toBe(true);
@@ -192,7 +217,10 @@ describe('Salesforce: send partial responses too', () => {
     expect(lastSaved('salesforce')?.events).toEqual(['partial', 'complete']);
     const warning = q(el, 'salesforce-partials-warning')?.textContent ?? '';
     expect(warning).toContain('[not provided]');
-    expect(warning).toMatch(/last name or company/);
+    expect(warning).toMatch(/new Lead/);
+    // Read out with the switch, not only shown beside it.
+    const describedBy = partialsSwitch(el, 'salesforce').getAttribute('aria-describedby')!.split(' ');
+    expect(describedBy.map((id) => document.getElementById(id)?.textContent)).toEqual([m.crmPartialsHelp, warning]);
     await act(async () => partialsSwitch(el, 'salesforce').click());
     await settle();
     expect(lastSaved('salesforce')?.events).toEqual(['complete']);
@@ -203,6 +231,15 @@ describe('Salesforce: send partial responses too', () => {
     const stored = salesforce({ events: ['partial', 'complete'] });
     const el = await mount([stored]);
     expect(isOn(partialsSwitch(el, 'salesforce'))).toBe(true);
+    await act(async () => switchNamed(el, m.salesforce.title).click());
+    await settle();
+    expect(lastSaved('salesforce')).toEqual({ ...stored, enabled: false });
+  });
+
+  it('reads an empty list as the default, and keeps it as stored', async () => {
+    const stored = salesforce({ events: [] });
+    const el = await mount([stored]);
+    expect(isOn(partialsSwitch(el, 'salesforce'))).toBe(false);
     await act(async () => switchNamed(el, m.salesforce.title).click());
     await settle();
     expect(lastSaved('salesforce')).toEqual({ ...stored, enabled: false });
@@ -220,7 +257,7 @@ describe('Salesforce: send partial responses too', () => {
     const el = await mount([salesforce({ events: ['partial', 'complete'] })], { locale: 'es' });
     expect(q(el, 'salesforce-partials')?.textContent).toContain(es.crmPartials);
     expect(q(el, 'salesforce-partials-warning')?.textContent).toContain('[not provided]');
-    expect(q(el, 'salesforce-partials-warning')?.textContent).toMatch(/apellido o empresa/);
+    expect(q(el, 'salesforce-partials-warning')?.textContent).toMatch(/Lead nuevo/);
   });
 });
 

@@ -14,6 +14,7 @@
  * complete only. A card that is opened and never flipped keeps `events` exactly
  * as stored (absent stays absent), so a legacy config saves back unchanged.
  */
+import { useId } from 'react';
 import type { FormsMessages } from '@quill/shared';
 import { destinationFiresForPhase, type DestinationEvent } from '@quill/types';
 import { Switch } from '@/components/ui/switch';
@@ -59,6 +60,14 @@ export function CrmPartialsSwitch({
   m: Msgs;
 }) {
   const on = crmSendsPartials(type, events);
+  const id = useId();
+  const held = partialsHeld && on;
+  const warned = on && !!warning;
+  // The switch is named by its label; what it does, that it is paused, and the
+  // Salesforce caveat are read out with it.
+  const describedBy = [`${id}-help`, held ? `${id}-held` : null, warned ? `${id}-warning` : null]
+    .filter(Boolean)
+    .join(' ');
   return (
     <div data-testid={`${testId}-partials`} className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-4">
@@ -68,8 +77,9 @@ export function CrmPartialsSwitch({
             {/* The switch stays as saved (switching protection off restores
                 it); what changes is that nothing partial is sent meanwhile.
                 Same badge as the webhook's Partial trigger. */}
-            {partialsHeld && on ? (
+            {held ? (
               <span
+                id={`${id}-held`}
                 data-testid={`${testId}-partials-held`}
                 className="rounded-full bg-secondary/15 px-2 py-0.5 text-xs font-medium text-secondary"
               >
@@ -77,17 +87,21 @@ export function CrmPartialsSwitch({
               </span>
             ) : null}
           </div>
-          <p className="text-xs text-muted-foreground">{m.crmPartialsHelp}</p>
+          <p id={`${id}-help`} className="text-xs text-muted-foreground">
+            {m.crmPartialsHelp}
+          </p>
         </div>
         <Switch
           checked={on}
           data-testid={`${testId}-partials-switch`}
           onCheckedChange={(next) => onChange(crmEventsFor(next))}
           aria-label={m.crmPartials}
+          aria-describedby={describedBy}
         />
       </div>
-      {on && warning ? (
+      {warned ? (
         <p
+          id={`${id}-warning`}
           data-testid={`${testId}-partials-warning`}
           className="flex items-start gap-1.5 text-xs text-muted-foreground"
         >
