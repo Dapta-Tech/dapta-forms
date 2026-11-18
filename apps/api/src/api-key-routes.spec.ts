@@ -92,6 +92,11 @@ const DENIED = new Set([
   // is its own change, so it stays shut until then rather than half-open.
   'POST /v1/integrations/salesforce/connect',
   'GET /v1/integrations/salesforce/fields',
+  // HighLevel, both routes, for the same two reasons: connecting takes a
+  // secret, and opening the field list to keys is the wave that adds its MCP
+  // tool and its place in the public API reference.
+  'POST /v1/integrations/gohighlevel/connect',
+  'GET /v1/integrations/gohighlevel/fields',
   // The Google Sheets consent flow, both halves. A key cannot start one (there
   // is no browser to send anywhere and no human to consent), and cannot finish
   // one either.
@@ -208,6 +213,8 @@ describe('ApiKeyRouteGuard', () => {
     refused(AdminCrudController, p.saveMyProfile);
     refused(ApiKeysController, ApiKeysController.prototype.create);
     refused(IntegrationsController, IntegrationsController.prototype.connect);
+    refused(IntegrationsController, IntegrationsController.prototype.connectGoHighLevel);
+    refused(IntegrationsController, IntegrationsController.prototype.goHighLevelFieldList);
   });
 
   it('with a key, an allowed route goes through', () => {

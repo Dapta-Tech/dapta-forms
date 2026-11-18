@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { parseJsonColumn, jsonParam } from './forms';
+import type { GoHighLevelStatusExtras } from '@quill/types';
 import { encryptToken, decryptToken, tokenLast4 } from './crypto';
 
 /**
@@ -27,6 +28,11 @@ import { encryptToken, decryptToken, tokenLast4 } from './crypto';
  * Domain, the consumer key and the consumer secret. It is still ONE encrypted
  * string per account, so the storage contract holds; the caller passes the
  * `last4` to show, since the tail of a JSON string is a closing brace.
+ *
+ * `gohighlevel` stores JSON too (the Private Integration token and the
+ * Location ID). Its `meta` also carries the `locationId` to show and, once a
+ * delivery got a 401 or 403 for that token, `rejectedAt`; a reconnect writes
+ * `meta` afresh, which clears it.
  */
 export const integrationProviders = ['hubspot', 'calendly', 'google-sheets', 'salesforce', 'gohighlevel'] as const;
 export type IntegrationProvider = (typeof integrationProviders)[number];
@@ -48,8 +54,12 @@ export interface IntegrationRow {
   updatedAt: number;
 }
 
-/** Public, token-free view of a connection for the connections UI. */
-export interface IntegrationStatus {
+/**
+ * Public, token-free view of a connection for the connections UI. The
+ * HighLevel extras (`locationId`, `rejectedAt`) are present on a `gohighlevel`
+ * entry only.
+ */
+export interface IntegrationStatus extends Partial<GoHighLevelStatusExtras> {
   provider: IntegrationProvider;
   connected: true;
   last4: string | null;
@@ -70,13 +80,19 @@ function mapRow(r: Record<string, unknown>): IntegrationRow {
 
 /** Never leaks the token — safe to return to the browser. */
 export function describeIntegration(row: IntegrationRow): IntegrationStatus {
-  return {
+  const status: IntegrationStatus = {
     provider: row.provider,
     connected: true,
     last4: row.meta?.last4 ?? null,
     label: row.meta?.label ?? null,
     connectedAt: row.connectedAt,
   };
+  if (row.provider === 'gohighlevel') {
+    const { locationId, rejectedAt } = row.meta ?? {};
+    status.locationId = typeof locationId === 'string' && locationId ? locationId : null;
+    status.rejectedAt = typeof rejectedAt === 'number' && Number.isFinite(rejectedAt) ? rejectedAt : null;
+  }
+  return status;
 }
 
 /** Fetch the raw row (incl. ciphertext) for one provider, or null. */
@@ -118,8 +134,13 @@ export async function upsertIntegration(
   label?: string | null,
   /** Override the displayed tail when `token` is not itself the credential. */
   last4?: string,
+  /**
+   * Other non-secret display hints (HighLevel's `locationId`). `meta` is
+   * written whole, so anything not passed again (a `rejectedAt`) is cleared.
+   */
+  extraMeta?: Record<string, string | number>,
 ): Promise<IntegrationStatus> {
-  const meta: IntegrationMeta = { last4: last4 ?? tokenLast4(token) };
+  const meta: IntegrationMeta = { ...extraMeta, last4: last4 ?? tokenLast4(token) };
   if (label) meta.label = label;
   const encrypted = encryptToken(token, encryptionKey);
   const now = Date.now();
@@ -138,6 +159,35 @@ export async function upsertIntegration(
   }
   const row = await getIntegration(db, accountId, provider);
   return describeIntegration(row!);
+}
+
+/**
+ * Record that the provider refused the stored credential (epoch ms), for the
+ * connections card. Written only while the row still holds `encryptedToken`,
+ * the credential the refused delivery used: a delivery that read the old
+ * token and answered after a reconnect must not mark the new one. The
+ * ciphertext is the guard because every encryption has its own IV, so a
+ * reconnect with the very same token still changes it. Returns whether the
+ * mark is on that credential afterwards (read back, since a reconnect can land
+ * between the read and the write). Leaves `updated_at` alone: nothing about
+ * the connection itself changed.
+ */
+export async function markIntegrationRejected(
+  db: Db,
+  accountId: string,
+  provider: IntegrationProvider,
+  encryptedToken: string,
+  at: number = Date.now(),
+): Promise<boolean> {
+  const row = await getIntegration(db, accountId, provider);
+  if (!row || row.encryptedToken !== encryptedToken) return false;
+  const meta: IntegrationMeta = { ...(row.meta ?? {}), rejectedAt: at };
+  await db.run(
+    sql`UPDATE account_integration SET meta = ${jsonParam(meta)}
+        WHERE account_id = ${accountId} AND provider = ${provider} AND encrypted_token = ${encryptedToken}`,
+  );
+  const after = await getIntegration(db, accountId, provider);
+  return after?.encryptedToken === encryptedToken && typeof after.meta?.rejectedAt === 'number';
 }
 
 /** Disconnect a provider. Idempotent. */

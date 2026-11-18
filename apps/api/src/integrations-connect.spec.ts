@@ -22,7 +22,6 @@ import {
   getAccountByCode,
   getIntegration,
   decryptToken,
-  integrationProviders,
   inviteMember,
   upsertIntegration,
   type Db,
@@ -193,25 +192,6 @@ describe('POST /v1/integrations/:provider/connect', () => {
     await expect(controller.connect(asOwner(), 'salesforce', { token: 't' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
-  });
-
-  it('treats HighLevel as unknown until its own route exists, without naming it, and stores nothing', async () => {
-    // A provider in the store, so a later connect route has somewhere to write...
-    expect(integrationProviders).toContain('gohighlevel');
-    build(makeEnv(), noopFetch);
-    for (const work of [
-      controller.connect(asOwner(), 'gohighlevel', { token: 'pit-example' }),
-      controller.disconnect(asOwner(), 'gohighlevel'),
-    ]) {
-      const err = await work.then(
-        () => null,
-        (e: unknown) => e,
-      );
-      // ...but no route that serves it yet, and no error that names it.
-      expect(err).toBeInstanceOf(BadRequestException);
-      expect(JSON.stringify((err as BadRequestException).getResponse())).not.toMatch(/gohighlevel|highlevel/i);
-    }
-    expect(await getIntegration(db, await accountId(), 'gohighlevel')).toBeNull();
   });
 
   it('rejects a missing/blank token with 400', async () => {

@@ -35,6 +35,7 @@ import { DestinationEffects } from './destination-effects';
 import { GoogleSheetsAccessTokens } from './google-sheets-token';
 import { SalesforceAccessTokens } from './salesforce-auth';
 import { SalesforceFieldsService } from './salesforce-fields';
+import { GoHighLevelFieldsService } from './gohighlevel-fields';
 import { BookingEffects } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
 import { AnalyticsEffects } from './analytics-effects';
@@ -289,6 +290,9 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // and the delivery path so a disconnect clears what both of them read.
     SalesforceAccessTokens,
     SalesforceFieldsService,
+    // HighLevel's custom-field cache, for the same reason: one for the
+    // controller and the delivery path, so a disconnect clears both.
+    GoHighLevelFieldsService,
     // Drains the durable outbox (submission emails + destinations) with
     // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).
     OutboxWorker,
