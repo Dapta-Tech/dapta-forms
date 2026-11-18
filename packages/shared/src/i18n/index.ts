@@ -2033,7 +2033,7 @@ export interface FormsMessages {
       crmPartials: string;
       /** Under the switch: what turning it on sends. */
       crmPartialsHelp: string;
-      /** Salesforce with partials on: a partial can create a Lead with placeholders. `{value}` = the placeholder. */
+      /** Salesforce with partials on: a partial can create a new Lead with placeholders. `{value}` = the placeholder. */
       crmPartialsSalesforcePlaceholder: string;
       /** The Google Sheets card: it only ever receives complete responses. */
       gsheetsCompleteOnly: string;
@@ -4665,7 +4665,7 @@ export const en: FormsMessages = {
       crmPartialsHelp:
         'Also sends what someone answered before leaving the form unfinished. Complete responses are always sent.',
       crmPartialsSalesforcePlaceholder:
-        'A partial response without a last name or company creates a Lead with {value} in those fields.',
+        'A partial response can create a new Lead before the last name or company is answered: the last name is then {value}, and the company comes from a work email or is {value}.',
       gsheetsCompleteOnly:
         'Only complete responses are added, one row per person. Partial responses are not sent to the sheet.',
       historyWebhookTitle: 'Webhook history',
@@ -7551,7 +7551,7 @@ export const es: FormsMessages = {
       crmPartialsHelp:
         'También envía lo que alguien respondió antes de dejar el formulario sin terminar. Las respuestas completas se envían siempre.',
       crmPartialsSalesforcePlaceholder:
-        'Una respuesta parcial sin apellido o empresa crea un Lead con {value} en esos campos.',
+        'Una respuesta parcial puede crear un Lead nuevo antes de que se responda el apellido o la empresa: el apellido queda como {value}, y la empresa sale de un correo de trabajo o queda como {value}.',
       gsheetsCompleteOnly:
         'Solo se agregan respuestas completas, una fila por persona. Las respuestas parciales no se envían a la hoja.',
       historyWebhookTitle: 'Historial del webhook',
