@@ -96,9 +96,20 @@ const WEBHOOK_FIELDS: Path[] = [
  * Destination kinds whose `events` (send partial responses too) has no switch
  * in the Connect tab yet. The phase rule already reads it, so an agent setting
  * it would change what a CRM receives with nothing on the card to show it.
- * The webhook's trigger has its control and is not here.
+ * The webhook's trigger and the HubSpot and Salesforce cards' "send partial
+ * responses too" switch are controls, so those kinds are not here.
  */
-const EVENTS_WITHOUT_CONTROL: ReadonlySet<unknown> = new Set(['hubspot', 'salesforce', 'gohighlevel']);
+const EVENTS_WITHOUT_CONTROL: ReadonlySet<unknown> = new Set(['gohighlevel']);
+/**
+ * Destination kinds whose `events` is a single on/off switch, "send partial
+ * responses too", over complete responses that are always sent. A list
+ * without `complete` (partials only) is a setting that switch cannot show: the
+ * card would read "on" and promise the complete response that never comes.
+ * An empty list is the kind's default and passes.
+ */
+const EVENTS_COMPLETE_ALWAYS: ReadonlySet<unknown> = new Set(['hubspot', 'salesforce']);
+const COMPLETE_ALWAYS_MESSAGE =
+  'This destination always receives complete responses: send ["complete"] or ["partial", "complete"].';
 
 /**
  * Step types the editor saves with a blank title on purpose, so a key may too.
@@ -140,6 +151,15 @@ export function strictDestinationIssues(destinations: unknown, prefix: Path): Va
   destinations.forEach((entry, i) => {
     if (isObj(entry) && EVENTS_WITHOUT_CONTROL.has(entry.type) && isSet(entry.events)) {
       issues.push(unsupported([...prefix, i, 'events']));
+    }
+    if (
+      isObj(entry) &&
+      EVENTS_COMPLETE_ALWAYS.has(entry.type) &&
+      Array.isArray(entry.events) &&
+      entry.events.length > 0 &&
+      !entry.events.includes('complete')
+    ) {
+      issues.push({ ...unsupported([...prefix, i, 'events']), message: COMPLETE_ALWAYS_MESSAGE });
     }
     if (!isObj(entry) || entry.type !== 'webhook') return;
     for (const field of WEBHOOK_FIELDS) {

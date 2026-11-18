@@ -125,6 +125,11 @@ describe('openapi spec', () => {
     const destination = openapiSpec.components.schemas.Destination.description;
     expect(destination).toMatch(/`signatureHeader` and `timeoutMs` are set in the dashboard only/);
     expect(destination).toContain('UNSUPPORTED_FIELD');
+    // The partials switch: `events` on HubSpot and Salesforce, with each kind's default.
+    expect(destination).toContain('HubSpot: { type: "hubspot", enabled, events?');
+    expect(destination).toContain('Salesforce: { type: "salesforce", enabled, events?');
+    expect(destination).toMatch(/Left out, a webhook and HubSpot receive both and Salesforce only complete ones/);
+    expect(openapiSpec.components.schemas.Destination.properties.events.items.enum).toEqual(['partial', 'complete']);
     const refusal = openapiSpec.components.schemas.IntegrationNotConnected;
     expect(refusal.properties.error).toEqual({ const: 'INTEGRATION_NOT_CONNECTED' });
     expect(refusal.required).toEqual(expect.arrayContaining(['provider', 'index', 'integrationsUrl', 'unavailable']));

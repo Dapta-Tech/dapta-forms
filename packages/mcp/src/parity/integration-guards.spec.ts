@@ -169,6 +169,36 @@ describe('set_destinations and a provider that is not connected', () => {
   });
 });
 
+describe('set_destinations and the partials switch of a CRM destination', () => {
+  it('sends HubSpot and Salesforce events to the route as given, and says what they mean', async () => {
+    const sent: unknown[][] = [];
+    const h = await bootHarness({
+      backend: {
+        setDestinations: async (_caller, id, destinations) => {
+          sent.push(destinations);
+          return { formId: id, updatedAt: 1, destinations, formActivityError: null, sheetHeaders: null };
+        },
+      },
+    });
+    const destinations = [
+      { type: 'hubspot', enabled: true, events: ['complete'], settings: {} },
+      { type: 'salesforce', enabled: true, events: ['partial', 'complete'], fieldMappings: { email: 'Email' } },
+    ];
+    try {
+      const c = await h.connect(h.key('owner'));
+      await c.callTool({ name: 'set_destinations', arguments: { form_id: 'form-1', destinations } });
+      expect(sent).toEqual([destinations]);
+      const listed = (await c.listTools()).tools.find((t) => t.name === 'set_destinations')!;
+      const schema = JSON.stringify(listed.inputSchema);
+      expect(schema).toContain('HubSpot: { \\"type\\": \\"hubspot\\", \\"enabled\\": true, \\"events\\"?');
+      expect(schema).toMatch(/send partial responses too/);
+      expect(schema).toMatch(/Salesforce only complete ones/);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 describe('create_form and destinations that deliver nothing yet', () => {
   it('passes the refusal through with its code, the page and what to do', async () => {
     const message =

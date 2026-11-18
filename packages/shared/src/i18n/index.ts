@@ -2028,6 +2028,15 @@ export interface FormsMessages {
       webhookPartialOnlyHeld: string;
       /** The HubSpot card while partials are held: contacts sync on complete. */
       hubspotPartialHeld: string;
+      // The "send partial responses too" switch on the CRM cards (HubSpot, Salesforce).
+      /** The switch's label. */
+      crmPartials: string;
+      /** Under the switch: what turning it on sends. */
+      crmPartialsHelp: string;
+      /** Salesforce with partials on: a partial can create a new Lead with placeholders. `{value}` = the placeholder. */
+      crmPartialsSalesforcePlaceholder: string;
+      /** The Google Sheets card: it only ever receives complete responses. */
+      gsheetsCompleteOnly: string;
       // Delivery history — the collapsible log inside each integration card.
       /** Per-card headings; the shared panel takes them as props. */
       historyWebhookTitle: string;
@@ -4652,6 +4661,13 @@ export const en: FormsMessages = {
         'This webhook will not fire: it only listens to partial answers, which are paused while spam protection is on.',
       hubspotPartialHeld:
         'Spam protection is on: contacts are created or updated when a respondent completes the form, not from partial answers.',
+      crmPartials: 'Send partial responses too',
+      crmPartialsHelp:
+        'Also sends what someone answered before leaving the form unfinished. Complete responses are always sent.',
+      crmPartialsSalesforcePlaceholder:
+        'A partial response can create a new Lead before the last name or company is answered: the last name is then {value}, and the company comes from a work email or is {value}.',
+      gsheetsCompleteOnly:
+        'Only complete responses are added, one row per person. Partial responses are not sent to the sheet.',
       historyWebhookTitle: 'Webhook history',
       historyHubspotTitle: 'HubSpot history',
       historySalesforceTitle: 'Salesforce history',
@@ -7531,6 +7547,13 @@ export const es: FormsMessages = {
         'Este webhook no se va a disparar: solo escucha respuestas parciales, que están en pausa mientras la protección contra spam está activa.',
       hubspotPartialHeld:
         'La protección contra spam está activa: los contactos se crean o actualizan cuando alguien completa el formulario, no con respuestas parciales.',
+      crmPartials: 'Enviar también respuestas parciales',
+      crmPartialsHelp:
+        'También envía lo que alguien respondió antes de dejar el formulario sin terminar. Las respuestas completas se envían siempre.',
+      crmPartialsSalesforcePlaceholder:
+        'Una respuesta parcial puede crear un Lead nuevo antes de que se responda el apellido o la empresa: el apellido queda como {value}, y la empresa sale de un correo de trabajo o queda como {value}.',
+      gsheetsCompleteOnly:
+        'Solo se agregan respuestas completas, una fila por persona. Las respuestas parciales no se envían a la hoja.',
       historyWebhookTitle: 'Historial del webhook',
       historyHubspotTitle: 'Historial de HubSpot',
       historySalesforceTitle: 'Historial de Salesforce',
