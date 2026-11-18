@@ -96,10 +96,12 @@ const WEBHOOK_FIELDS: Path[] = [
  * Destination kinds whose `events` (send partial responses too) has no switch
  * in the Connect tab yet. The phase rule already reads it, so an agent setting
  * it would change what a CRM receives with nothing on the card to show it.
- * The webhook's trigger and the HubSpot and Salesforce cards' "send partial
- * responses too" switch are controls, so those kinds are not here.
+ * The webhook's trigger and the "send partial responses too" switch of the
+ * HubSpot, Salesforce and HighLevel cards are controls, so every kind with an
+ * `events` field has one now. Kept, empty, so a new kind without a control
+ * starts here.
  */
-const EVENTS_WITHOUT_CONTROL: ReadonlySet<unknown> = new Set(['gohighlevel']);
+const EVENTS_WITHOUT_CONTROL: ReadonlySet<unknown> = new Set<unknown>([]);
 /**
  * Destination kinds whose `events` is a single on/off switch, "send partial
  * responses too", over complete responses that are always sent. A list
@@ -107,7 +109,7 @@ const EVENTS_WITHOUT_CONTROL: ReadonlySet<unknown> = new Set(['gohighlevel']);
  * card would read "on" and promise the complete response that never comes.
  * An empty list is the kind's default and passes.
  */
-const EVENTS_COMPLETE_ALWAYS: ReadonlySet<unknown> = new Set(['hubspot', 'salesforce']);
+const EVENTS_COMPLETE_ALWAYS: ReadonlySet<unknown> = new Set(['hubspot', 'salesforce', 'gohighlevel']);
 const COMPLETE_ALWAYS_MESSAGE =
   'This destination always receives complete responses: send ["complete"] or ["partial", "complete"].';
 

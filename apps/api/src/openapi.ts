@@ -61,21 +61,21 @@ const errorSchema = {
   },
 } as const;
 
-/** The 400 an agent gets for a Google Sheets or Salesforce destination that would deliver nothing. */
+/** The 400 an agent gets for a Google Sheets, Salesforce or HighLevel destination that would deliver nothing. */
 const integrationNotConnectedSchema = {
   type: 'object',
   description:
-    'Answered to an API key (or an MCP connection), never to a browser session, for the first new or changed enabled Google Sheets or Salesforce destination whose provider the workspace has not connected. Nothing is stored. An entry sent back exactly as the form stores it is never refused: it is kept, with a warning.',
+    'Answered to an API key (or an MCP connection), never to a browser session, for the first new or changed enabled Google Sheets, Salesforce or HighLevel destination whose provider the workspace has not connected. Nothing is stored. An entry sent back exactly as the form stores it is never refused: it is kept, with a warning.',
   required: ['error', 'message', 'provider', 'index', 'integrationsUrl', 'unavailable'],
   properties: {
     error: { const: 'INTEGRATION_NOT_CONNECTED' },
     message: { type: 'string', description: 'What to do, in English. Not stable: never parse it.' },
-    provider: { type: 'string', enum: ['google-sheets', 'salesforce'] },
+    provider: { type: 'string', enum: ['google-sheets', 'salesforce', 'gohighlevel'] },
     index: { type: 'integer', description: 'The position of the refused entry in the list that was sent.' },
     integrationsUrl: {
       type: 'string',
       description:
-        'The integrations page of the dashboard, an absolute URL on PUBLIC_APP_URL (the bare path when that is unset). Connecting Google or Salesforce is a consent screen in the person\u2019s browser: hand them this page, then send the same request again. Not worth handing over when `unavailable` is true.',
+        'The integrations page of the dashboard, an absolute URL on PUBLIC_APP_URL (the bare path when that is unset). Connecting Google or Salesforce is a consent screen in the person\u2019s browser, and connecting HighLevel is a Private Integration token an owner or admin pastes on that page (never through the API): hand them this page, then send the same request again. Not worth handing over when `unavailable` is true.',
     },
     unavailable: {
       type: 'boolean',
@@ -94,7 +94,7 @@ const destinationWarningSchema = {
       type: 'string',
       enum: ['INTEGRATION_NOT_CONNECTED', 'DESTINATION_INCOMPLETE'],
       description:
-        'INTEGRATION_NOT_CONNECTED: a Google Sheets or Salesforce entry whose provider is not connected (a browser session\u2019s save, or an entry an agent sent back exactly as stored). DESTINATION_INCOMPLETE: a Google Sheets entry with no spreadsheet or no column with a header yet, so no row is written.',
+        'INTEGRATION_NOT_CONNECTED: a Google Sheets, Salesforce or HighLevel entry whose provider is not connected (a browser session\u2019s save, or an entry an agent sent back exactly as stored). DESTINATION_INCOMPLETE: a Google Sheets entry with no spreadsheet or no column with a header yet, so no row is written.',
     },
     index: { type: 'integer', description: 'The position of the entry in the list that was sent.' },
     type: { type: 'string', description: 'The destination type of the entry.' },
@@ -132,15 +132,15 @@ const destinationSchema = {
   required: ['type'],
   additionalProperties: true,
   description:
-    'A webhook: { type: "webhook", id?, enabled, events?: ["partial", "complete"], settings: { url (https), secret?, signatureHeader?, timeoutMs? } }; `signatureHeader` and `timeoutMs` are set in the dashboard only: with an API key, an entry that carries either one is refused with 400 BAD_REQUEST (issue code UNSUPPORTED_FIELD), even when it matches what is stored, so leave them out. HubSpot: { type: "hubspot", enabled, events?, settings }, at most one per form. Google Sheets: { type: "google-sheets", enabled, settings: { spreadsheetId, sheetTitle? }, columns: [{ header, source, key? }] }, one row per response, into a spreadsheet dForms created or the author picked in the dashboard. Salesforce: { type: "salesforce", enabled, events?, fieldMappings, utmMappings?, scoreField?, dateField?, dayTimezone?, staticFields? }, at most one per form. `events` picks the responses a webhook, HubSpot or Salesforce entry receives (the webhook\u2019s triggers, and the "send partial responses too" switch on the HubSpot and Salesforce cards): ["partial", "complete"] also sends partial responses, ["complete"] only complete ones; HubSpot and Salesforce always receive complete responses, so a list without "complete" is refused there (UNSUPPORTED_FIELD). Left out, a webhook and HubSpot receive both and Salesforce only complete ones. A partial that creates a new Salesforce Lead before the last name or company is answered gets "[not provided]" for the last name, and for the company unless a work email supplies one. Google Sheets only ever receives complete responses. Google Sheets and Salesforce deliver through the workspace\u2019s own connection. A masked webhook secret sent back unchanged keeps the stored one; null removes it.',
+    'A webhook: { type: "webhook", id?, enabled, events?: ["partial", "complete"], settings: { url (https), secret?, signatureHeader?, timeoutMs? } }; `signatureHeader` and `timeoutMs` are set in the dashboard only: with an API key, an entry that carries either one is refused with 400 BAD_REQUEST (issue code UNSUPPORTED_FIELD), even when it matches what is stored, so leave them out. HubSpot: { type: "hubspot", enabled, events?, settings }, at most one per form. Google Sheets: { type: "google-sheets", enabled, settings: { spreadsheetId, sheetTitle? }, columns: [{ header, source, key? }] }, one row per response, into a spreadsheet dForms created or the author picked in the dashboard. Salesforce: { type: "salesforce", enabled, events?, fieldMappings, utmMappings?, scoreField?, dateField?, dayTimezone?, staticFields? }, at most one per form. HighLevel: { type: "gohighlevel", enabled, events?, fieldMappings: { stepKey: Target[] }, utmMappings?: { utm_source: CustomTarget, ... }, scoreField?, dateField?, dayTimezone?, staticFields?: [{ target, value }], tags?, source? }, at most one per form: the contact is upserted by email or phone, then the tags are added (never removed). A Target is { kind: "standard", field } or { kind: "custom", id, key, dataType }, from `GET /v1/integrations/gohighlevel/fields`; the score takes a NUMERICAL custom field, the submitted date a DATE one, a UTM a TEXT or LARGE_TEXT one, a fixed value only fills a field nothing else filled and never targets email or phone (400 BAD_REQUEST otherwise). `events` picks the responses a webhook, HubSpot, Salesforce or HighLevel entry receives (the webhook\u2019s triggers, and the "send partial responses too" switch on the HubSpot, Salesforce and HighLevel cards): ["partial", "complete"] also sends partial responses, ["complete"] only complete ones; HubSpot, Salesforce and HighLevel always receive complete responses, so a list without "complete" is refused there (UNSUPPORTED_FIELD). Left out, a webhook and HubSpot receive both, Salesforce and HighLevel only complete ones. A partial that creates a new Salesforce Lead before the last name or company is answered gets "[not provided]" for the last name, and for the company unless a work email supplies one. Google Sheets only ever receives complete responses. Google Sheets, Salesforce and HighLevel deliver through the workspace\u2019s own connection. A masked webhook secret sent back unchanged keeps the stored one; null removes it.',
   properties: {
-    type: { type: 'string', enum: ['webhook', 'hubspot', 'google-sheets', 'salesforce'] },
+    type: { type: 'string', enum: ['webhook', 'hubspot', 'google-sheets', 'salesforce', 'gohighlevel'] },
     enabled: { type: 'boolean' },
     events: {
       type: 'array',
       items: { type: 'string', enum: ['partial', 'complete'] },
       description:
-        'Webhook, HubSpot and Salesforce only. Left out: both for a webhook and HubSpot, complete only for Salesforce. Ignored on Google Sheets, which only receives complete responses.',
+        'Webhook, HubSpot, Salesforce and HighLevel only. Left out: both for a webhook and HubSpot, complete only for Salesforce and HighLevel. Ignored on Google Sheets, which only receives complete responses.',
     },
   },
 } as const;
@@ -160,11 +160,17 @@ const integrationsListSchema = {
       items: {
         type: 'object',
         properties: {
-          provider: { type: 'string', enum: ['hubspot', 'calendly', 'google-sheets', 'salesforce'] },
+          provider: { type: 'string', enum: ['hubspot', 'calendly', 'google-sheets', 'salesforce', 'gohighlevel'] },
           connected: { const: true },
           last4: { type: ['string', 'null'], description: 'The last 4 characters of the credential, never the credential.' },
-          label: { type: ['string', 'null'], description: 'The connected account, for display.' },
+          label: { type: ['string', 'null'], description: 'The connected account, for display (HighLevel: the sub-account name).' },
           connectedAt: { type: 'integer', description: 'Epoch ms.' },
+          locationId: { type: ['string', 'null'], description: 'HighLevel only: the connected sub-account\u2019s Location ID.' },
+          rejectedAt: {
+            type: ['integer', 'null'],
+            description:
+              'HighLevel only: when a delivery last got a 401 or 403 for this token (epoch ms), so HighLevel stopped accepting it and its destinations deliver nothing until it is connected again in the dashboard. Null while it works.',
+          },
         },
       },
     },
@@ -190,6 +196,51 @@ const integrationsListSchema = {
         'Present when the deployment has dCal as a scheduler: `createEventUrl` is where a person creates dCal event types. Null when it has none. dCal is not a connection (the editor forwards the author\u2019s own session), so it is never in `providers`.',
       properties: { createEventUrl: { type: 'string' } },
       required: ['createEventUrl'],
+    },
+  },
+} as const;
+
+/** One HighLevel custom field, as `GET /v1/integrations/gohighlevel/fields` lists it. */
+const goHighLevelFieldsSchema = {
+  type: 'object',
+  required: ['enabled'],
+  description:
+    'Never an HTTP error once the caller is authenticated. enabled false: `reason` is not_connected (connect HighLevel in the dashboard), rejected (HighLevel stopped accepting the token: connect it again there) or unavailable. enabled true: the standard contact fields, and the connected sub-account\u2019s custom fields of the types a destination can fill, sorted by name; when they cannot be read, `custom` is empty and `warning` is custom_fields_unavailable.',
+  properties: {
+    enabled: { type: 'boolean' },
+    reason: { type: 'string', enum: ['not_connected', 'rejected', 'unavailable'], description: 'enabled false only.' },
+    cached: { type: 'boolean', description: 'True when the custom fields came from the 5-minute copy.' },
+    warning: { type: 'string', enum: ['custom_fields_unavailable'] },
+    standard: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['kind', 'key', 'name', 'sources'],
+        properties: {
+          kind: { const: 'standard' },
+          key: { type: 'string', description: 'What a target names: { kind: "standard", field: key }.' },
+          name: { type: 'string' },
+          sources: { type: 'array', items: { type: 'string' }, description: 'The question types whose answer may fill it.' },
+        },
+      },
+    },
+    custom: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['kind', 'id', 'key', 'name', 'dataType'],
+        properties: {
+          kind: { const: 'custom' },
+          id: { type: 'string', description: 'What a target names, with key and dataType: { kind: "custom", id, key, dataType }.' },
+          key: { type: 'string', description: 'The field key, e.g. contact.utm_source.' },
+          name: { type: 'string', description: 'The sub-account\u2019s own name for it.' },
+          dataType: {
+            type: 'string',
+            enum: ['TEXT', 'LARGE_TEXT', 'PHONE', 'EMAIL', 'NUMERICAL', 'MONETORY', 'SINGLE_OPTIONS', 'RADIO', 'MULTIPLE_OPTIONS', 'CHECKBOX', 'DATE'],
+          },
+          options: { type: 'array', items: { type: 'string' }, description: 'The choices of an option field.' },
+        },
+      },
     },
   },
 } as const;
@@ -228,6 +279,7 @@ export const openapiSpec = {
       SheetHeaders: sheetHeadersSchema,
       Destination: destinationSchema,
       Integrations: integrationsListSchema,
+      GoHighLevelFields: goHighLevelFieldsSchema,
     },
   },
   webhooks: {
@@ -879,6 +931,40 @@ export const openapiSpec = {
         responses: { '200': { description: '{ items[] }' } },
       },
     },
+    '/v1/integrations/gohighlevel/fields': {
+      get: {
+        summary: 'The HighLevel contact fields a destination can map answers to (host)',
+        description:
+          'The standard contact fields and the connected sub-account\u2019s custom fields, cached 5 minutes per workspace. Rate-limited. A HighLevel destination copies its targets from here. Connecting HighLevel is a pasted Private Integration token in the dashboard, never an API call with a key.',
+        parameters: [
+          {
+            name: 'refresh',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', enum: ['1', 'true'] },
+            description: 'Read the custom fields from HighLevel again instead of the 5-minute copy.',
+          },
+        ],
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: '{ enabled, reason? } or { enabled, cached, standard[], custom[], warning? }', ...json({ $ref: '#/components/schemas/GoHighLevelFields' }) },
+          '429': { description: 'Too many calls' },
+        },
+      },
+    },
+    '/v1/integrations/gohighlevel/connect': {
+      post: {
+        summary: 'Connect HighLevel, or replace its token (host, admin/owner)',
+        description:
+          'Body { token, locationId }: a Private Integration token of the sub-account (it starts with `pit-`) and its Location ID, or the sub-account\u2019s URL. Both are checked against HighLevel before the token is stored encrypted at rest; replacing the token keeps every form\u2019s mapping. A refusal is 400 { error: "GOHIGHLEVEL_REJECTED", reason }, with reason token_format, invalid_token, wrong_location, missing_scope or unreachable. Never callable with an API key: the token is a secret. Disconnect with `DELETE /v1/integrations/gohighlevel`.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Connected (token-free status, with locationId)' },
+          '400': { description: 'GOHIGHLEVEL_REJECTED, a malformed body, or the server encryption key not configured' },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
     '/v1/integrations/{provider}/connect': {
       post: {
         summary: 'Connect a provider by pasted token (host, admin/owner)',
@@ -911,7 +997,7 @@ export const openapiSpec = {
             name: 'provider',
             in: 'path',
             required: true,
-            schema: { type: 'string', enum: ['hubspot', 'calendly'] },
+            schema: { type: 'string', enum: ['hubspot', 'calendly', 'gohighlevel'] },
           },
         ],
         security: [{ hostSession: [] }],

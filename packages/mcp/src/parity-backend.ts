@@ -307,6 +307,8 @@ export interface ApiParityBackend {
   listIntegrations(caller: McpCaller): Promise<Record<string, unknown>>;
   listWebhooks(caller: McpCaller): Promise<Array<Record<string, unknown>>>;
   hubspotProperties(caller: McpCaller): Promise<Record<string, unknown>>;
+  /** `GET /v1/integrations/gohighlevel/fields` (`refresh` skips the 5-minute copy). */
+  goHighLevelFields(caller: McpCaller, opts: { refresh: boolean }): Promise<Record<string, unknown>>;
   calendlyEventTypes(caller: McpCaller): Promise<Record<string, unknown>>;
 
   // Identity

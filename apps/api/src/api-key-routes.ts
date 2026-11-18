@@ -7,7 +7,7 @@
  * publish, revert, delete, file into a folder), folders, destinations,
  * responses and their files, CSV, analytics, brand kit, the workspace link
  * pages, notifications, `GET /v1/me`, reading the profile and the public page,
- * and reading integrations.
+ * and reading integrations (HighLevel's field list included).
  *
  * Everything else is a 403 `KEY_NOT_ALLOWED` with a key: the key routes
  * themselves, members, invitations, workspaces, onboarding and attribution
@@ -108,6 +108,11 @@ export const API_KEY_ALLOWED_ROUTES: ReadonlySet<string> = new Set([
   'GET /v1/integrations',
   'GET /v1/integrations/webhooks',
   'GET /v1/integrations/hubspot/properties',
+  // HighLevel's field list: the mapping an agent builds needs the custom
+  // fields' ids and types, and the MCP tool reads it in process, which only
+  // reaches key-allowed routes (`keyAllowedRoutes`). A read of field metadata,
+  // never the token; connecting stays session only.
+  'GET /v1/integrations/gohighlevel/fields',
   'GET /v1/integrations/calendly/event-types',
 ]);
 

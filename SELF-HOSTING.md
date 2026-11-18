@@ -532,6 +532,25 @@ allowlist needs those Salesforce hosts. A delivery looks the
 respondent up by email first and updates an existing Contact or Lead before it
 creates a new Lead.
 
+### HighLevel (optional)
+
+A form can send each response to a HighLevel (GoHighLevel) sub-account as a
+contact. There are no new environment variables: like Salesforce, it only needs
+`FORMS_ENCRYPTION_KEY`. An owner or admin connects one sub-account per
+workspace from the Connections page by pasting a Private Integration token of
+the sub-account (it starts with `pit-`) and its Location ID; both are proved
+against HighLevel before the token is stored encrypted. Agents never connect
+it: the MCP tools and the public API only read whether it is connected
+(`list_integrations`) and its fields (`list_gohighlevel_fields`,
+`GET /v1/integrations/gohighlevel/fields`), and a destination saved by an agent
+while it is not connected is refused with `INTEGRATION_NOT_CONNECTED` and the
+Connections page.
+
+The API calls only `services.leadconnectorhq.com`, which an egress allowlist
+needs. A delivery upserts the contact (HighLevel deduplicates it by email or
+phone, as the sub-account's duplicate rules say), then adds the destination's
+tags.
+
 ### dCal as a scheduler (optional)
 
 A scheduler question can embed a [dCal](https://github.com/Dapta-Tech/dapta-calendars-slate)

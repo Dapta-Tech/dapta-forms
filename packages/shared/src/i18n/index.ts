@@ -5529,12 +5529,13 @@ export const en: FormsMessages = {
           list_form_notifications: { what: 'See the emails one form sends.', ask: 'Which emails does my lead form send?' },
           update_form_notification: { what: 'Edit an email for one form.', ask: 'Send the lead form notices to sales@example.com' },
           reset_form_notification: { what: 'Put a form\'s email back to the workspace default.', ask: 'Reset the emails of my survey' },
-          list_integrations: { what: 'See which apps are connected (HubSpot, Calendly, Google Sheets or Salesforce) and whether dCal is available.', ask: 'Is HubSpot connected?' },
-          set_destinations: { what: 'Choose where a form\'s responses go: webhooks, HubSpot, Google Sheets or Salesforce.', ask: 'Send every lead from my form to HubSpot' },
+          list_integrations: { what: 'See which apps are connected (HubSpot, Calendly, Google Sheets, Salesforce or HighLevel) and whether dCal is available.', ask: 'Is HubSpot connected?' },
+          set_destinations: { what: 'Choose where a form\'s responses go: webhooks, HubSpot, Google Sheets, Salesforce or HighLevel.', ask: 'Send every lead from my form to HubSpot' },
           list_webhooks: { what: 'See a form\'s webhooks.', ask: 'Which webhooks does my lead form have?' },
           ping_webhook: { what: 'Send a test to a webhook.', ask: 'Test the webhook of my lead form' },
           list_deliveries: { what: 'See which responses were delivered and which failed.', ask: 'Did my last responses reach HubSpot?' },
           list_hubspot_properties: { what: 'See the HubSpot fields a question can fill.', ask: 'Which HubSpot fields can I map?' },
+          list_gohighlevel_fields: { what: 'See the HighLevel contact fields a question can fill, custom fields included.', ask: 'Which HighLevel fields can I map?' },
           list_event_types: { what: 'See the Calendly events a scheduler step can book. dCal events are picked in the form editor.', ask: 'Which Calendly events can my booking step offer?' },
           list_calendly_event_types: { what: 'See the Calendly events a form can book.', ask: 'Which Calendly events can my form book?' },
           whoami: { what: 'Check who is connected and in which workspace.', ask: 'Who am I connected as?' },
@@ -5735,9 +5736,11 @@ export const en: FormsMessages = {
         'POST /v1/forms/:id/notifications/:emailKey/reset':
           'Removes the form’s own version, so it follows the workspace setting again.',
         'GET /v1/integrations':
-          'Which integrations the workspace has connected (HubSpot, Calendly, Google Sheets, Salesforce), which ones this deployment cannot connect (`unavailable`), and whether it has dCal (`dcal`). Never returns a token.',
+          'Which integrations the workspace has connected (HubSpot, Calendly, Google Sheets, Salesforce, HighLevel), which ones this deployment cannot connect (`unavailable`), and whether it has dCal (`dcal`). The HighLevel entry adds `locationId` and `rejectedAt` (when HighLevel stopped accepting the token). Never returns a token.',
         'GET /v1/integrations/webhooks': 'Every webhook the workspace’s forms send to, with its recent failures.',
         'GET /v1/integrations/hubspot/properties': 'The HubSpot contact properties a destination can map answers to.',
+        'GET /v1/integrations/gohighlevel/fields':
+          'The HighLevel contact fields a destination can map answers to: the standard ones and the connected sub-account’s custom fields, with the `id`, `key` and `dataType` a mapping copies. `enabled: false` with `reason` (`not_connected`, `rejected`) when HighLevel cannot be read; HighLevel is connected in the dashboard only.',
         'GET /v1/integrations/calendly/event-types': 'The Calendly event types a scheduler step can book.',
         'GET /v1/me': 'The person and the workspace the key acts as, with the person’s role.',
         'GET /v1/me/profile': 'The person’s public page, if they set one up.',
@@ -5812,6 +5815,7 @@ export const en: FormsMessages = {
         notificationBody: 'The body as plain text, with `{{token}}` markers. `null` puts the default back.',
         notificationRecipients:
           'Who gets the notice to your team. Not accepted on `submission_confirmed`, which goes to the person who answered.',
+        goHighLevelRefresh: '`1` reads the custom fields from HighLevel again instead of the copy kept for 5 minutes, for a field just created there.',
       },
       notAllowed: {
         title: 'What a key cannot do',
@@ -8522,12 +8526,13 @@ export const es: FormsMessages = {
           list_form_notifications: { what: 'Ve los correos que envía un formulario.', ask: '¿Qué correos envía mi formulario de leads?' },
           update_form_notification: { what: 'Edita un correo de un formulario.', ask: 'Envía los avisos del formulario de leads a ventas@example.com' },
           reset_form_notification: { what: 'Devuelve el correo de un formulario a la versión del workspace.', ask: 'Restablece los correos de mi encuesta' },
-          list_integrations: { what: 'Ve qué apps están conectadas (HubSpot, Calendly, Google Sheets o Salesforce) y si dCal está disponible.', ask: '¿Está conectado HubSpot?' },
-          set_destinations: { what: 'Elige a dónde van las respuestas de un formulario: webhooks, HubSpot, Google Sheets o Salesforce.', ask: 'Manda cada lead de mi formulario a HubSpot' },
+          list_integrations: { what: 'Ve qué apps están conectadas (HubSpot, Calendly, Google Sheets, Salesforce o HighLevel) y si dCal está disponible.', ask: '¿Está conectado HubSpot?' },
+          set_destinations: { what: 'Elige a dónde van las respuestas de un formulario: webhooks, HubSpot, Google Sheets, Salesforce o HighLevel.', ask: 'Manda cada lead de mi formulario a HubSpot' },
           list_webhooks: { what: 'Ve los webhooks de un formulario.', ask: '¿Qué webhooks tiene mi formulario de leads?' },
           ping_webhook: { what: 'Envía una prueba a un webhook.', ask: 'Prueba el webhook de mi formulario de leads' },
           list_deliveries: { what: 'Mira qué respuestas se entregaron y cuáles fallaron.', ask: '¿Llegaron a HubSpot mis últimas respuestas?' },
           list_hubspot_properties: { what: 'Ve los campos de HubSpot que puede llenar una pregunta.', ask: '¿Qué campos de HubSpot puedo mapear?' },
+          list_gohighlevel_fields: { what: 'Ve los campos de contacto de HighLevel que puede llenar una pregunta, custom fields incluidos.', ask: '¿Qué campos de HighLevel puedo mapear?' },
           list_event_types: { what: 'Ve los eventos de Calendly que puede agendar un paso de agenda. Los eventos de dCal se eligen en el editor del formulario.', ask: '¿Qué eventos de Calendly puede ofrecer mi paso de agenda?' },
           list_calendly_event_types: { what: 'Ve los eventos de Calendly que puede agendar un formulario.', ask: '¿Qué eventos de Calendly puede agendar mi formulario?' },
           whoami: { what: 'Revisa quién está conectado y en qué workspace.', ask: '¿Con qué cuenta estoy conectado?' },
@@ -8728,9 +8733,11 @@ export const es: FormsMessages = {
         'POST /v1/forms/:id/notifications/:emailKey/reset':
           'Quita la versión propia del form, que vuelve a seguir lo que define el workspace.',
         'GET /v1/integrations':
-          'Qué integraciones conectó el workspace (HubSpot, Calendly, Google Sheets, Salesforce), cuáles no puede conectar este despliegue (`unavailable`) y si tiene dCal (`dcal`). Nunca devuelve un token.',
+          'Qué integraciones conectó el workspace (HubSpot, Calendly, Google Sheets, Salesforce, HighLevel), cuáles no puede conectar este despliegue (`unavailable`) y si tiene dCal (`dcal`). La entrada de HighLevel suma `locationId` y `rejectedAt` (cuándo HighLevel dejó de aceptar el token). Nunca devuelve un token.',
         'GET /v1/integrations/webhooks': 'Todos los webhooks a los que mandan los forms del workspace, con sus fallas recientes.',
         'GET /v1/integrations/hubspot/properties': 'Las propiedades de contacto de HubSpot a las que un destino puede mapear respuestas.',
+        'GET /v1/integrations/gohighlevel/fields':
+          'Los campos de contacto de HighLevel a los que un destino puede mapear respuestas: los estándar y los custom fields de la sub-account conectada, con el `id`, la `key` y el `dataType` que copia un mapeo. `enabled: false` con `reason` (`not_connected`, `rejected`) cuando no se puede leer HighLevel; HighLevel se conecta solo desde el panel.',
         'GET /v1/integrations/calendly/event-types': 'Los tipos de evento de Calendly que puede agendar un paso de agenda.',
         'GET /v1/me': 'La persona y el workspace por los que actúa la llave, con el rol de la persona.',
         'GET /v1/me/profile': 'La página pública de la persona, si la configuró.',
@@ -8805,6 +8812,7 @@ export const es: FormsMessages = {
         notificationBody: 'El cuerpo en texto plano, con marcadores `{{token}}`. `null` vuelve al texto por defecto.',
         notificationRecipients:
           'Quién recibe el aviso para tu equipo. No se acepta en `submission_confirmed`, que va a quien respondió.',
+        goHighLevelRefresh: '`1` vuelve a leer los custom fields de HighLevel en lugar de la copia que se guarda 5 minutos, para un campo que acabas de crear allá.',
       },
       notAllowed: {
         title: 'Lo que una llave no puede hacer',

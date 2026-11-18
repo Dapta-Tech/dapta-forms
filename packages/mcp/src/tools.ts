@@ -591,11 +591,11 @@ const getForm: ToolDef = {
       .describe('Only when a draft is pending: what respondents see right now.'),
     connected_destinations: z
       .number()
-      .describe('How many destinations (webhooks, HubSpot, Google Sheets, Salesforce) the form has (the length of destinations).'),
+      .describe('How many destinations (webhooks, HubSpot, Google Sheets, Salesforce, HighLevel) the form has (the length of destinations).'),
     destinations: z
       .array(z.record(z.string(), z.unknown()))
       .describe(
-        'Where responses go now (webhooks, HubSpot, Google Sheets and Salesforce), as stored on the live form, each with its id; signing secrets masked. The list set_destinations starts from: send it back whole with your change, a masked secret unchanged to keep it.',
+        'Where responses go now (webhooks, HubSpot, Google Sheets, Salesforce and HighLevel), as stored on the live form, each with its id; signing secrets masked. The list set_destinations starts from: send it back whole with your change, a masked secret unchanged to keep it.',
       ),
   }),
   async run(args: z.infer<typeof getFormInput>, ctx) {
@@ -648,7 +648,7 @@ const createForm: ToolDef = {
     `A minimal config: ${JSON.stringify(LEAD_CONFIG)}`,
     'A refused config answers VALIDATION_FAILED with every problem and its path, so you can fix them all in one retry. Unknown fields, repeated step keys or option values and references to steps that do not exist are refused, never silently changed.',
     'Without `branding`, dForms fills it in (the workspace brand kit, or the default look); get_form returns it, and update_form expects it back as read.',
-    "An enabled Google Sheets or Salesforce destination in the config needs its provider connected in the workspace (list_integrations); otherwise the create is refused with INTEGRATION_NOT_CONNECTED, whose message holds the page where the user connects it in a browser (or, when this deployment cannot connect the provider at all, says so: there is no page and no retry). A spreadsheet entry with no sheet yet comes back in warnings.",
+    "An enabled Google Sheets, Salesforce or HighLevel destination in the config needs its provider connected in the workspace (list_integrations); otherwise the create is refused with INTEGRATION_NOT_CONNECTED, whose message holds the page where the user connects it in a browser (or, when this deployment cannot connect the provider at all, says so: there is no page and no retry). A HighLevel entry has the shape set_destinations describes, with targets from list_gohighlevel_fields; events absent sends complete responses only. A spreadsheet entry with no sheet yet comes back in warnings.",
   ].join(' '),
   write: true,
   workspace: 'required',

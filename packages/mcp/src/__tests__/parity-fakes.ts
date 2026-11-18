@@ -295,6 +295,12 @@ export function parityFakes(): ApiParityBackend {
       },
     ],
     hubspotProperties: async () => ({ enabled: true, cached: false, properties: [{ name: 'company', label: 'Company', type: 'string' }] }),
+    goHighLevelFields: async () => ({
+      enabled: true,
+      cached: false,
+      standard: [{ kind: 'standard', key: 'email', name: 'Email', sources: ['email', 'text'] }],
+      custom: [{ kind: 'custom', id: 'f-plan', key: 'contact.plan', name: 'Plan', dataType: 'SINGLE_OPTIONS', options: ['Basic', 'Pro'] }],
+    }),
     calendlyEventTypes: async () => ({ enabled: false, cached: false, eventTypes: [] }),
 
     myProfile: async () => ({ handle: 'ada', profile: null }),

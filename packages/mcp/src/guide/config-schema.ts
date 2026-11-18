@@ -35,10 +35,10 @@ type JsonSchema = Record<string, unknown>;
 /**
  * Destination kinds the editor has no card for yet. Their variant is left out
  * of `destinations[]`, so an agent that validates against the schema never
- * builds one; the API refuses an agent's entry of these kinds anyway, since
- * nothing can connect them yet (`destination-connections.ts`).
+ * builds one. Empty: every destination kind has its card (HighLevel's came
+ * with its Connections card and its form card).
  */
-export const HIDDEN_DESTINATION_TYPES: readonly string[] = ['gohighlevel'];
+export const HIDDEN_DESTINATION_TYPES: readonly string[] = [];
 
 /**
  * Destination kinds whose `events` has no control in the editor yet. Left out

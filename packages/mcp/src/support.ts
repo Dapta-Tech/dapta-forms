@@ -310,7 +310,7 @@ const ACTIONABLE: Record<string, { message?: string; hint: string }> = {
   },
   KEY_NOT_ALLOWED: { hint: 'This can only be done in the dForms dashboard. Tell the user.' },
   INTEGRATION_NOT_CONNECTED: {
-    hint: "The message holds the dForms integrations page. Connecting Google or Salesforce is a consent screen in the user's browser, which no tool can open: the link goes to the user, and once list_integrations shows the provider connected, the same call can be sent again.",
+    hint: "The message holds the dForms integrations page. Connecting happens there, in the user's browser (a consent screen for Google and Salesforce, a pasted Private Integration token for HighLevel), which no tool can do: the link goes to the user, and once list_integrations shows the provider connected, the same call can be sent again.",
   },
   MEMBER_NOT_ACTIVE: {
     hint: 'You were removed from this workspace, or your access there was turned off. Call list_my_workspaces to see where you can act, and tell the user.',
@@ -332,24 +332,9 @@ const ACTIONABLE: Record<string, { message?: string; hint: string }> = {
 export const INTEGRATION_UNAVAILABLE_HINT =
   'Nobody in this workspace can connect this provider here: this dForms deployment has no way to connect it, so there is no page to send the user to, and the same call is refused again. list_integrations lists it in unavailable. Tell the user that whoever runs this dForms deployment has to set it up first; until then, send the call again without this destination, or with it switched off (enabled false).';
 
-/**
- * The hint for a provider no dForms deployment can connect yet (its connect
- * route does not exist). Not the deployment's doing, so the operator hint above
- * would be wrong, and it is not in list_integrations' unavailable either.
- */
-export const INTEGRATION_NOT_YET_HINT =
-  'dForms cannot connect this provider yet, on any deployment: there is no page to send the user to, and the same call is refused again. Send the call again without this destination, or with it switched off (enabled false), and tell the user it is not available yet.';
-
-/** Providers the API refuses as unavailable because nothing can connect them yet. */
-const NOT_YET_CONNECTABLE: ReadonlySet<unknown> = new Set(['gohighlevel']);
-
 /** Whether a refusal is about a provider the deployment cannot connect at all, as the route flags it. */
 export const isUnavailableProvider = (error: BackendError): boolean =>
   error.code === 'INTEGRATION_NOT_CONNECTED' && error.details['unavailable'] === true;
-
-/** The hint for an unavailable-provider refusal: not connectable yet, or not set up on this deployment. */
-export const unavailableProviderHint = (error: BackendError): string =>
-  NOT_YET_CONNECTABLE.has(error.details['provider']) ? INTEGRATION_NOT_YET_HINT : INTEGRATION_UNAVAILABLE_HINT;
 
 const CONNECTION: Record<string, { message?: string; hint: string }> = {
   FORBIDDEN: {
@@ -384,7 +369,7 @@ export function toFailure(error: unknown, credential: CredentialKind = 'key', to
     }
     if (error.status >= 500) return internalError();
     const known = isUnavailableProvider(error)
-      ? { hint: unavailableProviderHint(error) }
+      ? { hint: INTEGRATION_UNAVAILABLE_HINT }
       : ((credential === 'connection' ? CONNECTION[error.code] : undefined) ?? ACTIONABLE[error.code]);
     let message = known?.message ?? error.message;
     if (error.code === 'STALE' && typeof error.details['updatedAt'] === 'number')
