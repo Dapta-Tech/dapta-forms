@@ -100,6 +100,22 @@ describe('Modal Tab trap', () => {
     expect(document.activeElement).toBe(create);
   });
 
+  it('reaches an iframe (the file preview), since nothing off the list is reachable', async () => {
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <Modal open onClose={() => {}} title="Preview" labelId="p" portal>
+          <button type="button">Download</button>
+          <iframe title="file" />
+        </Modal>,
+      ),
+    );
+    await tab();
+    expect(document.activeElement?.tagName).toBe('IFRAME');
+  });
+
   it('pulls focus back in from outside the dialog', async () => {
     await mount(true);
     const outside = document.createElement('button');

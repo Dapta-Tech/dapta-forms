@@ -473,17 +473,17 @@ export function AdminShell({
     document.body.style.overflow = drawerOpen ? 'hidden' : '';
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // WCAG 1.4.13 Dismissible, for the pointer case it is written about.
+      // With the caret INSIDE the rail, Escape leaves the peek alone on
+      // purpose: collapsing a rail whose focus ring is on an icon-only link
+      // is worse than not dismissing.
+      if (!railRef.current?.contains(document.activeElement)) setPeeking(false);
       // A dialog opened from the drawer ("New workspace") owns this Escape: it
       // closes that dialog and leaves the drawer it came from open. The dialog
       // is portalled to <body>, so it is found by `aria-modal`, not by being
       // inside the drawer (which is `role="dialog"` itself, open or not).
       if (document.querySelector('[aria-modal="true"]')) return;
       setDrawerOpen(false);
-      // WCAG 1.4.13 Dismissible, for the pointer case it is written about.
-      // With the caret INSIDE the rail, Escape leaves the peek alone on
-      // purpose: collapsing a rail whose focus ring is on an icon-only link
-      // is worse than not dismissing.
-      if (!railRef.current?.contains(document.activeElement)) setPeeking(false);
     };
     window.addEventListener('keydown', onKey);
     if (drawerOpen) drawerRef.current?.querySelector<HTMLElement>('a,button')?.focus();

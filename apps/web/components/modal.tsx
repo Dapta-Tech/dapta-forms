@@ -140,7 +140,9 @@ export function useDialogA11y(
     restoreRef.current = document.activeElement as HTMLElement | null;
     /** Visible, focusable controls inside the dialog, in DOM order. */
     const focusable = (): HTMLElement[] =>
-      [...(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [])].filter(
+      // `iframe` too: Tab is moved by hand below, so whatever is not in this
+      // list cannot be reached at all, and the file preview is an iframe.
+      [...(panelRef.current?.querySelectorAll<HTMLElement>(`${FOCUSABLE_SELECTOR}, iframe`) ?? [])].filter(
         (el) => el.offsetParent !== null || el === document.activeElement,
       );
 

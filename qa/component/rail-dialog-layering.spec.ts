@@ -126,6 +126,8 @@ for (const viewport of ['desktop', 'mobile'] as const) {
           await page.keyboard.press('Escape');
           await expect(dialog).toHaveCount(0);
           await expect(page.locator('#app')).not.toHaveAttribute('aria-hidden', 'true');
+          // Focus goes back to the switcher that opened it, not to <body>.
+          await expect(page.locator('[data-testid="workspace-switcher-trigger"]:visible')).toBeFocused();
           if (viewport === 'mobile') {
             // Escape closes the dialog only: the drawer it was opened from stays.
             await expect(page.locator('aside[role="dialog"]')).not.toHaveAttribute('inert', '');
