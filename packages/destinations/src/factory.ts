@@ -7,6 +7,7 @@ import {
   type GoogleSheetsDestinationOptions,
 } from './adapters/google-sheets';
 import { SalesforceDestination, type SalesforceDestinationOptions } from './adapters/salesforce';
+import { GoHighLevelDestination } from './adapters/gohighlevel';
 import { GOHIGHLEVEL_REASONS, writableSheetColumns, type GoHighLevelDeliveryOptions } from '@quill/types';
 
 /**
@@ -71,12 +72,17 @@ export function createDestination(
       }
       return new SalesforceDestination(sf, fetchImpl);
     }
-    case 'gohighlevel':
-      // No adapter yet: every HighLevel delivery is the named no-op the
-      // delivery history shows as "not connected". The adapter goes here,
-      // behind a credentials check (`spec.gohighlevel?.credentials.token` and
-      // `.locationId`), with this same no-op when either is missing.
-      return new LogOnlyDestination(GOHIGHLEVEL_REASONS.notConnected);
+    case 'gohighlevel': {
+      const ghl = spec.gohighlevel;
+      // Not connected, or the connection is missing half of itself: the named
+      // no-op the delivery history shows as "reconnect HighLevel", not a retry.
+      const token = ghl?.credentials?.token?.trim();
+      const locationId = ghl?.credentials?.locationId?.trim();
+      if (!ghl || !token || !locationId) {
+        return new LogOnlyDestination(GOHIGHLEVEL_REASONS.notConnected);
+      }
+      return new GoHighLevelDestination({ ...ghl, credentials: { token, locationId } }, fetchImpl);
+    }
     default:
       return new LogOnlyDestination(`unknown destination type: ${String(spec.type)}`);
   }
