@@ -3,6 +3,9 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Modal } from '../../apps/web/components/modal';
 import { Select, type SelectOption } from '../../apps/web/components/ui/select';
+import { ConnectionsPanel } from '../../apps/web/app/admin/integrations/connections-panel';
+import { getMessages, type Locale } from '@quill/shared';
+import type { IntegrationStatus } from '../../apps/web/lib/admin-api';
 
 /**
  * Browser entry for qa/component: turns placeholders in the page into real
@@ -10,6 +13,7 @@ import { Select, type SelectOption } from '../../apps/web/components/ui/select';
  *
  *   <div data-select='{"options":[...],"value":"a","searchable":true}'></div>
  *   <div data-modal-select='{"options":[...]}'></div>
+ *   <div data-connections='{"locale":"en","providers":[...],"dcal":true}'></div>
  *
  * A `data-select` placeholder is `display: contents`, so the component's own
  * root is what takes part in the surrounding layout (a flex row sizes the
@@ -71,5 +75,27 @@ for (const host of document.querySelectorAll<HTMLElement>('[data-select]')) {
 for (const host of document.querySelectorAll<HTMLElement>('[data-modal-select]')) {
   const spec = JSON.parse(host.dataset.modalSelect ?? '{}') as SelectSpec;
   flushSync(() => createRoot(host).render(<InModal spec={spec} host={host} />));
+}
+for (const host of document.querySelectorAll<HTMLElement>('[data-connections]')) {
+  // The Integrations page's card grid (its server actions are stubbed in mount.ts).
+  const spec = JSON.parse(host.dataset.connections ?? '{}') as {
+    locale?: Locale;
+    providers?: IntegrationStatus[];
+    unavailable?: IntegrationStatus['provider'][];
+    dcal?: boolean;
+  };
+  const locale = spec.locale ?? 'en';
+  flushSync(() =>
+    createRoot(host).render(
+      <ConnectionsPanel
+        initialProviders={spec.providers ?? []}
+        encryptionAvailable
+        unavailable={spec.unavailable ?? []}
+        dcal={spec.dcal ? { createEventUrl: 'https://cal.example.com/event-types' } : null}
+        messages={getMessages(locale).admin.connections}
+        locale={locale}
+      />,
+    ),
+  );
 }
 document.documentElement.dataset.mounted = 'true';

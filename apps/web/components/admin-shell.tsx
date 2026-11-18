@@ -17,6 +17,7 @@ import { ProfileMenu } from '@/components/profile-menu';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import { McpLogos } from '@/components/mcp-logos';
+import { IntegrationLogos } from '@/components/integration-logos';
 import type { Workspace } from '@/lib/admin-api';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
@@ -121,13 +122,19 @@ const PEEK_CLOSE_MS = 160;
 
 // Dapta's icon system is PrimeIcons (pi pi-*) — the same set Calendars + the
 // production admin panel use. Sized at the design-system's 20px sidebar icon.
-// MCP is the one exception: its icon is the rotating AI app logos, same 20px.
-const PI_BY_NAME: Record<Exclude<IconName, 'mcp'>, string> = {
+// Two exceptions, same 20px: MCP's icon is the rotating AI app logos, and
+// Integrations' is the rotating marks of the services it connects (HubSpot,
+// Salesforce, HighLevel, Google Sheets, Calendly, dCal, Dapta). Integrations
+// keeps a plain row, not the green tint: one invitation in the rail reads as
+// one, and two stacked green rows would read as neither.
+type AnimatedIcon = 'mcp' | 'integrations';
+const ANIMATED_ICONS: ReadonlySet<IconName> = new Set<AnimatedIcon>(['mcp', 'integrations']);
+
+const PI_BY_NAME: Record<Exclude<IconName, AnimatedIcon>, string> = {
   home: 'pi-home',
   forms: 'pi-file-edit',
   submissions: 'pi-inbox',
   analytics: 'pi-chart-bar',
-  integrations: 'pi-link',
   tools: 'pi-sparkles',
   docs: 'pi-book',
   agents: 'pi-bot',
@@ -135,6 +142,7 @@ const PI_BY_NAME: Record<Exclude<IconName, 'mcp'>, string> = {
 
 function Icon({ name, className, paused }: { name: IconName; className?: string; paused?: boolean }) {
   if (name === 'mcp') return <McpLogos size={20} paused={paused} />;
+  if (name === 'integrations') return <IntegrationLogos size={20} paused={paused} />;
   return (
     <i
       aria-hidden
@@ -168,11 +176,13 @@ function navRowClass(collapsed: boolean, state: 'active' | 'idle') {
 }
 
 /**
- * The rail link whose icon is the rotating AI app logos ("Connect your
- * agent"). The logos hold still while the pointer is on the row, so the
- * mark someone is looking at does not change under them (see McpLogos).
+ * A rail link whose icon is a set of rotating logos ("Connect your agent",
+ * "Integrations"). The logos hold still while the pointer is on the row, so
+ * the mark someone is looking at does not change under them (see
+ * `useLogoRotation`).
  */
 function LogosLink({
+  icon,
   href,
   label,
   collapsed,
@@ -182,6 +192,7 @@ function LogosLink({
   className,
   onNavigate,
 }: {
+  icon: IconName;
   href: string;
   label: string;
   collapsed: boolean;
@@ -204,7 +215,7 @@ function LogosLink({
       data-prominent={prominent || undefined}
       className={className}
     >
-      <Icon name="mcp" paused={hovered} />
+      <Icon name={icon} paused={hovered} />
       <span className={collapsed ? 'sr-only' : ''}>{label}</span>
     </Link>
   );
@@ -252,10 +263,11 @@ function NavLinks({
             <span className={collapsed ? 'sr-only' : ''}>{label}</span>
           </>
         );
-        if (item.icon === 'mcp' && !item.external) {
+        if (ANIMATED_ICONS.has(item.icon) && !item.external) {
           return (
             <li key={item.key}>
               <LogosLink
+                icon={item.icon}
                 href={href}
                 label={label}
                 collapsed={collapsed}
