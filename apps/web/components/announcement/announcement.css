@@ -1,0 +1,19 @@
+/* ── In-app announcements: the home card and the rail badge ───────────────── */
+
+/* The card arrives with the page (server-rendered, its space already taken),
+   so this only fades and lifts it in place: nothing around it moves. */
+.ann-in {
+  animation: ann-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes ann-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ann-in {
+    animation: none;
+  }
+}

@@ -405,6 +405,24 @@ export const linkPageAlias = sqliteTable(
   }),
 );
 
+/** One person's state for one in-app announcement (see 0029 and the Postgres twin). */
+export const announcementState = sqliteTable(
+  'announcement_state',
+  {
+    userId: text('user_id').notNull(),
+    announcementId: text('announcement_id').notNull(),
+    sessionsSeen: integer('sessions_seen').notNull().default(0),
+    lastSeenAt: integer('last_seen_at'),
+    dismissedAt: integer('dismissed_at'),
+    clickedAt: integer('clicked_at'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.announcementId] }),
+  }),
+);
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -421,4 +439,5 @@ export const sqliteSchema = {
   accountIntegration,
   linkPage,
   linkPageAlias,
+  announcementState,
 };

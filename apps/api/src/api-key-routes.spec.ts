@@ -75,6 +75,10 @@ const DENIED = new Set([
   'PUT /v1/me/profile',
   'PUT /v1/me/locale',
   'PUT /v1/vanity',
+  // In-app announcements: news for a person in the dashboard. An agent has no
+  // dashboard, and its reads would count as sessions the person never had.
+  'GET /v1/me/announcement',
+  'POST /v1/me/announcements/:id',
   // Connecting or disconnecting an integration.
   'POST /v1/integrations/:provider/connect',
   'DELETE /v1/integrations/:provider',

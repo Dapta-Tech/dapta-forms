@@ -10,7 +10,7 @@ import {
 } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { isNavItemActive, type FormsMessages } from '@quill/shared';
+import { isNavItemActive, type AnnouncementRailItem, type FormsMessages } from '@quill/shared';
 import { AppSwitcher } from '@/components/app-switcher';
 import { BrandMark, BrandWordmark } from '@/components/brand/brand';
 import { ProfileMenu } from '@/components/profile-menu';
@@ -18,6 +18,13 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import { McpLogos } from '@/components/mcp-logos';
 import { IntegrationLogos } from '@/components/integration-logos';
+import {
+  captureAnnouncement,
+  captureAnnouncementSeen,
+  markAnnouncementSurface,
+  reportAnnouncement,
+  takeAnnouncementSurface,
+} from '@/components/announcement/announcement-client';
 import type { Workspace } from '@/lib/admin-api';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
@@ -175,6 +182,57 @@ function navRowClass(collapsed: boolean, state: 'active' | 'idle') {
     .join(' ');
 }
 
+/** The "New" mark one rail item carries while an announcement points at it. */
+interface NavBadge {
+  /** The visible pill: "New". */
+  label: string;
+  /** Read after the item's name: ", new", so the link is "Integrations, new". */
+  sr: string;
+}
+
+/**
+ * The icon, with the badge's dot when the rail is collapsed to 64px: there is
+ * no room for the pill there, and the dot sits on the icon's corner without
+ * moving it. Without a badge the icon is returned exactly as before.
+ */
+function BadgedIcon({ badge, collapsed, children }: { badge?: NavBadge | null; collapsed: boolean; children: ReactNode }) {
+  if (!badge || !collapsed) return <>{children}</>;
+  return (
+    <span className="relative inline-flex">
+      {children}
+      <span
+        aria-hidden
+        data-testid="nav-badge-dot"
+        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-sidebar"
+      />
+    </span>
+  );
+}
+
+/**
+ * The pill after the label in the open rail and the drawer, and the words a
+ * screen reader hears in either state. The pill itself is hidden from the
+ * accessibility tree so "new" is announced once, in lower case, as part of the
+ * name.
+ */
+function BadgeTail({ badge, collapsed }: { badge?: NavBadge | null; collapsed: boolean }) {
+  if (!badge) return null;
+  return (
+    <>
+      {!collapsed ? (
+        <span
+          aria-hidden
+          data-testid="nav-badge"
+          className="ml-auto shrink-0 rounded-full bg-signal/15 px-2 py-0.5 text-2xs font-semibold leading-4 text-signal-ink"
+        >
+          {badge.label}
+        </span>
+      ) : null}
+      <span className="sr-only">{badge.sr}</span>
+    </>
+  );
+}
+
 /**
  * A rail link whose icon is a set of rotating logos ("Connect your agent",
  * "Integrations"). The logos hold still while the pointer is on the row, so
@@ -191,6 +249,7 @@ function LogosLink({
   prominent,
   className,
   onNavigate,
+  badge,
 }: {
   icon: IconName;
   href: string;
@@ -201,6 +260,7 @@ function LogosLink({
   prominent?: true;
   className: string;
   onNavigate?: () => void;
+  badge?: NavBadge | null;
 }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -209,14 +269,18 @@ function LogosLink({
       onClick={onNavigate}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
-      title={collapsed ? label : undefined}
+      title={collapsed ? `${label}${badge ? badge.sr : ''}` : undefined}
       aria-current={active ? 'page' : undefined}
       data-testid={testId}
       data-prominent={prominent || undefined}
+      data-badge={badge ? 'new' : undefined}
       className={className}
     >
-      <Icon name={icon} paused={hovered} />
+      <BadgedIcon badge={badge} collapsed={collapsed}>
+        <Icon name={icon} paused={hovered} />
+      </BadgedIcon>
       <span className={collapsed ? 'sr-only' : ''}>{label}</span>
+      <BadgeTail badge={badge} collapsed={collapsed} />
     </Link>
   );
 }
@@ -227,6 +291,8 @@ function NavLinks({
   docsHref,
   newTab,
   onNavigate,
+  badgeItem = null,
+  badge,
 }: {
   collapsed: boolean;
   nav: ChromeMessages['nav'];
@@ -235,6 +301,9 @@ function NavLinks({
   /** "(opens in a new tab)" — read out after an external item's label. */
   newTab: string;
   onNavigate?: () => void;
+  /** The item an announcement marks "New", or null. */
+  badgeItem?: AnnouncementRailItem | null;
+  badge: NavBadge;
 }) {
   const pathname = usePathname();
   return (
@@ -242,6 +311,14 @@ function NavLinks({
       {NAV.map((item) => {
         const href = item.localizedHref ? docsHref : item.href;
         const label = nav[item.key];
+        const itemBadge = badgeItem !== null && item.key === badgeItem ? badge : null;
+        // A click on the marked item is how the visit gets filed as the rail's.
+        const navigate = itemBadge
+          ? () => {
+              markAnnouncementSurface('rail');
+              onNavigate?.();
+            }
+          : onNavigate;
         // An external item is never "here": its href is another origin, so the
         // prefix rule could not match anyway, but the intent should not depend
         // on that accident.
@@ -259,7 +336,9 @@ function NavLinks({
         // icon-only link keeps a discernible name (WCAG 4.1.2).
         const body = (
           <>
-            <Icon name={item.icon} />
+            <BadgedIcon badge={itemBadge} collapsed={collapsed}>
+              <Icon name={item.icon} />
+            </BadgedIcon>
             <span className={collapsed ? 'sr-only' : ''}>{label}</span>
           </>
         );
@@ -275,7 +354,8 @@ function NavLinks({
                 testId={`nav-${item.key}`}
                 prominent={item.prominent}
                 className={className}
-                onNavigate={onNavigate}
+                onNavigate={navigate}
+                badge={itemBadge}
               />
             </li>
           );
@@ -308,12 +388,14 @@ function NavLinks({
             ) : (
               <Link
                 href={href}
-                onClick={onNavigate}
-                title={collapsed ? label : undefined}
+                onClick={navigate}
+                title={collapsed ? `${label}${itemBadge ? itemBadge.sr : ''}` : undefined}
                 aria-current={active ? 'page' : undefined}
+                data-badge={itemBadge ? 'new' : undefined}
                 className={className}
               >
                 {body}
+                <BadgeTail badge={itemBadge} collapsed={collapsed} />
               </Link>
             )}
           </li>
@@ -321,6 +403,20 @@ function NavLinks({
       })}
     </ul>
   );
+}
+
+/**
+ * The in-app announcement the layout read for this person, the parts the rail
+ * needs: which item gets "New", and the route whose visit ends it.
+ */
+export interface ShellAnnouncement {
+  id: string;
+  cta: string;
+  railBadge: AnnouncementRailItem | null;
+  /** Whether the badge shows (false for an announcement without one). */
+  badge: boolean;
+  /** Whether the home card shows (false once the person closed it). */
+  card: boolean;
 }
 
 export interface ShellUser {
@@ -337,6 +433,7 @@ export function AdminShell({
   workspaces = [],
   currentAccountId,
   staff = false,
+  announcement = null,
   children,
 }: {
   user: ShellUser | null;
@@ -354,6 +451,8 @@ export function AdminShell({
   currentAccountId?: string;
   /** Staff of the deployment: the switcher's search reaches the whole estate. */
   staff?: boolean;
+  /** The announcement this person gets, or null (see `ShellAnnouncement`). */
+  announcement?: ShellAnnouncement | null;
   children: ReactNode;
 }) {
   // Tagged once for both rails (desktop and drawer), like the other suite doors.
@@ -378,6 +477,38 @@ export function AdminShell({
   // render, the hydration render and the first paint all agree on 64px. That
   // is the same no-FOUC contract the cookie buys everywhere else.
   const railCollapsed = studio ? !peeking : collapsed;
+
+  // ── In-app announcement ──────────────────────────────────────────────────
+  // The layout is not re-rendered on client navigation, so what it read at load
+  // is followed here: reaching the announcement's route ends it at once (card
+  // and badge), and is stored against the person. The builder shows none of
+  // it, so a load there reports nothing either.
+  const [announcementDone, setAnnouncementDone] = useState(false);
+  const seenReported = useRef(false);
+  const annId = announcement?.id ?? null;
+  const annCta = announcement?.cta ?? null;
+  const onAnnouncementRoute = annCta !== null && isNavItemActive(pathname, annCta);
+  useEffect(() => {
+    if (!annId || announcementDone || !onAnnouncementRoute) return;
+    setAnnouncementDone(true);
+    reportAnnouncement(annId, 'clicked');
+    captureAnnouncement('clicked', annId, takeAnnouncementSurface());
+  }, [annId, announcementDone, onAnnouncementRoute]);
+  const badgeItem =
+    announcement && announcement.badge && !announcementDone && !studio && !onAnnouncementRoute
+      ? announcement.railBadge
+      : null;
+  // One sighting per load of the dashboard, which is what the session count is
+  // made of: the API folds sightings closer than its gap into one session. A
+  // sighting needs something on screen: the badge, or the card on the home.
+  const cardOnScreen = !!announcement?.card && pathname === '/admin';
+  useEffect(() => {
+    if (!annId || seenReported.current || announcementDone) return;
+    if (!badgeItem && !cardOnScreen) return;
+    seenReported.current = true;
+    reportAnnouncement(annId, 'seen');
+    if (badgeItem) captureAnnouncementSeen(annId, 'rail');
+  }, [annId, announcementDone, badgeItem, cardOnScreen]);
 
   // Persist the desktop rail preference to a cookie so the SERVER renders the
   // correct width on the next load (no flash) — see AdminLayout.
@@ -652,6 +783,8 @@ export function AdminShell({
             nav={messages.nav}
             docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
+            badgeItem={badgeItem}
+            badge={messages.newBadge}
           />
         </nav>
         {renderFooter(railCollapsed)}
@@ -706,6 +839,8 @@ export function AdminShell({
             docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
             onNavigate={() => setDrawerOpen(false)}
+            badgeItem={badgeItem}
+            badge={messages.newBadge}
           />
         </nav>
         {renderFooter(false, () => setDrawerOpen(false))}

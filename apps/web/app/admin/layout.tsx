@@ -49,7 +49,13 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   // Best-effort: a failure here must never take down the dashboard. Without the
   // list the switcher simply does not render, which is exactly how it behaves
   // for the single-workspace majority anyway.
-  const workspaces = await adminApi.listWorkspaces().catch(() => []);
+  //
+  // The announcement is best-effort the same way: an API without the route, or
+  // one that fails, means no badge, never a broken rail.
+  const [workspaces, announcement] = await Promise.all([
+    adminApi.listWorkspaces().catch(() => []),
+    adminApi.announcement().catch(() => null),
+  ]);
 
   // Product analytics is scoped to the dashboard on purpose — mounting it here
   // (never in the root layout) is what keeps it off public form pages, where
@@ -100,6 +106,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         workspaces={workspaces}
         currentAccountId={me.accountId}
         staff={me.staff}
+        announcement={
+          announcement
+            ? {
+                id: announcement.id,
+                cta: announcement.cta,
+                railBadge: announcement.railBadge,
+                badge: announcement.badge,
+                card: announcement.card,
+              }
+            : null
+        }
         user={{ displayName: me.displayName, email: me.email }}
       >
         <WorkspaceTimeZoneProvider timeZone={me.timezone}>

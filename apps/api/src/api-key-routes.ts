@@ -12,8 +12,8 @@
  * Everything else is a 403 `KEY_NOT_ALLOWED` with a key: the key routes
  * themselves, members, invitations, workspaces, onboarding and attribution
  * (the signup's UTM record, and the "Made with dForms" switch), writing the
- * profile, the language or the public page (vanity), and connecting or
- * disconnecting integrations.
+ * profile, the language or the public page (vanity), the in-app
+ * announcements, and connecting or disconnecting integrations.
  *
  * `ApiKeyRouteGuard` enforces it for every controller, before any handler runs,
  * so it also covers handlers that never call `AuthService.resolveHost`. It

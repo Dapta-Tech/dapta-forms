@@ -9,6 +9,8 @@ import { CopyLink } from '@/components/copy-link';
 import { CreateForm } from './forms/create-form';
 import { AgentBanner } from './_components/agent-banner';
 import { AgentCard } from './_components/agent-card';
+import { AnnouncementCard } from '@/components/announcement/announcement-card';
+import { getThemePref } from '@/lib/theme.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,12 +18,17 @@ export default async function AdminHome() {
   const locale = await getLocale();
   const messages = getMessages(locale).admin;
   const h = messages.home;
-  const [me, forms, linkPage] = await Promise.all([
+  const [me, forms, linkPage, announcement, theme] = await Promise.all([
     adminApi.me(),
     adminApi.listForms(),
     // Missing or unreadable page reads as "not published": the box hides.
     adminApi.linkPage().catch(() => null),
+    // In-app news. Read with the page (not after it) so the card is there on
+    // first paint; a failure just means no card.
+    adminApi.announcement().catch(() => null),
+    getThemePref(),
   ]);
+  const announcementCopy = announcement?.card ? messages.announcements.items[announcement.copy] : undefined;
 
   // Aggregate submissions + completion across every form (reuse per-form
   // analytics — no new endpoint). Weighted completion = Σsubmissions / Σstarts.
@@ -72,6 +79,18 @@ export default async function AdminHome() {
 
   return (
     <div className="mx-auto max-w-[1520px] px-4 py-8 sm:px-8 sm:py-10">
+      {/* The announcement goes first, a full row of its own above the agent
+          banner: it is the newest thing on the page and the one that leaves. */}
+      {announcement && announcementCopy ? (
+        <AnnouncementCard
+          id={announcement.id}
+          copy={announcementCopy}
+          cta={announcement.cta}
+          visual={announcement.visual}
+          closeLabel={messages.announcements.close}
+          theme={theme}
+        />
+      ) : null}
       <AgentBanner m={h.agentBanner} />
       <div className="mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         {/* Two lines at ONE size: the greeting in ink, what the page is in grey.

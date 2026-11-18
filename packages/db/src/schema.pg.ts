@@ -423,6 +423,31 @@ export const linkPageAlias = pgTable(
   }),
 );
 
+/**
+ * What one person did with one in-app announcement (see 0029 and
+ * `announcements.ts` in @quill/shared). Keyed by the PERSON, not the member
+ * row: `user_id` is the identity service's user id (`member.external_id`, the
+ * session's `sub`), so someone in three workspaces sees an announcement once,
+ * not three times. A member the identity service does not know (the local dev
+ * stub, an invite never signed in) is keyed `member:{member.id}` instead.
+ */
+export const announcementState = pgTable(
+  'announcement_state',
+  {
+    userId: text('user_id').notNull(),
+    announcementId: text('announcement_id').notNull(),
+    sessionsSeen: integer('sessions_seen').notNull().default(0),
+    lastSeenAt: bigint('last_seen_at', { mode: 'number' }),
+    dismissedAt: bigint('dismissed_at', { mode: 'number' }),
+    clickedAt: bigint('clicked_at', { mode: 'number' }),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.announcementId] }),
+  }),
+);
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -439,4 +464,5 @@ export const pgSchema = {
   accountIntegration,
   linkPage,
   linkPageAlias,
+  announcementState,
 };
