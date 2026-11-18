@@ -6,7 +6,14 @@ import { deleteForm, duplicateForm, moveForm, setFormSlug } from './forms';
 import { getMyProfile, getWorkspaceLinkCode } from './identity';
 import { createLinkPage, deleteLinkPage, duplicateLinkPage, getLinkPage, listLinkPages, updateLinkPage } from './link-page';
 import { getFormSummary, getResponseFacets, searchAnswers } from './insights';
-import { listCalendlyEventTypes, listEventTypes, listHubspotProperties, listIntegrations, listWebhooks } from './integrations';
+import {
+  listCalendlyEventTypes,
+  listEventTypes,
+  listGoHighLevelFields,
+  listHubspotProperties,
+  listIntegrations,
+  listWebhooks,
+} from './integrations';
 import {
   listFormNotifications,
   listNotifications,
@@ -70,6 +77,7 @@ export const PARITY_TOOLS: readonly ToolDef[] = [
   listIntegrations,
   listWebhooks,
   listHubspotProperties,
+  listGoHighLevelFields,
   listEventTypes,
   listCalendlyEventTypes,
   // Identity
@@ -143,6 +151,7 @@ export const API_ROUTE_TOOLS: Readonly<Record<string, string>> = {
   'GET /v1/integrations': 'list_integrations',
   'GET /v1/integrations/webhooks': 'list_webhooks',
   'GET /v1/integrations/hubspot/properties': 'list_hubspot_properties',
+  'GET /v1/integrations/gohighlevel/fields': 'list_gohighlevel_fields',
   'GET /v1/integrations/calendly/event-types': 'list_event_types',
 
   'GET /v1/me': 'whoami',

@@ -92,6 +92,10 @@ const DENIED = new Set([
   // is its own change, so it stays shut until then rather than half-open.
   'POST /v1/integrations/salesforce/connect',
   'GET /v1/integrations/salesforce/fields',
+  // HighLevel's connect: it takes a secret, like `:provider/connect`. Its
+  // field list is allowed (it reads metadata only, and the MCP tool
+  // list_gohighlevel_fields reads it), and documented in the API reference.
+  'POST /v1/integrations/gohighlevel/connect',
   // The Google Sheets consent flow, both halves. A key cannot start one (there
   // is no browser to send anywhere and no human to consent), and cannot finish
   // one either.
@@ -208,6 +212,7 @@ describe('ApiKeyRouteGuard', () => {
     refused(AdminCrudController, p.saveMyProfile);
     refused(ApiKeysController, ApiKeysController.prototype.create);
     refused(IntegrationsController, IntegrationsController.prototype.connect);
+    refused(IntegrationsController, IntegrationsController.prototype.connectGoHighLevel);
   });
 
   it('with a key, an allowed route goes through', () => {
@@ -217,6 +222,10 @@ describe('ApiKeyRouteGuard', () => {
     expect(guard.canActivate(contextFor(IntegrationsController, IntegrationsController.prototype.list, auth))).toBe(
       true,
     );
+    // HighLevel's field list, which list_gohighlevel_fields reads (its connect stays refused, above).
+    expect(
+      guard.canActivate(contextFor(IntegrationsController, IntegrationsController.prototype.goHighLevelFieldList, auth)),
+    ).toBe(true);
     expect(guard.canActivate(contextFor(PublicController, PublicController.prototype.form, auth))).toBe(true);
     expect(guard.canActivate(contextFor(LinkPageController, LinkPageController.prototype.get, auth))).toBe(true);
     expect(guard.canActivate(contextFor(LinkPageController, LinkPageController.prototype.put, auth))).toBe(true);

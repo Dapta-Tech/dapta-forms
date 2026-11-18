@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { AgentLogo } from './agent-logos';
+import { LOGO_ROTATE_MS, useLogoRotation } from './logo-rotation';
 
 /** The AI apps the MCP item stands for, in the order they take turns. */
 export const MCP_LOGOS = ['claude', 'openai', 'cursor', 'openclaw', 'hermes'] as const;
@@ -35,22 +35,8 @@ export const MCP_LOGO_PATHS: Record<PathLogo, string> = {
     'M22.106 5.68L12.5.135a.998.998 0 00-.998 0L1.893 5.68a.84.84 0 00-.419.726v11.186c0 .3.16.577.42.727l9.607 5.547a.999.999 0 00.998 0l9.608-5.547a.84.84 0 00.42-.727V6.407a.84.84 0 00-.42-.726zm-.603 1.176L12.228 22.92c-.063.108-.228.064-.228-.061V12.34a.59.59 0 00-.295-.51l-9.11-5.26c-.107-.062-.063-.228.062-.228h18.55c.264 0 .428.286.296.514z',
 };
 
-/**
- * How long each logo stays before the next one fades in: the same for every
- * logo, on one steady interval (the crossfade is symmetric and short, so no
- * logo reads as staying longer than the others).
- */
-export const MCP_ROTATE_MS = 1600;
-
-const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
-
-function prefersReducedMotion(): boolean {
-  try {
-    return typeof window !== 'undefined' && !!window.matchMedia?.(REDUCED_MOTION).matches;
-  } catch {
-    return false;
-  }
-}
+/** How long each logo stays (see `logo-rotation.ts`, shared with the Integrations item). */
+export const MCP_ROTATE_MS = LOGO_ROTATE_MS;
 
 /**
  * The icon of the rail's MCP item: the Claude, ChatGPT and Cursor logos taking
@@ -71,30 +57,7 @@ function prefersReducedMotion(): boolean {
  * `prefers-reduced-motion`; globals.css also zeroes the transition there.
  */
 export function McpLogos({ size = 20, paused = false }: { size?: number; paused?: boolean }) {
-  const [index, setIndex] = useState(0);
-  const [still, setStill] = useState(true);
-
-  // Read the motion preference after mount (the server cannot know it), and
-  // follow it if it changes while the page is open.
-  useEffect(() => {
-    setStill(prefersReducedMotion());
-    let query: MediaQueryList | undefined;
-    try {
-      query = window.matchMedia?.(REDUCED_MOTION);
-    } catch {
-      query = undefined;
-    }
-    if (!query?.addEventListener) return;
-    const onChange = (e: MediaQueryListEvent) => setStill(e.matches);
-    query.addEventListener('change', onChange);
-    return () => query?.removeEventListener('change', onChange);
-  }, []);
-
-  useEffect(() => {
-    if (still || paused) return;
-    const timer = setInterval(() => setIndex((i) => (i + 1) % MCP_LOGOS.length), MCP_ROTATE_MS);
-    return () => clearInterval(timer);
-  }, [still, paused]);
+  const index = useLogoRotation(MCP_LOGOS.length, { paused });
 
   return (
     <span

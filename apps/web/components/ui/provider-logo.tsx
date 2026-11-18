@@ -131,6 +131,26 @@ export function GoogleSheetsLogo({ size = 18, className }: { size?: number; clas
 }
 
 /**
+ * HighLevel's mark, the one already shipped for onboarding
+ * (`public/onboarding/ghl.png`). A raster from the app's own origin, not an
+ * external host, so it renders offline like the inline marks. Always
+ * decoration beside the product's own name, hence `alt=""`.
+ */
+export function GoHighLevelLogo({ size = 18, className }: { size?: number; className?: string }) {
+  return (
+    <img
+      src="/onboarding/ghl.png"
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden
+      className={'rounded-[3px] ' + (className ?? '')}
+      data-provider-logo="gohighlevel"
+    />
+  );
+}
+
+/**
  * The mark for any account-level integration provider, whichever shape it is.
  *
  * It exists so callers stop having to know that two providers are one path on a
@@ -147,10 +167,11 @@ export function IntegrationMark({
   size = 18,
   className,
 }: {
-  provider: LogoProvider | 'google-sheets';
+  provider: LogoProvider | 'google-sheets' | 'gohighlevel';
   size?: number;
   className?: string;
 }) {
   if (provider === 'google-sheets') return <GoogleSheetsLogo size={size} className={className} />;
+  if (provider === 'gohighlevel') return <GoHighLevelLogo size={size} className={className} />;
   return <ProviderLogo provider={provider} size={size} className={className} />;
 }

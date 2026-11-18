@@ -2028,11 +2028,21 @@ export interface FormsMessages {
       webhookPartialOnlyHeld: string;
       /** The HubSpot card while partials are held: contacts sync on complete. */
       hubspotPartialHeld: string;
+      // The "send partial responses too" switch on the CRM cards (HubSpot, Salesforce).
+      /** The switch's label. */
+      crmPartials: string;
+      /** Under the switch: what turning it on sends. */
+      crmPartialsHelp: string;
+      /** Salesforce with partials on: a partial can create a new Lead with placeholders. `{value}` = the placeholder. */
+      crmPartialsSalesforcePlaceholder: string;
+      /** The Google Sheets card: it only ever receives complete responses. */
+      gsheetsCompleteOnly: string;
       // Delivery history — the collapsible log inside each integration card.
       /** Per-card headings; the shared panel takes them as props. */
       historyWebhookTitle: string;
       historyHubspotTitle: string;
       historySalesforceTitle: string;
+      historyHighlevelTitle: string;
       historySheetsTitle: string;
       historyEmailTitle: string;
       historyHelp: string;
@@ -2089,6 +2099,7 @@ export interface FormsMessages {
         webhook: string;
         hubspot: string;
         salesforce: string;
+        highlevel: string;
         googleSheets: string;
         other: string;
       };
@@ -2110,8 +2121,95 @@ export interface FormsMessages {
         salesforceNotConnected: string;
         hubspotNotConnected: string;
         webhookNoUrl: string;
+        /** The factory's no-op for a HighLevel destination with no usable connection. */
+        highlevelNotConnected: string;
+        /** HighLevel deduplicates on email or phone, so a response with neither is not sent. */
+        highlevelNoEmailOrPhone: string;
+        /** HighLevel answered 401: the token was revoked or rotated. */
+        highlevelTokenRejected: string;
+        /** HighLevel answered 403: the token cannot reach the location, or lacks a scope. */
+        highlevelLocationForbidden: string;
         /** HubSpot refused the booking properties a booking update wrote. `{status}`. */
         bookingRejected: string;
+      };
+      /** The per-form HighLevel card. */
+      highlevel: {
+        title: string;
+        desc: string;
+        /** Heads the connect form shown in place of the mapping when not connected. */
+        connectTitle: string;
+        notConnected: string;
+        /** The link to the workspace's Integrations page. */
+        openConnections: string;
+        /** The fields route says the stored token was refused. */
+        rejected: string;
+        /** The custom fields could not be read; standard ones still work. */
+        fieldsUnavailable: string;
+        refreshFields: string;
+        refreshing: string;
+        /** Who decides new vs existing, and the shared-phone trap. */
+        duplicates: string;
+        mappingTitle: string;
+        mappingHint: string;
+        standardGroup: string;
+        customGroup: string;
+        customHint: string;
+        /** The location has no custom field of a type dForms can fill. */
+        noCustomFields: string;
+        questionPlaceholder: string;
+        fieldPlaceholder: string;
+        customFieldPlaceholder: string;
+        addStandard: string;
+        addCustom: string;
+        remove: string;
+        rowNeedsField: string;
+        rowNeedsQuestion: string;
+        rowNeedsValue: string;
+        /** A stored target whose type no longer fits the answer. */
+        rowIncompatible: string;
+        /** Neither Email nor Phone is mapped: nothing can be sent. */
+        emailPhoneMissing: string;
+        /** The standard contact fields, by their upsert key. */
+        standardFields: {
+          firstName: string;
+          lastName: string;
+          name: string;
+          email: string;
+          phone: string;
+          companyName: string;
+          website: string;
+          address1: string;
+          city: string;
+          state: string;
+          postalCode: string;
+          country: string;
+          dateOfBirth: string;
+        };
+        utmTitle: string;
+        utmHint: string;
+        scoreLabel: string;
+        scoreHint: string;
+        dateLabel: string;
+        dateHint: string;
+        dayTimezoneLabel: string;
+        dayTimezoneHint: string;
+        none: string;
+        tagsTitle: string;
+        tagsHint: string;
+        tagsPlaceholder: string;
+        addTag: string;
+        /** `{tag}`. */
+        removeTag: string;
+        sourceLabel: string;
+        /** `{default}` = the source HighLevel gets when this is blank. */
+        sourceHint: string;
+        staticTitle: string;
+        staticHint: string;
+        addStatic: string;
+        valuePlaceholder: string;
+        /** A stored fixed Email or Phone, which the delivery ignores. */
+        staticIdentityIgnored: string;
+        extraStored: string;
       };
       salesforce: {
         title: string;
@@ -2330,6 +2428,53 @@ export interface FormsMessages {
         timeout: string;
         /** The member's role may not connect integrations. */
         forbidden: string;
+      };
+      /** The HighLevel connection card. */
+      highlevel: {
+        name: string;
+        desc: string;
+        setupTitle: string;
+        /** Three steps, with HighLevel's own menu labels. */
+        setupSteps: string[];
+        /** The scopes to tick, as HighLevel's scope search lists them. */
+        scopes: string[];
+        /** Private Integrations missing from Settings: it is behind Labs. */
+        labsNote: string;
+        tokenLabel: string;
+        tokenPlaceholder: string;
+        locationLabel: string;
+        locationPlaceholder: string;
+        locationHelp: string;
+        /** What happens to the token. */
+        secretHelp: string;
+        fieldsRequired: string;
+        /** `{label}` = the sub-account's name. */
+        connectedTo: string;
+        /** `{id}`. */
+        locationLine: string;
+        replaceToken: string;
+        /** Over the form that replaces the token: mappings are kept. */
+        replaceNote: string;
+        /** Under the read-only Location ID while replacing the token. */
+        replaceLocationFixed: string;
+        replaceSuccess: string;
+        /** The badge while HighLevel refuses the stored token. */
+        rejectedBadge: string;
+        rejectedTitle: string;
+        /** `{date}`. */
+        rejectedBody: string;
+        /** The same, for a member who cannot replace the token. `{date}`. */
+        rejectedBodyMember: string;
+        /** Why a connection was refused, one sentence per `GoHighLevelConnectError`. */
+        errors: {
+          token_format: string;
+          invalid_token: string;
+          wrong_location: string;
+          missing_scope: string;
+          unreachable: string;
+          timeout: string;
+          forbidden: string;
+        };
       };
       /** What the page says when the consent round trip comes back. */
       googleConnected: string;
@@ -4615,9 +4760,17 @@ export const en: FormsMessages = {
         'This webhook will not fire: it only listens to partial answers, which are paused while spam protection is on.',
       hubspotPartialHeld:
         'Spam protection is on: contacts are created or updated when a respondent completes the form, not from partial answers.',
+      crmPartials: 'Send partial responses too',
+      crmPartialsHelp:
+        'Also sends what someone answered before leaving the form unfinished. Complete responses are always sent.',
+      crmPartialsSalesforcePlaceholder:
+        'A partial response can create a new Lead before the last name or company is answered: the last name is then {value}, and the company comes from a work email or is {value}.',
+      gsheetsCompleteOnly:
+        'Only complete responses are added, one row per person. Partial responses are not sent to the sheet.',
       historyWebhookTitle: 'Webhook history',
       historyHubspotTitle: 'HubSpot history',
       historySalesforceTitle: 'Salesforce history',
+      historyHighlevelTitle: 'HighLevel history',
       historySheetsTitle: 'Google Sheets history',
       historyEmailTitle: 'Email history',
       historyHelp: 'The last deliveries this form made, newest first. Open one to see what was sent.',
@@ -4653,6 +4806,7 @@ export const en: FormsMessages = {
         webhook: 'your endpoint',
         hubspot: 'HubSpot',
         salesforce: 'Salesforce',
+        highlevel: 'HighLevel',
         googleSheets: 'Google Sheets',
         other: 'the destination',
       },
@@ -4668,7 +4822,88 @@ export const en: FormsMessages = {
         salesforceNotConnected: 'Salesforce is not connected. Connect it again to keep sending leads.',
         hubspotNotConnected: 'HubSpot is not connected.',
         webhookNoUrl: 'The webhook has no URL.',
+        highlevelNotConnected: 'HighLevel is not connected. Connect it again to keep sending leads.',
+        highlevelNoEmailOrPhone:
+          'This response has no email or phone, so HighLevel cannot tell whether the contact already exists. Nothing was sent.',
+        highlevelTokenRejected: 'HighLevel stopped accepting the token. Connect HighLevel again with a new token.',
+        highlevelLocationForbidden:
+          'The token cannot reach this sub-account, or it is missing a scope. Connect HighLevel again.',
         bookingRejected: 'HubSpot refused the booking update with HTTP {status}. Check the booking properties.',
+      },
+      highlevel: {
+        title: 'HighLevel',
+        desc: 'Send each completed response to HighLevel as a contact.',
+        connectTitle: 'Connect HighLevel to send contacts',
+        notConnected: 'Connect your sub-account once and every form in this workspace can send to it.',
+        openConnections: 'Open Integrations',
+        rejected:
+          'HighLevel stopped accepting the token, so nothing is sent. Replace the token in Integrations to keep sending leads.',
+        fieldsUnavailable:
+          'HighLevel did not list its custom fields. Standard fields still work; try refreshing the fields.',
+        refreshFields: 'Refresh fields',
+        refreshing: 'Refreshing…',
+        duplicates:
+          'HighLevel decides whether a response is a new contact or an existing one, by email or phone, following the sub-account’s Contact Duplication Preferences. Matching by phone can merge different people who share a number, like a family or an office line.',
+        mappingTitle: 'Questions to contact fields',
+        mappingHint: 'Pick a question and the HighLevel field it fills. One question can fill several fields.',
+        standardGroup: 'Standard',
+        customGroup: 'Custom fields',
+        customHint: 'Only the custom fields whose type can take the answer are offered.',
+        noCustomFields:
+          'This sub-account has no custom field dForms can fill yet. Create one in HighLevel, then refresh the fields.',
+        questionPlaceholder: 'Question…',
+        fieldPlaceholder: 'HighLevel field…',
+        customFieldPlaceholder: 'Custom field…',
+        addStandard: 'Add a standard field',
+        addCustom: 'Add a custom field',
+        remove: 'Remove',
+        rowNeedsField: 'Saved. Choose the HighLevel field to send it.',
+        rowNeedsQuestion: 'Saved. Choose the question that fills it to send it.',
+        rowNeedsValue: 'Saved. Give it a value to send it.',
+        rowIncompatible: 'This field’s type cannot take this answer, so it is left out. Choose another field.',
+        emailPhoneMissing:
+          'Map a question to Email or Phone. HighLevel needs one of them to find the contact, so without either nothing is sent.',
+        standardFields: {
+          firstName: 'First name',
+          lastName: 'Last name',
+          name: 'Full name',
+          email: 'Email',
+          phone: 'Phone',
+          companyName: 'Company name',
+          website: 'Website',
+          address1: 'Street address',
+          city: 'City',
+          state: 'State',
+          postalCode: 'Postal code',
+          country: 'Country',
+          dateOfBirth: 'Date of birth',
+        },
+        utmTitle: 'Campaign (UTM) fields',
+        utmHint:
+          'Write each UTM parameter of the visit to a text custom field. HighLevel does not let other apps write its own attribution.',
+        scoreLabel: 'Score',
+        scoreHint: 'A number custom field.',
+        dateLabel: 'Submission date',
+        dateHint: 'A date custom field.',
+        dayTimezoneLabel: 'Day in time zone',
+        dayTimezoneHint: 'Which calendar day a date field gets. Blank is UTC.',
+        none: 'Do not send',
+        tagsTitle: 'Tags',
+        tagsHint:
+          'Added to the contact with every response, to start your HighLevel workflows. Tags are added, never removed: the ones the contact already has stay. HighLevel saves them in lowercase.',
+        tagsPlaceholder: 'Type a tag and press Enter',
+        addTag: 'Add',
+        removeTag: 'Remove tag {tag}',
+        sourceLabel: 'Source',
+        sourceHint: 'What HighLevel shows as the contact’s source. Blank sends “{default}”.',
+        staticTitle: 'Fixed values',
+        staticHint:
+          'Written on every contact, unless an answer already filled that field. Email and Phone cannot take a fixed value, because every response would land on the same contact.',
+        addStatic: 'Add a fixed value',
+        valuePlaceholder: 'Value…',
+        staticIdentityIgnored: 'HighLevel ignores a fixed Email or Phone, so this row is never sent. Remove it.',
+        extraStored:
+          'This form has more than one HighLevel destination. Only the first is shown here, and saving keeps only this one.',
       },
       salesforce: {
         title: 'Salesforce',
@@ -4865,6 +5100,54 @@ export const en: FormsMessages = {
         timeout:
           'Salesforce took too long to answer. Try again; if it keeps happening, this server may not be allowed to reach Salesforce.',
         forbidden: 'Only workspace admins and owners can connect integrations.',
+      },
+      highlevel: {
+        name: 'HighLevel',
+        desc: 'Send respondents to HighLevel as contacts, or update them if they already exist, and map questions to fields.',
+        setupTitle: 'Before you connect, create a Private Integration in the HighLevel sub-account:',
+        setupSteps: [
+          'In the sub-account, open Settings > Private Integrations and click Create new Integration.',
+          'Give it these three scopes. Search each one by name:',
+          'Create it and copy the token right away: HighLevel shows it only once. Then copy the Location ID from Settings > Business Profile > General Information, or paste the sub-account’s URL instead.',
+        ],
+        scopes: [
+          'Edit Contacts - contacts.write',
+          'View Locations - locations.readonly',
+          'View Custom Fields - locations/customFields.readonly',
+        ],
+        labsNote: 'No Private Integrations under Settings? Turn it on in Settings > Labs.',
+        tokenLabel: 'Private Integration token',
+        tokenPlaceholder: 'pit-…',
+        locationLabel: 'Location ID',
+        locationPlaceholder: 'Location ID or the sub-account URL',
+        locationHelp: 'In Settings > Business Profile > General Information. The sub-account URL from your browser works too.',
+        secretHelp:
+          'The token and the Location ID are checked with HighLevel, encrypted and stored on the server. The token is never shown again.',
+        fieldsRequired: 'Paste the token and the Location ID.',
+        connectedTo: 'Connected to {label}',
+        locationLine: 'Location ID {id}',
+        replaceToken: 'Replace token',
+        replaceNote: 'Paste the new token. Every form keeps its mapping.',
+        replaceLocationFixed: 'Same sub-account. To use another one, disconnect HighLevel and connect it again.',
+        replaceSuccess: 'HighLevel token replaced.',
+        rejectedBadge: 'Needs a new token',
+        rejectedTitle: 'HighLevel stopped accepting the token',
+        rejectedBody:
+          'Since {date}, HighLevel refuses this token, so no response reaches it. Replace the token to keep sending leads.',
+        rejectedBodyMember:
+          'Since {date}, HighLevel refuses this token, so no response reaches it. Ask an owner or admin to replace the token.',
+        errors: {
+          token_format: 'That is not a HighLevel Private Integration token. It starts with pit-.',
+          invalid_token: 'HighLevel did not accept the token. Check that you copied all of it, or create a new one.',
+          wrong_location:
+            'This token has no access to that Location ID. Use the token and the Location ID of the same sub-account.',
+          missing_scope:
+            'The token is missing a scope. Give it contacts.write, locations.readonly and locations/customFields.readonly.',
+          unreachable: 'HighLevel did not answer. Try again in a moment.',
+          timeout:
+            'HighLevel took too long to answer. Try again; if it keeps happening, this server may not be allowed to reach HighLevel.',
+          forbidden: 'Only workspace admins and owners can connect integrations.',
+        },
       },
       googleConnected: 'Google Sheets is connected.',
       googleCancelled: 'Google Sheets was not connected.',
@@ -5246,12 +5529,13 @@ export const en: FormsMessages = {
           list_form_notifications: { what: 'See the emails one form sends.', ask: 'Which emails does my lead form send?' },
           update_form_notification: { what: 'Edit an email for one form.', ask: 'Send the lead form notices to sales@example.com' },
           reset_form_notification: { what: 'Put a form\'s email back to the workspace default.', ask: 'Reset the emails of my survey' },
-          list_integrations: { what: 'See which apps are connected (HubSpot, Calendly, Google Sheets or Salesforce) and whether dCal is available.', ask: 'Is HubSpot connected?' },
-          set_destinations: { what: 'Choose where a form\'s responses go: webhooks, HubSpot, Google Sheets or Salesforce.', ask: 'Send every lead from my form to HubSpot' },
+          list_integrations: { what: 'See which apps are connected (HubSpot, Calendly, Google Sheets, Salesforce or HighLevel) and whether dCal is available.', ask: 'Is HubSpot connected?' },
+          set_destinations: { what: 'Choose where a form\'s responses go: webhooks, HubSpot, Google Sheets, Salesforce or HighLevel.', ask: 'Send every lead from my form to HubSpot' },
           list_webhooks: { what: 'See a form\'s webhooks.', ask: 'Which webhooks does my lead form have?' },
           ping_webhook: { what: 'Send a test to a webhook.', ask: 'Test the webhook of my lead form' },
           list_deliveries: { what: 'See which responses were delivered and which failed.', ask: 'Did my last responses reach HubSpot?' },
           list_hubspot_properties: { what: 'See the HubSpot fields a question can fill.', ask: 'Which HubSpot fields can I map?' },
+          list_gohighlevel_fields: { what: 'See the HighLevel contact fields a question can fill, custom fields included.', ask: 'Which HighLevel fields can I map?' },
           list_event_types: { what: 'See the Calendly events a scheduler step can book. dCal events are picked in the form editor.', ask: 'Which Calendly events can my booking step offer?' },
           list_calendly_event_types: { what: 'See the Calendly events a form can book.', ask: 'Which Calendly events can my form book?' },
           whoami: { what: 'Check who is connected and in which workspace.', ask: 'Who am I connected as?' },
@@ -5452,9 +5736,11 @@ export const en: FormsMessages = {
         'POST /v1/forms/:id/notifications/:emailKey/reset':
           'Removes the form’s own version, so it follows the workspace setting again.',
         'GET /v1/integrations':
-          'Which integrations the workspace has connected (HubSpot, Calendly, Google Sheets, Salesforce), which ones this deployment cannot connect (`unavailable`), and whether it has dCal (`dcal`). Never returns a token.',
+          'Which integrations the workspace has connected (HubSpot, Calendly, Google Sheets, Salesforce, HighLevel), which ones this deployment cannot connect (`unavailable`), and whether it has dCal (`dcal`). The HighLevel entry adds `locationId` and `rejectedAt` (when HighLevel stopped accepting the token). Never returns a token.',
         'GET /v1/integrations/webhooks': 'Every webhook the workspace’s forms send to, with its recent failures.',
         'GET /v1/integrations/hubspot/properties': 'The HubSpot contact properties a destination can map answers to.',
+        'GET /v1/integrations/gohighlevel/fields':
+          'The HighLevel contact fields a destination can map answers to: the standard ones and the connected sub-account’s custom fields, with the `id`, `key` and `dataType` a mapping copies. `enabled: false` with `reason` (`not_connected`, `rejected`) when HighLevel cannot be read; HighLevel is connected in the dashboard only.',
         'GET /v1/integrations/calendly/event-types': 'The Calendly event types a scheduler step can book.',
         'GET /v1/me': 'The person and the workspace the key acts as, with the person’s role.',
         'GET /v1/me/profile': 'The person’s public page, if they set one up.',
@@ -5529,6 +5815,7 @@ export const en: FormsMessages = {
         notificationBody: 'The body as plain text, with `{{token}}` markers. `null` puts the default back.',
         notificationRecipients:
           'Who gets the notice to your team. Not accepted on `submission_confirmed`, which goes to the person who answered.',
+        goHighLevelRefresh: '`1` reads the custom fields from HighLevel again instead of the copy kept for 5 minutes, for a field just created there.',
       },
       notAllowed: {
         title: 'What a key cannot do',
@@ -7466,9 +7753,17 @@ export const es: FormsMessages = {
         'Este webhook no se va a disparar: solo escucha respuestas parciales, que están en pausa mientras la protección contra spam está activa.',
       hubspotPartialHeld:
         'La protección contra spam está activa: los contactos se crean o actualizan cuando alguien completa el formulario, no con respuestas parciales.',
+      crmPartials: 'Enviar también respuestas parciales',
+      crmPartialsHelp:
+        'También envía lo que alguien respondió antes de dejar el formulario sin terminar. Las respuestas completas se envían siempre.',
+      crmPartialsSalesforcePlaceholder:
+        'Una respuesta parcial puede crear un Lead nuevo antes de que se responda el apellido o la empresa: el apellido queda como {value}, y la empresa sale de un correo de trabajo o queda como {value}.',
+      gsheetsCompleteOnly:
+        'Solo se agregan respuestas completas, una fila por persona. Las respuestas parciales no se envían a la hoja.',
       historyWebhookTitle: 'Historial del webhook',
       historyHubspotTitle: 'Historial de HubSpot',
       historySalesforceTitle: 'Historial de Salesforce',
+      historyHighlevelTitle: 'Historial de HighLevel',
       historySheetsTitle: 'Historial de Google Sheets',
       historyEmailTitle: 'Historial de correos',
       historyHelp:
@@ -7505,6 +7800,7 @@ export const es: FormsMessages = {
         webhook: 'tu endpoint',
         hubspot: 'HubSpot',
         salesforce: 'Salesforce',
+        highlevel: 'HighLevel',
         googleSheets: 'Google Sheets',
         other: 'el destino',
       },
@@ -7520,7 +7816,88 @@ export const es: FormsMessages = {
         salesforceNotConnected: 'Salesforce no está conectado. Conéctalo de nuevo para seguir enviando leads.',
         hubspotNotConnected: 'HubSpot no está conectado.',
         webhookNoUrl: 'El webhook no tiene URL.',
+        highlevelNotConnected: 'HighLevel no está conectado. Conéctalo de nuevo para seguir enviando leads.',
+        highlevelNoEmailOrPhone:
+          'Esta respuesta no tiene email ni teléfono, así que HighLevel no puede saber si el contacto ya existe. No se envió nada.',
+        highlevelTokenRejected: 'HighLevel dejó de aceptar el token. Conecta HighLevel de nuevo con un token nuevo.',
+        highlevelLocationForbidden:
+          'El token no tiene acceso a esta subcuenta o le falta un scope. Conecta HighLevel de nuevo.',
         bookingRejected: 'HubSpot rechazó la actualización del agendamiento con HTTP {status}. Revisa las propiedades del agendamiento.',
+      },
+      highlevel: {
+        title: 'HighLevel',
+        desc: 'Envía cada respuesta completa a HighLevel como contacto.',
+        connectTitle: 'Conecta HighLevel para enviar contactos',
+        notConnected: 'Conecta tu subcuenta una vez y cualquier formulario de este espacio de trabajo podrá enviarle contactos.',
+        openConnections: 'Abrir Integraciones',
+        rejected:
+          'HighLevel dejó de aceptar el token, así que no se envía nada. Reemplaza el token en Integraciones para seguir enviando leads.',
+        fieldsUnavailable:
+          'HighLevel no listó sus custom fields. Los campos estándar siguen funcionando; prueba actualizar los campos.',
+        refreshFields: 'Actualizar campos',
+        refreshing: 'Actualizando…',
+        duplicates:
+          'HighLevel decide si una respuesta es un contacto nuevo o uno que ya existe, por email o por teléfono, según las Contact Duplication Preferences de la subcuenta. Deduplicar por teléfono puede juntar a personas distintas que comparten número, como una familia o la línea de una oficina.',
+        mappingTitle: 'Preguntas a campos del contacto',
+        mappingHint: 'Elige una pregunta y el campo de HighLevel que llena. Una pregunta puede llenar varios campos.',
+        standardGroup: 'Estándar',
+        customGroup: 'Custom fields',
+        customHint: 'Solo se ofrecen los custom fields cuyo tipo puede recibir la respuesta.',
+        noCustomFields:
+          'Esta subcuenta todavía no tiene ningún custom field que dForms pueda llenar. Crea uno en HighLevel y actualiza los campos.',
+        questionPlaceholder: 'Pregunta…',
+        fieldPlaceholder: 'Campo de HighLevel…',
+        customFieldPlaceholder: 'Custom field…',
+        addStandard: 'Agregar un campo estándar',
+        addCustom: 'Agregar un custom field',
+        remove: 'Quitar',
+        rowNeedsField: 'Guardado. Elige el campo de HighLevel para enviarlo.',
+        rowNeedsQuestion: 'Guardado. Elige la pregunta que lo llena para enviarlo.',
+        rowNeedsValue: 'Guardado. Dale un valor para enviarlo.',
+        rowIncompatible: 'El tipo de este campo no puede recibir esta respuesta, así que no se envía. Elige otro campo.',
+        emailPhoneMissing:
+          'Asigna una pregunta a Email o a Teléfono. HighLevel necesita uno de los dos para encontrar el contacto, así que sin ninguno no se envía nada.',
+        standardFields: {
+          firstName: 'Nombre',
+          lastName: 'Apellido',
+          name: 'Nombre completo',
+          email: 'Email',
+          phone: 'Teléfono',
+          companyName: 'Empresa',
+          website: 'Sitio web',
+          address1: 'Dirección',
+          city: 'Ciudad',
+          state: 'Estado o departamento',
+          postalCode: 'Código postal',
+          country: 'País',
+          dateOfBirth: 'Fecha de nacimiento',
+        },
+        utmTitle: 'Campos de campaña (UTM)',
+        utmHint:
+          'Escribe cada parámetro UTM de la visita en un custom field de texto. HighLevel no deja que otras apps escriban su propia atribución.',
+        scoreLabel: 'Score',
+        scoreHint: 'Un custom field de número.',
+        dateLabel: 'Fecha de envío',
+        dateHint: 'Un custom field de fecha.',
+        dayTimezoneLabel: 'Día en la zona horaria',
+        dayTimezoneHint: 'Qué día del calendario recibe un campo de fecha. En blanco es UTC.',
+        none: 'No enviar',
+        tagsTitle: 'Etiquetas',
+        tagsHint:
+          'Se agregan al contacto con cada respuesta, para disparar tus workflows de HighLevel. Las etiquetas se suman y nunca se quitan: las que el contacto ya tiene se quedan. HighLevel las guarda en minúsculas.',
+        tagsPlaceholder: 'Escribe una etiqueta y presiona Enter',
+        addTag: 'Agregar',
+        removeTag: 'Quitar la etiqueta {tag}',
+        sourceLabel: 'Source',
+        sourceHint: 'Lo que HighLevel muestra como origen del contacto. En blanco se envía “{default}”.',
+        staticTitle: 'Valores fijos',
+        staticHint:
+          'Se escriben en cada contacto, salvo que una respuesta ya haya llenado ese campo. Email y Teléfono no aceptan un valor fijo, porque todas las respuestas caerían en el mismo contacto.',
+        addStatic: 'Agregar un valor fijo',
+        valuePlaceholder: 'Valor…',
+        staticIdentityIgnored: 'HighLevel ignora un Email o Teléfono fijo, así que esta fila nunca se envía. Quítala.',
+        extraStored:
+          'Este formulario tiene más de un destino de HighLevel. Aquí solo se muestra el primero, y al guardar solo queda este.',
       },
       salesforce: {
         title: 'Salesforce',
@@ -7717,6 +8094,54 @@ export const es: FormsMessages = {
         timeout:
           'Salesforce tardó demasiado en responder. Vuelve a intentar; si sigue pasando, puede que este servidor no tenga permitido conectarse a Salesforce.',
         forbidden: 'Solo un propietario o un administrador del espacio de trabajo puede conectar integraciones.',
+      },
+      highlevel: {
+        name: 'HighLevel',
+        desc: 'Envía a quienes responden a HighLevel como contactos, o actualízalos si ya existen, y asigna preguntas a campos.',
+        setupTitle: 'Antes de conectar, crea una Private Integration en la subcuenta de HighLevel:',
+        setupSteps: [
+          'En la subcuenta, abre Settings > Private Integrations y haz clic en Create new Integration.',
+          'Dale estos tres scopes. Busca cada uno por su nombre:',
+          'Créala y copia el token en ese momento: HighLevel lo muestra una sola vez. Luego copia el Location ID desde Settings > Business Profile > General Information, o pega el URL de la subcuenta.',
+        ],
+        scopes: [
+          'Edit Contacts - contacts.write',
+          'View Locations - locations.readonly',
+          'View Custom Fields - locations/customFields.readonly',
+        ],
+        labsNote: '¿No ves Private Integrations en Settings? Actívalo en Settings > Labs.',
+        tokenLabel: 'Token de Private Integration',
+        tokenPlaceholder: 'pit-…',
+        locationLabel: 'Location ID',
+        locationPlaceholder: 'Location ID o el URL de la subcuenta',
+        locationHelp: 'Está en Settings > Business Profile > General Information. También sirve el URL de la subcuenta en tu navegador.',
+        secretHelp:
+          'El token y el Location ID se prueban con HighLevel, se cifran y se guardan en el servidor. El token no se vuelve a mostrar.',
+        fieldsRequired: 'Pega el token y el Location ID.',
+        connectedTo: 'Conectado a {label}',
+        locationLine: 'Location ID {id}',
+        replaceToken: 'Reemplazar token',
+        replaceNote: 'Pega el token nuevo. Cada formulario conserva su mapeo.',
+        replaceLocationFixed: 'Es la misma subcuenta. Para usar otra, desconecta HighLevel y vuelve a conectarla.',
+        replaceSuccess: 'Token de HighLevel reemplazado.',
+        rejectedBadge: 'Necesita un token nuevo',
+        rejectedTitle: 'HighLevel dejó de aceptar el token',
+        rejectedBody:
+          'Desde el {date}, HighLevel rechaza este token, así que ninguna respuesta le llega. Reemplaza el token para seguir enviando leads.',
+        rejectedBodyMember:
+          'Desde el {date}, HighLevel rechaza este token, así que ninguna respuesta le llega. Pídele a un propietario o administrador que reemplace el token.',
+        errors: {
+          token_format: 'Eso no es un token de Private Integration de HighLevel. Empieza por pit-.',
+          invalid_token: 'HighLevel no aceptó el token. Revisa que lo copiaste completo o crea uno nuevo.',
+          wrong_location:
+            'Este token no tiene acceso a ese Location ID. Usa el token y el Location ID de la misma subcuenta.',
+          missing_scope:
+            'Al token le falta un scope. Dale contacts.write, locations.readonly y locations/customFields.readonly.',
+          unreachable: 'HighLevel no respondió. Vuelve a intentar en un momento.',
+          timeout:
+            'HighLevel tardó demasiado en responder. Vuelve a intentar; si sigue pasando, puede que este servidor no tenga permitido conectarse a HighLevel.',
+          forbidden: 'Solo un propietario o un administrador del espacio de trabajo puede conectar integraciones.',
+        },
       },
       googleConnected: 'Google Sheets quedó conectado.',
       googleCancelled: 'Google Sheets no se conectó.',
@@ -8101,12 +8526,13 @@ export const es: FormsMessages = {
           list_form_notifications: { what: 'Ve los correos que envía un formulario.', ask: '¿Qué correos envía mi formulario de leads?' },
           update_form_notification: { what: 'Edita un correo de un formulario.', ask: 'Envía los avisos del formulario de leads a ventas@example.com' },
           reset_form_notification: { what: 'Devuelve el correo de un formulario a la versión del workspace.', ask: 'Restablece los correos de mi encuesta' },
-          list_integrations: { what: 'Ve qué apps están conectadas (HubSpot, Calendly, Google Sheets o Salesforce) y si dCal está disponible.', ask: '¿Está conectado HubSpot?' },
-          set_destinations: { what: 'Elige a dónde van las respuestas de un formulario: webhooks, HubSpot, Google Sheets o Salesforce.', ask: 'Manda cada lead de mi formulario a HubSpot' },
+          list_integrations: { what: 'Ve qué apps están conectadas (HubSpot, Calendly, Google Sheets, Salesforce o HighLevel) y si dCal está disponible.', ask: '¿Está conectado HubSpot?' },
+          set_destinations: { what: 'Elige a dónde van las respuestas de un formulario: webhooks, HubSpot, Google Sheets, Salesforce o HighLevel.', ask: 'Manda cada lead de mi formulario a HubSpot' },
           list_webhooks: { what: 'Ve los webhooks de un formulario.', ask: '¿Qué webhooks tiene mi formulario de leads?' },
           ping_webhook: { what: 'Envía una prueba a un webhook.', ask: 'Prueba el webhook de mi formulario de leads' },
           list_deliveries: { what: 'Mira qué respuestas se entregaron y cuáles fallaron.', ask: '¿Llegaron a HubSpot mis últimas respuestas?' },
           list_hubspot_properties: { what: 'Ve los campos de HubSpot que puede llenar una pregunta.', ask: '¿Qué campos de HubSpot puedo mapear?' },
+          list_gohighlevel_fields: { what: 'Ve los campos de contacto de HighLevel que puede llenar una pregunta, custom fields incluidos.', ask: '¿Qué campos de HighLevel puedo mapear?' },
           list_event_types: { what: 'Ve los eventos de Calendly que puede agendar un paso de agenda. Los eventos de dCal se eligen en el editor del formulario.', ask: '¿Qué eventos de Calendly puede ofrecer mi paso de agenda?' },
           list_calendly_event_types: { what: 'Ve los eventos de Calendly que puede agendar un formulario.', ask: '¿Qué eventos de Calendly puede agendar mi formulario?' },
           whoami: { what: 'Revisa quién está conectado y en qué workspace.', ask: '¿Con qué cuenta estoy conectado?' },
@@ -8307,9 +8733,11 @@ export const es: FormsMessages = {
         'POST /v1/forms/:id/notifications/:emailKey/reset':
           'Quita la versión propia del form, que vuelve a seguir lo que define el workspace.',
         'GET /v1/integrations':
-          'Qué integraciones conectó el workspace (HubSpot, Calendly, Google Sheets, Salesforce), cuáles no puede conectar este despliegue (`unavailable`) y si tiene dCal (`dcal`). Nunca devuelve un token.',
+          'Qué integraciones conectó el workspace (HubSpot, Calendly, Google Sheets, Salesforce, HighLevel), cuáles no puede conectar este despliegue (`unavailable`) y si tiene dCal (`dcal`). La entrada de HighLevel suma `locationId` y `rejectedAt` (cuándo HighLevel dejó de aceptar el token). Nunca devuelve un token.',
         'GET /v1/integrations/webhooks': 'Todos los webhooks a los que mandan los forms del workspace, con sus fallas recientes.',
         'GET /v1/integrations/hubspot/properties': 'Las propiedades de contacto de HubSpot a las que un destino puede mapear respuestas.',
+        'GET /v1/integrations/gohighlevel/fields':
+          'Los campos de contacto de HighLevel a los que un destino puede mapear respuestas: los estándar y los custom fields de la sub-account conectada, con el `id`, la `key` y el `dataType` que copia un mapeo. `enabled: false` con `reason` (`not_connected`, `rejected`) cuando no se puede leer HighLevel; HighLevel se conecta solo desde el panel.',
         'GET /v1/integrations/calendly/event-types': 'Los tipos de evento de Calendly que puede agendar un paso de agenda.',
         'GET /v1/me': 'La persona y el workspace por los que actúa la llave, con el rol de la persona.',
         'GET /v1/me/profile': 'La página pública de la persona, si la configuró.',
@@ -8384,6 +8812,7 @@ export const es: FormsMessages = {
         notificationBody: 'El cuerpo en texto plano, con marcadores `{{token}}`. `null` vuelve al texto por defecto.',
         notificationRecipients:
           'Quién recibe el aviso para tu equipo. No se acepta en `submission_confirmed`, que va a quien respondió.',
+        goHighLevelRefresh: '`1` vuelve a leer los custom fields de HighLevel en lugar de la copia que se guarda 5 minutos, para un campo que acabas de crear allá.',
       },
       notAllowed: {
         title: 'Lo que una llave no puede hacer',

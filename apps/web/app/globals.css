@@ -299,6 +299,19 @@ html.has-save-pill {
   background-clip: padding-box;
 }
 
+/* A scroll region that draws no scrollbar: it still scrolls by wheel, touch
+   and keyboard. For chrome whose overflow is the exception, the admin rail and
+   its mobile drawer, where a track down the edge reads as a stray border and,
+   as a classic bar, takes its width out of a 64px column. A class rather than
+   Tailwind's `[scrollbar-width:none]`: the rules above are unlayered, so they
+   beat any utility in a layer, and only an unlayered rule after them wins. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;
@@ -306,8 +319,8 @@ html.has-save-pill {
   }
 }
 
-/* The rail's MCP icon (components/mcp-logos.tsx): three stacked logos that
-   take turns. Each is an inline SVG filled with currentColor, so it takes the
+/* The rail's MCP icon (components/mcp-logos.tsx) and Integrations icon
+   (components/integration-logos.tsx): stacked logos that take turns. Each is an inline SVG filled with currentColor, so it takes the
    row's ink in both themes; Claude overrides `color` inline with its brand
    orange. Inline on purpose: a session replay cannot fetch a mask file. The
    one leaving shrinks and turns away while the next one fades in on the same
@@ -335,6 +348,29 @@ html.has-save-pill {
 @media (prefers-reduced-motion: reduce) {
   .mcp-logos__logo {
     transition: none;
+  }
+}
+
+/* A card's connect form arriving on the Integrations page
+   (app/admin/integrations/connections-panel.tsx): a short fade and settle, so
+   the card growing reads as the form opening. Only that card grows; its
+   neighbour keeps its height. Still with reduced motion. */
+.connect-reveal {
+  animation: connect-reveal 180ms ease-out;
+}
+@keyframes connect-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connect-reveal {
+    animation: none;
   }
 }
 

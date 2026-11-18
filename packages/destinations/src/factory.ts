@@ -7,7 +7,8 @@ import {
   type GoogleSheetsDestinationOptions,
 } from './adapters/google-sheets';
 import { SalesforceDestination, type SalesforceDestinationOptions } from './adapters/salesforce';
-import { writableSheetColumns } from '@quill/types';
+import { GoHighLevelDestination } from './adapters/gohighlevel';
+import { GOHIGHLEVEL_REASONS, writableSheetColumns, type GoHighLevelDeliveryOptions } from '@quill/types';
 
 /**
  * A fully-resolved destination spec: the form-config settings for the chosen
@@ -21,6 +22,8 @@ export interface DestinationSpec {
   hubspot?: HubspotDestinationOptions;
   googleSheets?: GoogleSheetsDestinationOptions;
   salesforce?: SalesforceDestinationOptions;
+  /** The stored mappings plus the account's credentials, resolved by the API. */
+  gohighlevel?: GoHighLevelDeliveryOptions;
 }
 
 /**
@@ -68,6 +71,17 @@ export function createDestination(
         return new LogOnlyDestination('salesforce destination has no usable connection (reconnect Salesforce)');
       }
       return new SalesforceDestination(sf, fetchImpl);
+    }
+    case 'gohighlevel': {
+      const ghl = spec.gohighlevel;
+      // Not connected, or the connection is missing half of itself: the named
+      // no-op the delivery history shows as "reconnect HighLevel", not a retry.
+      const token = ghl?.credentials?.token?.trim();
+      const locationId = ghl?.credentials?.locationId?.trim();
+      if (!ghl || !token || !locationId) {
+        return new LogOnlyDestination(GOHIGHLEVEL_REASONS.notConnected);
+      }
+      return new GoHighLevelDestination({ ...ghl, credentials: { token, locationId } }, fetchImpl);
     }
     default:
       return new LogOnlyDestination(`unknown destination type: ${String(spec.type)}`);

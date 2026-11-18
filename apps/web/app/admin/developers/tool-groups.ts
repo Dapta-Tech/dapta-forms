@@ -51,6 +51,7 @@ export const TOOL_GROUPS = {
     'ping_webhook',
     'list_deliveries',
     'list_hubspot_properties',
+    'list_gohighlevel_fields',
     'list_event_types',
     'list_calendly_event_types',
   ],

@@ -16,6 +16,7 @@ import {
   deleteIntegration,
   resolveProviderToken,
   describeIntegration,
+  markIntegrationRejected,
 } from './account-integrations';
 
 const KEY = randomBytes(32).toString('base64');
@@ -102,6 +103,47 @@ describe('account_integration repo', () => {
     expect(await resolveProviderToken(db, accountId, 'hubspot', KEY, 'env-token')).toBe('account-token');
     // Without an encryption key configured → only env fallback is consulted.
     expect(await resolveProviderToken(db, accountId, 'hubspot', undefined, 'env-token')).toBe('env-token');
+  });
+
+  it('a HighLevel status carries its location and rejection, and only HighLevel has them', async () => {
+    const creds = JSON.stringify({ token: 'pit-fake-0000-1234', locationId: 'loc-1' });
+    const status = await upsertIntegration(db, accountId, 'gohighlevel', creds, KEY, 'Acme', '1234', {
+      locationId: 'loc-1',
+    });
+    expect(status).toEqual({
+      provider: 'gohighlevel',
+      connected: true,
+      last4: '1234',
+      label: 'Acme',
+      connectedAt: expect.any(Number),
+      locationId: 'loc-1',
+      rejectedAt: null,
+    });
+    const hub = await upsertIntegration(db, accountId, 'hubspot', 'fake-hub-9999', KEY);
+    expect(hub).not.toHaveProperty('locationId');
+    expect(hub).not.toHaveProperty('rejectedAt');
+  });
+
+  it('marks the stored credential rejected, never a newer one, and a reconnect clears the mark', async () => {
+    const creds = JSON.stringify({ token: 'pit-fake-0000-1234', locationId: 'loc-1' });
+    await upsertIntegration(db, accountId, 'gohighlevel', creds, KEY, 'Acme', '1234', { locationId: 'loc-1' });
+    const used = (await getIntegration(db, accountId, 'gohighlevel'))!.encryptedToken;
+
+    expect(await markIntegrationRejected(db, accountId, 'gohighlevel', used, 5_000)).toBe(true);
+    let [row] = await listIntegrationStatuses(db, accountId);
+    expect(row).toMatchObject({ rejectedAt: 5_000, locationId: 'loc-1', label: 'Acme' });
+
+    // Reconnecting, even with the same token, writes a new ciphertext and clears it.
+    await upsertIntegration(db, accountId, 'gohighlevel', creds, KEY, 'Acme', '1234', { locationId: 'loc-1' });
+    [row] = await listIntegrationStatuses(db, accountId);
+    expect(row!.rejectedAt).toBeNull();
+    // A late refusal of the token read before the reconnect marks nothing.
+    expect(await markIntegrationRejected(db, accountId, 'gohighlevel', used, 6_000)).toBe(false);
+    [row] = await listIntegrationStatuses(db, accountId);
+    expect(row!.rejectedAt).toBeNull();
+    // Nothing to mark once disconnected.
+    await deleteIntegration(db, accountId, 'gohighlevel');
+    expect(await markIntegrationRejected(db, accountId, 'gohighlevel', used)).toBe(false);
   });
 
   it('disconnect removes the row (idempotent) and is account-scoped', async () => {

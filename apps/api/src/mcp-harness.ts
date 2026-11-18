@@ -97,6 +97,7 @@ const ENV_KEYS = [
   'JWT_ISSUER',
   'JWT_AUDIENCE',
   'PRODUCT_ANALYTICS_KEY',
+  'FORMS_ENCRYPTION_KEY',
 ] as const;
 
 export const APP_URL = 'https://forms.example.test';

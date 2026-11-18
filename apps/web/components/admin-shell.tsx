@@ -17,6 +17,7 @@ import { ProfileMenu } from '@/components/profile-menu';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import { McpLogos } from '@/components/mcp-logos';
+import { IntegrationLogos } from '@/components/integration-logos';
 import type { Workspace } from '@/lib/admin-api';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
@@ -121,13 +122,19 @@ const PEEK_CLOSE_MS = 160;
 
 // Dapta's icon system is PrimeIcons (pi pi-*) — the same set Calendars + the
 // production admin panel use. Sized at the design-system's 20px sidebar icon.
-// MCP is the one exception: its icon is the rotating AI app logos, same 20px.
-const PI_BY_NAME: Record<Exclude<IconName, 'mcp'>, string> = {
+// Two exceptions, same 20px: MCP's icon is the rotating AI app logos, and
+// Integrations' is the rotating marks of the services it connects (HubSpot,
+// Salesforce, HighLevel, Google Sheets, Calendly, dCal, Dapta). Integrations
+// keeps a plain row, not the green tint: one invitation in the rail reads as
+// one, and two stacked green rows would read as neither.
+type AnimatedIcon = 'mcp' | 'integrations';
+const ANIMATED_ICONS: ReadonlySet<IconName> = new Set<AnimatedIcon>(['mcp', 'integrations']);
+
+const PI_BY_NAME: Record<Exclude<IconName, AnimatedIcon>, string> = {
   home: 'pi-home',
   forms: 'pi-file-edit',
   submissions: 'pi-inbox',
   analytics: 'pi-chart-bar',
-  integrations: 'pi-link',
   tools: 'pi-sparkles',
   docs: 'pi-book',
   agents: 'pi-bot',
@@ -135,6 +142,7 @@ const PI_BY_NAME: Record<Exclude<IconName, 'mcp'>, string> = {
 
 function Icon({ name, className, paused }: { name: IconName; className?: string; paused?: boolean }) {
   if (name === 'mcp') return <McpLogos size={20} paused={paused} />;
+  if (name === 'integrations') return <IntegrationLogos size={20} paused={paused} />;
   return (
     <i
       aria-hidden
@@ -168,11 +176,13 @@ function navRowClass(collapsed: boolean, state: 'active' | 'idle') {
 }
 
 /**
- * The rail link whose icon is the rotating AI app logos ("Connect your
- * agent"). The logos hold still while the pointer is on the row, so the
- * mark someone is looking at does not change under them (see McpLogos).
+ * A rail link whose icon is a set of rotating logos ("Connect your agent",
+ * "Integrations"). The logos hold still while the pointer is on the row, so
+ * the mark someone is looking at does not change under them (see
+ * `useLogoRotation`).
  */
 function LogosLink({
+  icon,
   href,
   label,
   collapsed,
@@ -182,6 +192,7 @@ function LogosLink({
   className,
   onNavigate,
 }: {
+  icon: IconName;
   href: string;
   label: string;
   collapsed: boolean;
@@ -204,7 +215,7 @@ function LogosLink({
       data-prominent={prominent || undefined}
       className={className}
     >
-      <Icon name="mcp" paused={hovered} />
+      <Icon name={icon} paused={hovered} />
       <span className={collapsed ? 'sr-only' : ''}>{label}</span>
     </Link>
   );
@@ -252,10 +263,11 @@ function NavLinks({
             <span className={collapsed ? 'sr-only' : ''}>{label}</span>
           </>
         );
-        if (item.icon === 'mcp' && !item.external) {
+        if (ANIMATED_ICONS.has(item.icon) && !item.external) {
           return (
             <li key={item.key}>
               <LogosLink
+                icon={item.icon}
                 href={href}
                 label={label}
                 collapsed={collapsed}
@@ -461,12 +473,17 @@ export function AdminShell({
     document.body.style.overflow = drawerOpen ? 'hidden' : '';
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      setDrawerOpen(false);
       // WCAG 1.4.13 Dismissible, for the pointer case it is written about.
       // With the caret INSIDE the rail, Escape leaves the peek alone on
       // purpose: collapsing a rail whose focus ring is on an icon-only link
       // is worse than not dismissing.
       if (!railRef.current?.contains(document.activeElement)) setPeeking(false);
+      // A dialog opened from the drawer ("New workspace") owns this Escape: it
+      // closes that dialog and leaves the drawer it came from open. The dialog
+      // is portalled to <body>, so it is found by `aria-modal`, not by being
+      // inside the drawer (which is `role="dialog"` itself, open or not).
+      if (document.querySelector('[aria-modal="true"]')) return;
+      setDrawerOpen(false);
     };
     window.addEventListener('keydown', onKey);
     if (drawerOpen) drawerRef.current?.querySelector<HTMLElement>('a,button')?.focus();
@@ -605,7 +622,13 @@ export function AdminShell({
         //
         // The width transition needs no `motion-reduce:` variant: globals.css
         // already zeroes every transition under prefers-reduced-motion.
-        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-sidebar py-4 transition-[width] md:flex md:h-dvh md:overflow-y-auto ${
+        //
+        // The scrollbar is hidden, the scrolling is not. On a short window
+        // (under ~690px collapsed, ~660px expanded) the rail overflows, and a
+        // classic scrollbar drew a gray track down its right edge and took
+        // 11px of a 64px column, shoving every icon left. Wheel, touch and a
+        // Tab into an off-screen link still scroll it. See `.no-scrollbar`.
+        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-sidebar py-4 transition-[width] no-scrollbar md:flex md:h-dvh md:overflow-y-auto ${
           studio ? 'md:fixed md:left-0 md:top-0 md:z-30' : 'md:sticky md:top-0'
         } ${railCollapsed ? 'w-[64px] px-2' : 'w-60 px-4'}`}
       >
@@ -646,7 +669,8 @@ export function AdminShell({
       ) : null}
       <aside
         ref={drawerRef}
-        className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[320px] flex-col gap-6 overflow-y-auto border-r border-border bg-sidebar p-4 transition-transform md:hidden ${
+        // Scrollbar hidden as on the desktop rail; the drawer still scrolls.
+        className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[320px] flex-col gap-6 overflow-y-auto border-r border-border bg-sidebar p-4 transition-transform no-scrollbar md:hidden ${
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         role="dialog"

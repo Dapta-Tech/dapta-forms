@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { sql, type SQL } from 'drizzle-orm';
+import { DrizzleQueryError, sql, type SQL } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { isPostgresUrl } from '@quill/config/env';
@@ -29,7 +29,14 @@ export interface SqliteNative {
   exec(script: string): void;
 }
 
-/** Native Postgres handle for the async atomic path. */
+/**
+ * Native Postgres handle for the async atomic path. Use it ONLY through
+ * `transaction`, with `tx.execute` inside: that is the one entry point that
+ * rethrows the driver error (see `rethrowDriverError`). Its query builders and
+ * its own `execute` throw drizzle's wrapper, whose message carries every bound
+ * parameter value, and so does a `tx.execute` failure caught INSIDE the
+ * callback.
+ */
 export interface PgNative {
   drizzle: PostgresJsDatabase;
 }
@@ -152,21 +159,40 @@ async function createSqliteDb(url: string): Promise<Db> {
 
 // --- Postgres -------------------------------------------------------------
 
+/**
+ * Since drizzle-orm 0.44 every failed Postgres query is rethrown as a
+ * `DrizzleQueryError` whose message is the SQL text followed by every bound
+ * parameter VALUE ("params: ..."), with the driver error (SQLSTATE `code`,
+ * `constraint_name`) moved to `cause`. Anything that logs `error.message` would
+ * then write answers, emails or token ciphertext to the logs. Rethrow the
+ * driver error itself, so a Postgres failure looks exactly as it did before:
+ * the same `code`, the driver's own message, no parameters.
+ */
+function rethrowDriverError(error: unknown): never {
+  throw error instanceof DrizzleQueryError && error.cause ? error.cause : error;
+}
+
 async function createPostgresDb(url: string): Promise<Db> {
   const { default: postgres } = await import('postgres');
   const { drizzle } = await import('drizzle-orm/postgres-js');
   const client = postgres(url, { max: 10 });
   const db = drizzle(client);
+  // all/get/run go through `rows`; the native atomic paths go through
+  // `transaction`, patched on this one instance (a failing `tx.execute` inside
+  // the callback propagates out of it). `transaction` already returns a plain
+  // Promise, so the patched one keeps its exact type.
+  const transaction = db.transaction.bind(db);
+  db.transaction = ((...args: Parameters<typeof transaction>) =>
+    transaction(...args).catch(rethrowDriverError)) as typeof db.transaction;
+  const rows = async <T>(query: SQL): Promise<T[]> =>
+    (await db.execute(query).catch(rethrowDriverError)) as unknown as T[];
 
   return {
     dialect: 'postgres',
-    all: async <T>(query: SQL) => (await db.execute(query)) as unknown as T[],
-    get: async <T>(query: SQL) => {
-      const rows = (await db.execute(query)) as unknown as T[];
-      return rows[0];
-    },
+    all: <T>(query: SQL) => rows<T>(query),
+    get: async <T>(query: SQL) => (await rows<T>(query))[0],
     run: async (query: SQL) => {
-      await db.execute(query);
+      await rows(query);
     },
     execRaw: async (sqlText: string) => {
       await client.unsafe(sqlText);

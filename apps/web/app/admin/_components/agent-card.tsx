@@ -135,7 +135,11 @@ export function AgentCard({ m }: { m: CardMessages }) {
     <section
       aria-labelledby="agent-card-title"
       data-testid="home-agent-card"
-      className="mb-10 overflow-hidden rounded-2xl border border-border bg-card"
+      // `isolate`: the demo's chips, mock card and floating logos each animate
+      // a transform, which makes each one a positioned layer of the page. One
+      // stacking context for the card keeps them ranked inside it, so nothing
+      // in the demo can reach for a tier of lib/layers.ts.
+      className="isolate mb-10 overflow-hidden rounded-2xl border border-border bg-card"
     >
       <div className="grid gap-0 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="flex flex-col justify-center p-6 sm:p-8">

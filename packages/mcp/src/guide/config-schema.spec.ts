@@ -5,7 +5,9 @@ import { formConfigSchema } from '@quill/types';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import {
   EDITOR_DEFAULT_FIELDS,
+  EVENTS_WITHOUT_CONTROL,
   FIELD_DESCRIPTIONS,
+  HIDDEN_DESTINATION_TYPES,
   formConfigJsonSchema,
   KEPT_AS_READ_FIELDS,
   UNSUPPORTED_CONFIG_FIELDS,
@@ -125,6 +127,33 @@ describe('formConfigJsonSchema', () => {
     expect(hasField(schema, 'steps.[].reveal.headline')).toBe(true);
     expect(hasField(schema, 'destinations.[].settings.url')).toBe(true);
     expect(hasField(schema, 'outcomes.[].message')).toBe(true);
+  });
+
+  it('offers no destination the editor has no card for, and the CRM events the cards switch', () => {
+    const raw = zodToJsonSchema(formConfigSchema, { $refStrategy: 'none' });
+    const typesOf = (root: unknown) =>
+      (((root as { properties: { destinations: { items: { anyOf: unknown[] } } } }).properties.destinations.items
+        .anyOf ?? []) as { properties: Record<string, { const?: string }> }[]).map((v) => ({
+        type: v.properties.type?.const,
+        events: 'events' in v.properties,
+      }));
+    // In the source schema, so the test cannot pass by a typo...
+    for (const type of HIDDEN_DESTINATION_TYPES) expect(typesOf(raw).map((v) => v.type)).toContain(type);
+    for (const type of EVENTS_WITHOUT_CONTROL) expect(typesOf(raw).find((v) => v.type === type)?.events).toBe(true);
+    // ...and nowhere in what the guide and the skill publish.
+    for (const audience of ['rest', 'mcp'] as const) {
+      const published = formConfigJsonSchema(audience);
+      const variants = typesOf(published);
+      for (const type of HIDDEN_DESTINATION_TYPES) expect(variants.map((v) => v.type)).not.toContain(type);
+      // HighLevel has its cards now, its partials switch included: published whole.
+      expect(variants.find((v) => v.type === 'gohighlevel')?.events).toBe(true);
+      for (const type of EVENTS_WITHOUT_CONTROL) expect(variants.find((v) => v.type === type)?.events).toBe(false);
+      // The webhook's trigger has its control and stays, and so does the CRM
+      // cards' "send partial responses too" switch.
+      for (const type of ['webhook', 'hubspot', 'salesforce']) {
+        expect(variants.find((v) => v.type === type)?.events, `${audience} ${type}`).toBe(true);
+      }
+    }
   });
 
   it('inlines every sub-schema, so removing a field cannot leave a dangling $ref', () => {

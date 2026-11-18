@@ -62,6 +62,12 @@ describe('validateSubmission', () => {
     });
   });
 
+  it('refuses a required text answer of only spaces on submit', () => {
+    const config: FormConfig = { version: 1, steps: [{ key: 'company', type: 'text', required: true }] };
+    expect(validateSubmission(config, { company: '   ' })).toEqual({ ok: false, key: 'company', code: 'required' });
+    expect(validateSubmission(config, { company: 'Acme' })).toEqual({ ok: true });
+  });
+
   it('names the missing sub-field of a name step, even when the name was sent under its own key', () => {
     expect(validateSubmission(quiz, { team: 'solo', full: 'Ana Paz', firstname: 'Ana', email: 'ana@acme.com' })).toEqual({
       ok: false,

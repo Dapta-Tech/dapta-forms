@@ -23,7 +23,7 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BadRequestException, HttpException, RequestMethod } from '@nestjs/common';
-import { API_KEY_LIMIT_PER_MEMBER, createDb, migrate, seed, upsertSubmission, type Db } from '@quill/db';
+import { API_KEY_LIMIT_PER_MEMBER, createDb, getAccountByCode, migrate, seed, upsertIntegration, upsertSubmission, type Db } from '@quill/db';
 import {
   API_EXAMPLE_ANSWERS,
   API_EXAMPLE_ERROR,
@@ -51,6 +51,7 @@ import {
   IntegrationsController,
 } from './integrations.controller';
 import { LocalAuthProvider, type HostPrincipal, type ReqLike } from './auth.provider';
+import { GoHighLevelFieldsService } from './gohighlevel-fields';
 import { LinkPageController } from './link-page.controller';
 import { LinkPageService } from './link-page.service';
 
@@ -309,13 +310,27 @@ describe('every API_REFERENCE example, through the real handlers with an API key
       apiKeyId: 'key_test',
     });
     // Server tokens for HubSpot and Calendly, so their pickers answer with a
-    // list (from `providers` below) instead of the disabled state.
+    // list (from `providers` below) instead of the disabled state. HighLevel
+    // has no server token: the workspace is connected to it below, which
+    // takes the encryption key.
     const env = {
       NODE_ENV: 'test',
       PUBLIC_APP_URL: 'https://forms.example.com',
       HUBSPOT_PRIVATE_APP_TOKEN: 'test-token',
       CALENDLY_API_TOKEN: 'test-token',
+      FORMS_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
     } as unknown as ServerEnv;
+    const acme = (await getAccountByCode(db, 'acme'))!.id;
+    await upsertIntegration(
+      db,
+      acme,
+      'gohighlevel',
+      JSON.stringify({ token: 'pit-test-0000-0000-1234', locationId: 'Loc0Acme0000000000a1' }),
+      env.FORMS_ENCRYPTION_KEY!,
+      'Acme Corp',
+      '1234',
+      { locationId: 'Loc0Acme0000000000a1' },
+    );
     const providers = (async (input: string | URL) => {
       const url = String(input);
       const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -324,6 +339,21 @@ describe('every API_REFERENCE example, through the real handlers with an API key
           results: [
             { name: 'company', label: 'Company name', type: 'string' },
             { name: 'lifecyclestage', label: 'Lifecycle stage', type: 'enumeration', options: [{ value: 'lead', label: 'Lead' }] },
+          ],
+        });
+      }
+      if (url.includes('/customFields')) {
+        return json({
+          customFields: [
+            { id: 'pvUoGdsXdHZtYJ2qH2Qh', name: 'UTM source', fieldKey: 'contact.utm_source', dataType: 'TEXT', model: 'contact' },
+            {
+              id: 'N16JxmMMgId41iRLxDsT',
+              name: 'Plan',
+              fieldKey: 'contact.plan',
+              dataType: 'SINGLE_OPTIONS',
+              model: 'contact',
+              picklistOptions: ['Basic', 'Pro', 'Enterprise'],
+            },
           ],
         });
       }
@@ -346,6 +376,8 @@ describe('every API_REFERENCE example, through the real handlers with an API key
       }
       return new Response('{}', { status: 404 });
     }) as unknown as typeof fetch;
+    const goHighLevelFields = new GoHighLevelFieldsService(db, env);
+    goHighLevelFields.fetchImpl = providers;
     const destinations = new FormDestinationsController(db, key, env);
     // The webhook test call answers from here instead of the network.
     destinations.fetchImpl = (async () => new Response('ok', { status: 200 })) as unknown as typeof fetch;
@@ -371,6 +403,12 @@ describe('every API_REFERENCE example, through the real handlers with an API key
         new CalendlyEventTypesService(env, db, providers),
         db,
         env,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        goHighLevelFields,
       ),
       destinations,
     ]);

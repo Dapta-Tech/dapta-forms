@@ -14,6 +14,7 @@ import type {
   LinkPageFormRef,
   LinkPageSummary,
   FormDestination,
+  GoHighLevelFieldsResponse,
   MemberProfile,
   SubmissionFile,
   SubmissionsPage,
@@ -468,6 +469,7 @@ export type DeliveryKind =
   | 'hubspot'
   | 'google-sheets'
   | 'salesforce'
+  | 'gohighlevel'
   | 'booking_sync'
   | 'analytics'
   | 'dapta_sync';
@@ -513,7 +515,10 @@ export type HubSpotPropertiesResponse =
  * `authorizeGoogleSheets` and `connectIntegration` refuses it outright (the API
  * answers 400 rather than storing a credential that would die within the hour).
  */
-export type IntegrationProvider = 'hubspot' | 'calendly' | 'google-sheets' | 'salesforce';
+export type IntegrationProvider = 'hubspot' | 'calendly' | 'google-sheets' | 'salesforce' | 'gohighlevel';
+
+/** Why a HighLevel connection was refused, or what the browser decided (see `@quill/types`). */
+export type { GoHighLevelConnectError, GoHighLevelFieldsResponse } from '@quill/types';
 
 /**
  * Why a Salesforce connection was refused (the API's `reason`), one per thing
@@ -552,6 +557,13 @@ export interface IntegrationStatus {
   last4: string | null;
   label: string | null;
   connectedAt: number;
+  /** HighLevel only: the sub-account's Location ID. */
+  locationId?: string | null;
+  /**
+   * HighLevel only: when a delivery last got a 401 or 403 for this token
+   * (epoch ms). Null while it works; a successful connect clears it.
+   */
+  rejectedAt?: number | null;
 }
 
 /** One tab of a spreadsheet. `gid` is the `#gid=` in its URL. */
@@ -1108,6 +1120,16 @@ export const adminApi = {
   /** The connected org's writable Lead fields; `refresh` re-reads the org. */
   salesforceFields: (refresh = false) =>
     req<SalesforceFieldsResponse>('GET', `/v1/integrations/salesforce/fields${refresh ? '?refresh=1' : ''}`),
+  /**
+   * Connect (or replace the token of) a HighLevel sub-account: a Private
+   * Integration token and the Location ID, or the sub-account's URL. The API
+   * proves both against HighLevel before storing them.
+   */
+  connectGoHighLevel: (body: { token: string; locationId: string }) =>
+    req<IntegrationStatus>('POST', '/v1/integrations/gohighlevel/connect', body),
+  /** The standard fields and the location's mappable custom fields; `refresh` re-reads the location. */
+  goHighLevelFields: (refresh = false) =>
+    req<GoHighLevelFieldsResponse>('GET', `/v1/integrations/gohighlevel/fields${refresh ? '?refresh=1' : ''}`),
   /** Disconnect a provider for this account (idempotent → 204). */
   disconnectIntegration: (provider: IntegrationProvider) =>
     req<void>('DELETE', `/v1/integrations/${provider}`),

@@ -18,7 +18,9 @@ export function AgentBanner({ m }: { m: BannerMessages }) {
     <section
       aria-labelledby="agent-banner-title"
       data-testid="home-agent-banner"
-      className="relative mb-8 overflow-hidden rounded-2xl border border-signal/40 bg-gradient-to-r from-signal/[0.12] via-signal/[0.05] to-card"
+      // `isolate` keeps the marquee's sliding track inside this card's own
+      // stacking context, as in agent-card.tsx.
+      className="relative isolate mb-8 overflow-hidden rounded-2xl border border-signal/40 bg-gradient-to-r from-signal/[0.12] via-signal/[0.05] to-card"
     >
       <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:gap-8">
         <div className="min-w-0 lg:max-w-md">

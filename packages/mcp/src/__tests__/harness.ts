@@ -163,6 +163,8 @@ export interface HarnessOptions {
   onInternalError?: FormsMcpServerOptions['onInternalError'];
   onTransportError?: FormsMcpServerOptions['onTransportError'];
   onToolCall?: FormsMcpServerOptions['onToolCall'];
+  /** The dForms address the tools name (the deployment's PUBLIC_APP_URL). */
+  appUrl?: string;
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -187,6 +189,7 @@ export async function bootHarness(opts: HarnessOptions = {}): Promise<Harness> {
     onInternalError: opts.onInternalError,
     onTransportError: opts.onTransportError,
     onToolCall: opts.onToolCall,
+    appUrl: opts.appUrl,
   });
   const audit: string[] = [];
   server.auditSink = (line) => audit.push(line);

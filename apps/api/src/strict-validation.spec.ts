@@ -29,6 +29,7 @@ import { AuthService } from './auth.service';
 import { BrandingController } from './branding.controller';
 import { FormDestinationsController } from './integrations.controller';
 import { LocalAuthProvider, type HostPrincipal, type ReqLike } from './auth.provider';
+import { strictDestinationIssues } from './strict-config';
 
 let db: Db;
 let accountId: string;
@@ -383,6 +384,73 @@ describe('strict rules with an API key', () => {
     // A plain webhook is fine with a key.
     const plain = { destinations: [{ type: 'webhook', enabled: true, settings: { url: 'https://example.com/hook' } }] };
     await expect(key.destinations.putDestinations(req(), formId, plain)).resolves.toBeTruthy();
+  });
+
+  it('takes events on a HubSpot or Salesforce destination: their cards show the partials switch', async () => {
+    const body = {
+      destinations: [
+        { type: 'webhook', enabled: true, events: ['complete'], settings: { url: 'https://example.com/hook' } },
+        { type: 'hubspot', enabled: true, events: ['complete'], fieldMappings: { email: 'email' } },
+        { type: 'salesforce', enabled: false, events: ['partial', 'complete'], fieldMappings: { email: 'Email' } },
+      ],
+    };
+    await key.destinations.putDestinations(req(), formId, body);
+    const stored = cfg((await getFormById(db, accountId, formId))!.config).destinations as { type: string; events?: string[] }[];
+    expect(stored.map((d) => [d.type, d.events])).toEqual([
+      ['webhook', ['complete']],
+      ['hubspot', ['complete']],
+      ['salesforce', ['partial', 'complete']],
+    ]);
+  });
+
+  it('refuses partials only on HubSpot, Salesforce or HighLevel: their switch always sends the complete response', async () => {
+    const body = {
+      destinations: [
+        { type: 'hubspot', enabled: true, events: ['partial'], fieldMappings: { email: 'email' } },
+        { type: 'salesforce', enabled: false, events: ['partial'], fieldMappings: { email: 'Email' } },
+        { type: 'gohighlevel', enabled: false, events: ['partial'], fieldMappings: {} },
+        // Empty is the kind's default, and the webhook keeps its own triggers.
+        { type: 'webhook', enabled: true, events: ['partial'], settings: { url: 'https://example.com/hook' } },
+      ],
+    };
+    const r = await refusal(key.destinations.putDestinations(req(), formId, body));
+    expect(r.issues).toEqual([
+      { path: 'destinations.0.events', code: 'UNSUPPORTED_FIELD', message: expect.stringMatching(/always receives complete/) },
+      { path: 'destinations.1.events', code: 'UNSUPPORTED_FIELD', message: expect.stringMatching(/always receives complete/) },
+      { path: 'destinations.2.events', code: 'UNSUPPORTED_FIELD', message: expect.stringMatching(/always receives complete/) },
+    ]);
+    const empty = {
+      destinations: [{ type: 'salesforce', enabled: false, events: [], fieldMappings: { email: 'Email' } }],
+    };
+    await expect(key.destinations.putDestinations(req(), formId, empty)).resolves.toBeTruthy();
+  });
+
+  it('takes the partials switch on a HighLevel destination from a key, as its card writes it', async () => {
+    const body = {
+      destinations: [
+        { type: 'hubspot', enabled: true, events: ['partial', 'complete'], fieldMappings: { email: 'email' } },
+        { type: 'gohighlevel', enabled: false, events: ['partial', 'complete'], fieldMappings: {} },
+      ],
+    };
+    await expect(key.destinations.putDestinations(req(), formId, body)).resolves.toBeTruthy();
+    const stored = (await getFormById(db, accountId, formId))!.config as { destinations?: unknown[] };
+    expect(stored.destinations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'gohighlevel', events: ['partial', 'complete'] })]),
+    );
+  });
+
+  it('takes events on a HighLevel destination from a key: its card has the partials switch', () => {
+    const entry = (events: unknown) => ({ type: 'gohighlevel', enabled: true, events, fieldMappings: {} });
+    for (const events of [['complete'], ['partial', 'complete']]) {
+      expect(strictDestinationIssues([entry(events)], ['destinations'])).toEqual([]);
+    }
+    // The dashboard-only webhook fields stay refused next to it.
+    expect(
+      strictDestinationIssues(
+        [entry(['partial', 'complete']), { type: 'webhook', settings: { url: 'https://example.com/hook', timeoutMs: 5000 } }],
+        ['destinations'],
+      ).map((i) => i.path),
+    ).toEqual(['destinations.1.settings.timeoutMs']);
   });
 });
 

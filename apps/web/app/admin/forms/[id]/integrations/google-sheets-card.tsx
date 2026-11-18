@@ -513,6 +513,11 @@ export function GoogleSheetsCard({
         <>
           <section className="flex flex-col gap-3">
             <h3 className="text-sm font-semibold">{m.gsheets.sheetLabel}</h3>
+            {/* A sheet is append-only: a partial and its complete would be two
+                rows for one person, so it only ever gets the complete one. */}
+            <p data-testid="gsheets-complete-only" className="text-xs text-muted-foreground">
+              {m.gsheetsCompleteOnly}
+            </p>
             {state.spreadsheetId ? (
               <>
                 {/* ONE block that answers "where do my responses go?": the

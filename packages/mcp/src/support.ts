@@ -310,7 +310,7 @@ const ACTIONABLE: Record<string, { message?: string; hint: string }> = {
   },
   KEY_NOT_ALLOWED: { hint: 'This can only be done in the dForms dashboard. Tell the user.' },
   INTEGRATION_NOT_CONNECTED: {
-    hint: "The message holds the dForms integrations page. Connecting Google or Salesforce is a consent screen in the user's browser, which no tool can open: the link goes to the user, and once list_integrations shows the provider connected, the same call can be sent again.",
+    hint: "The message holds the dForms integrations page. Connecting happens there, in the user's browser (a consent screen for Google and Salesforce, a pasted Private Integration token for HighLevel), which no tool can do: the link goes to the user, and once list_integrations shows the provider connected, the same call can be sent again.",
   },
   MEMBER_NOT_ACTIVE: {
     hint: 'You were removed from this workspace, or your access there was turned off. Call list_my_workspaces to see where you can act, and tell the user.',

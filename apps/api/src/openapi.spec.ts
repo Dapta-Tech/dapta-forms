@@ -125,6 +125,13 @@ describe('openapi spec', () => {
     const destination = openapiSpec.components.schemas.Destination.description;
     expect(destination).toMatch(/`signatureHeader` and `timeoutMs` are set in the dashboard only/);
     expect(destination).toContain('UNSUPPORTED_FIELD');
+    // The partials switch: `events` on HubSpot, Salesforce and HighLevel, with each kind's default.
+    expect(destination).toContain('HubSpot: { type: "hubspot", enabled, events?');
+    expect(destination).toContain('Salesforce: { type: "salesforce", enabled, events?');
+    expect(destination).toContain('HighLevel: { type: "gohighlevel", enabled, events?');
+    expect(destination).toMatch(/Left out, a webhook and HubSpot receive both, Salesforce and HighLevel only complete ones/);
+    expect(destination).toMatch(/HubSpot, Salesforce and HighLevel always receive complete responses/);
+    expect(openapiSpec.components.schemas.Destination.properties.events.items.enum).toEqual(['partial', 'complete']);
     const refusal = openapiSpec.components.schemas.IntegrationNotConnected;
     expect(refusal.properties.error).toEqual({ const: 'INTEGRATION_NOT_CONNECTED' });
     expect(refusal.required).toEqual(expect.arrayContaining(['provider', 'index', 'integrationsUrl', 'unavailable']));
@@ -153,6 +160,24 @@ describe('openapi spec', () => {
     expect(list.required).toEqual(expect.arrayContaining(['unavailable', 'dcal', 'googlePicker', 'serverProvided']));
     expect(Object.keys(list.properties)).toEqual(expect.arrayContaining(['unavailable', 'dcal', 'googlePicker']));
     expect(list.properties.dcal.type).toEqual(['object', 'null']);
+  });
+
+  it('documents HighLevel: the destination with its partials switch, the providers, and the field list open to a key', () => {
+    const destination = openapiSpec.components.schemas.Destination;
+    expect(destination.properties.type.enum).toContain('gohighlevel');
+    expect(destination.properties.events.items.enum).toEqual(['partial', 'complete']);
+    expect(destination.description).toMatch(/HighLevel: \{ type: "gohighlevel"/);
+    expect(destination.description).toContain('GET /v1/integrations/gohighlevel/fields');
+    expect(openapiSpec.components.schemas.IntegrationNotConnected.properties.provider.enum).toContain('gohighlevel');
+    const entry = openapiSpec.components.schemas.Integrations.properties.providers.items.properties;
+    expect(entry.provider.enum).toContain('gohighlevel');
+    expect(Object.keys(entry)).toEqual(expect.arrayContaining(['locationId', 'rejectedAt']));
+    // The field list takes a key (derived from the allowlist); connecting HighLevel never does.
+    const fields = op('/v1/integrations/gohighlevel/fields', 'get');
+    expect(schemes(fields)).toEqual(['hostSession', 'apiKey']);
+    expect(JSON.stringify(fields.responses?.['200'])).toContain('#/components/schemas/GoHighLevelFields');
+    expect(schemes(op('/v1/integrations/gohighlevel/connect', 'post'))).toEqual(['hostSession']);
+    expect(openapiSpec.components.schemas.GoHighLevelFields.properties.reason.enum).toEqual(['not_connected', 'rejected', 'unavailable']);
   });
 
   it('resolves every $ref to a declared schema', () => {

@@ -61,6 +61,7 @@ const DESTINATION_KIND_LIST: Record<FormDestination['type'], true> = {
   hubspot: true,
   'google-sheets': true,
   salesforce: true,
+  gohighlevel: true,
 };
 const DESTINATION_KINDS: ReadonlySet<string> = new Set(Object.keys(DESTINATION_KIND_LIST));
 

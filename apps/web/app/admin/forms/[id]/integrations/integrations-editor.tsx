@@ -57,9 +57,16 @@ import {
   SalesforceCard,
   type SalesforceState,
 } from './salesforce-card';
-import type { SalesforceFieldsResponse } from '@/lib/admin-api';
+import type { GoHighLevelFieldsResponse, SalesforceFieldsResponse } from '@/lib/admin-api';
+import {
+  builtGoHighLevel,
+  GoHighLevelCard,
+  initialGoHighLevel,
+  type GoHighLevelState,
+} from './gohighlevel-card';
 import { storedColumns } from './sheet-columns';
 import { DeliveryHistory } from './delivery-history';
+import { CrmPartialsSwitch } from './crm-partials-switch';
 import { Card } from './integrations-card';
 import {
   isCustomValue,
@@ -185,6 +192,11 @@ interface HubspotState {
    * never use it.
    */
   dayTimezone: string;
+  /**
+   * The stored phases, untouched until the partials switch is flipped. Absent
+   * = HubSpot's default (both), and stays absent on save (`CrmPartialsSwitch`).
+   */
+  events?: DestinationEvent[];
 }
 
 /** Contact properties stamped when a respondent books a meeting (all optional). */
@@ -266,7 +278,8 @@ export function carriedOthers(destinations: FormDestination[]): FormDestination[
       d.type !== 'webhook' &&
       d.type !== 'hubspot' &&
       d.type !== 'google-sheets' &&
-      d.type !== 'salesforce',
+      d.type !== 'salesforce' &&
+      d.type !== 'gohighlevel',
   );
 }
 
@@ -451,6 +464,7 @@ export function initialHubspot(destinations: FormDestination[]): HubspotState {
       // The old per-bookingSync zone is the fallback so a config saved before
       // the shared field keeps the zone it was saved with.
       dayTimezone: h.dayTimezone ?? h.bookingSync?.dateTimezone ?? '',
+      ...(h.events ? { events: h.events } : {}),
     }, h.drafts);
   }
   return {
@@ -501,6 +515,9 @@ export function IntegrationsEditor({
   googlePickerAvailable = false,
   salesforceConnected = false,
   salesforceFields = { enabled: false, reason: 'not_connected' },
+  goHighLevelConnected = false,
+  goHighLevelRejected = false,
+  goHighLevelFields = { enabled: false, reason: 'not_connected' },
   access = DEFAULT_CONNECT_ACCESS,
   googleJustConnected = false,
   formName = '',
@@ -530,6 +547,12 @@ export function IntegrationsEditor({
   salesforceConnected?: boolean;
   /** The connected org's fields as the tab loaded them. */
   salesforceFields?: SalesforceFieldsResponse;
+  /** Account-level HighLevel connection. */
+  goHighLevelConnected?: boolean;
+  /** HighLevel stopped accepting the stored token. */
+  goHighLevelRejected?: boolean;
+  /** The connected location's fields as the tab loaded them. */
+  goHighLevelFields?: GoHighLevelFieldsResponse;
   /**
    * Whether the viewer can connect an account from these cards (owners and
    * admins, on a deployment with an encryption key). The cards connect in
@@ -601,6 +624,7 @@ export function IntegrationsEditor({
     document.getElementById('gsheets-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [googleJustConnected]);
   const [sf, setSf] = useState<SalesforceState>(() => initialSalesforce(initialDestinations));
+  const [ghl, setGhl] = useState<GoHighLevelState>(() => initialGoHighLevel(initialDestinations));
   const [formActivityError, setFormActivityError] = useState<string | null>(null);
   /** What the last save (or the header button) did to the sheet's row 1. */
   const [sheetHeaderSync, setSheetHeaderSync] = useState<SheetHeaderSync | null>(null);
@@ -755,7 +779,8 @@ export function IntegrationsEditor({
       hs.scoreProperty.trim() ||
       hs.dateProperty.trim() ||
       hs.outcomeProperty.trim() ||
-      hs.inferCompanyFromEmail;
+      hs.inferCompanyFromEmail ||
+      hs.events !== undefined;
     if (hasHubspotConfig) {
       // Round-trip any stored HubSpot fields this screen does not manage (e.g.
       // booking-sync settings saved elsewhere) so a save here never clobbers them.
@@ -785,6 +810,9 @@ export function IntegrationsEditor({
         // undefined overrides the stored spread, so finishing the last
         // unfinished row clears them instead of resurrecting them.
         drafts,
+        // As the card holds them: stored, or what the partials switch wrote.
+        // Absent stays absent, so an untouched legacy config is unchanged.
+        ...(hs.events !== undefined ? { events: hs.events } : {}),
       });
     }
     // The spreadsheet destination, when the card says enough to store one.
@@ -795,6 +823,11 @@ export function IntegrationsEditor({
     // is dropped on save (the card says so), the same rule as HubSpot's.
     const salesforceDestination = builtSalesforce(sf);
     if (salesforceDestination) out.push(salesforceDestination);
+
+    // HighLevel: the first stored one, same rule. Everything the card does not
+    // change (events, tags, drafts) is read in and written back as it was.
+    const goHighLevelDestination = builtGoHighLevel(ghl);
+    if (goHighLevelDestination) out.push(goHighLevelDestination);
 
     // Last: every destination kind this screen does not edit (see
     // `carriedOthers`). Without this, saving here deletes them.
@@ -996,6 +1029,13 @@ export function IntegrationsEditor({
     },
     [markDirty],
   );
+  const editGoHighLevel = useCallback(
+    (next: GoHighLevelState) => {
+      setGhl(next);
+      markDirty();
+    },
+    [markDirty],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -1083,12 +1123,29 @@ export function IntegrationsEditor({
       <SalesforceCard
         state={sf}
         setState={editSalesforce}
+        partialsHeld={partialsHeld}
         questions={questions}
         connected={salesforceConnected}
         initialFields={salesforceFields}
         extraStored={initialDestinations.filter((d) => d.type === 'salesforce').length > 1}
         formId={id}
         access={access}
+        locale={locale}
+        m={m}
+      />
+
+      <GoHighLevelCard
+        state={ghl}
+        setState={editGoHighLevel}
+        questions={questions}
+        connected={goHighLevelConnected}
+        rejected={goHighLevelRejected}
+        initialFields={goHighLevelFields}
+        extraStored={initialDestinations.filter((d) => d.type === 'gohighlevel').length > 1}
+        formId={id}
+        formName={formName}
+        access={access}
+        partialsHeld={partialsHeld}
         locale={locale}
         m={m}
       />
@@ -2859,6 +2916,15 @@ export function HubspotCard({
           ) : null}
         </div>
       </Field>
+
+      <CrmPartialsSwitch
+        type="hubspot"
+        events={state.events}
+        onChange={(events) => onChange({ ...state, events })}
+        partialsHeld={partialsHeld}
+        testId="hubspot"
+        m={m}
+      />
 
       <div className="flex items-center justify-between gap-4">
         <div>

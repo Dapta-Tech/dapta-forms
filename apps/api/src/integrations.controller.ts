@@ -39,16 +39,16 @@ import {
   destinationFiresForPhase,
   formDestinationSchema,
   MAX_SHEET_COLUMNS,
-  hasExtraHubspotDestination,
-  hasExtraSalesforceDestination,
+  extraOnePerFormDestination,
   sheetBaselineHeaders,
   sheetCells,
   writtenSheetHeaders,
   maskConfigSecrets,
-  ONE_HUBSPOT_DESTINATION_MESSAGE,
-  ONE_SALESFORCE_DESTINATION_MESSAGE,
   type DestinationEvent,
   type FormDestination,
+  type GoHighLevelConnectRefusal,
+  type GoHighLevelConnectRejection,
+  type GoHighLevelFieldsResponse,
 } from '@quill/types';
 import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
 import {
@@ -67,6 +67,14 @@ import {
   salesforceLast4,
 } from './salesforce-auth';
 import { SalesforceFieldsService, type SalesforceFieldsResponse } from './salesforce-fields';
+import {
+  extractGoHighLevelLocationId,
+  goHighLevelLast4,
+  isGoHighLevelToken,
+  probeGoHighLevel,
+} from './gohighlevel-api';
+import { GoHighLevelFieldsService } from './gohighlevel-fields';
+import { goHighLevelMappingIssue } from './gohighlevel-mappings';
 import {
   exchangeGoogleCode,
   googleAuthorizeUrl,
@@ -457,6 +465,15 @@ const salesforceConnectSchema = z.object({
 });
 
 /**
+ * The two values a HighLevel connection is made of. Both trimmed; the
+ * Location ID may be the sub-account's URL, from which the ID is taken.
+ */
+const goHighLevelConnectSchema = z.object({
+  token: z.string().trim().min(1).max(500),
+  locationId: z.string().trim().min(1).max(2000),
+});
+
+/**
  * Why a Salesforce connection was refused, as a code the admin UI turns into a
  * sentence. Never Salesforce's own error body.
  */
@@ -633,6 +650,10 @@ export class IntegrationsController {
     @Optional()
     @Inject(SalesforceFieldsService)
     private readonly salesforceFields?: SalesforceFieldsService,
+    /** HighLevel's custom-field list, shared with the delivery path. Last, for the positional specs. */
+    @Optional()
+    @Inject(GoHighLevelFieldsService)
+    private readonly goHighLevelFields?: GoHighLevelFieldsService,
   ) {}
 
   /**
@@ -813,6 +834,71 @@ export class IntegrationsController {
       salesforceLast4(creds),
     );
     this.invalidatePickerCache(p.accountId, 'salesforce');
+    return status;
+  }
+
+  /**
+   * Connect a HighLevel sub-account with a Private Integration token and its
+   * Location ID (or the sub-account's URL). Replacing the token is this same
+   * call: the row is rewritten in place, so every form's mapping is kept, and
+   * a `rejectedAt` from the old token is cleared.
+   *
+   * Declared ahead of `:provider/connect`, which would otherwise capture it
+   * and ask for a single `token`. In order, and each refusal before anything
+   * after it: the token's shape (no call made), the Location ID, the
+   * encryption key, then one call per scope (`probeGoHighLevel`). Nothing is
+   * stored until all three answered as a working connection does.
+   */
+  @Post('gohighlevel/connect')
+  async connectGoHighLevel(@Req() req: ReqLike, @Body() body: unknown): Promise<IntegrationStatus> {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const refuse = (reason: GoHighLevelConnectRejection, cause?: string): never => {
+      const refusal: GoHighLevelConnectRefusal = {
+        error: 'GOHIGHLEVEL_REJECTED',
+        reason,
+        ...(cause ? { cause } : {}),
+        message: `gohighlevel: ${reason}`,
+      };
+      throw new BadRequestException(refusal);
+    };
+    let input: z.infer<typeof goHighLevelConnectSchema>;
+    try {
+      input = goHighLevelConnectSchema.parse(body);
+    } catch (err) {
+      if (err instanceof ZodError)
+        throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
+      throw err;
+    }
+    // GHL answers a token of another kind with "Invalid JWT", which would read
+    // as a bad token; the shape is checked here so the admin learns they
+    // copied the wrong value, and nothing leaves the server for it.
+    if (!isGoHighLevelToken(input.token)) refuse('token_format');
+    // A Location ID nothing can be read from names no location: the same
+    // sentence as a location the token cannot reach, again without a call.
+    const locationId = extractGoHighLevelLocationId(input.locationId);
+    if (!locationId) return refuse('wrong_location');
+    const key = this.env.FORMS_ENCRYPTION_KEY;
+    if (!hasEncryptionKey(key)) {
+      throw new BadRequestException({
+        error: 'ENCRYPTION_UNAVAILABLE',
+        message: 'server encryption key not configured',
+      });
+    }
+    const creds = { token: input.token, locationId };
+    const probe = await probeGoHighLevel(creds, this.fetchImpl);
+    if (!probe.ok) return refuse(probe.reason, probe.cause);
+    const status = await upsertIntegration(
+      this.db,
+      p.accountId,
+      'gohighlevel',
+      JSON.stringify(creds),
+      key!,
+      probe.locationName ?? 'HighLevel',
+      goHighLevelLast4(creds.token),
+      { locationId },
+    );
+    this.invalidatePickerCache(p.accountId, 'gohighlevel');
     return status;
   }
 
@@ -1182,6 +1268,12 @@ export class IntegrationsController {
         this.salesforceTokens.invalidate(accountId);
         this.salesforceFields?.invalidate(accountId);
         return;
+      case 'gohighlevel':
+        // The field list, so a reconnect to ANOTHER sub-account does not keep
+        // offering the previous one's custom fields. The token itself is not
+        // cached: every delivery reads the stored row.
+        this.goHighLevelFields?.invalidate(accountId);
+        return;
       default:
         return;
     }
@@ -1210,6 +1302,27 @@ export class IntegrationsController {
     const p = await this.auth.resolveHost(req);
     if (!this.salesforceFields) return { enabled: false, reason: 'unavailable' };
     return this.salesforceFields.listFields(p.accountId, {
+      refresh: refresh === '1' || refresh === 'true',
+    });
+  }
+
+  /**
+   * The standard contact fields and the connected location's mappable custom
+   * fields, for the HighLevel mapping UI (and, in wave 2, the MCP). Never an
+   * HTTP error once the caller is authenticated (see
+   * `GoHighLevelFieldsService.listFields`). `refresh=1` re-reads the location,
+   * which is what an author needs after creating a custom field; rate-limited
+   * because a cache bypass with an outbound call behind it can be looped.
+   */
+  @Get('gohighlevel/fields')
+  @UseGuards(RateLimitGuard)
+  async goHighLevelFieldList(
+    @Req() req: ReqLike,
+    @Query('refresh') refresh?: string,
+  ): Promise<GoHighLevelFieldsResponse> {
+    const p = await this.auth.resolveHost(req);
+    if (!this.goHighLevelFields) return { enabled: false, reason: 'unavailable' };
+    return this.goHighLevelFields.listFields(p.accountId, {
       refresh: refresh === '1' || refresh === 'true',
     });
   }
@@ -1516,18 +1629,15 @@ export class FormDestinationsController {
     const before = await getFormById(this.db, p.accountId, id);
     if (!before) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     const stored = (before.config as { destinations?: unknown } | null)?.destinations;
-    if (hasExtraHubspotDestination(destinations, stored)) {
-      throw new BadRequestException({
-        error: 'BAD_REQUEST',
-        message: ONE_HUBSPOT_DESTINATION_MESSAGE,
-      });
-    }
-    if (hasExtraSalesforceDestination(destinations, stored)) {
-      throw new BadRequestException({
-        error: 'BAD_REQUEST',
-        message: ONE_SALESFORCE_DESTINATION_MESSAGE,
-      });
-    }
+    // The same rule covers every one-per-form kind (HubSpot, Salesforce,
+    // HighLevel), checked in that order, each with its own message.
+    const extra = extraOnePerFormDestination(destinations, stored);
+    if (extra) throw new BadRequestException({ error: 'BAD_REQUEST', message: extra.message });
+    // A HighLevel custom field of a type that cannot take what is mapped to it
+    // (a text field for the score) would be refused or emptied by GHL on every
+    // delivery. Only a new target is refused (see `goHighLevelMappingIssue`).
+    const ghlIssue = goHighLevelMappingIssue(destinations, stored);
+    if (ghlIssue) throw new BadRequestException({ error: 'BAD_REQUEST', message: ghlIssue.message, path: ghlIssue.path });
     // Bring the HubSpot mirror form in line BEFORE storing, so the guid it
     // returns is written in the same request that created it — no window where
     // a form exists in the portal that nothing points at. A HubSpot failure

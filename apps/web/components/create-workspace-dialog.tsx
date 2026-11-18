@@ -12,6 +12,11 @@ type Messages = FormsMessages['admin']['chrome']['workspaces'];
  * "New workspace": one field, then you are in it. Success is a redirect from
  * the server action (the cookie now names the new workspace), so this dialog
  * only ever handles the failure branch itself.
+ *
+ * `portal`: the workspace switcher that opens this lives in the rail, a
+ * stacking context the dialog has to leave to paint over the page (see
+ * `Modal`'s `portal` prop). The account's Workspaces page opens it too, from
+ * `<main>`, where the portal changes nothing.
  */
 export function CreateWorkspaceDialog({
   open,
@@ -44,7 +49,7 @@ export function CreateWorkspaceDialog({
       : null;
 
   return (
-    <Modal open={open} onClose={onClose} title={m.createTitle} labelId="create-workspace-title">
+    <Modal open={open} onClose={onClose} title={m.createTitle} labelId="create-workspace-title" portal>
       <p className="-mt-2 mb-4 text-sm text-muted-foreground">{m.createSubtitle}</p>
       <form ref={formRef} action={action} className="flex flex-col gap-4" data-testid="create-workspace-form">
         <label className="flex flex-col gap-1.5 text-sm">
