@@ -206,7 +206,11 @@ describe('the HighLevel connection card', () => {
     const form = c.querySelector('[data-testid="highlevel-connect-form"]')!;
     expect(form.querySelector('[data-testid="highlevel-setup"]')).toBeNull();
     expect(form.textContent).toContain(hm.replaceNote);
-    expect(form.querySelectorAll<HTMLInputElement>('input')[1]!.value).toBe(CONNECTED.locationId);
+    const location = form.querySelectorAll<HTMLInputElement>('input')[1]!;
+    expect(location.value).toBe(CONNECTED.locationId);
+    expect(location.readOnly).toBe(true);
+    expect(form.textContent).toContain(hm.replaceLocationFixed);
+    expect(form.textContent).not.toContain(hm.locationHelp);
     const token = form.querySelector<HTMLInputElement>('input')!;
     await act(async () => type(token, 'pit-new'));
     await act(async () => buttonIn(form, hm.replaceToken)!.click());

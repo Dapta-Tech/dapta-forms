@@ -265,12 +265,23 @@ describe('which field a question may fill', () => {
     ['email', 'PHONE', false],
     ['email', 'TEXT', true],
     ['file', 'TEXT', false],
+    // A consent box's `true` is no choice of an options field.
+    ['checkbox', 'CHECKBOX', false],
+    ['checkbox', 'TEXT', true],
     // Types the upsert cannot take are never offered, whatever the question.
     ['text', 'TEXTBOX_LIST', false],
     ['text', 'FILE_UPLOAD', false],
     ['text', 'FLOAT', false],
   ])('a %s answer into a %s custom field: %s', (questionType, dataType, ok) => {
     expect(customFieldSuits(questionType, dataType)).toBe(ok);
+  });
+
+  it('keeps a multiple-mode choice out of a single-choice field, and lets it into a multi one', () => {
+    expect(customFieldSuits('multiple_choice', 'SINGLE_OPTIONS')).toBe(true);
+    expect(customFieldSuits('multiple_choice', 'SINGLE_OPTIONS', true)).toBe(false);
+    expect(customFieldSuits('multiple_choice', 'RADIO', true)).toBe(false);
+    expect(customFieldSuits('multiple_choice', 'MULTIPLE_OPTIONS', true)).toBe(true);
+    expect(customFieldSuits('multiple_choice', 'TEXT', true)).toBe(true);
   });
 });
 
@@ -364,6 +375,12 @@ describe('the card', () => {
     expect(
       goHighLevelIdentityMissing(base({ mappings: [{ key: 'mobile', kind: 'standard', target: { kind: 'standard', field: 'phone' } }] })),
     ).toBe(false);
+  });
+
+  it('does not warn when a question keyed `email` is there, since the delivery falls back to it', () => {
+    const state = base({ mappings: [{ key: 'company', kind: 'standard', target: { kind: 'standard', field: 'companyName' } }] });
+    expect(goHighLevelIdentityMissing(state, [{ key: 'company' }])).toBe(true);
+    expect(goHighLevelIdentityMissing(state, [{ key: 'company' }, { key: 'email' }])).toBe(false);
   });
 
   it('says who decides about duplicates, and the shared-phone trap', async () => {

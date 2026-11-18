@@ -117,6 +117,22 @@ describe('mappableQuestions', () => {
     expect(out.map((q) => q.key)).not.toContain('nombre_completo');
   });
 
+  it('marks a multiple-mode choice, and only that one', () => {
+    const out = mappableQuestions(
+      [
+        step({ key: 'plans', type: 'multiple_choice', question: 'Plans', selectionMode: 'multiple' }),
+        step({ key: 'plan', type: 'multiple_choice', question: 'Plan', selectionMode: 'single' }),
+        step({ key: 'size', type: 'multiple_choice', question: 'Size' }),
+      ],
+      PARTS_EN,
+    );
+    expect(out).toEqual([
+      { key: 'plans', label: 'Plans', type: 'multiple_choice', multiple: true },
+      { key: 'plan', label: 'Plan', type: 'multiple_choice' },
+      { key: 'size', label: 'Size', type: 'multiple_choice' },
+    ]);
+  });
+
   it('uses the step’s own sub-field labels when it has them', () => {
     const out = mappableQuestions(
       [step({ key: 'name', type: 'name', question: 'Full name', fieldLabels: { firstname: 'Given', lastname: '  ' } })],

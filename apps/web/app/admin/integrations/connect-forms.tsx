@@ -437,11 +437,14 @@ export function GoHighLevelConnectForm({
           spellCheck={false}
           placeholder={hm.locationPlaceholder}
           aria-describedby="ghl-location-help"
+          // Replacing keeps the sub-account: the forms' mappings point at its
+          // custom field ids, so another one is a disconnect and a new connect.
+          readOnly={replacing}
           onChange={(e) => setLocationId(e.target.value)}
           onKeyDown={onEnter}
         />
         <p id="ghl-location-help" className="text-xs text-muted-foreground">
-          {hm.locationHelp}
+          {replacing ? hm.replaceLocationFixed : hm.locationHelp}
         </p>
       </div>
       <p className="text-xs text-muted-foreground">{hm.secretHelp}</p>

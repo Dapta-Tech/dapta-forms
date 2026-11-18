@@ -2455,6 +2455,8 @@ export interface FormsMessages {
         replaceToken: string;
         /** Over the form that replaces the token: mappings are kept. */
         replaceNote: string;
+        /** Under the read-only Location ID while replacing the token. */
+        replaceLocationFixed: string;
         replaceSuccess: string;
         /** The badge while HighLevel refuses the stored token. */
         rejectedBadge: string;
@@ -5126,6 +5128,7 @@ export const en: FormsMessages = {
         locationLine: 'Location ID {id}',
         replaceToken: 'Replace token',
         replaceNote: 'Paste the new token. Every form keeps its mapping.',
+        replaceLocationFixed: 'Same sub-account. To use another one, disconnect HighLevel and connect it again.',
         replaceSuccess: 'HighLevel token replaced.',
         rejectedBadge: 'Needs a new token',
         rejectedTitle: 'HighLevel stopped accepting the token',
@@ -8115,6 +8118,7 @@ export const es: FormsMessages = {
         locationLine: 'Location ID {id}',
         replaceToken: 'Reemplazar token',
         replaceNote: 'Pega el token nuevo. Cada formulario conserva su mapeo.',
+        replaceLocationFixed: 'Es la misma subcuenta. Para usar otra, desconecta HighLevel y vuelve a conectarla.',
         replaceSuccess: 'Token de HighLevel reemplazado.',
         rejectedBadge: 'Necesita un token nuevo',
         rejectedTitle: 'HighLevel dejó de aceptar el token',

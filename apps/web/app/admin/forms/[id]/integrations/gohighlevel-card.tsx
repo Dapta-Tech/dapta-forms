@@ -204,17 +204,25 @@ const CUSTOM_SOURCES: Record<string, ReadonlySet<string> | 'any'> = {
   number: new Set(['slider', 'text']),
   date: new Set(['text']),
   option: new Set(['dropdown', 'multiple_choice', 'text']),
-  options: new Set(['multiple_choice', 'dropdown', 'checkbox']),
+  // Not `checkbox`: in dForms that is a single consent box, whose `true` is
+  // no choice of a HighLevel options field.
+  options: new Set(['multiple_choice', 'dropdown']),
 };
 
-/** Whether a custom field of `dataType` can take this question's answer. */
-export function customFieldSuits(questionType: string | undefined, dataType: string): boolean {
+/**
+ * Whether a custom field of `dataType` can take this question's answer.
+ * `multiple` is a `multiple_choice` in multiple mode: a single-choice field
+ * would get the choices joined, which matches none of its options.
+ */
+export function customFieldSuits(questionType: string | undefined, dataType: string, multiple = false): boolean {
   if (!goHighLevelSlotAccepts('field', dataType) || !isGoHighLevelMappableDataType(dataType)) return false;
   if (questionType === undefined) return true;
   if (questionType === 'file') return false;
   if (dataType === 'PHONE') return questionType === 'phone' || questionType === 'text';
   if (dataType === 'EMAIL') return questionType === 'email' || questionType === 'text';
-  const sources = CUSTOM_SOURCES[GOHIGHLEVEL_VALUE_KIND[dataType]];
+  const kind = GOHIGHLEVEL_VALUE_KIND[dataType];
+  if (kind === 'option' && multiple) return false;
+  const sources = CUSTOM_SOURCES[kind];
   return sources === 'any' || !!sources?.has(questionType);
 }
 
@@ -279,8 +287,16 @@ export function goHighLevelAutoMap(
 
 // --- Warnings -------------------------------------------------------------------
 
-/** Neither Email nor Phone is mapped: HighLevel has nothing to find the contact by. */
-export function goHighLevelIdentityMissing(state: GoHighLevelState): boolean {
+/**
+ * Neither Email nor Phone is mapped: HighLevel has nothing to find the contact
+ * by. A question keyed `email` counts as mapped, since the delivery falls back
+ * to its answer when no row maps Email (as the Salesforce card's warning does).
+ */
+export function goHighLevelIdentityMissing(
+  state: GoHighLevelState,
+  questions: Pick<QuestionMeta, 'key'>[] = [],
+): boolean {
+  if (questions.some((q) => q.key === 'email')) return false;
   return !state.mappings.some(
     (r) =>
       r.key.trim() &&
@@ -425,7 +441,7 @@ export function GoHighLevelCard({
     ...customOptions((t) => goHighLevelSlotAccepts(slot, t), current),
   ];
 
-  const identityMissing = useMemo(() => goHighLevelIdentityMissing(state), [state]);
+  const identityMissing = useMemo(() => goHighLevelIdentityMissing(state, questions), [state, questions]);
   const showTimezone =
     !!state.dateField ||
     !!state.dayTimezone.trim() ||
@@ -461,12 +477,13 @@ export function GoHighLevelCard({
         ) : null}
         {rows.map(({ row, i }) => {
           const qType = questionType(row.key);
+          const qMultiple = !!row.key && !!questions.find((q) => q.key === row.key)?.multiple;
           const incompatible =
             !!row.target &&
             !!row.key &&
             (row.target.kind === 'standard'
               ? !standardFieldSuits(qType, row.target.field)
-              : !customFieldSuits(qType, row.target.dataType));
+              : !customFieldSuits(qType, row.target.dataType, qMultiple));
           return (
             <div
               key={i}
@@ -488,7 +505,7 @@ export function GoHighLevelCard({
                 options={
                   kind === 'standard'
                     ? standardOptions(qType, row.target)
-                    : customOptions((t) => customFieldSuits(qType, t), row.target)
+                    : customOptions((t) => customFieldSuits(qType, t, qMultiple), row.target)
                 }
                 placeholder={kind === 'standard' ? hm.fieldPlaceholder : hm.customFieldPlaceholder}
                 ariaLabel={kind === 'standard' ? hm.fieldPlaceholder : hm.customFieldPlaceholder}

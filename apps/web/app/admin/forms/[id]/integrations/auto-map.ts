@@ -19,6 +19,11 @@ export interface QuestionMeta {
    * like "Name and surname · First name" names both halves.
    */
   namePart?: 'first' | 'last';
+  /**
+   * Set only on a `multiple_choice` step in multiple mode: its answer is a
+   * list, so a field that holds one choice cannot take it.
+   */
+  multiple?: true;
 }
 
 /** The fallback sub-field labels for a `name` question, in the author's language. */
@@ -65,7 +70,8 @@ export function mappableQuestions(steps: readonly FormStep[], parts: NamePartLab
     if (isInputlessStep(s)) continue;
     const title = questionDisplayText(s) || s.key;
     if (s.type !== 'name') {
-      push({ key: s.key, label: title, type: s.type });
+      const multiple = s.type === 'multiple_choice' && s.selectionMode === 'multiple';
+      push({ key: s.key, label: title, type: s.type, ...(multiple ? { multiple: true as const } : {}) });
       continue;
     }
     nameFields(s).forEach((field, i) => {
