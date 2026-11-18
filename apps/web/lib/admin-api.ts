@@ -21,6 +21,13 @@ import type {
   SubmissionView,
 } from '@quill/types';
 import type { SubmissionFacets, SubmissionsSummary, SummaryAnswer } from '@quill/engine';
+import type {
+  AnnouncementBannerLogo,
+  AnnouncementCopyKey,
+  AnnouncementEvent,
+  AnnouncementRailItem,
+  AnnouncementVideo,
+} from '@quill/shared';
 import { serverApiUrl } from './api-url';
 import { getSession, clearSession, authProvider, getWorkspace } from './auth-session';
 import { analyticsSessionHeaders } from './analytics-session';
@@ -185,6 +192,29 @@ export interface WebhookPingResult {
   /** The endpoint's own response body, trimmed and truncated by the API. */
   detail?: string;
   message?: string;
+}
+
+/**
+ * The announcement the caller gets, as `GET /v1/me/announcement` answers it.
+ * `copy` is a key into `admin.announcements.items`: the language is the web
+ * app's to choose, like every other string.
+ */
+export interface AnnouncementView {
+  id: string;
+  copy: AnnouncementCopyKey;
+  cta: string;
+  visual: AnnouncementVideo;
+  railBadge: AnnouncementRailItem | null;
+  /** The Home banner's marks, or null when it has none. */
+  banner: { logos: readonly AnnouncementBannerLogo[] } | null;
+  /** Open the pop-up (the person has not closed or followed it). */
+  modal: boolean;
+  /** Show the rail badge (the person has not opened its page). */
+  badge: boolean;
+  /** Show the Home banner (for as long as the announcement runs). */
+  showBanner: boolean;
+  /** The person already reached the route: no visit left to report. */
+  followed: boolean;
 }
 
 export interface Me {
@@ -1053,6 +1083,12 @@ export const adminApi = {
    *  server action: this is the durable copy, and the one the notification
    *  emails are rendered from. */
   setMyLocale: (locale: 'en' | 'es') => req<{ ok: boolean; locale: 'en' | 'es' }>('PUT', '/v1/me/locale', { locale }),
+  /** The one in-app announcement the caller gets now, or null (see `announcements.ts` in @quill/shared). */
+  announcement: () =>
+    req<{ announcement: AnnouncementView | null }>('GET', '/v1/me/announcement').then((r) => r.announcement ?? null),
+  /** Report what the caller did with an announcement: on screen, card closed, or route reached. */
+  recordAnnouncement: (id: string, event: AnnouncementEvent) =>
+    req<{ ok: boolean }>('POST', `/v1/me/announcements/${encodeURIComponent(id)}`, { event }),
   /** Every workspace the caller can enter, for the switcher. */
   listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
   /** Same list after forcing a re-read from the identity service (when there is one). */

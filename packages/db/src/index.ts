@@ -26,6 +26,7 @@ export * from './templates';
 export * from './short-links';
 export * from './outbox';
 export * from './notification-settings';
+export * from './announcements';
 export { migrate } from './migrate';
 export { seed, type SeedResult } from './seed';
 export { sqliteSchema } from './schema.sqlite';

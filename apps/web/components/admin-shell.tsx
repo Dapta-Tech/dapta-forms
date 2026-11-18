@@ -4,13 +4,20 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type TransitionEvent as ReactTransitionEvent,
 } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { isNavItemActive, type FormsMessages } from '@quill/shared';
+import {
+  isNavItemActive,
+  type AnnouncementCopy,
+  type AnnouncementRailItem,
+  type AnnouncementVideo,
+  type FormsMessages,
+} from '@quill/shared';
 import { AppSwitcher } from '@/components/app-switcher';
 import { BrandMark, BrandWordmark } from '@/components/brand/brand';
 import { ProfileMenu } from '@/components/profile-menu';
@@ -18,6 +25,18 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import { McpLogos } from '@/components/mcp-logos';
 import { IntegrationLogos } from '@/components/integration-logos';
+import {
+  announcementShownThisSession,
+  captureAnnouncementClicked,
+  captureAnnouncementSeen,
+  isAnnouncementFollowed,
+  markAnnouncementFollowed,
+  markAnnouncementSurface,
+  reportAnnouncement,
+  subscribeAnnouncements,
+  takeAnnouncementSurface,
+} from '@/components/announcement/announcement-client';
+import { AnnouncementModal } from '@/components/announcement/announcement-modal';
 import type { Workspace } from '@/lib/admin-api';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
@@ -175,6 +194,75 @@ function navRowClass(collapsed: boolean, state: 'active' | 'idle') {
     .join(' ');
 }
 
+/** Whether the viewport is at least `px` wide, read after mount (false on the server). */
+function useMinWidth(px: number): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    let query: MediaQueryList;
+    try {
+      query = window.matchMedia(`(min-width: ${px}px)`);
+    } catch {
+      return;
+    }
+    const sync = () => setWide(query.matches);
+    sync();
+    query.addEventListener?.('change', sync);
+    return () => query.removeEventListener?.('change', sync);
+  }, [px]);
+  return wide;
+}
+
+/** The "New" mark one rail item carries while an announcement points at it. */
+interface NavBadge {
+  /** The visible pill: "New". */
+  label: string;
+  /** Read after the item's name: ", new", so the link is "Integrations, new". */
+  sr: string;
+}
+
+/**
+ * The icon, with the badge's dot when the rail is collapsed to 64px: there is
+ * no room for the pill there, and the dot sits on the icon's corner without
+ * moving it. Without a badge the icon is returned exactly as before.
+ */
+function BadgedIcon({ badge, collapsed, children }: { badge?: NavBadge | null; collapsed: boolean; children: ReactNode }) {
+  if (!badge || !collapsed) return <>{children}</>;
+  return (
+    <span className="relative inline-flex">
+      {children}
+      <span
+        aria-hidden
+        data-testid="nav-badge-dot"
+        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-sidebar"
+      />
+    </span>
+  );
+}
+
+/**
+ * The pill after the label in the open rail and the drawer, and the words a
+ * screen reader hears in either state. The pill itself is hidden from the
+ * accessibility tree so "new" is announced once, in lower case, as part of the
+ * name.
+ */
+function BadgeTail({ badge, collapsed }: { badge?: NavBadge | null; collapsed: boolean }) {
+  if (!badge) return null;
+  return (
+    <>
+      {!collapsed ? (
+        <span
+          aria-hidden
+          data-testid="nav-badge"
+          className="ml-auto shrink-0 rounded-full bg-signal/15 px-2 py-0.5 text-2xs font-semibold leading-4 text-signal-ink"
+        >
+          {badge.label}
+        </span>
+      ) : null}
+      <span className="sr-only">{badge.sr}</span>
+    </>
+  );
+}
+
 /**
  * A rail link whose icon is a set of rotating logos ("Connect your agent",
  * "Integrations"). The logos hold still while the pointer is on the row, so
@@ -191,6 +279,7 @@ function LogosLink({
   prominent,
   className,
   onNavigate,
+  badge,
 }: {
   icon: IconName;
   href: string;
@@ -201,6 +290,7 @@ function LogosLink({
   prominent?: true;
   className: string;
   onNavigate?: () => void;
+  badge?: NavBadge | null;
 }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -209,14 +299,18 @@ function LogosLink({
       onClick={onNavigate}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
-      title={collapsed ? label : undefined}
+      title={collapsed ? `${label}${badge ? badge.sr : ''}` : undefined}
       aria-current={active ? 'page' : undefined}
       data-testid={testId}
       data-prominent={prominent || undefined}
+      data-badge={badge ? 'new' : undefined}
       className={className}
     >
-      <Icon name={icon} paused={hovered} />
+      <BadgedIcon badge={badge} collapsed={collapsed}>
+        <Icon name={icon} paused={hovered} />
+      </BadgedIcon>
       <span className={collapsed ? 'sr-only' : ''}>{label}</span>
+      <BadgeTail badge={badge} collapsed={collapsed} />
     </Link>
   );
 }
@@ -227,6 +321,8 @@ function NavLinks({
   docsHref,
   newTab,
   onNavigate,
+  badgeItem = null,
+  badge,
 }: {
   collapsed: boolean;
   nav: ChromeMessages['nav'];
@@ -235,6 +331,9 @@ function NavLinks({
   /** "(opens in a new tab)" — read out after an external item's label. */
   newTab: string;
   onNavigate?: () => void;
+  /** The item an announcement marks "New", or null. */
+  badgeItem?: AnnouncementRailItem | null;
+  badge: NavBadge;
 }) {
   const pathname = usePathname();
   return (
@@ -242,6 +341,14 @@ function NavLinks({
       {NAV.map((item) => {
         const href = item.localizedHref ? docsHref : item.href;
         const label = nav[item.key];
+        const itemBadge = badgeItem !== null && item.key === badgeItem ? badge : null;
+        // A click on the marked item is how the visit gets filed as the rail's.
+        const navigate = itemBadge
+          ? () => {
+              markAnnouncementSurface('rail');
+              onNavigate?.();
+            }
+          : onNavigate;
         // An external item is never "here": its href is another origin, so the
         // prefix rule could not match anyway, but the intent should not depend
         // on that accident.
@@ -259,7 +366,9 @@ function NavLinks({
         // icon-only link keeps a discernible name (WCAG 4.1.2).
         const body = (
           <>
-            <Icon name={item.icon} />
+            <BadgedIcon badge={itemBadge} collapsed={collapsed}>
+              <Icon name={item.icon} />
+            </BadgedIcon>
             <span className={collapsed ? 'sr-only' : ''}>{label}</span>
           </>
         );
@@ -275,7 +384,8 @@ function NavLinks({
                 testId={`nav-${item.key}`}
                 prominent={item.prominent}
                 className={className}
-                onNavigate={onNavigate}
+                onNavigate={navigate}
+                badge={itemBadge}
               />
             </li>
           );
@@ -308,12 +418,14 @@ function NavLinks({
             ) : (
               <Link
                 href={href}
-                onClick={onNavigate}
-                title={collapsed ? label : undefined}
+                onClick={navigate}
+                title={collapsed ? `${label}${itemBadge ? itemBadge.sr : ''}` : undefined}
                 aria-current={active ? 'page' : undefined}
+                data-badge={itemBadge ? 'new' : undefined}
                 className={className}
               >
                 {body}
+                <BadgeTail badge={itemBadge} collapsed={collapsed} />
               </Link>
             )}
           </li>
@@ -321,6 +433,27 @@ function NavLinks({
       })}
     </ul>
   );
+}
+
+/**
+ * The in-app announcement the layout read for this person, the parts the rail
+ * needs: which item gets "New", and the route whose visit ends it.
+ */
+export interface ShellAnnouncement {
+  id: string;
+  cta: string;
+  railBadge: AnnouncementRailItem | null;
+  /** Whether the badge shows (false for an announcement without one, or once its page was opened). */
+  badge: boolean;
+  /** Whether the pop-up is due (the person has not closed or followed it). */
+  modal: boolean;
+  /** The person reached the route on an earlier load: nothing to report on a visit. */
+  followed: boolean;
+  /** The pop-up's copy in the reader's language; null when this build has none for it. */
+  copy: AnnouncementCopy | null;
+  /** The pop-up's close button name. */
+  closeLabel: string;
+  visual: AnnouncementVideo;
 }
 
 export interface ShellUser {
@@ -337,6 +470,7 @@ export function AdminShell({
   workspaces = [],
   currentAccountId,
   staff = false,
+  announcement = null,
   children,
 }: {
   user: ShellUser | null;
@@ -354,6 +488,8 @@ export function AdminShell({
   currentAccountId?: string;
   /** Staff of the deployment: the switcher's search reaches the whole estate. */
   staff?: boolean;
+  /** The announcement this person gets, or null (see `ShellAnnouncement`). */
+  announcement?: ShellAnnouncement | null;
   children: ReactNode;
 }) {
   // Tagged once for both rails (desktop and drawer), like the other suite doors.
@@ -378,6 +514,85 @@ export function AdminShell({
   // render, the hydration render and the first paint all agree on 64px. That
   // is the same no-FOUC contract the cookie buys everywhere else.
   const railCollapsed = studio ? !peeking : collapsed;
+
+  // ── In-app announcement ──────────────────────────────────────────────────
+  // The layout is not re-rendered on client navigation, so what it read at load
+  // is followed here: reaching the announcement's route ends the badge at once,
+  // and is stored against the person. The builder shows none of it, so a load
+  // there reports nothing either. What this load learned lives in
+  // announcement-client.ts, keyed by id.
+  const annId = announcement?.id ?? null;
+  const annCta = announcement?.cta ?? null;
+  const onAnnouncementRoute = annCta !== null && isNavItemActive(pathname, annCta);
+  const followedThisLoad = useSyncExternalStore(
+    subscribeAnnouncements,
+    () => (annId ? isAnnouncementFollowed(annId) : false),
+    () => false,
+  );
+  // Followed on an earlier load too: the banner keeps the announcement alive
+  // after that, and a later visit is not a new follow to report.
+  const followed = followedThisLoad || !!announcement?.followed;
+  useEffect(() => {
+    if (!annId || followed || !onAnnouncementRoute) return;
+    markAnnouncementFollowed(annId);
+    reportAnnouncement(annId, 'clicked');
+    captureAnnouncementClicked(annId, takeAnnouncementSurface());
+  }, [annId, followed, onAnnouncementRoute]);
+  const badgeItem =
+    announcement && announcement.badge && !followed && !studio && !onAnnouncementRoute
+      ? announcement.railBadge
+      : null;
+  // Analytics counts the badge as seen only when it is really on screen: the
+  // desktop rail from 768px up, or the drawer once it is opened.
+  const railOnScreen = useMinWidth(768) || drawerOpen;
+  useEffect(() => {
+    if (!annId || !badgeItem || !railOnScreen) return;
+    captureAnnouncementSeen(annId, 'rail');
+  }, [annId, badgeItem, railOnScreen]);
+
+  // The pop-up: on the first dashboard load of a browser session where it is
+  // due. Never in the builder, never on the announcement's own page (there is
+  // nothing left to announce), and never over another dialog or the open
+  // drawer: it waits for those to close. Onboarding never gets here, it lives
+  // outside /admin (see app/admin/layout.tsx).
+  const [modalOpen, setModalOpen] = useState(false);
+  const modalHandled = useRef<string | null>(null);
+  // Editors take the whole screen for work: the form builder and the link page
+  // editor never get a pop-up over them.
+  const editor = studio || /^\/admin\/account\/public-page\/[^/]+/.test(pathname);
+  const modalDue =
+    !!announcement?.modal && !!announcement.copy && !editor && !onAnnouncementRoute && !followed && !drawerOpen;
+  // Back or a swipe can take the page somewhere it must not be shown while it
+  // is up (portalled, it would stay): it leaves with the page, unreported, and
+  // does not come back on this load.
+  useEffect(() => {
+    if (modalOpen && !modalDue) setModalOpen(false);
+  }, [modalOpen, modalDue]);
+  useEffect(() => {
+    if (!annId || !modalDue || modalHandled.current === annId) return;
+    if (announcementShownThisSession(annId)) {
+      modalHandled.current = annId;
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    const tryOpen = () => {
+      // Another dialog, or a full-screen surface that holds the scroll (the
+      // submissions sheet opened from a notification link is a dialog without
+      // aria-modal): wait for it to close.
+      if (
+        document.querySelector('[aria-modal="true"], [role="alertdialog"]') ||
+        document.body.style.overflow === 'hidden'
+      ) {
+        timer = setTimeout(tryOpen, 1000);
+        return;
+      }
+      modalHandled.current = annId;
+      setModalOpen(true);
+    };
+    // A beat after the page settles, so it arrives over a finished page.
+    timer = setTimeout(tryOpen, 350);
+    return () => clearTimeout(timer);
+  }, [annId, modalDue]);
 
   // Persist the desktop rail preference to a cookie so the SERVER renders the
   // correct width on the next load (no flash) — see AdminLayout.
@@ -470,7 +685,13 @@ export function AdminShell({
 
   // Lock body scroll + close on Escape + move focus into the drawer on open (R28).
   useEffect(() => {
-    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    // Only while open, and put back what was there: writing '' on every mount
+    // wiped the scroll lock of a surface that opened with the page (the
+    // submissions sheet from a `?response=` link), which also hid it from the
+    // announcement pop-up's "is something else up?" check.
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    if (drawerOpen) body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       // WCAG 1.4.13 Dismissible, for the pointer case it is written about.
@@ -488,7 +709,7 @@ export function AdminShell({
     window.addEventListener('keydown', onKey);
     if (drawerOpen) drawerRef.current?.querySelector<HTMLElement>('a,button')?.focus();
     return () => {
-      document.body.style.overflow = '';
+      if (drawerOpen) body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
     };
   }, [drawerOpen]);
@@ -652,6 +873,8 @@ export function AdminShell({
             nav={messages.nav}
             docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
+            badgeItem={badgeItem}
+            badge={messages.newBadge}
           />
         </nav>
         {renderFooter(railCollapsed)}
@@ -706,6 +929,8 @@ export function AdminShell({
             docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
             onNavigate={() => setDrawerOpen(false)}
+            badgeItem={badgeItem}
+            badge={messages.newBadge}
           />
         </nav>
         {renderFooter(false, () => setDrawerOpen(false))}
@@ -714,6 +939,18 @@ export function AdminShell({
       <main inert={drawerOpen || undefined} className="min-w-0 flex-1 bg-background">
         {children}
       </main>
+      {announcement?.copy ? (
+        <AnnouncementModal
+          open={modalOpen}
+          onClosed={() => setModalOpen(false)}
+          id={announcement.id}
+          copy={announcement.copy}
+          cta={announcement.cta}
+          visual={announcement.visual}
+          closeLabel={announcement.closeLabel}
+          theme={themePref}
+        />
+      ) : null}
     </div>
   );
 }

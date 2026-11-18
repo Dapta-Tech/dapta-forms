@@ -17,6 +17,15 @@ import type {
 
 export type Locale = 'en' | 'es';
 
+/** The three strings of one in-app announcement (see `announcements.ts`). */
+export interface AnnouncementCopy {
+  title: string;
+  /** One line under the title: what changed for the person reading it. */
+  body: string;
+  /** The button, which goes to the announcement's `cta` route. */
+  cta: string;
+}
+
 export interface FormsMessages {
   /** The growth badge + SEO copy on public form pages. */
   growth: {
@@ -386,6 +395,16 @@ export interface FormsMessages {
        * localized messages, never the locale itself. Always an absolute URL.
        */
       docsHref: string;
+      /**
+       * The mark a rail item carries while an announcement points at it
+       * (`railBadge` in `announcements.ts`). `label` is the visible pill;
+       * `sr` is what a screen reader hears after the item's name, so the link
+       * reads as "Integrations, new". The collapsed rail shows a dot instead.
+       */
+      newBadge: {
+        label: string;
+        sr: string;
+      };
       /** Left-nav item labels (icon + label). */
       nav: {
         home: string;
@@ -511,6 +530,18 @@ export interface FormsMessages {
         /** The composer's placeholder before the prompt starts. // {app} */
         placeholder: string;
         connected: string;
+      };
+    };
+    /**
+     * In-app announcements (`ANNOUNCEMENTS` in `announcements.ts`): the card at
+     * the top of the home and the copy each announcement names by key. One
+     * entry per announcement id, never reused for another launch.
+     */
+    announcements: {
+      /** Accessible name of the card's close button. */
+      close: string;
+      items: {
+        'integrations-2026-11': AnnouncementCopy;
       };
     };
     /**
@@ -3357,6 +3388,10 @@ export const en: FormsMessages = {
         next: 'Switch to',
       },
       docsHref: 'https://docs.dapta.ai/dapta-forms/forms',
+      newBadge: {
+        label: 'New',
+        sr: ', new',
+      },
       nav: {
         home: 'Home',
         forms: 'Forms',
@@ -3450,6 +3485,16 @@ export const en: FormsMessages = {
         done: 'Done. It is live in dForms.',
         placeholder: 'Ask {app}…',
         connected: 'dForms connected',
+      },
+    },
+    announcements: {
+      close: 'Close announcement',
+      items: {
+        'integrations-2026-11': {
+          title: 'Send responses to HighLevel, Salesforce and Google Sheets',
+          body: 'Every response goes straight to the tool you already use. Plus dCal: leads book a meeting inside your form.',
+          cta: 'See integrations',
+        },
       },
     },
     attributionSetting: {
@@ -6342,6 +6387,10 @@ export const es: FormsMessages = {
         next: 'Cambiar a',
       },
       docsHref: 'https://docs.dapta.ai/dapta-docs-es/dapta-forms/forms',
+      newBadge: {
+        label: 'Nuevo',
+        sr: ', nuevo',
+      },
       nav: {
         home: 'Inicio',
         forms: 'Formularios',
@@ -6435,6 +6484,16 @@ export const es: FormsMessages = {
         done: 'Listo. Ya está publicado en dForms.',
         placeholder: 'Pregúntale a {app}…',
         connected: 'dForms conectado',
+      },
+    },
+    announcements: {
+      close: 'Cerrar anuncio',
+      items: {
+        'integrations-2026-11': {
+          title: 'Manda tus respuestas a HighLevel, Salesforce y Google Sheets',
+          body: 'Cada respuesta llega directo a la herramienta que ya usas. Y con dCal, tus leads agendan dentro del form.',
+          cta: 'Ver integraciones',
+        },
       },
     },
     attributionSetting: {
