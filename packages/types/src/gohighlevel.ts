@@ -14,10 +14,12 @@
  * `name` of each standard field, which the fields route returns as data (the
  * web app labels them from the i18n catalog instead).
  *
- * Inert for now: there is no connect route, fields route, adapter or screen
- * yet. The destination factory turns every `gohighlevel` delivery into a
- * log-only no-op with {@link GOHIGHLEVEL_REASONS}.notConnected, and the API
- * refuses an agent's `gohighlevel` entry as not connectable.
+ * The adapter exists (`@quill/destinations`): the destination factory builds
+ * it when the API passes credentials with a token and a Location ID, and
+ * turns any other `gohighlevel` delivery into a log-only no-op with
+ * {@link GOHIGHLEVEL_REASONS}.notConnected. There is no connect route, fields
+ * route or screen yet, so the API still refuses an agent's `gohighlevel`
+ * entry as not connectable.
  */
 import type { FormFieldType } from '@quill/engine';
 // Type-only: the stored shapes are inferred from the schemas in `index.ts`.
@@ -131,8 +133,8 @@ export type GoHighLevelCustomFieldDataType = (typeof GOHIGHLEVEL_CUSTOM_FIELD_DA
  * Left out on purpose: `TEXTBOX_LIST`, `SIGNATURE` and `FILE_UPLOAD` (the
  * upsert does not take them), and `FLOAT` and `TIME` (how the upsert takes
  * their value is not confirmed). The fields route will never offer them, the
- * API will refuse a mapping to one on save, and the adapter will leave such a
- * value out (none of the three exists yet).
+ * API will refuse a mapping to one on save, and the adapter leaves such a
+ * value out.
  * The schema itself accepts every known type (see
  * {@link GOHIGHLEVEL_CUSTOM_FIELD_DATA_TYPES}), so moving a type out of this
  * list later can never stop a stored config from parsing.
