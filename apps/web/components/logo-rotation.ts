@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * How long each logo of a rail carousel stays before the next one fades in:
@@ -32,8 +32,9 @@ function prefersReducedMotion(): boolean {
  *    cannot know it) and followed if it changes while the page is open. The
  *    first logo is then the static icon.
  *
- * `delayMs` shifts the first change, so two carousels stacked in the rail can
- * take turns instead of swapping on the same frame.
+ * `delayMs` shifts the very first change only, so two carousels stacked in
+ * the rail take turns instead of swapping on the same frame. Resuming after a
+ * hover waits one plain interval: the offset is not paid again.
  */
 export function useLogoRotation(
   count: number,
@@ -41,6 +42,7 @@ export function useLogoRotation(
 ): number {
   const [index, setIndex] = useState(0);
   const [still, setStill] = useState(true);
+  const offset = useRef(delayMs);
 
   useEffect(() => {
     setStill(prefersReducedMotion());
@@ -61,14 +63,15 @@ export function useLogoRotation(
     const next = () => setIndex((i) => (i + 1) % count);
     let timer: ReturnType<typeof setInterval> | undefined;
     const first = setTimeout(() => {
+      offset.current = 0;
       next();
       timer = setInterval(next, LOGO_ROTATE_MS);
-    }, LOGO_ROTATE_MS + delayMs);
+    }, LOGO_ROTATE_MS + offset.current);
     return () => {
       clearTimeout(first);
       if (timer) clearInterval(timer);
     };
-  }, [still, paused, count, delayMs]);
+  }, [still, paused, count]);
 
   return index;
 }

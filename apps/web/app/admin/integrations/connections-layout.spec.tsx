@@ -115,6 +115,14 @@ describe('the Connections grid', () => {
     expect(body(highlevel).innerHTML).toBe(before);
   });
 
+  it('starts every body with its button, the oauth note under it', async () => {
+    const el = await mount();
+    const sheets = cards(el).find((c) => c.dataset.provider === 'google-sheets')!;
+    const stack = body(sheets).firstElementChild!;
+    expect(stack.firstElementChild!.tagName).toBe('BUTTON');
+    expect(stack.lastElementChild!.textContent).toBe(m.gsheetsConnectNote);
+  });
+
   it('closes again on Cancel, and the card is no longer marked open', async () => {
     const el = await mount();
     const [hubspot] = cards(el);

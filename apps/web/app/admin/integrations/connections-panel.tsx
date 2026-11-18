@@ -58,9 +58,11 @@ const fill = (template: string, vars: Record<string, string>): string =>
  *
  * The section itself draws nothing (it is the subgrid); the header draws the
  * top of the card and the body the bottom, with no seam between them. Its own
- * `gap-y-0` replaces the grid's row gap between its two rows.
+ * `gap-y-0` replaces the grid's row gap between its two rows, and
+ * `grid-cols-1` (`minmax(0, 1fr)`) keeps a long unbroken word inside the
+ * column instead of widening the card over its neighbour.
  */
-const CARD = 'row-span-2 grid grid-rows-subgrid gap-y-0';
+const CARD = 'row-span-2 grid grid-cols-1 grid-rows-subgrid gap-y-0';
 const CARD_TOP =
   'flex items-start justify-between gap-3 rounded-t-xl border border-b-0 border-border bg-card px-5 pt-5';
 const CARD_BODY = 'self-start rounded-b-xl border border-t-0 border-border bg-card px-5 pb-5 pt-4';
@@ -381,11 +383,13 @@ function ProviderCard({
           />
         ) : meta.how === 'oauth' ? (
           // No token field and no second step: the consent screen IS the form.
+          // The button first and the note under it, like every body here: a
+          // note above it would push it below its neighbour's.
           <div className="flex flex-col gap-3">
+            <GoogleConnectButton m={m} className="self-start" />
             {meta.note ? (
               <p className="text-xs text-muted-foreground">{meta.note}</p>
             ) : null}
-            <GoogleConnectButton m={m} className="self-start" />
           </div>
         ) : meta.how === 'gohighlevel' && showConnect ? (
           <Reveal>
@@ -428,12 +432,13 @@ function ProviderCard({
           />
           </Reveal>
         ) : (
+          // Button first, note under it (see the oauth branch above).
           <div className="flex flex-col gap-3">
-            {serverProvided ? <ServerProvidedNote providerName={meta.name} m={m} /> : null}
             <Button onClick={() => setShowConnect(true)} className="self-start">
               <i aria-hidden className="pi pi-link" style={{ fontSize: 12 }} />
               {m.connect}
             </Button>
+            {serverProvided ? <ServerProvidedNote providerName={meta.name} m={m} /> : null}
           </div>
         )}
         {dialog}
@@ -576,7 +581,7 @@ function ConnectedView({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <dl className="min-w-0 space-y-0.5 text-sm">
           {status.label ? (
-            <dd className="font-medium text-foreground">
+            <dd className="font-medium text-foreground [overflow-wrap:anywhere]">
               {fill(labelTemplate ?? m.connectedAs, { label: status.label })}
             </dd>
           ) : null}

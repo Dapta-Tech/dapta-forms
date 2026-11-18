@@ -100,6 +100,18 @@ describe('IntegrationLogos', () => {
     expect(active()).toBe('hubspot');
   });
 
+  it('pays the half-beat offset once: after a hover it resumes on a plain interval', async () => {
+    await mount();
+    await tick(LOGO_ROTATE_MS + 800);
+    expect(active()).toBe('salesforce');
+    await act(async () => root.render(<IntegrationLogos daptaBrand paused />));
+    await tick(LOGO_ROTATE_MS * 3);
+    expect(active()).toBe('salesforce');
+    await act(async () => root.render(<IntegrationLogos daptaBrand />));
+    await tick(LOGO_ROTATE_MS);
+    expect(active()).toBe('gohighlevel');
+  });
+
   it('holds still while paused', async () => {
     await mount({ paused: true });
     await tick(LOGO_ROTATE_MS * 5);
