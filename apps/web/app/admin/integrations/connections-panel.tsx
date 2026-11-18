@@ -14,6 +14,7 @@ import { DcalLogo } from '@/components/ui/dcal-logo';
 import { disconnectIntegrationAction } from './actions';
 import { callAction } from '@/lib/call-action';
 import {
+  GoHighLevelConnectForm,
   GoogleConnectButton,
   SalesforceConnectForm,
   TokenConnectForm,
@@ -45,7 +46,7 @@ interface ProviderMeta {
    * browser to the provider's own consent screen and comes back through the
    * API's callback, so there is no token field and nothing to validate here.
    */
-  how: 'paste' | 'oauth' | 'salesforce';
+  how: 'paste' | 'oauth' | 'salesforce' | 'gohighlevel';
   /** Shown above the Connect button on an `oauth` card, so the round trip is no surprise. */
   note?: string;
 }
@@ -107,6 +108,9 @@ export function ConnectionsPanel({
     // Three values, not one token: Salesforce has no API keys, and Client
     // Credentials is the one server-to-server credential an admin can paste.
     { id: 'salesforce', name: m.salesforceName, desc: m.salesforceDesc, how: 'salesforce' },
+    // Two values, like Salesforce's three: a Private Integration token and the
+    // sub-account it belongs to, proved together by the API.
+    { id: 'gohighlevel', name: m.highlevel.name, desc: m.highlevel.desc, how: 'gohighlevel' },
   ];
 
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus | null>>(() => {
@@ -115,6 +119,7 @@ export function ConnectionsPanel({
       calendly: null,
       'google-sheets': null,
       salesforce: null,
+      gohighlevel: null,
     };
     for (const s of initialProviders) if (s.connected) map[s.provider] = s;
     return map;
@@ -217,7 +222,12 @@ function ProviderCard({
   const [pending, start] = useTransition();
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
   const [showConnect, setShowConnect] = useState(false);
+  // HighLevel only: the connected card's "Replace token" form is open.
+  const [replacing, setReplacing] = useState(false);
   const connected = !!status;
+  // HighLevel refuses the stored token (a delivery got a 401 or 403 since it
+  // was connected). The connection still exists; it only needs a new token.
+  const rejectedAt = meta.id === 'gohighlevel' && status?.rejectedAt ? status.rejectedAt : null;
 
   async function disconnect() {
     const ok = await confirmDialog({
@@ -256,7 +266,12 @@ function ProviderCard({
             <p className="mt-0.5 text-sm text-muted-foreground">{meta.desc}</p>
           </div>
         </div>
-        <StatusBadge connected={connected} serverProvided={serverProvided} m={m} />
+        <StatusBadge
+          connected={connected}
+          serverProvided={serverProvided}
+          rejected={rejectedAt !== null}
+          m={m}
+        />
       </header>
 
       {/* `mt-auto` pins the action row to the bottom of the card. Without it the
@@ -290,6 +305,18 @@ function ProviderCard({
               {fill(m.manageAdminOnly, { provider: meta.name })}
             </p>
           </div>
+        ) : connected && status && meta.how === 'gohighlevel' && replacing && canManage ? (
+          <GoHighLevelConnectForm
+            replacing
+            initialLocationId={status.locationId ?? ''}
+            onConnected={(s) => {
+              onStatusChange(s);
+              setReplacing(false);
+              success(m.highlevel.replaceSuccess);
+            }}
+            onCancel={() => setReplacing(false)}
+            m={m}
+          />
         ) : connected && status ? (
           <ConnectedView
             status={status}
@@ -299,6 +326,25 @@ function ProviderCard({
             m={m}
             locale={locale}
             note={meta.id === 'calendly' ? m.calendlyScopeNote : null}
+            {...(meta.how === 'gohighlevel'
+              ? {
+                  labelTemplate: m.highlevel.connectedTo,
+                  locationId: status.locationId ?? null,
+                  onReplace: canManage ? () => setReplacing(true) : null,
+                  replaceLabel: m.highlevel.replaceToken,
+                  rejected:
+                    rejectedAt !== null
+                      ? {
+                          title: m.highlevel.rejectedTitle,
+                          body: fill(canManage ? m.highlevel.rejectedBody : m.highlevel.rejectedBodyMember, {
+                            date: new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
+                              new Date(rejectedAt),
+                            ),
+                          }),
+                        }
+                      : null,
+                }
+              : {})}
           />
         ) : meta.how === 'oauth' ? (
           // No token field and no second step: the consent screen IS the form.
@@ -308,6 +354,16 @@ function ProviderCard({
             ) : null}
             <GoogleConnectButton m={m} className="self-start" />
           </div>
+        ) : meta.how === 'gohighlevel' && showConnect ? (
+          <GoHighLevelConnectForm
+            onConnected={(s) => {
+              onStatusChange(s);
+              setShowConnect(false);
+              success(fill(m.connectSuccess, { provider: meta.name }));
+            }}
+            onCancel={() => setShowConnect(false)}
+            m={m}
+          />
         ) : meta.how === 'salesforce' && showConnect ? (
           <SalesforceConnectForm
             onConnected={(s) => {
@@ -370,23 +426,35 @@ function ServerProvidedNote({ providerName, m }: { providerName: string; m: Msgs
 function StatusBadge({
   connected,
   serverProvided = false,
+  rejected = false,
   m,
 }: {
   connected: boolean;
   serverProvided?: boolean;
+  /** Connected, but the provider refuses the stored credential (HighLevel). */
+  rejected?: boolean;
   m: Msgs;
 }) {
   // A connected account outranks the server token — its own credential is what
-  // actually gets used, so the badge must name that one.
-  const state = connected ? 'account' : serverProvided ? 'server' : 'none';
+  // actually gets used, so the badge must name that one. A refused credential
+  // outranks "connected": green over a token nothing accepts would be a lie.
+  const state = connected ? (rejected ? 'rejected' : 'account') : serverProvided ? 'server' : 'none';
   const tone =
-    state === 'account'
-      ? 'border-signal-edge/40 bg-signal/15 text-foreground'
-      : state === 'server'
-        ? 'border-border bg-muted/60 text-foreground'
-        : 'border-border bg-muted/40 text-muted-foreground';
+    state === 'rejected'
+      ? 'border-destructive/40 bg-destructive/10 text-destructive'
+      : state === 'account'
+        ? 'border-signal-edge/40 bg-signal/15 text-foreground'
+        : state === 'server'
+          ? 'border-border bg-muted/60 text-foreground'
+          : 'border-border bg-muted/40 text-muted-foreground';
   const dot =
-    state === 'account' ? 'bg-signal-edge' : state === 'server' ? 'bg-signal-edge/50' : 'bg-muted-foreground';
+    state === 'rejected'
+      ? 'bg-destructive'
+      : state === 'account'
+        ? 'bg-signal-edge'
+        : state === 'server'
+          ? 'bg-signal-edge/50'
+          : 'bg-muted-foreground';
   return (
     <span
       data-testid="connection-status"
@@ -397,7 +465,13 @@ function StatusBadge({
       }
     >
       <span aria-hidden className={'h-1.5 w-1.5 rounded-full ' + dot} />
-      {state === 'account' ? m.connected : state === 'server' ? m.serverProvided : m.notConnected}
+      {state === 'rejected'
+        ? m.highlevel.rejectedBadge
+        : state === 'account'
+          ? m.connected
+          : state === 'server'
+            ? m.serverProvided
+            : m.notConnected}
     </span>
   );
 }
@@ -410,7 +484,21 @@ function ConnectedView({
   m,
   locale,
   note,
+  labelTemplate,
+  locationId = null,
+  onReplace = null,
+  replaceLabel,
+  rejected = null,
 }: {
+  /** How the identity line reads (`{label}`); "Connected as" by default. */
+  labelTemplate?: string;
+  /** HighLevel: the sub-account's Location ID, so the admin can check it is the right one. */
+  locationId?: string | null;
+  /** HighLevel: replace the token in place. Null for a member. */
+  onReplace?: (() => void) | null;
+  replaceLabel?: string;
+  /** The provider stopped accepting the credential: said above everything else. */
+  rejected?: { title: string; body: string } | null;
   status: IntegrationStatus;
   /** Null for a member: the API would refuse, so there is no button. */
   onDisconnect: (() => void) | null;
@@ -427,10 +515,27 @@ function ConnectedView({
   );
   return (
     <div className="flex flex-col gap-2">
+      {rejected ? (
+        <div
+          role="alert"
+          data-testid="connection-rejected"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-3"
+        >
+          <p className="text-sm font-medium text-destructive">{rejected.title}</p>
+          <p className="mt-1 text-xs text-foreground">{rejected.body}</p>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <dl className="min-w-0 space-y-0.5 text-sm">
           {status.label ? (
-            <dd className="font-medium text-foreground">{fill(m.connectedAs, { label: status.label })}</dd>
+            <dd className="font-medium text-foreground">
+              {fill(labelTemplate ?? m.connectedAs, { label: status.label })}
+            </dd>
+          ) : null}
+          {locationId ? (
+            <dd className="break-all text-xs text-muted-foreground" data-testid="connection-location">
+              {fill(m.highlevel.locationLine, { id: locationId })}
+            </dd>
           ) : null}
           <dd className="text-xs text-muted-foreground">
             {/* "Ending in" is how somebody recognises the token THEY pasted.
@@ -444,10 +549,25 @@ function ConnectedView({
             {fill(m.connectedOn, { date })}
           </dd>
         </dl>
-        {onDisconnect ? (
-          <Button variant="destructive" size="sm" onClick={onDisconnect} disabled={pending}>
-            {pending ? m.disconnecting : m.disconnect}
-          </Button>
+        {onDisconnect || onReplace ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {onReplace ? (
+              <Button
+                variant={rejected ? 'default' : 'outline'}
+                size="sm"
+                onClick={onReplace}
+                disabled={pending}
+                data-testid="connection-replace"
+              >
+                {replaceLabel}
+              </Button>
+            ) : null}
+            {onDisconnect ? (
+              <Button variant="destructive" size="sm" onClick={onDisconnect} disabled={pending}>
+                {pending ? m.disconnecting : m.disconnect}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {adminOnly ? (

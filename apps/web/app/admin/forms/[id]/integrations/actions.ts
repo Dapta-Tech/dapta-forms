@@ -14,6 +14,7 @@ import {
   type GoogleSheetsTabsResponse,
   type FormSheetHeaderRowResponse,
   type HubSpotPropertiesResponse,
+  type GoHighLevelFieldsResponse,
   type SalesforceFieldsResponse,
   type SheetHeaderSync,
   type WebhookPingResult,
@@ -272,6 +273,22 @@ export async function salesforceFieldsAction(
 ): Promise<{ ok: true; fields: SalesforceFieldsResponse } | { ok: false }> {
   try {
     return { ok: true, fields: await adminApi.salesforceFields(refresh) };
+  } catch (e) {
+    unstable_rethrow(e);
+    return { ok: false };
+  }
+}
+
+/**
+ * Re-read the connected HighLevel location's custom fields, skipping the
+ * five-minute cache: what an author needs right after creating one in
+ * HighLevel. Rate-limited by the API.
+ */
+export async function goHighLevelFieldsAction(
+  refresh: boolean,
+): Promise<{ ok: true; fields: GoHighLevelFieldsResponse } | { ok: false }> {
+  try {
+    return { ok: true, fields: await adminApi.goHighLevelFields(refresh) };
   } catch (e) {
     unstable_rethrow(e);
     return { ok: false };
