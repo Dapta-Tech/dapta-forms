@@ -23,6 +23,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   createDb,
   decryptToken,
+  listOutbox,
   getAccountByCode,
   getFormById,
   getIntegration,
@@ -54,6 +55,7 @@ import { AdminService } from './admin.service';
 import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
 import { AnalyticsService } from './analytics.service';
+import { OutboxWorker } from './outbox.worker';
 
 const ENCRYPTION_KEY = Buffer.alloc(32, 9).toString('base64');
 const BASE = 'https://services.leadconnectorhq.com';
@@ -125,10 +127,19 @@ function fakeGhl() {
   ]);
   const names: Record<string, string> = { [LOC]: 'Acme Corp (dForms QA)', [OTHER_LOC]: 'Other Agency Client' };
   const fields: Record<string, FakeField[]> = { [LOC]: [...SANDBOX_FIELDS], [OTHER_LOC]: [{ id: 'o-1', name: 'Other', fieldKey: 'contact.other', dataType: 'TEXT' }] };
-  const contacts: Array<{ id: string; locationId: string; email?: string }> = [];
+  const contacts: Array<{
+    id: string;
+    locationId: string;
+    email?: string;
+    fields: Record<string, unknown>;
+    customFields: Record<string, unknown>;
+    tags: Set<string>;
+  }> = [];
   const state = {
     mode: null as null | 'down' | 'cloudflare' | 'network',
     fieldsDown: false,
+    /** What the next upserts answer instead of working, one per call. */
+    upsertFails: [] as Array<{ status: number; message: string | string[] }>,
   };
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -175,16 +186,41 @@ function fakeGhl() {
     }
     if (url.pathname === '/contacts/upsert' && method === 'POST') {
       if (!grant.scopes.has('contacts')) return scopeRefusal();
-      const payload = JSON.parse(body ?? '{}') as { locationId?: string; email?: string; phone?: string };
+      const payload = JSON.parse(body ?? '{}') as {
+        locationId?: string;
+        email?: string;
+        phone?: string;
+        customFields?: Array<{ id: string; fieldValue: unknown }>;
+        [k: string]: unknown;
+      };
       if (payload.locationId !== grant.locationId) return noAccess();
+      const failure = state.upsertFails.shift();
+      if (failure) return json({ statusCode: failure.status, message: failure.message }, failure.status);
       if (!payload.email && !payload.phone) {
         return json({ statusCode: 400, message: 'Pass at least one of number, email query parameter' }, 400);
       }
-      const existing = contacts.find((c) => c.locationId === payload.locationId && c.email === payload.email);
-      if (existing) return json({ new: false, contact: { id: existing.id } }, 201);
-      const created = { id: `c-${contacts.length + 1}`, locationId: payload.locationId, email: payload.email };
-      contacts.push(created);
-      return json({ new: true, contact: { id: created.id } }, 201);
+      if (payload.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payload.email)) {
+        return json({ statusCode: 422, message: ['email must be an email'], error: 'Unprocessable Entity' }, 422);
+      }
+      const { locationId: _l, customFields, ...standard } = payload;
+      const email = payload.email?.toLowerCase();
+      let contact = contacts.find((c) => c.locationId === payload.locationId && c.email === email);
+      const created = !contact;
+      if (!contact) {
+        contact = { id: `c-${contacts.length + 1}`, locationId: payload.locationId!, email, fields: {}, customFields: {}, tags: new Set() };
+        contacts.push(contact);
+      }
+      Object.assign(contact.fields, standard);
+      for (const f of customFields ?? []) contact.customFields[f.id] = f.fieldValue;
+      return json({ new: created, contact: { id: contact.id } }, 201);
+    }
+    const tagged = /^\/contacts\/([^/]+)\/tags$/.exec(url.pathname);
+    if (tagged && method === 'POST') {
+      if (!grant.scopes.has('contacts')) return scopeRefusal();
+      const contact = contacts.find((c) => c.id === tagged[1]);
+      if (!contact) return json({ statusCode: 400, message: 'Contact not found for id' }, 400);
+      for (const t of (JSON.parse(body ?? '{}') as { tags: string[] }).tags) contact.tags.add(t.toLowerCase());
+      return json({ tags: [...contact.tags], tagsAdded: [] }, 201);
     }
     return json({ statusCode: 404, message: 'Cannot find route' }, 404);
   }) as unknown as typeof fetch;
@@ -303,6 +339,7 @@ describe('POST /v1/integrations/gohighlevel/connect', () => {
     ['a JWT', 'eyJhbGciOiJIUzI1NiJ9.e30.sig'],
     ['an API key without the prefix', 'aaaa-bbbb-cccc-1234'],
     ['the bare prefix', 'pit-'],
+    ['a token pasted with a line break inside', 'pit-aaaa-bbbb\ncccc-1234'],
   ])('refuses %s as token_format without a single request', async (_what, token) => {
     const body = await refusalOf(connect(token));
     expect(body).toEqual({ error: 'GOHIGHLEVEL_REJECTED', reason: 'token_format', message: 'gohighlevel: token_format' });
@@ -566,12 +603,22 @@ describe('what a delivery is handed', () => {
     expect(typeof options.onRejected).toBe('function');
   });
 
-  it('no types when GHL cannot list them (the adapter falls back to the stored ones)', async () => {
+  it('no types when GHL cannot list them (the adapter falls back to the stored ones), and no re-read for a minute', async () => {
     await connect();
     ghl.state.fieldsDown = true;
+    const reads = () => ghl.calls.filter((c) => c.path.includes('/customFields')).length;
+    const before = reads();
     const spec = await specFor(destination);
     expect(spec.gohighlevel!.customFieldTypes).toBeUndefined();
     expect(spec.gohighlevel!.credentials.token).toBe(TOKEN);
+    expect(reads()).toBe(before + 1);
+    // The next delivery does not wait on the same failing call...
+    ghl.state.fieldsDown = false;
+    await specFor(destination);
+    expect(reads()).toBe(before + 1);
+    // ...while the mapping UI still reads, and a success resumes the types.
+    await expect(controller.goHighLevelFieldList(asOwner())).resolves.toMatchObject({ cached: false });
+    expect((await specFor(destination)).gohighlevel!.customFieldTypes).toMatchObject({ 'f-num': 'NUMERICAL' });
   });
 
   it('empty credentials and no callback when the workspace never connected HighLevel', async () => {
@@ -667,6 +714,22 @@ describe('saving a HighLevel destination', () => {
     expect(await stored()).toHaveLength(1);
   });
 
+  it.each(['email', 'phone'])('refuses a fixed value on the %s field, which would merge every respondent', async (field) => {
+    const body = await refusalOf(
+      destinationsController().putDestinations(asOwner(), formId, {
+        destinations: [entry({ staticFields: [{ target: { kind: 'standard', field }, value: 'x@acme.io' }] })],
+      }),
+    );
+    expect(body).toMatchObject({ error: 'BAD_REQUEST', path: 'destinations.0.staticFields.0.target' });
+    expect(body.message).toContain(`gives the ${field} field a fixed value`);
+    // Another standard field takes one.
+    await expect(
+      destinationsController().putDestinations(asOwner(), formId, {
+        destinations: [entry({ staticFields: [{ target: { kind: 'standard', field: 'country' }, value: 'US' }] })],
+      }),
+    ).resolves.toBeTruthy();
+  });
+
   it('keeps a target the form already stores, so an untouched form stays saveable', async () => {
     const legacy = entry({ scoreField: custom('qa_text', 'TEXT') });
     await updateFormDestinations(db, await accountId(), formId, [legacy]);
@@ -715,4 +778,163 @@ describe('extractGoHighLevelLocationId', () => {
       expect(extractGoHighLevelLocationId(raw)).toBeNull();
     },
   );
+});
+
+describe('delivering a submission to HighLevel, through the outbox and the real adapter', () => {
+  const destination = {
+    type: 'gohighlevel',
+    enabled: true,
+    fieldMappings: {
+      email: [{ kind: 'standard', field: 'email' }],
+      company: [{ kind: 'standard', field: 'companyName' }],
+      // Stored as text when it was chosen; the location now says it is a number.
+      seats: [{ kind: 'custom', id: 'f-num', key: 'contact.qa_number', dataType: 'TEXT' }],
+      plan: [{ kind: 'custom', id: 'f-single', key: 'contact.qa_single', dataType: 'SINGLE_OPTIONS' }],
+    },
+    utmMappings: { utm_source: { kind: 'custom', id: 'f-utm', key: 'contact.utm_source', dataType: 'TEXT' } },
+    tags: ['dForms', 'Webinar'],
+  };
+  let effects: DestinationEffects;
+  let worker: OutboxWorker;
+  let sequence = 0;
+
+  /** Submit one response and settle its delivery the way the worker does. */
+  const submit = async (data: Record<string, unknown>, config: unknown[] = [destination]) => {
+    const submissionId = `sub-${++sequence}`;
+    await effects.enqueueSubmissionDeliveries({
+      formId: 'form-1',
+      formName: 'Spring webinar',
+      accountId: await accountId(),
+      submissionId,
+      sessionId: `sess-${submissionId}`,
+      score: 7,
+      outcomeLabel: null,
+      phase: 'complete',
+      submittedAt: Date.UTC(2026, 10, 17, 15),
+      data,
+      config: { version: 1, steps: [], destinations: config },
+    });
+    await worker.drainOnce(Date.now() + 1_000);
+    return submissionId;
+  };
+  const row = async (submissionId: string) => (await listOutbox(db, { kind: 'gohighlevel', subjectUid: submissionId }))[0]!;
+  // Deliveries only: the connect probe's own upsert (`{locationId}`) is not one.
+  const upserts = () =>
+    ghl.calls.filter((c) => c.path === '/contacts/upsert' && Object.keys(JSON.parse(c.body ?? '{}')).length > 1);
+  const rejectedAt = async () => (await listIntegrationStatuses(db, await accountId()))[0]!.rejectedAt;
+  const lead = { email: 'Sam@Acme.io', company: 'Acme', seats: '25', plan: 'Pro', utm: { utm_source: 'linkedin' } };
+
+  beforeEach(() => {
+    effects = new DestinationEffects(db, env(), undefined, undefined, undefined, undefined, fields);
+    effects.fetchImpl = ghl.fetchImpl;
+    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
+    worker = new OutboxWorker(db, { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5000, NODE_ENV: 'test' } as never, email, effects);
+  });
+
+  it('creates the contact with converted values, then updates the same one, adding the tags only once', async () => {
+    await connect();
+    const first = await submit(lead);
+    expect(await row(first)).toMatchObject({ status: 'done', lastError: null });
+    expect(ghl.contacts).toHaveLength(1);
+    const contact = ghl.contacts[0]!;
+    expect(contact.fields).toMatchObject({ email: 'Sam@Acme.io', companyName: 'Acme', source: 'dForms: Spring webinar' });
+    // The live type wins over the stored one: a number goes as a number.
+    expect(contact.customFields).toEqual({ 'f-num': 25, 'f-single': 'Pro', 'f-utm': 'linkedin' });
+    expect([...contact.tags].sort()).toEqual(['dforms', 'webinar']);
+    // Written with the stored token, to the stored location, never with tags in the upsert.
+    const [upsert] = upserts();
+    expect(upsert!.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(JSON.parse(upsert!.body!)).toMatchObject({ locationId: LOC });
+    expect(JSON.parse(upsert!.body!)).not.toHaveProperty('tags');
+
+    const second = await submit({ ...lead, company: 'Acme Inc' });
+    expect(await row(second)).toMatchObject({ status: 'done' });
+    expect(ghl.contacts).toHaveLength(1);
+    expect(contact.fields.companyName).toBe('Acme Inc');
+    expect([...contact.tags].sort()).toEqual(['dforms', 'webinar']);
+    expect(await rejectedAt()).toBeNull();
+  });
+
+  it('skips a response with no email and no phone, without an upsert', async () => {
+    await connect();
+    const id = await submit({ company: 'Acme' });
+    expect(await row(id)).toMatchObject({ status: 'skipped', lastError: GOHIGHLEVEL_REASONS.noEmailOrPhone });
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it("skips a value GHL refuses, with GHL's reason, and does not retry it", async () => {
+    await connect();
+    ghl.state.upsertFails.push({ status: 422, message: ['phone must be a valid phone number', 'email must be an email'] });
+    const id = await submit(lead);
+    expect(await row(id)).toMatchObject({
+      status: 'skipped',
+      lastError: 'HTTP 422: phone must be a valid phone number; email must be an email',
+    });
+    await worker.drainOnce(Date.now() + 60_000);
+    expect(upserts()).toHaveLength(1);
+    expect(await rejectedAt()).toBeNull();
+  });
+
+  it('a revoked token skips with the reconnect reason and marks the connection; reconnecting clears it', async () => {
+    await connect();
+    ghl.tokens.delete(TOKEN);
+    const id = await submit(lead);
+    expect(await row(id)).toMatchObject({ status: 'skipped', lastError: GOHIGHLEVEL_REASONS.tokenRejected });
+    expect(await rejectedAt()).toEqual(expect.any(Number));
+    const card = (await controller.list(asOwner())).providers.find((p) => p.provider === 'gohighlevel');
+    expect(card!.rejectedAt).toEqual(expect.any(Number));
+
+    await connect(TOKEN_TWO);
+    expect(await rejectedAt()).toBeNull();
+    const next = await submit(lead);
+    expect(await row(next)).toMatchObject({ status: 'done' });
+  });
+
+  it('a token that lost access to the location skips and marks the connection', async () => {
+    await connect();
+    ghl.tokens.get(TOKEN)!.locationId = OTHER_LOC;
+    const id = await submit(lead);
+    expect(await row(id)).toMatchObject({ status: 'skipped', lastError: GOHIGHLEVEL_REASONS.locationForbidden });
+    expect(await rejectedAt()).toEqual(expect.any(Number));
+  });
+
+  it.each([429, 503])('retries a %s, then delivers once GHL answers, without a second contact', async (status) => {
+    await connect();
+    ghl.state.upsertFails.push({ status, message: 'Too many requests' });
+    const id = await submit(lead);
+    expect(await row(id)).toMatchObject({ status: 'pending', attempts: 1 });
+    expect(await rejectedAt()).toBeNull();
+
+    await worker.drainOnce(Date.now() + 60_000);
+    expect(await row(id)).toMatchObject({ status: 'done' });
+    expect(ghl.contacts).toHaveLength(1);
+  });
+
+  it('retries a Cloudflare block and never marks the token', async () => {
+    await connect();
+    ghl.state.mode = 'cloudflare';
+    const id = await submit(lead);
+    expect(await row(id)).toMatchObject({ status: 'pending', attempts: 1 });
+    expect(await rejectedAt()).toBeNull();
+    ghl.state.mode = null;
+    await worker.drainOnce(Date.now() + 60_000);
+    expect(await row(id)).toMatchObject({ status: 'done' });
+  });
+
+  it('retries a dropped connection', async () => {
+    await connect();
+    ghl.state.mode = 'network';
+    const id = await submit(lead);
+    expect(await row(id)).toMatchObject({ status: 'pending', attempts: 1 });
+    expect(await rejectedAt()).toBeNull();
+  });
+
+  it('skips with the reconnect reason, and sends nothing, once the workspace disconnects', async () => {
+    await connect();
+    await controller.disconnect(asOwner(), 'gohighlevel');
+    const before = ghl.calls.length;
+    const id = await submit(lead);
+    expect(await row(id)).toMatchObject({ status: 'skipped', lastError: GOHIGHLEVEL_REASONS.notConnected });
+    expect(ghl.calls.length).toBe(before);
+  });
 });

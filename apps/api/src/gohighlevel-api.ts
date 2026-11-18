@@ -28,16 +28,14 @@
  */
 import { createHash } from 'node:crypto';
 import { decryptToken, getIntegration, type Db } from '@quill/db';
+// The adapter's own base, version and agent: the probe must be sent exactly
+// as a delivery is, or Cloudflare could pass one and block the other.
+import { GOHIGHLEVEL_API_BASE, goHighLevelHeaders } from '@quill/destinations';
 import {
   GOHIGHLEVEL_TOKEN_PREFIX,
   type GoHighLevelConnectRejection,
   type GoHighLevelCredentials,
 } from '@quill/types';
-
-// The adapter in `@quill/destinations` sends the same base, version and agent.
-export const GOHIGHLEVEL_API_BASE = 'https://services.leadconnectorhq.com';
-const GOHIGHLEVEL_API_VERSION = 'v3';
-const GOHIGHLEVEL_USER_AGENT = 'dForms/1.0 (+https://dforms.ai)';
 
 /**
  * Give up on one probe call. Connecting runs the location read, then the
@@ -46,17 +44,6 @@ const GOHIGHLEVEL_USER_AGENT = 'dForms/1.0 (+https://dforms.ai)';
  * second (sandbox: 300 to 700 ms).
  */
 const PROBE_TIMEOUT_MS = 5_000;
-
-/** The headers every HighLevel call sends. */
-export function goHighLevelHeaders(token: string): Record<string, string> {
-  return {
-    authorization: `Bearer ${token}`,
-    version: GOHIGHLEVEL_API_VERSION,
-    accept: 'application/json',
-    'content-type': 'application/json',
-    'user-agent': GOHIGHLEVEL_USER_AGENT,
-  };
-}
 
 /** A Location ID as GHL issues them: letters and digits (20 in practice). */
 const LOCATION_ID = /^[A-Za-z0-9]{8,64}$/;

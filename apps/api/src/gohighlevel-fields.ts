@@ -20,13 +20,8 @@ import {
   type GoHighLevelFieldTypes,
   type GoHighLevelStandardFieldDto,
 } from '@quill/types';
-import {
-  classifyGoHighLevelError,
-  GOHIGHLEVEL_API_BASE,
-  goHighLevelFingerprint,
-  goHighLevelHeaders,
-  readGoHighLevelConnection,
-} from './gohighlevel-api';
+import { GOHIGHLEVEL_API_BASE, goHighLevelHeaders } from '@quill/destinations';
+import { classifyGoHighLevelError, goHighLevelFingerprint, readGoHighLevelConnection } from './gohighlevel-api';
 import { DB, ENV } from './tokens';
 
 const FIELDS_CACHE_MS = 5 * 60_000;
