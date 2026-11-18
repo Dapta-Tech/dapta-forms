@@ -41,11 +41,12 @@ type JsonSchema = Record<string, unknown>;
 export const HIDDEN_DESTINATION_TYPES: readonly string[] = [];
 
 /**
- * Destination kinds whose `events` has no control in the editor yet (the
- * webhook's trigger has one). Left out of those variants; the API refuses it
- * from an agent (`strict-config.ts`).
+ * Destination kinds whose `events` has no control in the editor yet. Left out
+ * of those variants; the API refuses it from an agent (`strict-config.ts`).
+ * None today: the webhook has its trigger, and HubSpot and Salesforce their
+ * "send partial responses too" switch. HighLevel's variant is hidden whole.
  */
-export const EVENTS_WITHOUT_CONTROL: readonly string[] = ['hubspot', 'salesforce'];
+export const EVENTS_WITHOUT_CONTROL: readonly string[] = [];
 
 /**
  * Of those fields, the ones the editor writes itself, with the only value the

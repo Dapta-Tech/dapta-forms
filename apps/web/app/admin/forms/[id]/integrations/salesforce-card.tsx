@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { getMessages, type FormsMessages } from '@quill/shared';
-import { propertiesFor, type FormDestination } from '@quill/types';
+import { propertiesFor, type DestinationEvent, type FormDestination } from '@quill/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -12,6 +12,7 @@ import type { QuestionMeta } from './auto-map';
 import { Card } from './integrations-card';
 import { salesforceFieldsAction } from './actions';
 import { DeliveryHistory } from './delivery-history';
+import { CrmPartialsSwitch } from './crm-partials-switch';
 import { useToast } from '@/components/toast';
 import { SalesforceConnectForm } from '@/app/admin/integrations/connect-forms';
 import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
@@ -42,6 +43,11 @@ export interface SalesforceState {
   dateField: string;
   dayTimezone: string;
   statics: { field: string; value: string }[];
+  /**
+   * The stored phases, untouched until the partials switch is flipped. Absent
+   * = Salesforce's default (complete only), and stays absent on save.
+   */
+  events?: DestinationEvent[];
 }
 
 /** The card's state, read out of the FIRST stored Salesforce destination. */
@@ -75,6 +81,7 @@ export function initialSalesforce(destinations: FormDestination[]): SalesforceSt
       ...Object.entries(stored.staticFields ?? {}).map(([field, value]) => ({ field, value })),
       ...(stored.drafts?.statics ?? []).map((row) => ({ field: row.field, value: row.value })),
     ],
+    ...(stored.events ? { events: stored.events } : {}),
   };
 }
 
@@ -127,7 +134,8 @@ export function builtSalesforce(state: SalesforceState): FormDestination | null 
     Object.keys(staticFields).length > 0 ||
     Object.keys(drafts).length > 0 ||
     state.scoreField.trim() ||
-    dateField;
+    dateField ||
+    state.events !== undefined;
   if (!holds) return null;
   return {
     type: 'salesforce',
@@ -139,6 +147,9 @@ export function builtSalesforce(state: SalesforceState): FormDestination | null 
     ...(dateField && state.dayTimezone.trim() ? { dayTimezone: state.dayTimezone.trim() } : {}),
     ...(Object.keys(staticFields).length ? { staticFields } : {}),
     ...(Object.keys(drafts).length ? { drafts } : {}),
+    // As the card holds them: stored, or what the partials switch wrote.
+    // Absent stays absent, so an untouched legacy config is unchanged.
+    ...(state.events !== undefined ? { events: state.events } : {}),
   };
 }
 
@@ -213,6 +224,7 @@ export function SalesforceCard({
   extraStored = false,
   formId,
   access = DEFAULT_CONNECT_ACCESS,
+  partialsHeld = false,
   locale,
   m,
 }: {
@@ -229,6 +241,8 @@ export function SalesforceCard({
   formId?: string;
   /** Who may connect Salesforce from here (see `ConnectInPlace`). */
   access?: ConnectAccess;
+  /** Spam protection holds the form's partials: none is sent meanwhile. */
+  partialsHeld?: boolean;
   locale?: string;
   m: Msgs;
 }) {
@@ -535,6 +549,19 @@ export function SalesforceCard({
               {sm.addStatic}
             </Button>
           </section>
+
+          {/* A partial rarely has the last name or the company yet, and the
+              delivery fills both with Salesforce's placeholder rather than
+              have the Lead refused: said while the author decides. */}
+          <CrmPartialsSwitch
+            type="salesforce"
+            events={state.events}
+            onChange={(events) => patch({ events })}
+            partialsHeld={partialsHeld}
+            warning={fill(m.crmPartialsSalesforcePlaceholder, { value: NOT_PROVIDED })}
+            testId="salesforce"
+            m={m}
+          />
         </div>
       )}
       {/* The org's own refusals (a validation rule, a required field) are only

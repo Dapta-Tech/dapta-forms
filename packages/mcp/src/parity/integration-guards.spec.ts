@@ -166,10 +166,40 @@ describe('set_destinations and a provider that is not connected', () => {
       expect(schema).toContain('fieldMappings');
       // HighLevel: its shape, where targets come from, which slots take which types, and the partials switch.
       expect(schema).toContain('HighLevel: { \\"type\\": \\"gohighlevel\\"');
-      for (const part of ['list_gohighlevel_fields', 'NUMERICAL', 'DATE', 'TEXT or LARGE_TEXT', 'never targets email or phone', '\\"events\\"?', 'complete responses only']) {
+      for (const part of ['list_gohighlevel_fields', 'NUMERICAL', 'DATE', 'TEXT or LARGE_TEXT', 'never targets email or phone', '\\"events\\"?', 'Salesforce and HighLevel only complete ones']) {
         expect(schema, part).toContain(part);
       }
       expect(JSON.stringify(listed.outputSchema)).toContain('INTEGRATION_NOT_CONNECTED');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+describe('set_destinations and the partials switch of a CRM destination', () => {
+  it('sends HubSpot and Salesforce events to the route as given, and says what they mean', async () => {
+    const sent: unknown[][] = [];
+    const h = await bootHarness({
+      backend: {
+        setDestinations: async (_caller, id, destinations) => {
+          sent.push(destinations);
+          return { formId: id, updatedAt: 1, destinations, formActivityError: null, sheetHeaders: null };
+        },
+      },
+    });
+    const destinations = [
+      { type: 'hubspot', enabled: true, events: ['complete'], settings: {} },
+      { type: 'salesforce', enabled: true, events: ['partial', 'complete'], fieldMappings: { email: 'Email' } },
+    ];
+    try {
+      const c = await h.connect(h.key('owner'));
+      await c.callTool({ name: 'set_destinations', arguments: { form_id: 'form-1', destinations } });
+      expect(sent).toEqual([destinations]);
+      const listed = (await c.listTools()).tools.find((t) => t.name === 'set_destinations')!;
+      const schema = JSON.stringify(listed.inputSchema);
+      expect(schema).toContain('HubSpot: { \\"type\\": \\"hubspot\\", \\"enabled\\": true, \\"events\\"?');
+      expect(schema).toMatch(/send partial responses too/);
+      expect(schema).toMatch(/Salesforce and HighLevel only complete ones/);
     } finally {
       await h.close();
     }
