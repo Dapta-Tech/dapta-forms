@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { FOCUSABLE_SELECTOR } from '@/lib/focusable';
+import { LAYER } from '@/lib/layers';
 
 /**
  * Accessible modal dialog: backdrop, Esc-to-close, role=dialog + aria-labelledby,
@@ -35,6 +37,7 @@ export function Modal({
   title,
   labelId,
   size = 'md',
+  portal = false,
   children,
 }: {
   open: boolean;
@@ -43,16 +46,42 @@ export function Modal({
   labelId: string;
   /** Panel width. Defaults to the original `md` so callers are unaffected. */
   size?: keyof typeof SIZES;
+  /**
+   * Render at the end of `document.body` instead of in place. For a dialog
+   * opened from inside a stacking context it cannot paint out of: the rail's
+   * "New workspace" dialog sat inside the `md:sticky` rail, so every
+   * positioned element in `<main>` (the Home card's animated chips) painted
+   * over its Name field and Create button, and inside the mobile drawer the
+   * drawer's transform made the "full screen" overlay as wide as the drawer.
+   * Same reasons, same fix, as the rail's menus (ui/anchored-menu.tsx).
+   *
+   * Off by default because nesting is decided by the DOM: `inNestedDialog`
+   * and the drawers' key handlers ask `panel.contains(...)`, so a dialog
+   * opened from another dialog has to stay inside it. A dialog opened from
+   * the page's chrome is never nested, which is when to turn this on.
+   */
+  portal?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   /** The whole overlay — used to spare it (and its subtree) from aria-hidden. */
   const rootRef = useRef<HTMLDivElement>(null);
-  useDialogA11y(open, ref, rootRef, onClose);
+  // `document.body` exists only after mount; the server and the first client
+  // render agree on nothing being there.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  // The dialog setup (focus, aria-hidden siblings) needs the overlay in the
+  // DOM, so it keys on what is actually shown, not on `open` alone.
+  const shown = open && (!portal || mounted);
+  useDialogA11y(shown, ref, rootRef, onClose);
 
-  if (!open) return null;
-  return (
-    <div ref={rootRef} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  if (!shown) return null;
+  const overlay = (
+    <div
+      ref={rootRef}
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: LAYER.overlay }}
+    >
       <button type="button" aria-hidden tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-background/80" />
       <div
         ref={ref}
@@ -68,6 +97,7 @@ export function Modal({
       </div>
     </div>
   );
+  return portal ? createPortal(overlay, document.body) : overlay;
 }
 
 /**
@@ -110,7 +140,9 @@ export function useDialogA11y(
     restoreRef.current = document.activeElement as HTMLElement | null;
     /** Visible, focusable controls inside the dialog, in DOM order. */
     const focusable = (): HTMLElement[] =>
-      [...(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [])].filter(
+      // `iframe` too: Tab is moved by hand below, so whatever is not in this
+      // list cannot be reached at all, and the file preview is an iframe.
+      [...(panelRef.current?.querySelectorAll<HTMLElement>(`${FOCUSABLE_SELECTOR}, iframe`) ?? [])].filter(
         (el) => el.offsetParent !== null || el === document.activeElement,
       );
 
@@ -130,21 +162,31 @@ export function useDialogA11y(
       if (e.key !== 'Tab') return;
       const items = focusable();
       if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
+      // Every Tab is moved by hand, not only the one at either end. Safari
+      // does not Tab to buttons or links, so from the "New workspace" Name
+      // field (its only text input) the native Tab skipped Cancel and Create,
+      // the wrap at the last control never ran, and focus left the dialog.
+      // By hand, the order is this list in every browser; the same fix as the
+      // submissions sheet's trap (response-panel.tsx).
+      e.preventDefault();
+      const n = items.length;
       const active = document.activeElement as HTMLElement | null;
-      if (!panelRef.current?.contains(active)) {
-        e.preventDefault();
-        (e.shiftKey ? last : first).focus();
+      const at = active ? items.indexOf(active) : -1;
+      if (at >= 0) {
+        items[(at + (e.shiftKey ? n - 1 : 1)) % n]!.focus();
         return;
       }
-      if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
+      if (!active || !panelRef.current?.contains(active)) {
+        items[e.shiftKey ? n - 1 : 0]!.focus();
+        return;
       }
+      // Focus is inside on something Tab does not stop at (the panel itself, a
+      // `tabIndex={-1}` region): go to the next control after it, as native.
+      const next = items.findIndex(
+        (el) => (active.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+      );
+      if (e.shiftKey) items[next <= 0 ? n - 1 : next - 1]!.focus();
+      else items[next < 0 ? 0 : next]!.focus();
     };
     window.addEventListener('keydown', onKey);
     // First ENABLED control: the drawer's first button is "previous response",

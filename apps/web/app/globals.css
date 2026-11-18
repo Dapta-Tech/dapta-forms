@@ -299,6 +299,19 @@ html.has-save-pill {
   background-clip: padding-box;
 }
 
+/* A scroll region that draws no scrollbar: it still scrolls by wheel, touch
+   and keyboard. For chrome whose overflow is the exception, the admin rail and
+   its mobile drawer, where a track down the edge reads as a stray border and,
+   as a classic bar, takes its width out of a 64px column. A class rather than
+   Tailwind's `[scrollbar-width:none]`: the rules above are unlayered, so they
+   beat any utility in a layer, and only an unlayered rule after them wins. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;
