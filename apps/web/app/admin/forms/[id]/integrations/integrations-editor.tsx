@@ -57,7 +57,13 @@ import {
   SalesforceCard,
   type SalesforceState,
 } from './salesforce-card';
-import type { SalesforceFieldsResponse } from '@/lib/admin-api';
+import type { GoHighLevelFieldsResponse, SalesforceFieldsResponse } from '@/lib/admin-api';
+import {
+  builtGoHighLevel,
+  GoHighLevelCard,
+  initialGoHighLevel,
+  type GoHighLevelState,
+} from './gohighlevel-card';
 import { storedColumns } from './sheet-columns';
 import { DeliveryHistory } from './delivery-history';
 import { Card } from './integrations-card';
@@ -266,7 +272,8 @@ export function carriedOthers(destinations: FormDestination[]): FormDestination[
       d.type !== 'webhook' &&
       d.type !== 'hubspot' &&
       d.type !== 'google-sheets' &&
-      d.type !== 'salesforce',
+      d.type !== 'salesforce' &&
+      d.type !== 'gohighlevel',
   );
 }
 
@@ -501,6 +508,9 @@ export function IntegrationsEditor({
   googlePickerAvailable = false,
   salesforceConnected = false,
   salesforceFields = { enabled: false, reason: 'not_connected' },
+  goHighLevelConnected = false,
+  goHighLevelRejected = false,
+  goHighLevelFields = { enabled: false, reason: 'not_connected' },
   access = DEFAULT_CONNECT_ACCESS,
   googleJustConnected = false,
   formName = '',
@@ -530,6 +540,12 @@ export function IntegrationsEditor({
   salesforceConnected?: boolean;
   /** The connected org's fields as the tab loaded them. */
   salesforceFields?: SalesforceFieldsResponse;
+  /** Account-level HighLevel connection. */
+  goHighLevelConnected?: boolean;
+  /** HighLevel stopped accepting the stored token. */
+  goHighLevelRejected?: boolean;
+  /** The connected location's fields as the tab loaded them. */
+  goHighLevelFields?: GoHighLevelFieldsResponse;
   /**
    * Whether the viewer can connect an account from these cards (owners and
    * admins, on a deployment with an encryption key). The cards connect in
@@ -601,6 +617,7 @@ export function IntegrationsEditor({
     document.getElementById('gsheets-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [googleJustConnected]);
   const [sf, setSf] = useState<SalesforceState>(() => initialSalesforce(initialDestinations));
+  const [ghl, setGhl] = useState<GoHighLevelState>(() => initialGoHighLevel(initialDestinations));
   const [formActivityError, setFormActivityError] = useState<string | null>(null);
   /** What the last save (or the header button) did to the sheet's row 1. */
   const [sheetHeaderSync, setSheetHeaderSync] = useState<SheetHeaderSync | null>(null);
@@ -795,6 +812,11 @@ export function IntegrationsEditor({
     // is dropped on save (the card says so), the same rule as HubSpot's.
     const salesforceDestination = builtSalesforce(sf);
     if (salesforceDestination) out.push(salesforceDestination);
+
+    // HighLevel: the first stored one, same rule. Everything the card does not
+    // change (events, tags, drafts) is read in and written back as it was.
+    const goHighLevelDestination = builtGoHighLevel(ghl);
+    if (goHighLevelDestination) out.push(goHighLevelDestination);
 
     // Last: every destination kind this screen does not edit (see
     // `carriedOthers`). Without this, saving here deletes them.
@@ -996,6 +1018,13 @@ export function IntegrationsEditor({
     },
     [markDirty],
   );
+  const editGoHighLevel = useCallback(
+    (next: GoHighLevelState) => {
+      setGhl(next);
+      markDirty();
+    },
+    [markDirty],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -1089,6 +1118,22 @@ export function IntegrationsEditor({
         extraStored={initialDestinations.filter((d) => d.type === 'salesforce').length > 1}
         formId={id}
         access={access}
+        locale={locale}
+        m={m}
+      />
+
+      <GoHighLevelCard
+        state={ghl}
+        setState={editGoHighLevel}
+        questions={questions}
+        connected={goHighLevelConnected}
+        rejected={goHighLevelRejected}
+        initialFields={goHighLevelFields}
+        extraStored={initialDestinations.filter((d) => d.type === 'gohighlevel').length > 1}
+        formId={id}
+        formName={formName}
+        access={access}
+        partialsHeld={partialsHeld}
         locale={locale}
         m={m}
       />

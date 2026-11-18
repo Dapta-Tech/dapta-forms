@@ -14,6 +14,7 @@
  * is shown as recorded, which is no worse than before.
  */
 import type { FormsMessages } from '@quill/shared';
+import { GOHIGHLEVEL_REASONS } from '@quill/types';
 import type { DeliveryKind } from '@/lib/admin-api';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -35,6 +36,8 @@ function providerName(kind: DeliveryKind, m: Msgs): string {
       return m.historyProviders.googleSheets;
     case 'salesforce':
       return m.historyProviders.salesforce;
+    case 'gohighlevel':
+      return m.historyProviders.highlevel;
     case 'hubspot':
     case 'booking_sync':
       return m.historyProviders.hubspot;
@@ -44,6 +47,9 @@ function providerName(kind: DeliveryKind, m: Msgs): string {
       return m.historyProviders.other;
   }
 }
+
+/** A reason the adapter writes word for word (`GOHIGHLEVEL_REASONS`), as a whole-string pattern. */
+const exact = (reason: string): RegExp => new RegExp(`^${reason.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
 /**
  * Exact reasons the adapters and the destination factory write, each with
@@ -58,6 +64,10 @@ const FIXED: { pattern: RegExp; key: keyof Msgs['historyReasons'] }[] = [
   { pattern: /^salesforce destination has no usable connection \(reconnect salesforce\)$/i, key: 'salesforceNotConnected' },
   { pattern: /^hubspot destination missing token\b.*$/i, key: 'hubspotNotConnected' },
   { pattern: /^webhook destination missing url$/i, key: 'webhookNoUrl' },
+  { pattern: exact(GOHIGHLEVEL_REASONS.notConnected), key: 'highlevelNotConnected' },
+  { pattern: exact(GOHIGHLEVEL_REASONS.noEmailOrPhone), key: 'highlevelNoEmailOrPhone' },
+  { pattern: exact(GOHIGHLEVEL_REASONS.tokenRejected), key: 'highlevelTokenRejected' },
+  { pattern: exact(GOHIGHLEVEL_REASONS.locationForbidden), key: 'highlevelLocationForbidden' },
 ];
 
 /**
@@ -74,7 +84,7 @@ export function describeDeliveryReason(kind: DeliveryKind, reason: string, m: Ms
   const r = m.historyReasons;
   for (const { pattern, key } of FIXED) if (pattern.test(raw)) return r[key];
 
-  const failed = /^(?:webhook|salesforce|google sheets) delivery failed: ([\s\S]+)$/i.exec(raw) ??
+  const failed = /^(?:webhook|salesforce|gohighlevel|google sheets) delivery failed: ([\s\S]+)$/i.exec(raw) ??
     /^hubspot (?:booking )?upsert failed: ([\s\S]+)$/i.exec(raw);
   if (failed) return fill(r.deliveryFailed, { provider: providerName(kind, m), detail: failed[1]!.trim() });
 

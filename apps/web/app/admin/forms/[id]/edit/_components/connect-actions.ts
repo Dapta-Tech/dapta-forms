@@ -5,6 +5,7 @@ import {
   adminApi,
   ApiError,
   isAdminRole,
+  type GoHighLevelFieldsResponse,
   type HubSpotPropertiesResponse,
   type SalesforceFieldsResponse,
 } from '@/lib/admin-api';
@@ -58,6 +59,15 @@ export interface ConnectIntegrationsData {
    * Salesforce should not pay a round trip for a card that shows a link.
    */
   salesforceFields: SalesforceFieldsResponse;
+  /** Whether HighLevel is connected for the account. */
+  goHighLevelConnected: boolean;
+  /**
+   * HighLevel stopped accepting the stored token (a delivery got a 401 or a
+   * 403 since it was connected), so the card says to replace it.
+   */
+  goHighLevelRejected: boolean;
+  /** The location's fields. Read only when connected, like Salesforce's. */
+  goHighLevelFields: GoHighLevelFieldsResponse;
   /**
    * Whether the viewer may connect an account from the cards (owners and
    * admins; the API refuses anyone else). A member sees a sentence instead.
@@ -103,6 +113,8 @@ export async function loadConnectIntegrationsAction(
   let googleSheetsAvailable = true;
   let googlePickerAvailable = false;
   let salesforceConnected = false;
+  let goHighLevelConnected = false;
+  let goHighLevelRejected = false;
   // True until the API says otherwise, like `googleSheetsAvailable`: the API is
   // the real gate, and a failed lookup must not hide the connect controls.
   let encryptionAvailable = true;
@@ -121,6 +133,9 @@ export async function loadConnectIntegrationsAction(
     salesforceConnected = integrations.providers.some(
       (p) => p.provider === 'salesforce' && p.connected,
     );
+    const highlevel = integrations.providers.find((p) => p.provider === 'gohighlevel' && p.connected);
+    goHighLevelConnected = !!highlevel;
+    goHighLevelRejected = !!highlevel?.rejectedAt;
   } catch (e) {
     unstable_rethrow(e);
     hubspotConnected = false;
@@ -148,6 +163,16 @@ export async function loadConnectIntegrationsAction(
     }
   }
 
+  let goHighLevelFields: GoHighLevelFieldsResponse = { enabled: false, reason: 'not_connected' };
+  if (goHighLevelConnected) {
+    try {
+      goHighLevelFields = await adminApi.goHighLevelFields();
+    } catch (e) {
+      unstable_rethrow(e);
+      goHighLevelFields = { enabled: false, reason: 'unavailable' };
+    }
+  }
+
   return {
     ok: true,
     data: {
@@ -161,6 +186,9 @@ export async function loadConnectIntegrationsAction(
       formName: form.name,
       salesforceConnected,
       salesforceFields,
+      goHighLevelConnected,
+      goHighLevelRejected,
+      goHighLevelFields,
       canConnect,
       encryptionAvailable,
     },
