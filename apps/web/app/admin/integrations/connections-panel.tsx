@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, useTransition } from 'react';
+import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { FOCUSABLE_SELECTOR } from '@/lib/focusable';
 import { useRouter } from 'next/navigation';
@@ -36,6 +36,34 @@ export type OauthOutcome = 'connected' | 'cancelled' | 'error' | 'scope';
 /** Replace `{key}` tokens in a catalog string (locale copy owns the wording). */
 const fill = (template: string, vars: Record<string, string>): string =>
   template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
+
+/**
+ * The card frame, shared by every card in the grid below.
+ *
+ * Each card is two grid rows of a SUBGRID: its header in the first, its body
+ * (button, form, connection) in the second. The two cards of a row share both
+ * tracks, and the parts behave differently in them on purpose:
+ *
+ *  - the headers STRETCH to the row's tallest header, so at rest every
+ *    Connect / How it works button of a row starts on the same line, however
+ *    many lines each description wraps to;
+ *  - the bodies sit at the TOP of their track (`self-start`) at their own
+ *    height, so a card whose connect form opens grows alone. Its neighbour
+ *    keeps the exact height it had.
+ *
+ * It used to be one box per card, stretched to the row with its button pinned
+ * to the bottom (`mt-auto`). That aligned the buttons at rest, and then pushed
+ * the neighbour's button to the bottom of a card as tall as the open form,
+ * leaving a hole in the middle of it.
+ *
+ * The section itself draws nothing (it is the subgrid); the header draws the
+ * top of the card and the body the bottom, with no seam between them. Its own
+ * `gap-y-0` replaces the grid's row gap between its two rows.
+ */
+const CARD = 'row-span-2 grid grid-rows-subgrid gap-y-0';
+const CARD_TOP =
+  'flex items-start justify-between gap-3 rounded-t-xl border border-b-0 border-border bg-card px-5 pt-5';
+const CARD_BODY = 'self-start rounded-b-xl border border-t-0 border-border bg-card px-5 pb-5 pt-4';
 
 interface ProviderMeta {
   id: IntegrationProvider;
@@ -165,7 +193,7 @@ export function ConnectionsPanel({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="connections-grid">
         {visibleProviders.map((meta) => [
           // dCal sits right above Calendly: it is the scheduler we would
           // rather people pick, so it comes first where the two are compared.
@@ -251,9 +279,12 @@ function ProviderCard({
     });
   }
 
+  // A credential form is open in this card (connect, or HighLevel's replace).
+  const formOpen = (showConnect && !connected) || (replacing && connected);
+
   return (
-    <section className="flex flex-col rounded-xl border border-border bg-card p-5">
-      <header className="flex items-start justify-between gap-3">
+    <section className={CARD} data-provider={meta.id} data-open={formOpen || undefined}>
+      <header className={CARD_TOP}>
         <div className="flex min-w-0 items-center gap-3">
           <span
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted"
@@ -274,10 +305,10 @@ function ProviderCard({
         />
       </header>
 
-      {/* `mt-auto` pins the action row to the bottom of the card. Without it the
-          button followed its description, and HubSpot's two-line copy pushed its
-          Connect button a line lower than Calendly's — the two never lined up. */}
-      <div className="mt-auto pt-4">
+      {/* The body: at its own height, under a header as tall as its row's
+          tallest (see CARD). That is what lines the buttons up at rest
+          without stretching a neighbour when this card's form opens. */}
+      <div className={CARD_BODY} data-testid="card-body">
         {unavailable ? (
           <div
             data-testid="provider-unavailable"
@@ -306,6 +337,7 @@ function ProviderCard({
             </p>
           </div>
         ) : connected && status && meta.how === 'gohighlevel' && replacing && canManage ? (
+          <Reveal>
           <GoHighLevelConnectForm
             replacing
             initialLocationId={status.locationId ?? ''}
@@ -317,6 +349,7 @@ function ProviderCard({
             onCancel={() => setReplacing(false)}
             m={m}
           />
+          </Reveal>
         ) : connected && status ? (
           <ConnectedView
             status={status}
@@ -355,6 +388,7 @@ function ProviderCard({
             <GoogleConnectButton m={m} className="self-start" />
           </div>
         ) : meta.how === 'gohighlevel' && showConnect ? (
+          <Reveal>
           <GoHighLevelConnectForm
             onConnected={(s) => {
               onStatusChange(s);
@@ -364,7 +398,9 @@ function ProviderCard({
             onCancel={() => setShowConnect(false)}
             m={m}
           />
+          </Reveal>
         ) : meta.how === 'salesforce' && showConnect ? (
+          <Reveal>
           <SalesforceConnectForm
             onConnected={(s) => {
               onStatusChange(s);
@@ -374,9 +410,11 @@ function ProviderCard({
             onCancel={() => setShowConnect(false)}
             m={m}
           />
+          </Reveal>
         ) : showConnect ? (
           // Connecting stays available while the server supplies a token — an
           // account can override the shared one with its own.
+          <Reveal>
           <TokenConnectForm
             provider={meta.id}
             providerName={meta.name}
@@ -388,6 +426,7 @@ function ProviderCard({
             onCancel={() => setShowConnect(false)}
             m={m}
           />
+          </Reveal>
         ) : (
           <div className="flex flex-col gap-3">
             {serverProvided ? <ServerProvidedNote providerName={meta.name} m={m} /> : null}
@@ -397,10 +436,19 @@ function ProviderCard({
             </Button>
           </div>
         )}
+        {dialog}
       </div>
-      {dialog}
     </section>
   );
+}
+
+/**
+ * A credential form arriving in its card: a short fade and settle, so the card
+ * growing reads as the form opening rather than as a jump. Only the card that
+ * opens moves (see CARD). Still under reduced motion (globals.css).
+ */
+function Reveal({ children }: { children: ReactNode }) {
+  return <div className="connect-reveal">{children}</div>;
 }
 
 /** "The deployment already gave us a token" — shown wherever Connect would be. */
@@ -599,8 +647,8 @@ function DcalCard({ createEventUrl, m }: { createEventUrl: string | null; m: Msg
   const [showSteps, setShowSteps] = useState(false);
   const available = createEventUrl !== null;
   return (
-    <section className="flex flex-col rounded-xl border border-border bg-card p-5" data-testid="dcal-card">
-      <header className="flex items-start justify-between gap-3">
+    <section className={CARD} data-testid="dcal-card">
+      <header className={CARD_TOP}>
         <div className="flex min-w-0 items-center gap-3">
           <span
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"
@@ -633,7 +681,7 @@ function DcalCard({ createEventUrl, m }: { createEventUrl: string | null; m: Msg
           </span>
         )}
       </header>
-      <div className="mt-auto pt-4">
+      <div className={CARD_BODY} data-testid="card-body">
         <Button
           onClick={() => setShowSteps(true)}
           variant={available ? 'default' : 'outline'}
@@ -643,13 +691,14 @@ function DcalCard({ createEventUrl, m }: { createEventUrl: string | null; m: Msg
           <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 12 }} />
           {m.dcalHow}
         </Button>
+        {/* In a dialog, not inside the card: three steps are reading matter,
+            not a form, and a modal keeps them clear of the grid. (It also
+            predates CARD, from when a card opened in place stretched its
+            neighbour.) Portalled, so it takes no grid cell. */}
+        {showSteps ? (
+          <DcalStepsDialog createEventUrl={createEventUrl} onClose={() => setShowSteps(false)} m={m} />
+        ) : null}
       </div>
-      {/* In a dialog, not inside the card: every card in a grid row is as tall
-          as the tallest, so steps opened in place stretched the neighbouring
-          card and left a hole in the middle of it. */}
-      {showSteps ? (
-        <DcalStepsDialog createEventUrl={createEventUrl} onClose={() => setShowSteps(false)} m={m} />
-      ) : null}
     </section>
   );
 }
