@@ -110,9 +110,18 @@ export class GoHighLevelFieldsService {
     @Optional() @Inject(ENV) private readonly env?: ServerEnv,
   ) {}
 
+  /** A new or removed connection: start over. */
   invalidate(accountId: string): void {
     this.cache.delete(accountId);
     this.failedUntil.delete(accountId);
+  }
+
+  /**
+   * GHL refused the token: drop the list, but keep any delivery backoff, or
+   * every delivery with the refused token would read the fields again.
+   */
+  dropList(accountId: string): void {
+    this.cache.delete(accountId);
   }
 
   private async read(creds: GoHighLevelCredentials, timeoutMs: number): Promise<ReadResult> {

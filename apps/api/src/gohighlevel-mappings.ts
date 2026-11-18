@@ -93,18 +93,15 @@ function goHighLevelEntries(list: unknown): Array<{ index: number; entry: GoHigh
 export function goHighLevelMappingIssue(incoming: unknown, stored?: unknown): GoHighLevelMappingIssue | null {
   const kept = new Set<string>();
   for (const { entry } of goHighLevelEntries(stored)) for (const t of targetsOf(entry)) kept.add(signature(t));
+  // By field, not position: deleting another fixed value must not make the
+  // stored one new. Such an entry is inert anyway (the adapter ignores it).
   const keptFixed = new Set<string>();
   for (const { entry } of goHighLevelEntries(stored)) {
-    (entry.staticFields ?? []).forEach((s, i) => {
-      if (s.target.kind === 'standard') keptFixed.add(`${i}\n${s.target.field}`);
-    });
+    for (const s of entry.staticFields ?? []) if (s.target.kind === 'standard') keptFixed.add(s.target.field);
   }
   for (const { index, entry } of goHighLevelEntries(incoming)) {
     const fixed = (entry.staticFields ?? []).findIndex(
-      (s, i) =>
-        s.target.kind === 'standard' &&
-        NO_FIXED_VALUE.has(s.target.field) &&
-        !keptFixed.has(`${i}\n${s.target.field}`),
+      (s) => s.target.kind === 'standard' && NO_FIXED_VALUE.has(s.target.field) && !keptFixed.has(s.target.field),
     );
     if (fixed >= 0) {
       const field = (entry.staticFields![fixed]!.target as { field: string }).field;

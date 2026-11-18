@@ -318,7 +318,7 @@ export class DestinationEffects {
             ? async () => {
                 try {
                   await markIntegrationRejected(this.db, accountId, 'gohighlevel', conn.encryptedToken);
-                  this.goHighLevelFields?.invalidate(accountId);
+                  this.goHighLevelFields?.dropList(accountId);
                 } catch (err) {
                   this.log.warn(`could not mark the HighLevel connection rejected: ${String(err)}`);
                 }

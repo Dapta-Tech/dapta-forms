@@ -730,6 +730,27 @@ describe('saving a HighLevel destination', () => {
     ).resolves.toBeTruthy();
   });
 
+  it('keeps a fixed email the form already stores, even after another fixed value is removed', async () => {
+    const staticFields = [
+      { target: { kind: 'standard', field: 'country' }, value: 'US' },
+      { target: { kind: 'standard', field: 'email' }, value: 'x@acme.io' },
+    ];
+    await updateFormDestinations(db, await accountId(), formId, [entry({ staticFields })]);
+    await expect(
+      destinationsController().putDestinations(asOwner(), formId, {
+        destinations: [entry({ staticFields: [staticFields[1]] })],
+      }),
+    ).resolves.toBeTruthy();
+    // Phone is not stored, so it is new and refused.
+    expect(
+      await refusalOf(
+        destinationsController().putDestinations(asOwner(), formId, {
+          destinations: [entry({ staticFields: [{ target: { kind: 'standard', field: 'phone' }, value: '1' }] })],
+        }),
+      ),
+    ).toMatchObject({ path: 'destinations.0.staticFields.0.target' });
+  });
+
   it('keeps a target the form already stores, so an untouched form stays saveable', async () => {
     const legacy = entry({ scoreField: custom('qa_text', 'TEXT') });
     await updateFormDestinations(db, await accountId(), formId, [legacy]);
@@ -888,6 +909,16 @@ describe('delivering a submission to HighLevel, through the outbox and the real 
     expect(await rejectedAt()).toBeNull();
     const next = await submit(lead);
     expect(await row(next)).toMatchObject({ status: 'done' });
+  });
+
+  it('a refused token does not make every later delivery read the fields again', async () => {
+    await connect();
+    ghl.tokens.delete(TOKEN);
+    const reads = () => ghl.calls.filter((c) => c.path.includes('/customFields')).length;
+    const before = reads();
+    await submit(lead);
+    await submit(lead);
+    expect(reads()).toBe(before + 1);
   });
 
   it('a token that lost access to the location skips and marks the connection', async () => {

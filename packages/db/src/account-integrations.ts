@@ -187,7 +187,7 @@ export async function markIntegrationRejected(
         WHERE account_id = ${accountId} AND provider = ${provider} AND encrypted_token = ${encryptedToken}`,
   );
   const after = await getIntegration(db, accountId, provider);
-  return after?.encryptedToken === encryptedToken && after.meta?.rejectedAt === at;
+  return after?.encryptedToken === encryptedToken && typeof after.meta?.rejectedAt === 'number';
 }
 
 /** Disconnect a provider. Idempotent. */
