@@ -5,8 +5,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * (apps/web/app/admin/forms/[id]/edit/_components/empty-state.tsx).
  *
  * A brand-new form (zero questions) shows the guided empty state: a clear
- * "Start from scratch" option FIRST, then four template cards (Lead qualifier /
- * Contact / Feedback / RSVP). This spec locks in:
+ * "Start from scratch" option FIRST, then the template cards. This spec locks in:
  *  a. the scratch option + every template card are real buttons (role=button)
  *     and clickable;
  *  b. picking the Lead qualifier template APPLIES its steps — the WYSIWYG canvas
@@ -51,7 +50,7 @@ function nameInput(page: Page) {
   return page.locator('header input').first();
 }
 
-const TEMPLATE_IDS = ['lead', 'contact', 'feedback', 'rsvp'] as const;
+const TEMPLATE_IDS = ['lead', 'contact', 'feedback', 'rsvp', 'customer-discovery'] as const;
 
 test('the scratch option and every template card are buttons and are clickable', async ({
   page,
@@ -65,7 +64,7 @@ test('the scratch option and every template card are buttons and are clickable',
   await expect(scratch).toBeVisible();
   await expect(page.getByTestId('empty-scratch')).toHaveJSProperty('tagName', 'BUTTON');
 
-  // All four template cards are native buttons (implicit role=button).
+  // All template cards are native buttons (implicit role=button).
   for (const tid of TEMPLATE_IDS) {
     const card = page.getByTestId(`empty-template-${tid}`);
     await expect(card).toBeVisible();
@@ -116,3 +115,31 @@ test('picking a template preserves the user-given form name (not replaced by the
   await expect(nameInput(page)).toHaveValue(original);
   await expect(nameInput(page)).not.toHaveValue('Lead qualifier');
 });
+
+for (const { locale, label, firstQuestion } of [
+  {
+    locale: 'en',
+    label: 'Customer discovery',
+    firstQuestion: 'What’s one task you handled recently, and what were you trying to accomplish?',
+  },
+  {
+    locale: 'es',
+    label: 'Entrevista con clientes',
+    firstQuestion: '¿Qué tarea hiciste hace poco y qué querías lograr?',
+  },
+]) {
+  test(`customer discovery applies and saves its questions in ${locale}`, async ({ page, request }) => {
+    const id = await createEmptyForm(request, uniqueName(`discovery-${locale}`));
+    await page.context().addCookies([
+      { name: 'quill_locale', value: locale, url: 'http://localhost:3400' },
+    ]);
+    await openEmptyState(page, id);
+
+    await page.getByRole('button', { name: new RegExp(label, 'i') }).click();
+    await expect(page.getByTestId('canvas-title-input')).toHaveValue(firstQuestion);
+    await expect(page.getByTestId('editor-save-status')).toHaveAttribute('data-status', 'saved');
+
+    await page.reload();
+    await expect(page.getByTestId('canvas-title-input')).toHaveValue(firstQuestion);
+  });
+}
