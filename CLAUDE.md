@@ -132,6 +132,12 @@ layer, run this before you push.
    queries are scoped to that account. A new admin route MUST resolve the principal
    and pass its `accountId` — never query across accounts. Role checks live in
    `apps/api/src/permissions.ts`.
+   One deliberate exception: the in-app announcement state
+   (`announcement_state`, `apps/api/src/announcements.controller.ts`) is keyed
+   by the PERSON (the caller's own `member.external_id`, resolved through their
+   account), so an announcement closed in one workspace stays closed in the
+   others. It holds nothing about any account and is never read for anyone
+   but the caller.
 4. **Config is a versioned zod schema — extend, never break v1.** The form config
    contract is `formConfigSchema` in `packages/types/src/index.ts` with
    `version: z.literal(1)`. Add optional fields; do not remove or repurpose
@@ -406,6 +412,17 @@ retryable failures) → `src/factory.ts` (add the switch case + graceful fallbac
 `src/index.ts` (export) → `packages/types/src/index.ts` (add the schema variant to
 `formDestinationSchema`) → UI in
 `apps/web/app/admin/forms/[id]/integrations/` → test `src/adapters/<name>.spec.ts`.
+
+**Publish an in-app announcement** (a pop-up over the dashboard, the rail's
+"New" mark and a banner beside the agents banner on Home): append an entry to
+`ANNOUNCEMENTS` in `packages/shared/src/announcements.ts` with a fresh `id`
+(never reuse one: per-person state is keyed by it), its dates, `cta` route,
+`railBadge`, `banner` logos and `daptaOnly`; add its copy under
+`admin.announcements.items[<id>]` in **both** locales of
+`packages/shared/src/i18n/index.ts`; put the animation in
+`apps/web/public/announcements/` as `{src}-{light,dark}.{webm,mp4}` and
+`{src}-{light,dark}-poster.png`. Nothing else changes: the API picks one per
+person (`pickAnnouncement`) and stores what they did in `announcement_state`.
 
 **Add a language:** `packages/shared/src/i18n/index.ts` — extend the `Locale` union,
 add a full `FormsMessages` const (the interface forces complete key coverage), wire

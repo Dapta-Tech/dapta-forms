@@ -9,6 +9,8 @@ import { CopyLink } from '@/components/copy-link';
 import { CreateForm } from './forms/create-form';
 import { AgentBanner } from './_components/agent-banner';
 import { AgentCard } from './_components/agent-card';
+import { HomeTopRow } from './_components/home-banner';
+import { IntegrationsBanner } from './_components/integrations-banner';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,12 +18,18 @@ export default async function AdminHome() {
   const locale = await getLocale();
   const messages = getMessages(locale).admin;
   const h = messages.home;
-  const [me, forms, linkPage] = await Promise.all([
+  const [me, forms, linkPage, announcement] = await Promise.all([
     adminApi.me(),
     adminApi.listForms(),
     // Missing or unreadable page reads as "not published": the box hides.
     adminApi.linkPage().catch(() => null),
+    // An announcement's banner shares the top row with the agents banner. Read
+    // with the page, so the row is laid out on first paint; a failure just
+    // means the agents banner alone, full width, as before.
+    adminApi.announcement().catch(() => null),
   ]);
+  const bannerCopy =
+    announcement?.showBanner && announcement.banner ? messages.announcements.items[announcement.copy] : undefined;
 
   // Aggregate submissions + completion across every form (reuse per-form
   // analytics — no new endpoint). Weighted completion = Σsubmissions / Σstarts.
@@ -72,7 +80,17 @@ export default async function AdminHome() {
 
   return (
     <div className="mx-auto max-w-[1520px] px-4 py-8 sm:px-8 sm:py-10">
-      <AgentBanner m={h.agentBanner} />
+      <HomeTopRow split={Boolean(bannerCopy)}>
+        <AgentBanner m={h.agentBanner} layout={bannerCopy ? 'split' : 'wide'} />
+        {announcement?.banner && bannerCopy ? (
+          <IntegrationsBanner
+            id={announcement.id}
+            copy={bannerCopy}
+            cta={announcement.cta}
+            logos={announcement.banner.logos}
+          />
+        ) : null}
+      </HomeTopRow>
       <div className="mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         {/* Two lines at ONE size: the greeting in ink, what the page is in grey.
             The grey line is the subtitle, promoted, so the page opens with a

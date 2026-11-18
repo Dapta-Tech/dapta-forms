@@ -1,0 +1,19 @@
+/* ── In-app announcements: the pop-up ─────────────────────────────────────── */
+
+/* The pop-up rises into place over the dimmed page. Nothing behind it moves:
+   it is fixed, and the page's scroll is held still with its gutter kept. */
+.ann-pop {
+  animation: ann-pop 0.32s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes ann-pop {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ann-pop {
+    animation: none;
+  }
+}

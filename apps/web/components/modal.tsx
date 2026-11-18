@@ -38,6 +38,10 @@ export function Modal({
   labelId,
   size = 'md',
   portal = false,
+  bare = false,
+  overlayClassName,
+  panelClassName,
+  lockScroll = false,
   children,
 }: {
   open: boolean;
@@ -61,6 +65,23 @@ export function Modal({
    * the page's chrome is never nested, which is when to turn this on.
    */
   portal?: boolean;
+  /**
+   * The panel draws nothing of its own: no padding, no heading. For a dialog
+   * whose first thing is not its title (the announcement pop-up opens on its
+   * animation). The caller renders an element with `id={labelId}` itself, and
+   * `title` is then unused.
+   */
+  bare?: boolean;
+  /** Replaces the overlay's placement classes (`items-center justify-center p-4`). */
+  overlayClassName?: string;
+  /** Replaces the panel's look (width, radius, padding, border). */
+  panelClassName?: string;
+  /**
+   * Keep the page behind from scrolling while the dialog is up, with the
+   * scrollbar's width held as padding so nothing behind it moves sideways.
+   * Opt-in: the existing dialogs sit over pages that manage their own scroll.
+   */
+  lockScroll?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -74,12 +95,13 @@ export function Modal({
   // DOM, so it keys on what is actually shown, not on `open` alone.
   const shown = open && (!portal || mounted);
   useDialogA11y(shown, ref, rootRef, onClose);
+  useScrollLock(shown && lockScroll);
 
   if (!shown) return null;
   const overlay = (
     <div
       ref={rootRef}
-      className="fixed inset-0 flex items-center justify-center p-4"
+      className={`fixed inset-0 flex ${overlayClassName ?? 'items-center justify-center p-4'}`}
       style={{ zIndex: LAYER.overlay }}
     >
       <button type="button" aria-hidden tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-background/80" />
@@ -88,16 +110,38 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelId}
-        className={`relative w-full ${SIZES[size]} rounded-xl border border-border bg-popover p-6 shadow-lg`}
+        className={`relative w-full ${panelClassName ?? `${SIZES[size]} rounded-xl border border-border bg-popover p-6 shadow-lg`}`}
       >
-        <h2 id={labelId} className="mb-4 text-lg font-semibold">
-          {title}
-        </h2>
+        {bare ? null : (
+          <h2 id={labelId} className="mb-4 text-lg font-semibold">
+            {title}
+          </h2>
+        )}
         {children}
       </div>
     </div>
   );
   return portal ? createPortal(overlay, document.body) : overlay;
+}
+
+/**
+ * Freeze the page's scroll while `on`, restoring exactly what was there. The
+ * scrollbar the lock removes is put back as padding on <body>, so on a system
+ * with classic scrollbars the page behind the dialog does not jump sideways.
+ */
+export function useScrollLock(on: boolean): void {
+  useEffect(() => {
+    if (!on) return;
+    const body = document.body;
+    const prev = { overflow: body.style.overflow, paddingRight: body.style.paddingRight };
+    const gutter = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (gutter > 0) body.style.paddingRight = `${gutter}px`;
+    return () => {
+      body.style.overflow = prev.overflow;
+      body.style.paddingRight = prev.paddingRight;
+    };
+  }, [on]);
 }
 
 /**

@@ -3,6 +3,7 @@ import type { FormsMessages } from '@quill/shared';
 import { AgentLogo } from '@/components/agent-logos';
 import { MCP_APPS, MCP_APP_NAMES } from '@/components/mcp-apps';
 import { buttonVariants } from '@/components/ui/button';
+import { BannerChip, HomeBannerFrame } from './home-banner';
 import './agent-promo.css';
 
 type BannerMessages = FormsMessages['admin']['home']['agentBanner'];
@@ -13,7 +14,38 @@ export const CONNECT_PATH = '/admin/developers/connect';
  * The home's top banner: control dForms from an AI agent, a marquee of the
  * apps' official logos, and the way to connect. It stays on the home.
  */
-export function AgentBanner({ m }: { m: BannerMessages }) {
+export function AgentBanner({ m, layout = 'wide' }: { m: BannerMessages; layout?: 'wide' | 'split' }) {
+  // Half of the top row (an announcement's banner beside it): the same three
+  // parts, stacked, so it still reads as designed at half the width.
+  if (layout === 'split') {
+    return (
+      <HomeBannerFrame
+        testId="home-agent-banner"
+        labelId="agent-banner-title"
+        title={m.title}
+        body={m.body}
+        marqueeTestId="home-agent-marquee"
+        chipsLabel={MCP_APPS.map((app) => MCP_APP_NAMES[app]).join(', ')}
+        chips={MCP_APPS.map((app) => (
+          <BannerChip key={app}>
+            <AgentLogo app={app} size={18} />
+            {MCP_APP_NAMES[app]}
+          </BannerChip>
+        ))}
+        cta={
+          <Link
+            href={CONNECT_PATH}
+            data-testid="home-agent-banner-cta"
+            className={`${buttonVariants({ variant: 'default' })} shrink-0`}
+          >
+            {m.cta}
+            <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
+          </Link>
+        }
+        tone="signal"
+      />
+    );
+  }
   return (
     <section
       aria-labelledby="agent-banner-title"

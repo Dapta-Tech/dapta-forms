@@ -61,6 +61,7 @@ import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
 import { BrandingController } from './branding.controller';
 import { AttributionController } from './attribution.controller';
+import { ANNOUNCEMENTS_OPTIONS, AnnouncementsController, isDaptaDeployment } from './announcements.controller';
 import { AttributionService } from './attribution.service';
 import { LinkPageController } from './link-page.controller';
 import { LinkPageService } from './link-page.service';
@@ -108,6 +109,9 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     AnalyticsController,
     IntegrationsController,
     FormDestinationsController,
+    // GET /v1/me/announcement + POST /v1/me/announcements/:id: in-app news,
+    // once per person. Session only (see the controller).
+    AnnouncementsController,
     // POST /mcp: the dForms MCP server (@quill/mcp). Runs each tool through the
     // form handlers above, so it resolves them from the module once it is built.
     McpController,
@@ -120,6 +124,11 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
   ],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },
+    {
+      provide: ANNOUNCEMENTS_OPTIONS,
+      useFactory: (env: ServerEnv) => ({ dapta: isDaptaDeployment(env) }),
+      inject: [ENV],
+    },
     { provide: DB, useFactory: () => createDb() },
     {
       provide: EMAIL,
