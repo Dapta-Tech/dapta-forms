@@ -6,6 +6,13 @@
  */
 export function randomInt(min: number, max?: number): number {
   const [lo, hi] = max === undefined ? [0, min] : [min, max];
-  const [n] = crypto.getRandomValues(new Uint32Array(1));
-  return lo + (n! % (hi - lo));
+  const range = hi - lo;
+  // Rejection sampling keeps the result uniform: a plain modulo favours low
+  // values whenever 2^32 is not a multiple of the range.
+  const limit = 2 ** 32 - (2 ** 32 % range);
+  const buf = new Uint32Array(1);
+  for (;;) {
+    crypto.getRandomValues(buf);
+    if (buf[0]! < limit) return lo + (buf[0]! % range);
+  }
 }
