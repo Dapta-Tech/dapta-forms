@@ -143,8 +143,10 @@ describe('formConfigJsonSchema', () => {
     // ...and nowhere in what the guide and the skill publish.
     for (const audience of ['rest', 'mcp'] as const) {
       const published = formConfigJsonSchema(audience);
-      expect(JSON.stringify(published)).not.toMatch(/gohighlevel/i);
       const variants = typesOf(published);
+      for (const type of HIDDEN_DESTINATION_TYPES) expect(variants.map((v) => v.type)).not.toContain(type);
+      // HighLevel has its cards now, its partials switch included: published whole.
+      expect(variants.find((v) => v.type === 'gohighlevel')?.events).toBe(true);
       for (const type of EVENTS_WITHOUT_CONTROL) expect(variants.find((v) => v.type === type)?.events).toBe(false);
       // The webhook's trigger has its control and stays.
       expect(variants.find((v) => v.type === 'webhook')?.events).toBe(true);

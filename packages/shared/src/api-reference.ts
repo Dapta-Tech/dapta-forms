@@ -132,7 +132,9 @@ export type ApiParamDoc =
   | 'notificationEnabled'
   | 'notificationSubject'
   | 'notificationBody'
-  | 'notificationRecipients';
+  | 'notificationRecipients'
+  // Integrations
+  | 'goHighLevelRefresh';
 
 export interface ApiParamSpec {
   name: string;
@@ -1030,6 +1032,27 @@ export const API_REFERENCE = {
           label: 'Lifecycle stage',
           type: 'enumeration',
           options: [{ value: 'lead', label: 'Lead' }],
+        },
+      ],
+    },
+  },
+  'GET /v1/integrations/gohighlevel/fields': {
+    area: 'integrations',
+    status: 200,
+    params: [{ name: 'refresh', in: 'query', type: '1', doc: 'goHighLevelRefresh', example: '1' }],
+    response: {
+      enabled: true,
+      cached: false,
+      standard: [{ kind: 'standard', key: 'email', name: 'Email', sources: ['email', 'text'] }],
+      custom: [
+        { kind: 'custom', id: 'pvUoGdsXdHZtYJ2qH2Qh', key: 'contact.utm_source', name: 'UTM source', dataType: 'TEXT' },
+        {
+          kind: 'custom',
+          id: 'N16JxmMMgId41iRLxDsT',
+          key: 'contact.plan',
+          name: 'Plan',
+          dataType: 'SINGLE_OPTIONS',
+          options: ['Basic', 'Pro', 'Enterprise'],
         },
       ],
     },
