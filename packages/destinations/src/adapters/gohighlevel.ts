@@ -171,21 +171,23 @@ const isoDay = (epochMs: number, timezone?: string): string =>
 
 /**
  * A calendar day as `YYYY-MM-DD`, or undefined. A bare day is kept as typed
- * (after checking it exists); an instant (`2026-11-18T03:00:00Z`, epoch ms) is
- * named in `timezone`, because GHL would otherwise cut the ISO string at its
- * UTC date. Anything else (`11/18/2026`, which could be either order) is left
- * out.
+ * (after checking it exists), and so is the day of a date-time without an
+ * offset (`2026-11-18T09:00`), which names no instant to convert. An instant
+ * (`2026-11-18T03:00:00Z`, `...-05:00`) is named in `timezone`, because GHL
+ * would otherwise cut the ISO string at its UTC date. Anything else
+ * (`11/18/2026`, which could be either order, or a number, which no question
+ * stores as a date) is left out.
  */
 export function toGoHighLevelDay(value: unknown, timezone?: string): string | undefined {
-  if (typeof value === 'number') return Number.isFinite(value) ? isoDay(value, timezone) : undefined;
-  const text = asText(value);
-  if (text === undefined) return undefined;
-  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim();
+  const local = /^(\d{4}-\d{2}-\d{2})T[\d:.]+$/.exec(text);
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(local ? local[1]! : text);
   if (day) {
     const [y, m, d] = [Number(day[1]), Number(day[2]), Number(day[3])];
     const at = new Date(Date.UTC(y, m - 1, d));
     const real = at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d;
-    return real ? text : undefined;
+    return real ? day[0] : undefined;
   }
   if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
     const ms = Date.parse(text);
@@ -244,6 +246,9 @@ export function goHighLevelCustomValue(
 }
 
 // --- The request body --------------------------------------------------------
+
+/** The standard fields GHL matches a contact by. Never a fixed value. */
+const IDENTITY_FIELDS: ReadonlySet<GoHighLevelStandardFieldKey> = new Set(['email', 'phone']);
 
 /** The standard keys the upsert body may carry, besides `locationId` and `source`. */
 type StandardValues = Partial<Record<GoHighLevelStandardFieldKey, string>>;
@@ -319,17 +324,21 @@ export class GoHighLevelDestination implements SubmissionDestination {
     for (const [utmKey, target] of Object.entries(this.options.utmMappings ?? {})) {
       if (target) put(target, 'utm', ctx.utm?.[utmKey]);
     }
-    if (this.options.dateField) put(this.options.dateField, 'date', ctx.submittedAt);
+    if (this.options.dateField) put(this.options.dateField, 'date', isoDay(ctx.submittedAt, tz));
     if (this.options.scoreField) put(this.options.scoreField, 'score', ctx.score);
-    for (const entry of this.options.staticFields ?? []) {
-      if (entry?.target) put(entry.target, 'field', entry.value);
-    }
 
     // Email is the respondent's own: the mapped answer, else a raw `email`
     // answer, the same fallback the Salesforce and HubSpot adapters keep.
     if (standard.email === undefined) {
       const fallback = standardValue('email', ctx.data?.email);
       if (fallback) standard.email = fallback;
+    }
+
+    for (const entry of this.options.staticFields ?? []) {
+      // Email and phone are who the respondent IS: GHL matches contacts by
+      // them, so one constant would merge every respondent into one contact.
+      if (entry?.target?.kind === 'standard' && IDENTITY_FIELDS.has(entry.target.field)) continue;
+      if (entry?.target) put(entry.target, 'field', entry.value);
     }
 
     const body: GoHighLevelUpsertBody = {
@@ -437,7 +446,8 @@ export class GoHighLevelDestination implements SubmissionDestination {
 
     const tags = this.tags();
     if (tags.length) {
-      const tagged = await this.call(`/contacts/${encodeURIComponent(contactId)}/tags`, JSON.stringify({ tags }));
+      const tagsBody = JSON.stringify({ tags });
+      const tagged = await this.call(`/contacts/${encodeURIComponent(contactId)}/tags`, tagsBody);
       if (!tagged.ok) {
         // Deleted between the two calls: the retry upserts it again.
         if (tagged.status === 400 && /contact not found/i.test(tagged.text ?? '')) {
@@ -445,11 +455,14 @@ export class GoHighLevelDestination implements SubmissionDestination {
             'gohighlevel delivery failed: contact vanished before its tags',
             400,
             tagged.text,
-            requestBody,
+            tagsBody,
           );
         }
+        // The contact was written but the tags were refused: not what the
+        // author configured, so it is reported as not delivered, with the
+        // request that was refused.
         return goHighLevelResult(tagged.outcome, {
-          requestBody,
+          requestBody: tagsBody,
           responseStatus: tagged.status,
           responseBody: tagged.text,
         });

@@ -311,6 +311,11 @@ describe('what each custom field receives', () => {
     expect(toGoHighLevelDay('11/18/2026')).toBeUndefined();
   });
 
+  it('keeps the day of a date-time without an offset, and never reads a number as a date', async () => {
+    expect(await sent({ day: '2026-11-18T23:30' }, { dayTimezone: 'Asia/Tokyo' })).toEqual({ qa_date: '2026-11-18' });
+    expect(await sent({ day: 42 })).toEqual({});
+  });
+
   it('sends the submitted day to the date field in the destination zone', async () => {
     const loc = fakeLocation();
     await new GoHighLevelDestination(
@@ -388,6 +393,23 @@ describe('precedence', () => {
       { id: 'qa_single', fieldValue: 'Pro' },
       { id: 'qa_text', fieldValue: 'campaign-q4' },
     ]);
+  });
+
+  it('never takes the email or the phone from a fixed value, which would merge every respondent', async () => {
+    const loc = fakeLocation();
+    await new GoHighLevelDestination(
+      options({
+        fieldMappings: { firstname: [standard('firstName')] },
+        staticFields: [
+          { target: standard('email'), value: 'sales@acme.io' },
+          { target: standard('phone'), value: '+1 202 555 0143' },
+        ],
+      }),
+      loc.fetchImpl,
+    ).deliver(ctx({ data: { firstname: 'Sam', email: 'sam@acme.io' } }));
+    const body = upserts(loc.requests)[0]!.body;
+    expect(body.email).toBe('sam@acme.io');
+    expect(body).not.toHaveProperty('phone');
   });
 
   it('lets an empty answer leave its field to the fixed value', async () => {
@@ -499,6 +521,42 @@ describe('which failures retry', () => {
       GoHighLevelHttpError,
     );
     expect(onRejected).not.toHaveBeenCalled();
+  });
+
+  it('throws a 403 whose body is not JSON, an edge page rather than GHL', async () => {
+    const onRejected = vi.fn();
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 403,
+      text: async () => '<html>Access denied</html>',
+    })) as unknown as typeof fetch;
+    await expect(new GoHighLevelDestination(options({ onRejected }), fetchImpl).deliver(ctx())).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(onRejected).not.toHaveBeenCalled();
+  });
+
+  it('throws a success that names no contact, since asking again is safe', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify({ new: true, traceId: 't' }),
+    })) as unknown as typeof fetch;
+    await expect(new GoHighLevelDestination(options(), fetchImpl).deliver(ctx())).rejects.toBeInstanceOf(
+      GoHighLevelHttpError,
+    );
+  });
+
+  it('skips a refused tags call with the reconnect reason and the request it refused', async () => {
+    const loc = failing(401, { statusCode: 401, message: 'The token is not authorized for this scope.' }, '/tags');
+    const onRejected = vi.fn();
+    const out = await new GoHighLevelDestination(options({ tags: ['vip'], onRejected }), loc.fetchImpl).deliver(ctx());
+    expect(out).toMatchObject({
+      delivered: false,
+      detail: GOHIGHLEVEL_REASONS.tokenRejected,
+      requestBody: JSON.stringify({ tags: ['vip'] }),
+    });
+    expect(onRejected).toHaveBeenCalledWith(401);
   });
 
   it('skips a 400 with GHL message, and a 422 with its list of messages joined', async () => {

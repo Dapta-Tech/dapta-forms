@@ -76,10 +76,12 @@ export function createDestination(
       const ghl = spec.gohighlevel;
       // Not connected, or the connection is missing half of itself: the named
       // no-op the delivery history shows as "reconnect HighLevel", not a retry.
-      if (!ghl?.credentials?.token?.trim() || !ghl.credentials.locationId?.trim()) {
+      const token = ghl?.credentials?.token?.trim();
+      const locationId = ghl?.credentials?.locationId?.trim();
+      if (!ghl || !token || !locationId) {
         return new LogOnlyDestination(GOHIGHLEVEL_REASONS.notConnected);
       }
-      return new GoHighLevelDestination(ghl, fetchImpl);
+      return new GoHighLevelDestination({ ...ghl, credentials: { token, locationId } }, fetchImpl);
     }
     default:
       return new LogOnlyDestination(`unknown destination type: ${String(spec.type)}`);
