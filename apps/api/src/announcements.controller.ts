@@ -60,6 +60,8 @@ export interface AnnouncementView {
   badge: boolean;
   /** Show the Home banner. */
   showBanner: boolean;
+  /** The person already reached the route: the browser has no visit left to report. */
+  followed: boolean;
 }
 
 /**
@@ -114,6 +116,7 @@ export class AnnouncementsController {
         modal: pick.modal,
         badge: pick.badge,
         showBanner: pick.banner,
+        followed: pick.followed,
       },
     };
   }

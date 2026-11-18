@@ -114,6 +114,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
                 railBadge: announcement.railBadge,
                 badge: announcement.badge,
                 modal: announcement.modal,
+                followed: announcement.followed,
                 // An id this build has no copy for (an API ahead of the web
                 // app) opens no pop-up rather than an empty one.
                 copy: adminMessages.announcements.items[announcement.copy] ?? null,

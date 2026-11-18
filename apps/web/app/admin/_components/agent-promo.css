@@ -69,6 +69,12 @@
     width: auto;
     flex-wrap: wrap;
   }
+  /* Still, the chips wrap inside their list too: at half the top row a single
+     line of them would run out of the banner with no mask to fade it. */
+  .ap-marquee__track > ul {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+  }
   .ap-marquee__copy {
     display: none;
   }

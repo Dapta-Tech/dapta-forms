@@ -447,6 +447,8 @@ export interface ShellAnnouncement {
   badge: boolean;
   /** Whether the pop-up is due (the person has not closed or followed it). */
   modal: boolean;
+  /** The person reached the route on an earlier load: nothing to report on a visit. */
+  followed: boolean;
   /** The pop-up's copy in the reader's language; null when this build has none for it. */
   copy: AnnouncementCopy | null;
   /** The pop-up's close button name. */
@@ -522,11 +524,14 @@ export function AdminShell({
   const annId = announcement?.id ?? null;
   const annCta = announcement?.cta ?? null;
   const onAnnouncementRoute = annCta !== null && isNavItemActive(pathname, annCta);
-  const followed = useSyncExternalStore(
+  const followedThisLoad = useSyncExternalStore(
     subscribeAnnouncements,
     () => (annId ? isAnnouncementFollowed(annId) : false),
     () => false,
   );
+  // Followed on an earlier load too: the banner keeps the announcement alive
+  // after that, and a later visit is not a new follow to report.
+  const followed = followedThisLoad || !!announcement?.followed;
   useEffect(() => {
     if (!annId || followed || !onAnnouncementRoute) return;
     markAnnouncementFollowed(annId);
@@ -552,8 +557,17 @@ export function AdminShell({
   // outside /admin (see app/admin/layout.tsx).
   const [modalOpen, setModalOpen] = useState(false);
   const modalHandled = useRef<string | null>(null);
+  // Editors take the whole screen for work: the form builder and the link page
+  // editor never get a pop-up over them.
+  const editor = studio || /^\/admin\/account\/public-page\/[^/]+/.test(pathname);
   const modalDue =
-    !!announcement?.modal && !!announcement.copy && !studio && !onAnnouncementRoute && !followed && !drawerOpen;
+    !!announcement?.modal && !!announcement.copy && !editor && !onAnnouncementRoute && !followed && !drawerOpen;
+  // Back or a swipe can take the page somewhere it must not be shown while it
+  // is up (portalled, it would stay): it leaves with the page, unreported, and
+  // does not come back on this load.
+  useEffect(() => {
+    if (modalOpen && !modalDue) setModalOpen(false);
+  }, [modalOpen, modalDue]);
   useEffect(() => {
     if (!annId || !modalDue || modalHandled.current === annId) return;
     if (announcementShownThisSession(annId)) {
@@ -562,7 +576,13 @@ export function AdminShell({
     }
     let timer: ReturnType<typeof setTimeout>;
     const tryOpen = () => {
-      if (document.querySelector('[aria-modal="true"], [role="alertdialog"]')) {
+      // Another dialog, or a full-screen surface that holds the scroll (the
+      // submissions sheet opened from a notification link is a dialog without
+      // aria-modal): wait for it to close.
+      if (
+        document.querySelector('[aria-modal="true"], [role="alertdialog"]') ||
+        document.body.style.overflow === 'hidden'
+      ) {
         timer = setTimeout(tryOpen, 1000);
         return;
       }
@@ -665,7 +685,13 @@ export function AdminShell({
 
   // Lock body scroll + close on Escape + move focus into the drawer on open (R28).
   useEffect(() => {
-    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    // Only while open, and put back what was there: writing '' on every mount
+    // wiped the scroll lock of a surface that opened with the page (the
+    // submissions sheet from a `?response=` link), which also hid it from the
+    // announcement pop-up's "is something else up?" check.
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    if (drawerOpen) body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       // WCAG 1.4.13 Dismissible, for the pointer case it is written about.
@@ -683,7 +709,7 @@ export function AdminShell({
     window.addEventListener('keydown', onKey);
     if (drawerOpen) drawerRef.current?.querySelector<HTMLElement>('a,button')?.focus();
     return () => {
-      document.body.style.overflow = '';
+      if (drawerOpen) body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
     };
   }, [drawerOpen]);

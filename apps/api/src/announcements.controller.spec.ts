@@ -104,6 +104,7 @@ describe('GET /v1/me/announcement', () => {
       modal: true,
       badge: true,
       showBanner: true,
+      followed: false,
     });
   });
 
@@ -148,7 +149,7 @@ describe('the pop-up, the badge and the banner', () => {
   it('reaching the page ends the pop-up and the badge; the banner stays while the announcement runs', async () => {
     const c = controller();
     await c.record(asOwner(), ID, { event: 'clicked' });
-    expect(await current(c)).toMatchObject({ modal: false, badge: false, showBanner: true });
+    expect(await current(c)).toMatchObject({ modal: false, badge: false, showBanner: true, followed: true });
     clock = END;
     expect(await current(c)).toBeNull();
   });

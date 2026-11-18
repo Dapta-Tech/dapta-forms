@@ -96,16 +96,20 @@ export function AnnouncementModal({
       <div data-testid="announcement-modal" data-announcement={id} className="relative flex flex-1 flex-col">
         {/* First in the panel: `Modal` focuses the first button it finds. A
             chip, not a bare icon, so it reads over both themes of the art. */}
-        <button
-          type="button"
-          onClick={() => close('close')}
-          aria-label={closeLabel}
-          title={closeLabel}
-          data-testid="announcement-close"
-          className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-popover/90 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
-        >
-          <i aria-hidden className="pi pi-times" style={{ fontSize: 14 }} />
-        </button>
+        {/* Sticky, so a short screen that scrolls the panel (a phone held
+            sideways) never scrolls the way out off it. */}
+        <div className="sticky top-0 z-10 h-0">
+          <button
+            type="button"
+            onClick={() => close('close')}
+            aria-label={closeLabel}
+            title={closeLabel}
+            data-testid="announcement-close"
+            className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-popover/90 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
+          >
+            <i aria-hidden className="pi pi-times" style={{ fontSize: 14 }} />
+          </button>
+        </div>
         <AnnouncementMedia visual={visual} theme={theme} className="w-full shrink-0 border-b border-border" />
         <div className="flex flex-1 flex-col p-6 sm:p-8">
           <h2 id={labelId} className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">

@@ -213,6 +213,8 @@ export interface AnnouncementView {
   badge: boolean;
   /** Show the Home banner (for as long as the announcement runs). */
   showBanner: boolean;
+  /** The person already reached the route: no visit left to report. */
+  followed: boolean;
 }
 
 export interface Me {

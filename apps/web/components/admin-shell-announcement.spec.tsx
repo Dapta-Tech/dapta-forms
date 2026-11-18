@@ -47,6 +47,7 @@ const ANN: ShellAnnouncement = {
   railBadge: 'integrations',
   badge: true,
   modal: false,
+  followed: false,
   copy: copy().items['integrations-2026-11'],
   closeLabel: copy().close,
   visual: { kind: 'video', src: '/announcements/announce-integrations', width: 1280, height: 720 },
@@ -332,6 +333,45 @@ describe('AdminShell: the announcement pop-up', () => {
     other.remove();
     await sleep(1100);
     expect($('[data-testid="announcement-modal"]')).not.toBeNull();
+  });
+
+  it('never opens over the link page editor, or over a surface that holds the scroll', async () => {
+    nav.pathname = '/admin/account/public-page/p1';
+    await mount(shell({ announcement: DUE }));
+    await sleep(450);
+    expect(dialog()).toBeNull();
+    await act(async () => root!.unmount());
+    host!.remove();
+
+    nav.pathname = '/admin/submissions';
+    document.body.style.overflow = 'hidden';
+    await mount(shell({ announcement: DUE }));
+    await sleep(450);
+    expect(dialog()).toBeNull();
+    document.body.style.overflow = '';
+    await sleep(1100);
+    expect(dialog()).not.toBeNull();
+  });
+
+  it('leaves with the page when Back takes it into the builder, unreported', async () => {
+    await mount(shell({ announcement: DUE }));
+    await sleep(450);
+    expect(dialog()).not.toBeNull();
+    nav.pathname = '/admin/forms/f1/edit';
+    await act(async () => root!.render(shell({ announcement: DUE })));
+    expect(dialog()).toBeNull();
+    expect(calls.actions).toEqual([[ID, 'seen']]);
+    nav.pathname = '/admin';
+    await act(async () => root!.render(shell({ announcement: DUE })));
+    await sleep(450);
+    expect(dialog()).toBeNull();
+  });
+
+  it('a visit to the page on a later load is not reported again once followed', async () => {
+    nav.pathname = '/admin/integrations';
+    await mount(shell({ announcement: { ...ANN, badge: false, followed: true } }));
+    expect(calls.actions).toEqual([]);
+    expect(calls.events).toEqual([]);
   });
 
   it('speaks Spanish', async () => {

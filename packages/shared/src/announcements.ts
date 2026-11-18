@@ -107,6 +107,8 @@ export interface AnnouncementPick {
   badge: boolean;
   /** The Home banner: for as long as the announcement runs. */
   banner: boolean;
+  /** The person already reached its route: nothing left to report about it. */
+  followed: boolean;
 }
 
 /** The events a person's browser reports for an announcement. */
@@ -149,6 +151,7 @@ export function pickAnnouncement(
     modal,
     badge: a.railBadge !== null && !followed(a),
     banner: a.banner !== null,
+    followed: followed(a),
   });
 
   const withModal = live.find((a) => !closed(a));
