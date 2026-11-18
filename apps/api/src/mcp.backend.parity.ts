@@ -100,7 +100,7 @@ export const MCP_PARITY_HANDLERS = {
   destinations: ['putDestinations', 'pingWebhook'],
   branding: ['get', 'put', 'apply', 'revert'],
   linkPage: ['get', 'put', 'list', 'create', 'one', 'update', 'remove', 'duplicate'],
-  integrations: ['list', 'webhooks', 'hubspotProperties', 'calendlyEventTypes'],
+  integrations: ['list', 'webhooks', 'hubspotProperties', 'goHighLevelFieldList', 'calendlyEventTypes'],
 } as const;
 
 type Names<K extends keyof typeof MCP_PARITY_HANDLERS> = (typeof MCP_PARITY_HANDLERS)[K][number];
@@ -506,6 +506,13 @@ export class ApiMcpBackend extends ApiFormsBackend implements FormsBackend {
 
   hubspotProperties(caller: McpCaller): Promise<Record<string, unknown>> {
     return run(async () => ({ ...(await this.parity().integrations.hubspotProperties(reqOf(caller))) }));
+  }
+
+  goHighLevelFields(caller: McpCaller, opts: { refresh: boolean }): Promise<Record<string, unknown>> {
+    // The route's own query string: `refresh=1` skips the 5-minute copy.
+    return run(async () => ({
+      ...(await this.parity().integrations.goHighLevelFieldList(reqOf(caller), opts.refresh ? '1' : undefined)),
+    }));
   }
 
   calendlyEventTypes(caller: McpCaller): Promise<Record<string, unknown>> {

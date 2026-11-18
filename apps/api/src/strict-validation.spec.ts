@@ -29,6 +29,7 @@ import { AuthService } from './auth.service';
 import { BrandingController } from './branding.controller';
 import { FormDestinationsController } from './integrations.controller';
 import { LocalAuthProvider, type HostPrincipal, type ReqLike } from './auth.provider';
+import { strictDestinationIssues } from './strict-config';
 
 let db: Db;
 let accountId: string;
@@ -401,6 +402,20 @@ describe('strict rules with an API key', () => {
     // A session's save, which never sends it, stores the CRM entries as before.
     const out = await session.destinations.putDestinations(req(), formId, body);
     expect(out).toBeTruthy();
+  });
+
+  it('takes events on a HighLevel destination from a key: its card has the partials switch', () => {
+    const entry = (events: unknown) => ({ type: 'gohighlevel', enabled: true, events, fieldMappings: {} });
+    for (const events of [['complete'], ['partial', 'complete']]) {
+      expect(strictDestinationIssues([entry(events)], ['destinations'])).toEqual([]);
+    }
+    // The dashboard-only webhook fields stay refused next to it.
+    expect(
+      strictDestinationIssues(
+        [entry(['partial', 'complete']), { type: 'webhook', settings: { url: 'https://example.com/hook', timeoutMs: 5000 } }],
+        ['destinations'],
+      ).map((i) => i.path),
+    ).toEqual(['destinations.1.settings.timeoutMs']);
   });
 });
 

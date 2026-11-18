@@ -10,9 +10,10 @@ import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Client } from '@modelcontextprotocol/client';
-import { sql, updateFormDestinations, upsertSubmission } from '@quill/db';
+import { getIntegration, markIntegrationRejected, sql, updateFormDestinations, upsertIntegration, upsertSubmission } from '@quill/db';
 import { WEBHOOK_SECRET_MASK } from '@quill/types';
 import { AnalyticsService } from './analytics.service';
+import { GoHighLevelFieldsService } from './gohighlevel-fields';
 import { APP_URL, bootHarness, errorText, structured, type Harness } from './mcp-harness';
 import type { RateLimiter } from './rate-limit';
 import { API_KEY_RATE_LIMITER } from './tokens';
@@ -683,6 +684,163 @@ describe('destinations and integrations the workspace has not connected, over th
     expect(integrations.not_connected).toContain('salesforce');
     expect(integrations.not_connected).not.toContain('google-sheets');
   });
+});
+
+describe('HighLevel over the real handlers', () => {
+  const PAGE = `${APP_URL.replace(/\/+$/, '')}/admin/integrations`;
+  const LOC = 'Loc0Acme0000000000a1';
+  let g: Harness;
+  /** Every call the fields service made to HighLevel, and what HighLevel answers. */
+  const ghlCalls: string[] = [];
+  let ghlStatus = 200;
+  const CUSTOM_FIELDS = [
+    { id: 'f-plan', name: 'Plan', fieldKey: 'contact.plan', dataType: 'SINGLE_OPTIONS', model: 'contact', picklistOptions: ['Basic', 'Pro'] },
+    { id: 'f-score', name: 'Lead score', fieldKey: 'contact.lead_score', dataType: 'NUMERICAL', model: 'contact' },
+    // A type the contact upsert cannot take: never offered.
+    { id: 'f-sign', name: 'Signature', fieldKey: 'contact.sign', dataType: 'SIGNATURE', model: 'contact' },
+  ];
+  const ENTRY = {
+    type: 'gohighlevel',
+    enabled: true,
+    events: ['partial', 'complete'],
+    fieldMappings: {
+      email: [{ kind: 'standard', field: 'email' }],
+      interest: [{ kind: 'custom', id: 'f-plan', key: 'contact.plan', dataType: 'SINGLE_OPTIONS' }],
+    },
+    scoreField: { kind: 'custom', id: 'f-score', key: 'contact.lead_score', dataType: 'NUMERICAL' },
+    tags: ['dforms'],
+  };
+  async function admin(): Promise<Client> {
+    return g.connect((await g.key('admin')).key);
+  }
+  async function connectGhl(): Promise<void> {
+    await upsertIntegration(
+      g.db,
+      g.accountId,
+      'gohighlevel',
+      JSON.stringify({ token: 'pit-aaaa-bbbb-cccc-1234', locationId: LOC }),
+      Buffer.alloc(32, 9).toString('base64'),
+      'Acme Corp (dForms QA)',
+      '1234',
+      { locationId: LOC },
+    );
+    g.app.get(GoHighLevelFieldsService).invalidate(g.accountId);
+  }
+
+  beforeAll(async () => {
+    g = await bootHarness({
+      MCP_WRITE_RATE_LIMIT_CAPACITY: '1000',
+      MCP_RATE_LIMIT_CAPACITY: '1000',
+      FORMS_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
+    });
+    g.app.get(GoHighLevelFieldsService).fetchImpl = (async (input: string | URL) => {
+      ghlCalls.push(String(input));
+      if (ghlStatus !== 200) return new Response(JSON.stringify({ statusCode: ghlStatus, message: 'Invalid Private Integration token' }), { status: ghlStatus });
+      return new Response(JSON.stringify({ customFields: CUSTOM_FIELDS }), { status: 200 });
+    }) as unknown as typeof fetch;
+  });
+  afterAll(async () => {
+    await g?.close();
+  });
+
+  it('while HighLevel is not connected: listed as not connected, no fields, and a new destination refused with the page', async () => {
+    const c = await admin();
+    const integrations = structured<{ not_connected: string[]; integrations_url: string }>(await c.callTool({ name: 'list_integrations', arguments: {} }));
+    expect(integrations.not_connected).toContain('gohighlevel');
+    expect(integrations.integrations_url).toBe(PAGE);
+    const fields = structured<{ enabled: boolean; reason: string; integrations_url: string; message: string }>(
+      await c.callTool({ name: 'list_gohighlevel_fields', arguments: {} }),
+    );
+    expect(fields).toMatchObject({ enabled: false, reason: 'not_connected', integrations_url: PAGE });
+    expect(ghlCalls).toEqual([]);
+
+    const id = await newForm(c);
+    const text = errorText(await c.callTool({ name: 'set_destinations', arguments: { form_id: id, destinations: [ENTRY] } }));
+    expect(text).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed HighLevel destination/);
+    expect(text).toContain(PAGE);
+    // Connectable here: the page goes to the user, then the same call again.
+    expect(text).toMatch(/holds the dForms integrations page/);
+    expect(text).not.toMatch(/cannot connect HighLevel yet|whoever runs this dForms deployment/);
+    expect(structured<{ destinations: unknown[] }>(await c.callTool({ name: 'get_form', arguments: { form_id: id } })).destinations).toEqual([]);
+
+    const name = `HighLevel form ${randomUUID().slice(0, 8)}`;
+    const created = errorText(
+      await c.callTool({ name: 'create_form', arguments: { name, config: { ...CONFIG, destinations: [ENTRY] } } }),
+    );
+    expect(created).toMatch(/^INTEGRATION_NOT_CONNECTED: Destination 1 is a new or changed HighLevel destination/);
+  });
+
+  it('once connected: the sub-account in list_integrations, its mappable fields, and a destination saved with partials on', async () => {
+    await connectGhl();
+    const c = await admin();
+    const integrations = structured<{ providers: Array<Record<string, unknown>>; not_connected: string[]; rejected: string[] }>(
+      await member().then((m) => m.callTool({ name: 'list_integrations', arguments: {} })),
+    );
+    expect(integrations.providers).toContainEqual(
+      expect.objectContaining({ provider: 'gohighlevel', connected: true, label: 'Acme Corp (dForms QA)', last4: '1234', locationId: LOC, rejectedAt: null }),
+    );
+    expect(integrations.not_connected).not.toContain('gohighlevel');
+    expect(integrations.rejected).toEqual([]);
+    expect(JSON.stringify(integrations)).not.toContain('pit-aaaa');
+
+    const fields = structured<{ enabled: boolean; cached: boolean; standard: Array<{ key: string }>; custom: Array<Record<string, unknown>> }>(
+      await c.callTool({ name: 'list_gohighlevel_fields', arguments: {} }),
+    );
+    expect(fields.enabled).toBe(true);
+    expect(fields.cached).toBe(false);
+    expect(fields.standard.map((f) => f.key)).toEqual(expect.arrayContaining(['firstName', 'email', 'phone']));
+    expect(fields.custom).toEqual([
+      { id: 'f-score', key: 'contact.lead_score', name: 'Lead score', dataType: 'NUMERICAL', options: null },
+      { id: 'f-plan', key: 'contact.plan', name: 'Plan', dataType: 'SINGLE_OPTIONS', options: ['Basic', 'Pro'] },
+    ]);
+    // The 5-minute copy answers the next read; refresh reads HighLevel again.
+    const before = ghlCalls.length;
+    expect(structured<{ cached: boolean }>(await c.callTool({ name: 'list_gohighlevel_fields', arguments: {} })).cached).toBe(true);
+    expect(ghlCalls.length).toBe(before);
+    expect(structured<{ cached: boolean }>(await c.callTool({ name: 'list_gohighlevel_fields', arguments: { refresh: true } })).cached).toBe(false);
+    expect(ghlCalls.length).toBe(before + 1);
+    expect(ghlCalls.at(-1)).toContain(`/locations/${LOC}/customFields?model=contact`);
+
+    const id = await newForm(c);
+    const saved = structured<{ destinations: Array<Record<string, unknown>>; warnings: unknown[] }>(
+      await c.callTool({ name: 'set_destinations', arguments: { form_id: id, destinations: [ENTRY] } }),
+    );
+    expect(saved.warnings).toEqual([]);
+    expect(saved.destinations).toEqual([expect.objectContaining({ type: 'gohighlevel', enabled: true, events: ['partial', 'complete'], tags: ['dforms'] })]);
+    const read = structured<{ destinations: Array<Record<string, unknown>> }>(await c.callTool({ name: 'get_form', arguments: { form_id: id } }));
+    expect(read.destinations[0]).toMatchObject({ type: 'gohighlevel', events: ['partial', 'complete'], scoreField: ENTRY.scoreField });
+
+    // The score into a text field is refused, by the route's own rule.
+    const wrong = errorText(
+      await c.callTool({
+        name: 'set_destinations',
+        arguments: { form_id: id, destinations: [{ ...ENTRY, scoreField: { kind: 'custom', id: 'f-plan', key: 'contact.plan', dataType: 'SINGLE_OPTIONS' } }] },
+      }),
+    );
+    expect(wrong).toMatch(/score.*NUMERICAL/);
+  });
+
+  it('when HighLevel stopped accepting the token: rejected in list_integrations, and the fields say so', async () => {
+    const row = await getIntegration(g.db, g.accountId, 'gohighlevel');
+    expect(await markIntegrationRejected(g.db, g.accountId, 'gohighlevel', row!.encryptedToken)).toBe(true);
+    ghlStatus = 401;
+    try {
+      const c = await admin();
+      const res = await c.callTool({ name: 'list_integrations', arguments: {} });
+      expect(structured<{ rejected: string[] }>(res).rejected).toEqual(['gohighlevel']);
+      expect(JSON.stringify(res)).toMatch(/HighLevel stopped accepting its token/);
+      const fields = structured<{ enabled: boolean; reason: string; integrations_url: string }>(
+        await c.callTool({ name: 'list_gohighlevel_fields', arguments: { refresh: true } }),
+      );
+      expect(fields).toMatchObject({ enabled: false, reason: 'rejected', integrations_url: PAGE });
+    } finally {
+      ghlStatus = 200;
+    }
+  });
+
+  async function member(): Promise<Client> {
+    return g.connect((await g.key('member')).key);
+  }
 });
 
 describe('one tool call, one API-key call', () => {
