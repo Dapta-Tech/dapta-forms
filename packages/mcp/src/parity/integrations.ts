@@ -177,7 +177,7 @@ const goHighLevelFieldsInput = z.object({
 /** Why HighLevel's fields cannot be listed, as a sentence. */
 function goHighLevelReason(reason: unknown, page: string): string {
   if (reason === 'rejected') {
-    return `HighLevel stopped accepting the workspace's token, so its fields cannot be read and its destinations deliver nothing. An owner or admin connects it again at ${page}.`;
+    return `HighLevel refused the workspace's token for this sub-account, so its fields cannot be read. An owner or admin connects it again at ${page}.`;
   }
   if (reason === 'not_connected') {
     return `HighLevel is not connected in this workspace. An owner or admin connects it at ${page}, pasting a Private Integration token and the Location ID there (never through a tool).`;
@@ -248,7 +248,11 @@ export const listGoHighLevelFields: ToolDef = {
       name: String(f['name']),
       sources: Array.isArray(f['sources']) ? (f['sources'] as unknown[]).map(String) : [],
     }));
-    const custom = ((v['custom'] as Array<Record<string, unknown>> | undefined) ?? []).map((f) => ({
+    // Only what a target can store: the destination schema caps an id at 100
+    // characters and a key at 200, so a longer one could never be saved.
+    const custom = ((v['custom'] as Array<Record<string, unknown>> | undefined) ?? [])
+      .filter((f) => typeof f['id'] === 'string' && f['id'].length <= 100 && String(f['key'] ?? '').length <= 200)
+      .map((f) => ({
       // id, key and dataType are what a mapping copies: kept exactly as HighLevel reports them.
       id: String(f['id']),
       key: String(f['key'] ?? ''),

@@ -383,6 +383,8 @@ describe('list_gohighlevel_fields', () => {
               dataType: 'SINGLE_OPTIONS',
               options: ['Basic', 'Pro'],
             },
+            // An id the destination schema could never store: not offered.
+            { kind: 'custom', id: 'x'.repeat(101), key: 'contact.long', name: 'Long', dataType: 'TEXT' },
           ],
         }),
       },
@@ -407,7 +409,7 @@ describe('list_gohighlevel_fields', () => {
 
   it.each([
     ['not_connected', /HighLevel is not connected in this workspace\. An owner or admin connects it at https:\/\/forms\.example\.test\/admin\/integrations/],
-    ['rejected', /HighLevel stopped accepting the workspace's token.*connects it again at https:\/\/forms\.example\.test\/admin\/integrations/],
+    ['rejected', /HighLevel refused the workspace's token for this sub-account.*connects it again at https:\/\/forms\.example\.test\/admin\/integrations/],
   ] as const)('answers %s with the reason, the sentence and the dashboard page', async (reason, sentence) => {
     const h = await bootHarness({ appUrl: 'https://forms.example.test', backend: { goHighLevelFields: async () => ({ enabled: false, reason }) } });
     try {
