@@ -47,9 +47,6 @@ export const DESTINATION_INCOMPLETE = 'DESTINATION_INCOMPLETE';
 export const CONNECTED_DESTINATIONS = {
   'google-sheets': 'Google Sheets',
   salesforce: 'Salesforce',
-  // Nothing can connect HighLevel yet (there is no connect route), so it is
-  // also in `unavailableDestinationProviders`: an agent's HighLevel entry is
-  // always refused here, as not retryable, and a browser's is warned.
   gohighlevel: 'HighLevel',
 } as const;
 export type ConnectedDestinationType = keyof typeof CONNECTED_DESTINATIONS;
@@ -79,28 +76,19 @@ export async function connectedDestinationProviders(
 
 /** The destination providers this DEPLOYMENT cannot connect at all, as `GET /v1/integrations` reports them. */
 export function unavailableDestinationProviders(env: GoogleOAuthEnv | undefined): Set<string> {
-  // HighLevel until its connect route exists. Not in `GET /v1/integrations`
-  // `unavailable`, which only lists cards the Connections page shows.
-  return new Set([...(googleOAuthClient(env) ? [] : ['google-sheets']), 'gohighlevel']);
+  return new Set(googleOAuthClient(env) ? [] : ['google-sheets']);
 }
 
 /**
  * Why a provider cannot be connected at all, and what to do until it can, as
- * the refusal and the warning say it. Google Sheets: the deployment has no
- * OAuth client. HighLevel: dForms cannot connect it yet.
+ * the refusal and the warning say it: the deployment has no OAuth client for
+ * it (Google Sheets is the only such provider).
  */
 function unavailableWording(type: ConnectedDestinationType): {
   why: string;
   until: string;
   saved: (what: string) => string;
 } {
-  if (type === 'gohighlevel') {
-    return {
-      why: 'dForms cannot connect HighLevel yet',
-      until: 'Leave this destination out or switched off.',
-      saved: (what) => `HighLevel cannot be connected in dForms yet, so ${what} delivers nothing.`,
-    };
-  }
   const name = CONNECTED_DESTINATIONS[type];
   return {
     why: `this dForms deployment cannot connect ${name} at all (it has no OAuth client for it)`,

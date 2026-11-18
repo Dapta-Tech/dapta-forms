@@ -278,6 +278,9 @@ function IntegrationsSection({
           googlePickerAvailable={state.data.googlePickerAvailable}
           salesforceConnected={state.data.salesforceConnected}
           salesforceFields={state.data.salesforceFields}
+          goHighLevelConnected={state.data.goHighLevelConnected}
+          goHighLevelRejected={state.data.goHighLevelRejected}
+          goHighLevelFields={state.data.goHighLevelFields}
           access={{
             canConnect: state.data.canConnect,
             encryptionAvailable: state.data.encryptionAvailable,

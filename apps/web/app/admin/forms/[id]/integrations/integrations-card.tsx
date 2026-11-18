@@ -34,7 +34,7 @@ export function Card({
   m: Msgs;
   badge?: string;
   /** The provider this card configures, when it is a named third party. */
-  logo?: LogoProvider | 'google-sheets';
+  logo?: LogoProvider | 'google-sheets' | 'gohighlevel';
   /**
    * Rendered under the header and OUTSIDE the `enabled` gate, unlike `children`.
    * For what is true of the STORED config whether or not the card is switched
