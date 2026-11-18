@@ -60,6 +60,7 @@ const stubs: Plugin = {
   name: 'qa-stubs',
   setup(b) {
     b.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: path.join(here, 'stubs/next-navigation.ts') }));
+    b.onResolve({ filter: /^next\/link$/ }, () => ({ path: path.join(here, 'stubs/next-link.tsx') }));
     b.onResolve({ filter: /^node:crypto$/ }, () => ({ path: path.join(here, 'stubs/node-crypto.ts') }));
     // Only the Connections page's actions have a stand-in; any other
     // `./actions` fails loudly rather than bundling a server module.
@@ -72,9 +73,51 @@ const stubs: Plugin = {
   },
 };
 
+/**
+ * Any other `'use server'` module (the shell's theme, sign-out and workspace
+ * actions) becomes a module whose exported functions throw when called. The
+ * export names are read from the file, so a component that imports an action
+ * still bundles; a layout spec never invokes one.
+ */
+const serverActions: Plugin = {
+  name: 'qa-server-actions',
+  setup(b) {
+    b.onLoad({ filter: /apps[\\/]web[\\/].*\.ts$/ }, async (args) => {
+      const source = await readFile(args.path, 'utf8');
+      // The directive may sit under a doc comment (`app/login/actions.ts` does).
+      if (!/^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*['"]use server['"]/.test(source)) return undefined;
+      const names = [...source.matchAll(/^export async function (\w+)/gm)].map((m) => m[1]);
+      const body = names.map((n) => `export const ${n} = never;`).join('\n');
+      return {
+        contents: `const never = async () => { throw new Error('server actions are not available in qa/component'); };\n${body}`,
+        loader: 'ts',
+      };
+    });
+  },
+};
+
+/**
+ * A component's own stylesheet (`import './agent-promo.css'`) is injected as a
+ * `<style>` tag when the bundle runs. Next would ship it in the page's CSS; a
+ * blank page only has the compiled globals, and the Home card's animations
+ * live in its own file.
+ */
+const componentCss: Plugin = {
+  name: 'qa-component-css',
+  setup(b) {
+    b.onLoad({ filter: /\.css$/ }, async (args) => {
+      const css = await readFile(args.path, 'utf8');
+      return {
+        contents: `const s = document.createElement('style'); s.textContent = ${JSON.stringify(css)}; document.head.appendChild(s);`,
+        loader: 'js',
+      };
+    });
+  },
+};
+
 async function compileJs(): Promise<string> {
   const result = await build({
-    plugins: [stubs],
+    plugins: [stubs, serverActions, componentCss],
     entryPoints: [path.join(here, 'entry.tsx')],
     bundle: true,
     write: false,
@@ -85,6 +128,10 @@ async function compileJs(): Promise<string> {
     tsconfig: path.join(web, 'tsconfig.json'),
     nodePaths: [path.join(web, 'node_modules')],
     define: { 'process.env.NODE_ENV': '"production"' },
+    // `lib/suite.ts` and `lib/product-name.ts` read `NEXT_PUBLIC_*` at module
+    // scope, which Next inlines at build time. Unset here, so they take their
+    // defaults, exactly as a deployment without those variables does.
+    banner: { js: 'var process = { env: {} };' },
     logLevel: 'silent',
   });
   return result.outputFiles[0]!.text;
