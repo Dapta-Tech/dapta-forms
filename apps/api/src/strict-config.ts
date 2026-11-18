@@ -96,9 +96,10 @@ const WEBHOOK_FIELDS: Path[] = [
  * Destination kinds whose `events` (send partial responses too) has no switch
  * in the Connect tab yet. The phase rule already reads it, so an agent setting
  * it would change what a CRM receives with nothing on the card to show it.
- * The webhook's trigger has its control and is not here.
+ * The webhook's trigger and the HubSpot and Salesforce cards' "send partial
+ * responses too" switch are controls, so those kinds are not here.
  */
-const EVENTS_WITHOUT_CONTROL: ReadonlySet<unknown> = new Set(['hubspot', 'salesforce', 'gohighlevel']);
+const EVENTS_WITHOUT_CONTROL: ReadonlySet<unknown> = new Set(['gohighlevel']);
 
 /**
  * Step types the editor saves with a blank title on purpose, so a key may too.

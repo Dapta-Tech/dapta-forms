@@ -385,22 +385,34 @@ describe('strict rules with an API key', () => {
     await expect(key.destinations.putDestinations(req(), formId, plain)).resolves.toBeTruthy();
   });
 
-  it('refuses events on a HubSpot or Salesforce destination: the Connect tab has no switch for it yet', async () => {
+  it('takes events on a HubSpot or Salesforce destination: their cards show the partials switch', async () => {
     const body = {
       destinations: [
         { type: 'webhook', enabled: true, events: ['complete'], settings: { url: 'https://example.com/hook' } },
         { type: 'hubspot', enabled: true, events: ['complete'], fieldMappings: { email: 'email' } },
-        { type: 'salesforce', enabled: true, events: ['partial', 'complete'], fieldMappings: { email: 'Email' } },
+        { type: 'salesforce', enabled: false, events: ['partial', 'complete'], fieldMappings: { email: 'Email' } },
+      ],
+    };
+    await key.destinations.putDestinations(req(), formId, body);
+    const stored = cfg((await getFormById(db, accountId, formId))!.config).destinations as { type: string; events?: string[] }[];
+    expect(stored.map((d) => [d.type, d.events])).toEqual([
+      ['webhook', ['complete']],
+      ['hubspot', ['complete']],
+      ['salesforce', ['partial', 'complete']],
+    ]);
+  });
+
+  it('still refuses events on a HighLevel destination: its card has no switch yet', async () => {
+    const body = {
+      destinations: [
+        { type: 'hubspot', enabled: true, events: ['partial', 'complete'], fieldMappings: { email: 'email' } },
+        { type: 'gohighlevel', enabled: false, events: ['partial', 'complete'], fieldMappings: {} },
       ],
     };
     const r = await refusal(key.destinations.putDestinations(req(), formId, body));
     expect(r.issues).toEqual([
       { path: 'destinations.1.events', code: 'UNSUPPORTED_FIELD', message: expect.any(String) },
-      { path: 'destinations.2.events', code: 'UNSUPPORTED_FIELD', message: expect.any(String) },
     ]);
-    // A session's save, which never sends it, stores the CRM entries as before.
-    const out = await session.destinations.putDestinations(req(), formId, body);
-    expect(out).toBeTruthy();
   });
 });
 

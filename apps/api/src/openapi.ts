@@ -132,10 +132,16 @@ const destinationSchema = {
   required: ['type'],
   additionalProperties: true,
   description:
-    'A webhook: { type: "webhook", id?, enabled, events?: ["partial", "complete"], settings: { url (https), secret?, signatureHeader?, timeoutMs? } }; `signatureHeader` and `timeoutMs` are set in the dashboard only: with an API key, an entry that carries either one is refused with 400 BAD_REQUEST (issue code UNSUPPORTED_FIELD), even when it matches what is stored, so leave them out. HubSpot: { type: "hubspot", enabled, settings }, at most one per form. Google Sheets: { type: "google-sheets", enabled, settings: { spreadsheetId, sheetTitle? }, columns: [{ header, source, key? }] }, one row per response, into a spreadsheet dForms created or the author picked in the dashboard. Salesforce: { type: "salesforce", enabled, fieldMappings, utmMappings?, scoreField?, dateField?, dayTimezone?, staticFields? }, at most one per form. Google Sheets and Salesforce deliver through the workspace\u2019s own connection. A masked webhook secret sent back unchanged keeps the stored one; null removes it.',
+    'A webhook: { type: "webhook", id?, enabled, events?: ["partial", "complete"], settings: { url (https), secret?, signatureHeader?, timeoutMs? } }; `signatureHeader` and `timeoutMs` are set in the dashboard only: with an API key, an entry that carries either one is refused with 400 BAD_REQUEST (issue code UNSUPPORTED_FIELD), even when it matches what is stored, so leave them out. HubSpot: { type: "hubspot", enabled, events?, settings }, at most one per form. Google Sheets: { type: "google-sheets", enabled, settings: { spreadsheetId, sheetTitle? }, columns: [{ header, source, key? }] }, one row per response, into a spreadsheet dForms created or the author picked in the dashboard. Salesforce: { type: "salesforce", enabled, events?, fieldMappings, utmMappings?, scoreField?, dateField?, dayTimezone?, staticFields? }, at most one per form. `events` picks the responses a webhook, HubSpot or Salesforce entry receives (the webhook\u2019s triggers, and the "send partial responses too" switch on the HubSpot and Salesforce cards): ["partial", "complete"] also sends partial responses, ["complete"] only complete ones. Left out, a webhook and HubSpot receive both and Salesforce only complete ones; a partial without a last name or company creates a Salesforce Lead with "[not provided]" in those fields. Google Sheets only ever receives complete responses. Google Sheets and Salesforce deliver through the workspace\u2019s own connection. A masked webhook secret sent back unchanged keeps the stored one; null removes it.',
   properties: {
     type: { type: 'string', enum: ['webhook', 'hubspot', 'google-sheets', 'salesforce'] },
     enabled: { type: 'boolean' },
+    events: {
+      type: 'array',
+      items: { type: 'string', enum: ['partial', 'complete'] },
+      description:
+        'Webhook, HubSpot and Salesforce only. Left out: both for a webhook and HubSpot, complete only for Salesforce. Ignored on Google Sheets, which only receives complete responses.',
+    },
   },
 } as const;
 
