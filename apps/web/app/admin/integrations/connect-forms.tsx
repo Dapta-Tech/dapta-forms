@@ -1,14 +1,21 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, type KeyboardEvent } from 'react';
 import type { FormsMessages } from '@quill/shared';
-import type { IntegrationProvider, IntegrationStatus, SalesforceConnectError } from '@/lib/admin-api';
+import { GOHIGHLEVEL_CONNECT_REJECTIONS, GOHIGHLEVEL_TOKEN_PREFIX } from '@quill/types';
+import type {
+  GoHighLevelConnectError,
+  IntegrationProvider,
+  IntegrationStatus,
+  SalesforceConnectError,
+} from '@/lib/admin-api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { IntegrationMark } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { callAction } from '@/lib/call-action';
 import {
+  connectGoHighLevelAction,
   connectIntegrationAction,
   connectSalesforceAction,
   startGoogleSheetsAuthAction,
@@ -303,4 +310,182 @@ export function salesforceProblem(
   // No reason this form knows: a localized sentence by the API's code, never
   // the API's own English message.
   return connectProblem(res, m, m.salesforceName);
+}
+
+/**
+ * HighLevel's connect form: a Private Integration token and the sub-account's
+ * Location ID (or its URL, from which the API takes the ID), with the setup on
+ * the form in HighLevel's own menu labels, the scopes as its scope search
+ * lists them, and where to find Private Integrations when it is hidden.
+ *
+ * The same form replaces the token of a connection that exists (`replacing`):
+ * the API rewrites the row in place, so every form keeps its mapping, and the
+ * Location ID comes filled in from the connection.
+ */
+export function GoHighLevelConnectForm({
+  onConnected,
+  onCancel,
+  initialLocationId = '',
+  replacing = false,
+  m,
+}: {
+  onConnected: (status: IntegrationStatus) => void;
+  /** Absent where there is nothing to go back to (the form's Connect tab). */
+  onCancel?: () => void;
+  /** The connected Location ID, when replacing its token. */
+  initialLocationId?: string;
+  /** Replace the token of the existing connection: no setup steps, a note instead. */
+  replacing?: boolean;
+  m: Msgs;
+}) {
+  const hm = m.highlevel;
+  const [token, setToken] = useState('');
+  const [locationId, setLocationId] = useState(initialLocationId);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  function connect() {
+    const input = { token: token.trim(), locationId: locationId.trim() };
+    if (!input.token || !input.locationId) {
+      setProblem(hm.fieldsRequired);
+      return;
+    }
+    // The API refuses any other shape without calling HighLevel; saying it
+    // here spares the round trip and names the usual mistake (an API key or
+    // an agency token pasted instead).
+    if (!input.token.startsWith(GOHIGHLEVEL_TOKEN_PREFIX)) {
+      setProblem(hm.errors.token_format);
+      return;
+    }
+    setProblem(null);
+    start(async () => {
+      // One call per scope server-side, each bounded: thirty seconds, so the
+      // button never gives up before the server has said why.
+      const res = await callAction(() => connectGoHighLevelAction(input), { timeoutMs: 30_000 });
+      if (res.ok) {
+        setToken('');
+        onConnected(res.status);
+        return;
+      }
+      setProblem(goHighLevelProblem(res, m));
+    });
+  }
+
+  const onEnter = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') connect();
+  };
+
+  return (
+    <div className="flex flex-col gap-3" data-testid="highlevel-connect-form">
+      {replacing ? (
+        <p className="text-xs text-muted-foreground" data-testid="highlevel-replace-note">
+          {hm.replaceNote}
+        </p>
+      ) : (
+        <div
+          className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground"
+          data-testid="highlevel-setup"
+        >
+          <p className="font-medium text-foreground">{hm.setupTitle}</p>
+          <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+            {hm.setupSteps.map((step, i) => (
+              <li key={step}>
+                {step}
+                {/* The scopes hang off the step that asks for them, each as
+                    HighLevel's scope search lists it, so it can be pasted. */}
+                {i === 1 ? (
+                  <ul className="mt-1 flex flex-col gap-1">
+                    {hm.scopes.map((scope) => (
+                      <li key={scope}>
+                        <code className="break-all rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                          {scope}
+                        </code>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+          <p className="mt-2">{hm.labsNote}</p>
+        </div>
+      )}
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium" htmlFor="ghl-token">
+          {hm.tokenLabel}
+        </label>
+        <Input
+          id="ghl-token"
+          type="password"
+          value={token}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={hm.tokenPlaceholder}
+          onChange={(e) => setToken(e.target.value)}
+          onKeyDown={onEnter}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium" htmlFor="ghl-location">
+          {hm.locationLabel}
+        </label>
+        <Input
+          id="ghl-location"
+          type="text"
+          value={locationId}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={hm.locationPlaceholder}
+          aria-describedby="ghl-location-help"
+          onChange={(e) => setLocationId(e.target.value)}
+          onKeyDown={onEnter}
+        />
+        <p id="ghl-location-help" className="text-xs text-muted-foreground">
+          {hm.locationHelp}
+        </p>
+      </div>
+      <p className="text-xs text-muted-foreground">{hm.secretHelp}</p>
+      {problem ? (
+        <p role="alert" data-testid="highlevel-connect-problem" className="text-sm text-destructive">
+          {problem}
+        </p>
+      ) : null}
+      <div className="mt-1 flex items-center gap-2">
+        <Button onClick={connect} disabled={pending}>
+          {pending ? m.connecting : replacing ? hm.replaceToken : m.connect}
+        </Button>
+        {onCancel ? (
+          <Button variant="ghost" onClick={onCancel} disabled={pending}>
+            {m.cancel}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const isGoHighLevelError = (reason: unknown): reason is GoHighLevelConnectError =>
+  (GOHIGHLEVEL_CONNECT_REJECTIONS as readonly unknown[]).includes(reason) ||
+  reason === 'timeout' ||
+  reason === 'forbidden';
+
+/**
+ * The sentence for a refused HighLevel connection, by the API's reason: which
+ * of the two values to fix, a missing scope, or HighLevel not answering (with
+ * how the call died, which tells an operator whether this server is blocked).
+ * A role that may not connect, no answer in time and a server that cannot
+ * store credentials get their own sentences; never the API's English.
+ */
+export function goHighLevelProblem(
+  res:
+    | { ok: false; transport: true; message: string }
+    | { ok: false; reason?: GoHighLevelConnectError; status?: number; code?: string; message?: string; cause?: string },
+  m: Msgs,
+): string {
+  const errors = m.highlevel.errors;
+  if ('transport' in res) return errors.timeout;
+  if (res.reason === 'unreachable' && res.cause) return `${errors.unreachable} (${res.cause})`;
+  if (isGoHighLevelError(res.reason)) return errors[res.reason];
+  if (res.status === 403) return errors.forbidden;
+  return connectProblem(res, m, m.highlevel.name);
 }

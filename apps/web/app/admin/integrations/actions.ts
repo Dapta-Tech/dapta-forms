@@ -5,6 +5,7 @@ import { unstable_rethrow } from 'next/navigation';
 import {
   adminApi,
   ApiError,
+  type GoHighLevelConnectError,
   type IntegrationProvider,
   type IntegrationStatus,
   type SalesforceConnectError,
@@ -65,6 +66,39 @@ export async function connectSalesforceAction(input: {
       return {
         ok: false,
         reason: typeof reason === 'string' ? (reason as SalesforceConnectError) : undefined,
+        status: e.status,
+        code: e.code,
+        message: e.message,
+        cause: typeof e.body?.cause === 'string' ? e.body.cause : undefined,
+      };
+    }
+    return { ok: false };
+  }
+}
+
+/**
+ * Connect a HighLevel sub-account, or replace its token: the same call, and
+ * the API keeps every form's mapping. The token travels client → server
+ * action → API like a pasted token, and only the token-free status comes
+ * back. A refusal carries the API's reason, so the card can say what to fix.
+ */
+export async function connectGoHighLevelAction(input: { token: string; locationId: string }): Promise<
+  | { ok: true; status: IntegrationStatus }
+  | { ok: false; reason?: GoHighLevelConnectError; status?: number; code?: string; message?: string; cause?: string }
+> {
+  try {
+    const status = await adminApi.connectGoHighLevel(input);
+    revalidatePath('/admin/integrations');
+    return { ok: true, status };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError) {
+      // Only `GOHIGHLEVEL_REJECTED` carries a reason; anything else (a refused
+      // role, no encryption key, a server error) travels as status and code.
+      const reason = e.code === 'GOHIGHLEVEL_REJECTED' ? e.body?.reason : undefined;
+      return {
+        ok: false,
+        reason: typeof reason === 'string' ? (reason as GoHighLevelConnectError) : undefined,
         status: e.status,
         code: e.code,
         message: e.message,
