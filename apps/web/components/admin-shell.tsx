@@ -473,6 +473,11 @@ export function AdminShell({
     document.body.style.overflow = drawerOpen ? 'hidden' : '';
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // A dialog opened from the drawer ("New workspace") owns this Escape: it
+      // closes that dialog and leaves the drawer it came from open. The dialog
+      // is portalled to <body>, so it is found by `aria-modal`, not by being
+      // inside the drawer (which is `role="dialog"` itself, open or not).
+      if (document.querySelector('[aria-modal="true"]')) return;
       setDrawerOpen(false);
       // WCAG 1.4.13 Dismissible, for the pointer case it is written about.
       // With the caret INSIDE the rail, Escape leaves the peek alone on

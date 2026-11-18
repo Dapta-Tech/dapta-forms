@@ -11,6 +11,7 @@ import {
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { LAYER } from '@/lib/layers';
 
 /**
  * A menu panel that hangs off a trigger button but lives at the end of
@@ -73,10 +74,10 @@ const MIN_HEIGHT = 160;
 
 /**
  * Above every popover, dropdown and modal inside `<main>` (all `z-50`), below
- * the toast stack (`z-[60]`) and the confirm dialog (`z-[70]`) — a destructive
- * confirmation must never end up under a workspace list.
+ * the toast stack (`z-[60]`) and the confirm dialog (`z-[70]`): a destructive
+ * confirmation must never end up under a workspace list. See lib/layers.ts.
  */
-const Z_INDEX = 55;
+const Z_INDEX = LAYER.railMenu;
 
 interface Box {
   top: number;
