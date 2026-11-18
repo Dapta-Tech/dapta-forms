@@ -423,7 +423,7 @@ describe('the card', () => {
     expect(el.querySelector('[data-testid="highlevel-partials-held"]')).toBeNull();
     await act(async () => sw.click());
     expect(latest?.events).toEqual(['partial', 'complete']);
-    expect(el.querySelector('[data-testid="highlevel-partials-held"]')?.textContent).toBe(hm.partialsHeld);
+    expect(el.querySelector('[data-testid="highlevel-partials-held"]')?.textContent).toBe(m.eventPartialHeld);
     await act(async () => sw.click());
     expect(latest?.events).toEqual(['complete']);
   });

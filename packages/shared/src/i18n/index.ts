@@ -2209,10 +2209,6 @@ export interface FormsMessages {
         valuePlaceholder: string;
         /** A stored fixed Email or Phone, which the delivery ignores. */
         staticIdentityIgnored: string;
-        partialsLabel: string;
-        partialsHelp: string;
-        /** Spam protection holds partials, so the switch has no effect meanwhile. */
-        partialsHeld: string;
         extraStored: string;
       };
       salesforce: {
@@ -4904,10 +4900,6 @@ export const en: FormsMessages = {
         addStatic: 'Add a fixed value',
         valuePlaceholder: 'Value…',
         staticIdentityIgnored: 'HighLevel ignores a fixed Email or Phone, so this row is never sent. Remove it.',
-        partialsLabel: 'Send partial responses too',
-        partialsHelp:
-          'Off, only finished responses reach HighLevel. On, a response left halfway is sent with what it has so far, and the contact is updated if the person finishes.',
-        partialsHeld: 'Spam protection holds partial responses, so none is sent while it is on.',
         extraStored:
           'This form has more than one HighLevel destination. Only the first is shown here, and saving keeps only this one.',
       },
@@ -7897,10 +7889,6 @@ export const es: FormsMessages = {
         addStatic: 'Agregar un valor fijo',
         valuePlaceholder: 'Valor…',
         staticIdentityIgnored: 'HighLevel ignora un Email o Teléfono fijo, así que esta fila nunca se envía. Quítala.',
-        partialsLabel: 'Enviar también respuestas parciales',
-        partialsHelp:
-          'Apagado, solo las respuestas terminadas llegan a HighLevel. Encendido, una respuesta que quedó a medias se envía con lo que tiene, y el contacto se actualiza si la persona termina.',
-        partialsHeld: 'La protección contra spam retiene las respuestas parciales, así que no se envía ninguna mientras esté encendida.',
         extraStored:
           'Este formulario tiene más de un destino de HighLevel. Aquí solo se muestra el primero, y al guardar solo queda este.',
       },

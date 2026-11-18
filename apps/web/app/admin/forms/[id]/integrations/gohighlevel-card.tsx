@@ -3,7 +3,6 @@
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
 import {
-  destinationFiresForPhase,
   GOHIGHLEVEL_STANDARD_FIELDS,
   GOHIGHLEVEL_UTM_KEYS,
   GOHIGHLEVEL_VALUE_KIND,
@@ -22,7 +21,6 @@ import {
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { callAction } from '@/lib/call-action';
 import type { DeliveryKind } from '@/lib/admin-api';
 import { useToast } from '@/components/toast';
@@ -31,6 +29,7 @@ import { suggestProperty, type QuestionMeta } from './auto-map';
 import { Card } from './integrations-card';
 import { goHighLevelFieldsAction } from './actions';
 import { DeliveryHistory } from './delivery-history';
+import { CrmPartialsSwitch } from './crm-partials-switch';
 import { ConnectInPlace, DEFAULT_CONNECT_ACCESS, type ConnectAccess } from './connect-in-place';
 import { RowHint } from './salesforce-card';
 
@@ -427,7 +426,6 @@ export function GoHighLevelCard({
   ];
 
   const identityMissing = useMemo(() => goHighLevelIdentityMissing(state), [state]);
-  const partials = destinationFiresForPhase({ type: 'gohighlevel', events: state.events }, 'partial');
   const showTimezone =
     !!state.dateField ||
     !!state.dayTimezone.trim() ||
@@ -847,23 +845,14 @@ export function GoHighLevelCard({
             </Button>
           </section>
 
-          <section className="flex flex-col gap-1.5" data-testid="highlevel-partials">
-            <div className="flex items-center justify-between gap-3 text-sm font-medium">
-              <span>{hm.partialsLabel}</span>
-              <Switch
-                checked={partials}
-                onCheckedChange={(on) => patch({ events: on ? ['partial', 'complete'] : ['complete'] })}
-                aria-label={hm.partialsLabel}
-                data-testid="highlevel-partials-switch"
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">{hm.partialsHelp}</p>
-            {partialsHeld && partials ? (
-              <p className="text-xs text-secondary" data-testid="highlevel-partials-held">
-                {hm.partialsHeld}
-              </p>
-            ) : null}
-          </section>
+          <CrmPartialsSwitch
+            type="gohighlevel"
+            events={state.events}
+            onChange={(events) => patch({ events })}
+            partialsHeld={partialsHeld}
+            testId="highlevel"
+            m={m}
+          />
         </div>
       )}
       {formId ? (
