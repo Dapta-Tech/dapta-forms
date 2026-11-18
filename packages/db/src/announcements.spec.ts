@@ -1,10 +1,10 @@
 /**
- * Per-person announcement state (0029): the session count, and the first close
- * and the first follow being the ones kept.
+ * Per-person announcement state (0029): the first sighting, the first close and
+ * the first follow are the ones kept.
  *
  * Defaults to a temp SQLite file; CI runs the identical assertions against
- * DATABASE_URL on Postgres, which is where the upsert's CASE and COALESCE have
- * to mean the same thing.
+ * DATABASE_URL on Postgres, which is where the upsert's COALESCE has to mean
+ * the same thing.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -14,14 +14,8 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { createDb, type Db } from './client';
 import { migrate } from './migrate';
-import {
-  announcementUserKey,
-  listAnnouncementStates,
-  recordAnnouncementAction,
-  recordAnnouncementSeen,
-} from './announcements';
+import { announcementUserKey, listAnnouncementStates, recordAnnouncementEvent } from './announcements';
 
-const GAP = 30 * 60 * 1000;
 const T0 = Date.parse('2026-11-20T15:00:00Z');
 
 let db: Db;
@@ -51,55 +45,31 @@ afterEach(async () => {
 
 const stateOf = async (id = 'a') => (await listAnnouncementStates(db, user)).find((s) => s.announcementId === id);
 
-describe('recordAnnouncementSeen', () => {
-  it('counts the first sighting as one session', async () => {
-    await recordAnnouncementSeen(db, user, 'a', T0, GAP);
-    expect(await stateOf()).toEqual({
-      announcementId: 'a',
-      sessionsSeen: 1,
-      lastSeenAt: T0,
-      dismissedAt: null,
-      clickedAt: null,
-    });
+describe('recordAnnouncementEvent', () => {
+  it('stores each moment once, keeping the first', async () => {
+    await recordAnnouncementEvent(db, user, 'a', 'seen', T0);
+    await recordAnnouncementEvent(db, user, 'a', 'seen', T0 + 1000);
+    expect(await stateOf()).toEqual({ announcementId: 'a', seenAt: T0, dismissedAt: null, clickedAt: null });
+
+    await recordAnnouncementEvent(db, user, 'a', 'dismissed', T0 + 2000);
+    await recordAnnouncementEvent(db, user, 'a', 'dismissed', T0 + 3000);
+    await recordAnnouncementEvent(db, user, 'a', 'clicked', T0 + 4000);
+    expect(await stateOf()).toEqual({ announcementId: 'a', seenAt: T0, dismissedAt: T0 + 2000, clickedAt: T0 + 4000 });
   });
 
-  it('keeps sightings inside the gap in one session, and the gap slides with them', async () => {
-    await recordAnnouncementSeen(db, user, 'a', T0, GAP);
-    await recordAnnouncementSeen(db, user, 'a', T0 + GAP - 1, GAP);
-    await recordAnnouncementSeen(db, user, 'a', T0 + 2 * GAP - 2, GAP);
-    expect((await stateOf())?.sessionsSeen).toBe(1);
-    expect((await stateOf())?.lastSeenAt).toBe(T0 + 2 * GAP - 2);
+  it('stores a close without a prior sighting', async () => {
+    await recordAnnouncementEvent(db, user, 'a', 'dismissed', T0);
+    expect(await stateOf()).toEqual({ announcementId: 'a', seenAt: null, dismissedAt: T0, clickedAt: null });
   });
 
-  it('counts a new session once the gap has passed', async () => {
-    await recordAnnouncementSeen(db, user, 'a', T0, GAP);
-    await recordAnnouncementSeen(db, user, 'a', T0 + GAP, GAP);
-    await recordAnnouncementSeen(db, user, 'a', T0 + 3 * GAP, GAP);
-    expect((await stateOf())?.sessionsSeen).toBe(3);
-  });
-
-  it('keeps announcements apart', async () => {
-    await recordAnnouncementSeen(db, user, 'a', T0, GAP);
-    await recordAnnouncementSeen(db, user, 'b', T0, GAP);
-    await recordAnnouncementSeen(db, user, 'b', T0 + GAP, GAP);
-    expect((await stateOf('a'))?.sessionsSeen).toBe(1);
-    expect((await stateOf('b'))?.sessionsSeen).toBe(2);
-  });
-});
-
-describe('recordAnnouncementAction', () => {
-  it('stores a close without a prior sighting, and keeps the first one', async () => {
-    await recordAnnouncementAction(db, user, 'a', 'dismissed', T0);
-    await recordAnnouncementAction(db, user, 'a', 'dismissed', T0 + 1000);
-    expect(await stateOf()).toMatchObject({ sessionsSeen: 0, dismissedAt: T0, clickedAt: null });
-  });
-
-  it('keeps the session count when the card is closed or followed', async () => {
-    await recordAnnouncementSeen(db, user, 'a', T0, GAP);
-    await recordAnnouncementSeen(db, user, 'a', T0 + GAP, GAP);
-    await recordAnnouncementAction(db, user, 'a', 'dismissed', T0 + GAP + 1);
-    await recordAnnouncementAction(db, user, 'a', 'clicked', T0 + GAP + 2);
-    expect(await stateOf()).toMatchObject({ sessionsSeen: 2, dismissedAt: T0 + GAP + 1, clickedAt: T0 + GAP + 2 });
+  it('keeps announcements and people apart', async () => {
+    await recordAnnouncementEvent(db, user, 'a', 'dismissed', T0);
+    await recordAnnouncementEvent(db, user, 'b', 'seen', T0);
+    await recordAnnouncementEvent(db, `${user}-other`, 'a', 'clicked', T0);
+    expect((await stateOf('a'))?.dismissedAt).toBe(T0);
+    expect((await stateOf('a'))?.clickedAt).toBeNull();
+    expect((await stateOf('b'))?.dismissedAt).toBeNull();
+    await db.run(sql`DELETE FROM announcement_state WHERE user_id = ${`${user}-other`}`);
   });
 });
 

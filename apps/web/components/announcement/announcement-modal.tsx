@@ -1,34 +1,44 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AnnouncementCopy, AnnouncementVideo } from '@quill/shared';
+import { Modal } from '@/components/modal';
 import { buttonVariants } from '@/components/ui/button';
 import type { ThemePref } from '@/lib/theme';
 import {
-  captureAnnouncement,
+  captureAnnouncementDismissed,
   captureAnnouncementSeen,
-  isAnnouncementCardClosed,
-  markAnnouncementCardClosed,
+  markAnnouncementShownThisSession,
   markAnnouncementSurface,
   reportAnnouncement,
-  reportAnnouncementSeen,
-  subscribeAnnouncements,
+  type AnnouncementDismissVia,
 } from './announcement-client';
 import './announcement.css';
 
 /**
- * The home's announcement card: a looping animation, a title, one line, a
- * button to the announcement's route and a close button. It sits at the top
- * of the home, above the "Connect your agent" banner, as one full-width row,
- * and never blocks anything: no overlay, no focus taken, no scroll lock.
+ * The announcement pop-up: a dialog over the dashboard with the looping
+ * animation on top, the title, one line, the button to the announcement's
+ * route and a close button.
  *
- * Rendered by the server with the page, so it is there on first paint and
- * nothing below it moves when it arrives. Closing it hides it at once and
- * stores the close against the person; the rail badge outlives it (see
- * `pickAnnouncement`).
+ * Built on the shared `Modal`, portalled to <body> (so nothing in the page's
+ * stacking contexts can paint over it, see lib/layers.ts), with its focus
+ * trap, Escape and `aria-modal`, plus the page's scroll held still behind it.
+ * Focus starts on the close button, never on the call to action, so Enter on
+ * arrival does not navigate anyone away.
+ *
+ * Closing it in any way (the X, Escape, a click outside, or the button) ends
+ * it for good: the close is stored against the person, so it does not come
+ * back after a reload, in another browser, or in another workspace. When to
+ * open it is the rail's call (admin-shell.tsx): once per browser session, not
+ * in the builder, and never over another dialog.
+ *
+ * At 390px it is a sheet from the bottom, nearly the full height of the
+ * screen, with the close button over the animation's corner.
  */
-export function AnnouncementCard({
+export function AnnouncementModal({
+  open,
+  onClosed,
   id,
   copy,
   cta,
@@ -36,6 +46,9 @@ export function AnnouncementCard({
   closeLabel,
   theme,
 }: {
+  open: boolean;
+  /** After it closed, however. The close is already reported. */
+  onClosed: () => void;
   id: string;
   copy: AnnouncementCopy;
   cta: string;
@@ -45,90 +58,77 @@ export function AnnouncementCard({
   /** The theme the server painted, so the poster matches before any script runs. */
   theme: ThemePref;
 }) {
-  const box = useRef<HTMLElement>(null);
-  // Closed here or followed elsewhere on this load: a Home restored by Back
-  // still carries the server's older `card: true`.
-  const closed = useSyncExternalStore(
-    subscribeAnnouncements,
-    () => isAnnouncementCardClosed(id),
-    () => false,
-  );
-
+  // `Modal` calls one `onClose` for Escape and for a click outside; a capture
+  // listener on the window sees the key first and says which it was.
+  const via = useRef<AnnouncementDismissVia | null>(null);
   useEffect(() => {
-    if (closed) return;
-    reportAnnouncementSeen(id);
-    captureAnnouncementSeen(id, 'card');
-  }, [id, closed]);
+    if (!open) return;
+    reportAnnouncement(id, 'seen');
+    captureAnnouncementSeen(id, 'modal');
+    markAnnouncementShownThisSession(id);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') via.current = 'escape';
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [open, id]);
 
-  if (closed) return null;
-
-  const dismiss = () => {
-    // A keyboard user closing it would otherwise be dropped on <body>: hand
-    // focus to the first control after the card (the agent banner's button).
-    const section = box.current;
-    if (section?.contains(document.activeElement)) {
-      let next = section.nextElementSibling;
-      while (next) {
-        const target = next.matches('a[href],button') ? next : next.querySelector<HTMLElement>('a[href],button');
-        if (target) {
-          (target as HTMLElement).focus();
-          break;
-        }
-        next = next.nextElementSibling;
-      }
-    }
-    markAnnouncementCardClosed(id);
+  const close = (how: AnnouncementDismissVia) => {
     reportAnnouncement(id, 'dismissed');
-    captureAnnouncement('dismissed', id, 'card');
+    captureAnnouncementDismissed(id, how);
+    via.current = null;
+    onClosed();
   };
 
+  const labelId = `announcement-${id}-title`;
   return (
-    <section
-      ref={box}
-      aria-labelledby="announcement-title"
-      data-testid="home-announcement"
-      data-announcement={id}
-      // `isolate`: the video and the close button are positioned layers; one
-      // stacking context keeps them ranked inside the card, as in agent-card.tsx.
-      className="ann-in relative isolate mb-6 overflow-hidden rounded-2xl border border-border bg-card"
+    <Modal
+      open={open}
+      onClose={() => close(via.current ?? 'backdrop')}
+      title={copy.title}
+      labelId={labelId}
+      portal
+      bare
+      lockScroll
+      overlayClassName="items-end justify-center p-0 sm:items-center sm:p-6"
+      panelClassName="ann-pop flex max-h-[calc(100dvh-1rem)] min-h-[88dvh] flex-col overflow-y-auto rounded-t-2xl border border-border bg-popover shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:min-h-0 sm:max-w-[640px] sm:rounded-2xl"
     >
-      <div className="flex flex-col sm:flex-row sm:items-stretch">
-        <AnnouncementMedia
-          visual={visual}
-          theme={theme}
-          className="w-full shrink-0 border-b border-border sm:w-[232px] sm:border-b-0 sm:border-r lg:w-[264px]"
-        />
-        <div className="flex min-w-0 flex-1 flex-col gap-4 p-5 sm:justify-center sm:p-6 sm:pr-16 lg:flex-row lg:items-center lg:gap-8">
-          <div className="min-w-0 flex-1">
-            <h2 id="announcement-title" className="text-lg font-semibold leading-snug text-foreground sm:text-xl">
-              {copy.title}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">{copy.body}</p>
+      <div data-testid="announcement-modal" data-announcement={id} className="relative flex flex-1 flex-col">
+        {/* First in the panel: `Modal` focuses the first button it finds. A
+            chip, not a bare icon, so it reads over both themes of the art. */}
+        <button
+          type="button"
+          onClick={() => close('close')}
+          aria-label={closeLabel}
+          title={closeLabel}
+          data-testid="announcement-close"
+          className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-popover/90 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
+        >
+          <i aria-hidden className="pi pi-times" style={{ fontSize: 14 }} />
+        </button>
+        <AnnouncementMedia visual={visual} theme={theme} className="w-full shrink-0 border-b border-border" />
+        <div className="flex flex-1 flex-col p-6 sm:p-8">
+          <h2 id={labelId} className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">
+            {copy.title}
+          </h2>
+          <p className="mt-2 text-muted-foreground">{copy.body}</p>
+          <div className="mt-auto pt-6 sm:mt-0">
+            <Link
+              href={cta}
+              data-testid="announcement-cta"
+              onClick={() => {
+                markAnnouncementSurface('modal');
+                close('cta');
+              }}
+              className={`${buttonVariants({ variant: 'default' })} w-full sm:w-auto`}
+            >
+              {copy.cta}
+              <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
+            </Link>
           </div>
-          <Link
-            href={cta}
-            data-testid="home-announcement-cta"
-            onClick={() => markAnnouncementSurface('card')}
-            className={`${buttonVariants({ variant: 'default' })} shrink-0 self-start lg:self-center`}
-          >
-            {copy.cta}
-            <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
-          </Link>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={dismiss}
-        aria-label={closeLabel}
-        title={closeLabel}
-        data-testid="home-announcement-close"
-        // A chip, not a bare icon: on a phone it sits over the animation, and
-        // has to read against both of its themes.
-        className="absolute right-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card/90 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98] sm:right-3 sm:top-3 sm:h-9 sm:w-9"
-      >
-        <i aria-hidden className="pi pi-times" style={{ fontSize: 13 }} />
-      </button>
-    </section>
+    </Modal>
   );
 }
 
@@ -183,9 +183,9 @@ function muteAndPlay(video: HTMLVideoElement | null): void {
 }
 
 /**
- * The animation: the poster first (server-rendered, at the render's aspect
- * ratio, so the box never resizes), and the video over it once the card is on
- * screen and the browser is idle, so it costs the home nothing at load. WebM
+ * The animation: the poster first (at the render's aspect ratio, so the box
+ * never resizes), and the video over it once it is on screen and the browser
+ * is idle, so it costs the page behind nothing. WebM
  * first, MP4 for Safari. Under reduced motion the video never mounts: the
  * poster is the whole visual. Decorative: the title says what it shows.
  */

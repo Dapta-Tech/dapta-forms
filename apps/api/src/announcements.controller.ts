@@ -1,16 +1,9 @@
 import { Body, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post, Req } from '@nestjs/common';
 import type { ServerEnv } from '@quill/config/env';
-import {
-  announcementUserKey,
-  listAnnouncementStates,
-  recordAnnouncementAction,
-  recordAnnouncementSeen,
-  type Db,
-} from '@quill/db';
+import { announcementUserKey, listAnnouncementStates, recordAnnouncementEvent, type Db } from '@quill/db';
 import {
   ANNOUNCEMENTS,
   ANNOUNCEMENT_EVENTS,
-  ANNOUNCEMENT_SESSION_GAP_MS,
   findAnnouncement,
   isAnnouncementLive,
   isDaptaProductName,
@@ -30,7 +23,7 @@ export const ANNOUNCEMENTS_OPTIONS = Symbol('ANNOUNCEMENTS_OPTIONS');
 export interface AnnouncementsOptions {
   /** Whether this deployment is Dapta's own: `daptaOnly` announcements show only then. */
   dapta: boolean;
-  /** The clock. Injectable so the dates and the session gap are testable. */
+  /** The clock. Injectable so the dates are testable. */
   now?: () => number;
   /** The announcements to choose from. Defaults to `ANNOUNCEMENTS`. */
   list?: readonly Announcement[];
@@ -59,10 +52,14 @@ export interface AnnouncementView {
   cta: string;
   visual: Announcement['visual'];
   railBadge: Announcement['railBadge'];
-  /** Show the home card. */
-  card: boolean;
+  /** The Home banner's marks, or null when the announcement has no banner. */
+  banner: Announcement['banner'];
+  /** Open the pop-up. */
+  modal: boolean;
   /** Show the rail badge. */
   badge: boolean;
+  /** Show the Home banner. */
+  showBanner: boolean;
 }
 
 /**
@@ -74,7 +71,7 @@ export interface AnnouncementView {
  * members all get announcements.
  *
  * State is per person, across workspaces (`announcementUserKey`): someone who
- * closes the card in one workspace does not get it again in the next.
+ * closes the pop-up in one workspace does not get it again in the next.
  */
 @Controller('v1/me')
 export class AnnouncementsController {
@@ -113,15 +110,17 @@ export class AnnouncementsController {
         cta: a.cta,
         visual: a.visual,
         railBadge: a.railBadge,
-        card: pick.card,
+        banner: a.banner,
+        modal: pick.modal,
         badge: pick.badge,
+        showBanner: pick.banner,
       },
     };
   }
 
   /**
-   * Record that the announcement was on screen (`seen`), its card was closed
-   * (`dismissed`), or the person reached its route (`clicked`). An unknown id
+   * Record that the pop-up was on screen (`seen`), was closed (`dismissed`),
+   * or the person reached the announcement's route (`clicked`). An unknown id
    * is a 404; a known one outside its dates, or not allowed on this
    * deployment, is accepted and stores nothing, so a tab left open past the end
    * date gets no error for a click nobody needs anymore.
@@ -135,8 +134,7 @@ export class AnnouncementsController {
     if (!a) throw new NotFoundException({ error: 'NOT_FOUND', message: 'No such announcement.' });
     const now = this.now();
     if (!isAnnouncementLive(a, now, { dapta: this.options.dapta })) return { ok: true };
-    if (event === 'seen') await recordAnnouncementSeen(this.db, userId, a.id, now, ANNOUNCEMENT_SESSION_GAP_MS);
-    else await recordAnnouncementAction(this.db, userId, a.id, event, now);
+    await recordAnnouncementEvent(this.db, userId, a.id, event, now);
     return { ok: true };
   }
 }

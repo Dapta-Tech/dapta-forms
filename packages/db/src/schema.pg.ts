@@ -436,8 +436,7 @@ export const announcementState = pgTable(
   {
     userId: text('user_id').notNull(),
     announcementId: text('announcement_id').notNull(),
-    sessionsSeen: integer('sessions_seen').notNull().default(0),
-    lastSeenAt: bigint('last_seen_at', { mode: 'number' }),
+    seenAt: bigint('seen_at', { mode: 'number' }),
     dismissedAt: bigint('dismissed_at', { mode: 'number' }),
     clickedAt: bigint('clicked_at', { mode: 'number' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),

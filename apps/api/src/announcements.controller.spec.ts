@@ -2,18 +2,13 @@
  * In-app announcements through the REAL controller on in-memory SQLite, with
  * the local auth provider resolving real member rows (same harness as
  * member-locale.controller.spec.ts). The clock and the list are the only
- * things swapped, so the dates and the session gap can be walked through.
+ * things swapped, so the dates can be walked through.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { ForbiddenException } from '@nestjs/common';
 import { createDb, migrate, seed, sql, type Db } from '@quill/db';
-import {
-  ANNOUNCEMENTS,
-  ANNOUNCEMENT_MAX_SESSIONS,
-  ANNOUNCEMENT_SESSION_GAP_MS,
-  type Announcement,
-} from '@quill/shared';
+import { ANNOUNCEMENTS, type Announcement } from '@quill/shared';
 import { AnnouncementsController, isDaptaDeployment, type AnnouncementsOptions } from './announcements.controller';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
@@ -31,6 +26,7 @@ const announcement = (over: Partial<Announcement> = {}): Announcement => ({
   cta: '/admin/integrations',
   visual: { kind: 'video', src: '/announcements/announce-integrations', width: 1280, height: 720 },
   railBadge: 'integrations',
+  banner: { logos: ['gohighlevel', 'salesforce', 'google-sheets', 'hubspot', 'calendly', 'dcal'] },
   daptaOnly: true,
   ...over,
 });
@@ -93,71 +89,76 @@ afterEach(async () => {
   await db.close();
 });
 
+const ID = 'integrations-2026-11';
+const current = async (c: AnnouncementsController, req: ReqLike = asOwner()) => (await c.current(req)).announcement;
+
 describe('GET /v1/me/announcement', () => {
-  it('gives the live announcement with its card and its rail badge', async () => {
-    expect(await controller().current(asOwner())).toEqual({
-      announcement: {
-        id: 'integrations-2026-11',
-        copy: 'integrations-2026-11',
-        cta: '/admin/integrations',
-        visual: { kind: 'video', src: '/announcements/announce-integrations', width: 1280, height: 720 },
-        railBadge: 'integrations',
-        card: true,
-        badge: true,
-      },
+  it('gives the live announcement with its pop-up, its rail badge and its Home banner', async () => {
+    expect(await current(controller())).toEqual({
+      id: ID,
+      copy: 'integrations-2026-11',
+      cta: '/admin/integrations',
+      visual: { kind: 'video', src: '/announcements/announce-integrations', width: 1280, height: 720 },
+      railBadge: 'integrations',
+      banner: { logos: ['gohighlevel', 'salesforce', 'google-sheets', 'hubspot', 'calendly', 'dcal'] },
+      modal: true,
+      badge: true,
+      showBanner: true,
     });
   });
 
   it('gives nothing before the start or from the end date on', async () => {
     clock = START - 1;
-    expect((await controller().current(asOwner())).announcement).toBeNull();
+    expect(await current(controller())).toBeNull();
     clock = START;
-    expect((await controller().current(asOwner())).announcement).not.toBeNull();
+    expect(await current(controller())).not.toBeNull();
     clock = END - 1;
-    expect((await controller().current(asOwner())).announcement).not.toBeNull();
+    expect(await current(controller())).not.toBeNull();
     clock = END;
-    expect((await controller().current(asOwner())).announcement).toBeNull();
+    expect(await current(controller())).toBeNull();
   });
 
   it('hides a Dapta-only announcement on a fork', async () => {
-    expect((await controller({ dapta: false }).current(asOwner())).announcement).toBeNull();
+    expect(await current(controller({ dapta: false }))).toBeNull();
     const plain = controller({ dapta: false, list: [announcement({ daptaOnly: false })] });
-    expect((await plain.current(asOwner())).announcement?.id).toBe('integrations-2026-11');
+    expect((await current(plain))?.id).toBe(ID);
   });
 });
 
-describe('closing, following, and who else still sees it', () => {
-  it('closing the card ends the card for good and keeps the badge', async () => {
+describe('the pop-up, the badge and the banner', () => {
+  it('closing the pop-up ends it for good, in any session, and keeps the badge and the banner', async () => {
     const c = controller();
-    await c.record(asOwner(), 'integrations-2026-11', { event: 'seen' });
-    await c.record(asOwner(), 'integrations-2026-11', { event: 'dismissed' });
-
-    for (const later of [MID + 1000, MID + 2 * DAY]) {
+    await c.record(asOwner(), ID, { event: 'seen' });
+    await c.record(asOwner(), ID, { event: 'dismissed' });
+    for (const later of [MID + 1000, MID + 2 * DAY, END - 1]) {
       clock = later;
-      expect((await c.current(asOwner())).announcement).toMatchObject({ card: false, badge: true });
+      expect(await current(c)).toMatchObject({ modal: false, badge: true, showBanner: true });
     }
   });
 
-  it('following it (the button, or visiting the page) ends card and badge', async () => {
+  it('a sighting alone never ends the pop-up: no session cap', async () => {
     const c = controller();
-    await c.record(asOwner(), 'integrations-2026-11', { event: 'clicked' });
-    expect((await c.current(asOwner())).announcement).toBeNull();
-
-    // Also after the card was closed first.
-    const mate = await addMember(accountId, 'mate@example.test');
-    await c.record(asMember(accountId, mate), 'integrations-2026-11', { event: 'dismissed' });
-    await c.record(asMember(accountId, mate), 'integrations-2026-11', { event: 'clicked' });
-    expect((await c.current(asMember(accountId, mate))).announcement).toBeNull();
+    for (let i = 0; i < 10; i++) {
+      await c.record(asOwner(), ID, { event: 'seen' });
+      clock += DAY;
+    }
+    expect(await current(c)).toMatchObject({ modal: true });
   });
 
-  it('another person in the same workspace still sees it after one closes it', async () => {
+  it('reaching the page ends the pop-up and the badge; the banner stays while the announcement runs', async () => {
+    const c = controller();
+    await c.record(asOwner(), ID, { event: 'clicked' });
+    expect(await current(c)).toMatchObject({ modal: false, badge: false, showBanner: true });
+    clock = END;
+    expect(await current(c)).toBeNull();
+  });
+
+  it('another person in the same workspace still gets the pop-up after one closes it', async () => {
     const c = controller();
     await addMember(accountId, 'mate@example.test');
-    await c.record(asOwner(), 'integrations-2026-11', { event: 'dismissed' });
-    await c.record(asOwner(), 'integrations-2026-11', { event: 'clicked' });
-
-    expect((await c.current(asOwner())).announcement).toBeNull();
-    expect((await c.current(asEmail('mate@example.test'))).announcement).toMatchObject({ card: true, badge: true });
+    await c.record(asOwner(), ID, { event: 'dismissed' });
+    expect(await current(c)).toMatchObject({ modal: false });
+    expect(await current(c, asEmail('mate@example.test'))).toMatchObject({ modal: true, badge: true });
   });
 
   it('is once per person: closing it in one workspace closes it in the others', async () => {
@@ -166,40 +167,15 @@ describe('closing, following, and who else still sees it', () => {
     const here = await addMember(accountId, 'same@example.test', 'iam-user-7');
     const there = await addMember(other, 'same@example.test', 'iam-user-7');
 
-    await c.record(asMember(accountId, here), 'integrations-2026-11', { event: 'dismissed' });
-    expect((await c.current(asMember(other, there))).announcement).toMatchObject({ card: false });
-  });
-});
-
-describe('the session cap', () => {
-  it(`shows an untouched announcement for ${ANNOUNCEMENT_MAX_SESSIONS} sessions, the last one to its end`, async () => {
-    const c = controller();
-    for (let i = 0; i < ANNOUNCEMENT_MAX_SESSIONS; i++) {
-      expect((await c.current(asOwner())).announcement, `session ${i + 1}`).not.toBeNull();
-      await c.record(asOwner(), 'integrations-2026-11', { event: 'seen' });
-      // A reload inside the session does not count again.
-      clock += 60_000;
-      await c.record(asOwner(), 'integrations-2026-11', { event: 'seen' });
-      if (i < ANNOUNCEMENT_MAX_SESSIONS - 1) clock += ANNOUNCEMENT_SESSION_GAP_MS;
-    }
-    // Still inside the fifth session.
-    clock += ANNOUNCEMENT_SESSION_GAP_MS - 1;
-    expect((await c.current(asOwner())).announcement).not.toBeNull();
-    // A sixth session would start: gone, card and badge.
-    clock += 1;
-    expect((await c.current(asOwner())).announcement).toBeNull();
+    await c.record(asMember(accountId, here), ID, { event: 'dismissed' });
+    expect(await current(c, asMember(other, there))).toMatchObject({ modal: false, badge: true });
   });
 
-  it('a closed card leaves a badge the session cap does not end; only the visit does', async () => {
-    const c = controller();
-    await c.record(asOwner(), 'integrations-2026-11', { event: 'dismissed' });
-    for (let i = 0; i < ANNOUNCEMENT_MAX_SESSIONS + 2; i++) {
-      await c.record(asOwner(), 'integrations-2026-11', { event: 'seen' });
-      clock += ANNOUNCEMENT_SESSION_GAP_MS;
-    }
-    expect((await c.current(asOwner())).announcement).toMatchObject({ card: false, badge: true });
-    await c.record(asOwner(), 'integrations-2026-11', { event: 'clicked' });
-    expect((await c.current(asOwner())).announcement).toBeNull();
+  it('an announcement without a badge or a banner shows only what it has', async () => {
+    const c = controller({ list: [announcement({ railBadge: null, banner: null })] });
+    expect(await current(c)).toMatchObject({ modal: true, badge: false, showBanner: false, banner: null });
+    await c.record(asOwner(), ID, { event: 'dismissed' });
+    expect(await current(c)).toBeNull();
   });
 });
 
@@ -209,20 +185,27 @@ describe('one announcement at a time', () => {
 
   it('the most recent one the person has not closed wins', async () => {
     const c = controller({ list: [older, newer] });
-    expect((await c.current(asOwner())).announcement).toMatchObject({ id: 'newer', card: true });
+    expect(await current(c)).toMatchObject({ id: 'newer', modal: true });
 
     await c.record(asOwner(), 'newer', { event: 'dismissed' });
-    expect((await c.current(asOwner())).announcement).toMatchObject({ id: 'older', card: true });
+    expect(await current(c)).toMatchObject({ id: 'older', modal: true });
 
     await c.record(asOwner(), 'older', { event: 'dismissed' });
-    // Both cards closed: the newest badge is what is left.
-    expect((await c.current(asOwner())).announcement).toMatchObject({ id: 'newer', card: false, badge: true });
+    // Both pop-ups closed: the newest badge is what is left, with its banner.
+    expect(await current(c)).toMatchObject({ id: 'newer', modal: false, badge: true, showBanner: true });
+
+    await c.record(asOwner(), 'newer', { event: 'clicked' });
+    expect(await current(c)).toMatchObject({ id: 'older', modal: false, badge: true });
+
+    await c.record(asOwner(), 'older', { event: 'clicked' });
+    // Everything followed: the newest banner runs on.
+    expect(await current(c)).toMatchObject({ id: 'newer', modal: false, badge: false, showBanner: true });
   });
 
   it('an announcement that has not started yet does not compete', async () => {
     const future = announcement({ id: 'future', startsAt: END, endsAt: END + DAY });
     const c = controller({ list: [announcement(), future] });
-    expect((await c.current(asOwner())).announcement?.id).toBe('integrations-2026-11');
+    expect((await current(c))?.id).toBe(ID);
   });
 });
 

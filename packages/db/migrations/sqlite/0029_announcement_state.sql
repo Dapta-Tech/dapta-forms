@@ -3,8 +3,7 @@
 CREATE TABLE IF NOT EXISTS announcement_state (
   user_id          TEXT NOT NULL,
   announcement_id  TEXT NOT NULL,
-  sessions_seen    INTEGER NOT NULL DEFAULT 0,
-  last_seen_at     INTEGER,
+  seen_at          INTEGER,
   dismissed_at     INTEGER,
   clicked_at       INTEGER,
   created_at       INTEGER NOT NULL,

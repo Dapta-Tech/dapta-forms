@@ -48,6 +48,22 @@ const OFFSET_MS = 800;
  * `currentColor`, so they follow the row's ink in light and in dark.
  */
 function mark(logo: IntegrationLogo, size: number): ReactNode {
+  return <IntegrationMark logo={logo} size={size} />;
+}
+
+/** The service's name as it brands itself; never translated. */
+export const INTEGRATION_NAMES: Record<IntegrationLogo, string> = {
+  hubspot: 'HubSpot',
+  salesforce: 'Salesforce',
+  gohighlevel: 'HighLevel',
+  'google-sheets': 'Google Sheets',
+  calendly: 'Calendly',
+  dcal: 'dCal',
+  dapta: 'Dapta',
+};
+
+/** One service's mark, as the rail and the Home's integrations banner draw it. */
+export function IntegrationMark({ logo, size }: { logo: IntegrationLogo; size: number }): ReactNode {
   switch (logo) {
     case 'google-sheets':
       return <GoogleSheetsLogo size={size} />;

@@ -22,6 +22,7 @@ import type {
 } from '@quill/types';
 import type { SubmissionFacets, SubmissionsSummary, SummaryAnswer } from '@quill/engine';
 import type {
+  AnnouncementBannerLogo,
   AnnouncementCopyKey,
   AnnouncementEvent,
   AnnouncementRailItem,
@@ -204,10 +205,14 @@ export interface AnnouncementView {
   cta: string;
   visual: AnnouncementVideo;
   railBadge: AnnouncementRailItem | null;
-  /** Show the home card. */
-  card: boolean;
-  /** Show the rail badge. */
+  /** The Home banner's marks, or null when it has none. */
+  banner: { logos: readonly AnnouncementBannerLogo[] } | null;
+  /** Open the pop-up (the person has not closed or followed it). */
+  modal: boolean;
+  /** Show the rail badge (the person has not opened its page). */
   badge: boolean;
+  /** Show the Home banner (for as long as the announcement runs). */
+  showBanner: boolean;
 }
 
 export interface Me {

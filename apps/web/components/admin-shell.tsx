@@ -11,7 +11,13 @@ import {
 } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { isNavItemActive, type AnnouncementRailItem, type FormsMessages } from '@quill/shared';
+import {
+  isNavItemActive,
+  type AnnouncementCopy,
+  type AnnouncementRailItem,
+  type AnnouncementVideo,
+  type FormsMessages,
+} from '@quill/shared';
 import { AppSwitcher } from '@/components/app-switcher';
 import { BrandMark, BrandWordmark } from '@/components/brand/brand';
 import { ProfileMenu } from '@/components/profile-menu';
@@ -20,16 +26,17 @@ import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import { McpLogos } from '@/components/mcp-logos';
 import { IntegrationLogos } from '@/components/integration-logos';
 import {
-  captureAnnouncement,
+  announcementShownThisSession,
+  captureAnnouncementClicked,
   captureAnnouncementSeen,
   isAnnouncementFollowed,
   markAnnouncementFollowed,
   markAnnouncementSurface,
   reportAnnouncement,
-  reportAnnouncementSeen,
   subscribeAnnouncements,
   takeAnnouncementSurface,
 } from '@/components/announcement/announcement-client';
+import { AnnouncementModal } from '@/components/announcement/announcement-modal';
 import type { Workspace } from '@/lib/admin-api';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
@@ -436,8 +443,15 @@ export interface ShellAnnouncement {
   id: string;
   cta: string;
   railBadge: AnnouncementRailItem | null;
-  /** Whether the badge shows (false for an announcement without one). */
+  /** Whether the badge shows (false for an announcement without one, or once its page was opened). */
   badge: boolean;
+  /** Whether the pop-up is due (the person has not closed or followed it). */
+  modal: boolean;
+  /** The pop-up's copy in the reader's language; null when this build has none for it. */
+  copy: AnnouncementCopy | null;
+  /** The pop-up's close button name. */
+  closeLabel: string;
+  visual: AnnouncementVideo;
 }
 
 export interface ShellUser {
@@ -501,11 +515,10 @@ export function AdminShell({
 
   // ── In-app announcement ──────────────────────────────────────────────────
   // The layout is not re-rendered on client navigation, so what it read at load
-  // is followed here: reaching the announcement's route ends it at once (card
-  // and badge), and is stored against the person. The builder shows none of
-  // it, so a load there reports nothing either. What this load learned lives
-  // in announcement-client.ts, keyed by id, so the card on a Home restored by
-  // Back agrees with the rail.
+  // is followed here: reaching the announcement's route ends the badge at once,
+  // and is stored against the person. The builder shows none of it, so a load
+  // there reports nothing either. What this load learned lives in
+  // announcement-client.ts, keyed by id.
   const annId = announcement?.id ?? null;
   const annCta = announcement?.cta ?? null;
   const onAnnouncementRoute = annCta !== null && isNavItemActive(pathname, annCta);
@@ -518,22 +531,48 @@ export function AdminShell({
     if (!annId || followed || !onAnnouncementRoute) return;
     markAnnouncementFollowed(annId);
     reportAnnouncement(annId, 'clicked');
-    captureAnnouncement('clicked', annId, takeAnnouncementSurface());
+    captureAnnouncementClicked(annId, takeAnnouncementSurface());
   }, [annId, followed, onAnnouncementRoute]);
   const badgeItem =
     announcement && announcement.badge && !followed && !studio && !onAnnouncementRoute
       ? announcement.railBadge
       : null;
-  // A sighting counts only when the badge is really on screen: the desktop
-  // rail from 768px up, or the drawer once it is opened. Under 768px the rail
-  // is display:none and the drawer sits off screen, so a phone on any page but
-  // Home would otherwise spend a session on nothing. The card reports its own.
+  // Analytics counts the badge as seen only when it is really on screen: the
+  // desktop rail from 768px up, or the drawer once it is opened.
   const railOnScreen = useMinWidth(768) || drawerOpen;
   useEffect(() => {
     if (!annId || !badgeItem || !railOnScreen) return;
-    reportAnnouncementSeen(annId);
     captureAnnouncementSeen(annId, 'rail');
   }, [annId, badgeItem, railOnScreen]);
+
+  // The pop-up: on the first dashboard load of a browser session where it is
+  // due. Never in the builder, never on the announcement's own page (there is
+  // nothing left to announce), and never over another dialog or the open
+  // drawer: it waits for those to close. Onboarding never gets here, it lives
+  // outside /admin (see app/admin/layout.tsx).
+  const [modalOpen, setModalOpen] = useState(false);
+  const modalHandled = useRef<string | null>(null);
+  const modalDue =
+    !!announcement?.modal && !!announcement.copy && !studio && !onAnnouncementRoute && !followed && !drawerOpen;
+  useEffect(() => {
+    if (!annId || !modalDue || modalHandled.current === annId) return;
+    if (announcementShownThisSession(annId)) {
+      modalHandled.current = annId;
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    const tryOpen = () => {
+      if (document.querySelector('[aria-modal="true"], [role="alertdialog"]')) {
+        timer = setTimeout(tryOpen, 1000);
+        return;
+      }
+      modalHandled.current = annId;
+      setModalOpen(true);
+    };
+    // A beat after the page settles, so it arrives over a finished page.
+    timer = setTimeout(tryOpen, 350);
+    return () => clearTimeout(timer);
+  }, [annId, modalDue]);
 
   // Persist the desktop rail preference to a cookie so the SERVER renders the
   // correct width on the next load (no flash) — see AdminLayout.
@@ -874,6 +913,18 @@ export function AdminShell({
       <main inert={drawerOpen || undefined} className="min-w-0 flex-1 bg-background">
         {children}
       </main>
+      {announcement?.copy ? (
+        <AnnouncementModal
+          open={modalOpen}
+          onClosed={() => setModalOpen(false)}
+          id={announcement.id}
+          copy={announcement.copy}
+          cta={announcement.cta}
+          visual={announcement.visual}
+          closeLabel={announcement.closeLabel}
+          theme={themePref}
+        />
+      ) : null}
     </div>
   );
 }

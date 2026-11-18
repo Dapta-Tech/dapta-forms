@@ -411,8 +411,7 @@ export const announcementState = sqliteTable(
   {
     userId: text('user_id').notNull(),
     announcementId: text('announcement_id').notNull(),
-    sessionsSeen: integer('sessions_seen').notNull().default(0),
-    lastSeenAt: integer('last_seen_at'),
+    seenAt: integer('seen_at'),
     dismissedAt: integer('dismissed_at'),
     clickedAt: integer('clicked_at'),
     createdAt: integer('created_at').notNull(),

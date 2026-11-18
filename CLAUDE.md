@@ -413,10 +413,11 @@ retryable failures) → `src/factory.ts` (add the switch case + graceful fallbac
 `formDestinationSchema`) → UI in
 `apps/web/app/admin/forms/[id]/integrations/` → test `src/adapters/<name>.spec.ts`.
 
-**Publish an in-app announcement** (the Home card and the rail's "New" mark):
-append an entry to `ANNOUNCEMENTS` in `packages/shared/src/announcements.ts`
-with a fresh `id` (never reuse one: per-person state is keyed by it), its dates,
-`cta` route, `railBadge` and `daptaOnly`; add its copy under
+**Publish an in-app announcement** (a pop-up over the dashboard, the rail's
+"New" mark and a banner beside the agents banner on Home): append an entry to
+`ANNOUNCEMENTS` in `packages/shared/src/announcements.ts` with a fresh `id`
+(never reuse one: per-person state is keyed by it), its dates, `cta` route,
+`railBadge`, `banner` logos and `daptaOnly`; add its copy under
 `admin.announcements.items[<id>]` in **both** locales of
 `packages/shared/src/i18n/index.ts`; put the animation in
 `apps/web/public/announcements/` as `{src}-{light,dark}.{webm,mp4}` and

@@ -1,17 +1,22 @@
 /**
- * In-app announcements: product news shown inside the dashboard, once per
- * person, without blocking anything. A card at the top of the home and,
- * optionally, a "New" mark on one rail item.
+ * In-app announcements: product news shown inside the dashboard. Three
+ * surfaces, each optional per announcement:
+ *
+ *   - a pop-up (modal) over the dashboard, once per person: closing it, or
+ *     following its button, ends it for good;
+ *   - a "New" mark on one rail item, until the person opens that item's page;
+ *   - a banner in the Home's top row, beside the agents banner, for as long as
+ *     the announcement runs, whatever the person did with the pop-up.
  *
  * The list lives in code on purpose: publishing an announcement is a pull
  * request, reviewed like any other change, and a fork gets exactly the
- * announcements its own repository carries (minus the `daptaOnly` ones). Who
- * has seen, closed or followed each one lives in the database, per person
- * (`announcement_state`, migration 0029), never only in the browser.
+ * announcements its own repository carries (minus the `daptaOnly` ones). What
+ * each person did with each one lives in the database (`announcement_state`,
+ * migration 0029), never only in the browser.
  *
- * This module is framework-free: the API decides which announcement a person
- * gets with `pickAnnouncement`, and the web app reads the same definitions to
- * render the copy and the media.
+ * This module is framework-free: the API decides what a person gets with
+ * `pickAnnouncement`, and the web app reads the same definitions to render the
+ * copy and the media.
  */
 import type { FormsMessages } from './i18n';
 
@@ -22,10 +27,16 @@ export type AnnouncementCopyKey = keyof FormsMessages['admin']['announcements'][
 export type AnnouncementRailItem = 'integrations';
 
 /**
- * The looping animation of a card. Files live under `apps/web/public` as
+ * The marks a Home banner rotates through, by the names the web app's
+ * integration logos use (`components/integration-logos.tsx`).
+ */
+export type AnnouncementBannerLogo = 'gohighlevel' | 'salesforce' | 'google-sheets' | 'hubspot' | 'calendly' | 'dcal';
+
+/**
+ * The looping animation of the pop-up. Files live under `apps/web/public` as
  * `{src}-{light|dark}.webm`, `{src}-{light|dark}.mp4` and
- * `{src}-{light|dark}-poster.png`, so the card follows the dashboard's theme.
- * `width` and `height` are the render's, used for the aspect ratio the card
+ * `{src}-{light|dark}-poster.png`, so it follows the dashboard's theme.
+ * `width` and `height` are the render's, used for the aspect ratio the pop-up
  * reserves before anything loads.
  */
 export interface AnnouncementVideo {
@@ -46,8 +57,10 @@ export interface Announcement {
   /** An internal route. Reaching it, by the button or on one's own, completes the announcement. */
   cta: string;
   visual: AnnouncementVideo;
-  /** The rail item that carries "New" while the announcement is live, or null for none. */
+  /** The rail item that carries "New" until its page is opened, or null for none. */
   railBadge: AnnouncementRailItem | null;
+  /** The Home banner's rotating marks, or null for no banner. */
+  banner: { logos: readonly AnnouncementBannerLogo[] } | null;
   /** Names Dapta or a Dapta product: never shown on a fork. */
   daptaOnly: boolean;
 }
@@ -68,43 +81,32 @@ export const ANNOUNCEMENTS: readonly Announcement[] = [
     cta: '/admin/integrations',
     visual: { kind: 'video', src: '/announcements/announce-integrations', width: 1280, height: 720 },
     railBadge: 'integrations',
+    banner: { logos: ['gohighlevel', 'salesforce', 'google-sheets', 'hubspot', 'calendly', 'dcal'] },
     // It names dCal, a Dapta product.
     daptaOnly: true,
   },
 ];
 
-/**
- * A person who sees an announcement and does nothing stops seeing it after this
- * many sessions. Closing the card is doing something: the badge left behind
- * then waits for the visit (or the end date), whatever the count.
- */
-export const ANNOUNCEMENT_MAX_SESSIONS = 5;
-
-/**
- * Two sightings this far apart are two sessions; closer, the same one. Thirty
- * minutes of inactivity, the usual definition of a web session.
- */
-export const ANNOUNCEMENT_SESSION_GAP_MS = 30 * 60 * 1000;
-
 /** What a person did with one announcement, as stored. */
 export interface AnnouncementUserState {
   announcementId: string;
-  /** Distinct sessions in which the announcement was on screen. */
-  sessionsSeen: number;
-  lastSeenAt: number | null;
-  /** The card's close button. The rail badge outlives it. */
+  /** The first time the pop-up was on screen for them. */
+  seenAt: number | null;
+  /** The pop-up was closed (X, Escape, outside click or its button). Never shown again. */
   dismissedAt: number | null;
-  /** The button, or reaching the `cta` route on one's own. Ends the announcement for this person. */
+  /** The person reached the `cta` route, by the button, the rail or on their own. Ends the badge. */
   clickedAt: number | null;
 }
 
 /** The announcement a person gets right now, and where it shows. */
 export interface AnnouncementPick {
   announcement: Announcement;
-  /** The home card. False once the person closed it. */
-  card: boolean;
-  /** The rail badge. */
+  /** The pop-up: until the person closes or follows it. */
+  modal: boolean;
+  /** The rail badge: until the person opens its page. */
   badge: boolean;
+  /** The Home banner: for as long as the announcement runs. */
+  banner: boolean;
 }
 
 /** The events a person's browser reports for an announcement. */
@@ -118,23 +120,14 @@ export function isAnnouncementLive(a: Announcement, now: number, opts: { dapta: 
 }
 
 /**
- * Has the person used up the sessions an untouched announcement gets? The
- * fifth session is still shown to its end: only a sixth would not be.
- */
-export function sessionsExhausted(state: AnnouncementUserState | undefined, now: number): boolean {
-  if (!state || state.sessionsSeen < ANNOUNCEMENT_MAX_SESSIONS) return false;
-  const inSession = state.lastSeenAt != null && now - state.lastSeenAt < ANNOUNCEMENT_SESSION_GAP_MS;
-  return !inSession;
-}
-
-/**
- * The one announcement a person gets, if any.
+ * The one announcement a person gets, if any, and its surfaces.
  *
- * Only one at a time. Among the live ones the person has not followed, the most
- * recent whose card they have not closed (and that has sessions left) wins,
- * card and badge. If every such card is closed, the most recent closed one
- * with a rail badge keeps its badge alone: closing the card does not clear it,
- * only the visit or the end date does.
+ * One at a time, newest first. The newest live one whose pop-up the person
+ * has neither closed nor followed wins, with every surface it has. If every
+ * pop-up is done, the newest one whose badge still waits for its page visit
+ * shows its badge (and its banner). If every badge is done too, the newest
+ * live one keeps its banner alone: the banner runs for as long as the
+ * announcement does.
  */
 export function pickAnnouncement(
   list: readonly Announcement[],
@@ -143,23 +136,27 @@ export function pickAnnouncement(
   opts: { dapta: boolean },
 ): AnnouncementPick | null {
   const byId = new Map(states.map((s) => [s.announcementId, s]));
-  const candidates = list
+  const live = list
     .map((a, index) => ({ a, index }))
     .filter(({ a }) => isAnnouncementLive(a, now, opts))
-    .filter(({ a }) => {
-      const s = byId.get(a.id);
-      if (s?.clickedAt) return false;
-      // The cap is for the untouched: a closed card's badge outlives it.
-      return Boolean(s?.dismissedAt) || !sessionsExhausted(s, now);
-    })
     // Most recent first; for the same start, the one added later.
     .sort((x, y) => y.a.startsAt - x.a.startsAt || y.index - x.index)
     .map(({ a }) => a);
+  const followed = (a: Announcement) => Boolean(byId.get(a.id)?.clickedAt);
+  const closed = (a: Announcement) => followed(a) || Boolean(byId.get(a.id)?.dismissedAt);
+  const surfaces = (a: Announcement, modal: boolean): AnnouncementPick => ({
+    announcement: a,
+    modal,
+    badge: a.railBadge !== null && !followed(a),
+    banner: a.banner !== null,
+  });
 
-  const withCard = candidates.find((a) => !byId.get(a.id)?.dismissedAt);
-  if (withCard) return { announcement: withCard, card: true, badge: withCard.railBadge !== null };
-  const withBadge = candidates.find((a) => a.railBadge !== null);
-  if (withBadge) return { announcement: withBadge, card: false, badge: true };
+  const withModal = live.find((a) => !closed(a));
+  if (withModal) return surfaces(withModal, true);
+  const withBadge = live.find((a) => a.railBadge !== null && !followed(a));
+  if (withBadge) return surfaces(withBadge, false);
+  const withBanner = live.find((a) => a.banner !== null);
+  if (withBanner) return surfaces(withBanner, false);
   return null;
 }
 

@@ -2,8 +2,8 @@
 --
 -- The announcements themselves live in code (`ANNOUNCEMENTS` in
 -- @quill/shared): publishing one is a pull request. This table only remembers,
--- per person and per announcement, how many distinct sessions it was on screen,
--- and whether the person closed the home card or followed it. An announcement
+-- per person and per announcement, when its pop-up was first on screen, when the
+-- person closed it, and when they reached its page. An announcement
 -- is shown once per person, so the key is the PERSON (`user_id`, the identity
 -- service's user id, `member.external_id`), not a member row of one workspace:
 -- someone in three workspaces would otherwise see it three times. A member the
@@ -14,8 +14,7 @@
 CREATE TABLE IF NOT EXISTS announcement_state (
   user_id          TEXT NOT NULL,
   announcement_id  TEXT NOT NULL,
-  sessions_seen    INTEGER NOT NULL DEFAULT 0,
-  last_seen_at     BIGINT,
+  seen_at          BIGINT,
   dismissed_at     BIGINT,
   clicked_at       BIGINT,
   created_at       BIGINT NOT NULL,
