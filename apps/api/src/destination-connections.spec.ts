@@ -62,7 +62,7 @@ const SHEET = {
 };
 const SALESFORCE = { type: 'salesforce', enabled: true, fieldMappings: { email: 'Email' }, utmMappings: {} };
 const WEBHOOK = { type: 'webhook', enabled: true, settings: { url: 'https://example.test/hook' } };
-/** Nothing can connect HighLevel yet, so this entry can never deliver. */
+/** A HighLevel entry: delivers only once the workspace connects a sub-account. */
 const HIGHLEVEL = {
   type: 'gohighlevel',
   enabled: true,
@@ -126,7 +126,7 @@ describe('a destination whose provider is not connected', () => {
     expect(err).toBeInstanceOf(BadRequestException);
     return (err as BadRequestException).getResponse() as Record<string, unknown>;
   };
-  const connect = (provider: 'google-sheets' | 'salesforce') =>
+  const connect = (provider: 'google-sheets' | 'salesforce' | 'gohighlevel') =>
     upsertIntegration(db, accountId, provider, 'credential-value', KEY, 'ops@example.test');
 
   beforeEach(async () => {
@@ -166,18 +166,31 @@ describe('a destination whose provider is not connected', () => {
       expect(body).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'salesforce', index: 0, integrationsUrl: PAGE });
     });
 
-    it('refuses a HighLevel entry, which nothing can connect yet, and stores nothing', async () => {
+    it('refuses a HighLevel entry while HighLevel is not connected, with the page to connect it, and stores nothing', async () => {
       const before = await stored();
       const body = await refusal(controller(via).putDestinations(req(), formId, { destinations: [WEBHOOK, HIGHLEVEL] }));
-      // Not retryable: there is no page where it could be connected yet.
-      expect(body).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'gohighlevel', index: 1, unavailable: true });
-      expect(body.message).toBe(
-        'Destination 2 is a new or changed HighLevel destination, and dForms cannot connect HighLevel yet, so it would deliver nothing. Leave this destination out or switched off.',
-      );
+      // Retryable now: the Integrations page can connect it.
+      expect(body).toMatchObject({
+        error: 'INTEGRATION_NOT_CONNECTED',
+        provider: 'gohighlevel',
+        index: 1,
+        integrationsUrl: PAGE,
+        unavailable: false,
+      });
+      expect(body.message).toMatch(/^Destination 2 is a new or changed HighLevel destination/);
+      expect(body.message).toContain(PAGE);
+      expect(body.message).not.toMatch(/cannot connect HighLevel yet/);
       expect(await stored()).toEqual(before);
       // Creating a form with one is refused the same way.
       const created = await refusal(newForm(via, [HIGHLEVEL]));
       expect(created).toMatchObject({ error: 'INTEGRATION_NOT_CONNECTED', provider: 'gohighlevel' });
+    });
+
+    it('takes a HighLevel entry once HighLevel is connected', async () => {
+      await connect('gohighlevel');
+      const out = await controller(via).putDestinations(req(), formId, { destinations: [HIGHLEVEL] });
+      expect(out.warnings ?? []).toEqual([]);
+      expect((await stored()).map((d) => (d as { type: string }).type)).toEqual(['gohighlevel']);
     });
 
     it('refuses even a Sheets entry with no spreadsheet yet: an agent has no card to finish it on', async () => {
@@ -362,13 +375,14 @@ describe('a destination whose provider is not connected', () => {
       expect(out.warnings?.[0]).toMatchObject({ code: 'INTEGRATION_NOT_CONNECTED' });
     });
 
-    it('saves a HighLevel entry with a warning rather than refusing it', async () => {
+    it('saves a HighLevel entry with a warning that names the page to connect it on', async () => {
       const out = await controller('session').putDestinations(req(), formId, { destinations: [HIGHLEVEL] });
       expect(out.warnings?.[0]).toMatchObject({
         code: 'INTEGRATION_NOT_CONNECTED',
         index: 0,
         type: 'gohighlevel',
-        message: 'HighLevel cannot be connected in dForms yet, so this destination was saved, but it delivers nothing.',
+        integrationsUrl: PAGE,
+        message: `HighLevel is not connected in this workspace, so this destination was saved, but it delivers nothing until someone connects HighLevel at ${PAGE} (in a browser).`,
       });
       expect(await stored()).toHaveLength(1);
     });
