@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { BrandLockup } from '@/components/brand/brand';
 import { attributionHandoffQuery } from '@/lib/attribution';
 import { authProvider, getSession } from '@/lib/auth-session';
+import { loginHandoffPath, SCREEN_PARAM, wantsSignUp } from '@/lib/login-screen';
 import { publicFormPath } from '@/lib/public-form-path';
 import { selfHost } from '@/lib/request-origin';
 
@@ -21,6 +22,11 @@ const DEMO_FORM_PATH = publicFormPath('acme', 'lead-qualifier');
  * cannot. `landing_path` is deliberately not set: it would be '/' on every visit,
  * making the parse non-empty for a plain bookmark hit and burning the write-once
  * claim on a value that says nothing.
+ *
+ * A landing's "create an account" call to action adds `?screen=sign-up`
+ * (lib/login-screen.ts), which rides along after the tags so the login route
+ * opens the hosted sign-up screen. Only that exact, single value is passed on,
+ * rebuilt from the constants; without it the path is the one this always built.
  */
 async function loginHandoff(params: Record<string, string | string[] | undefined>): Promise<string> {
   const h = await headers();
@@ -31,7 +37,7 @@ async function loginHandoff(params: Record<string, string | string[] | undefined
     // self-host fallback. `Host` / `X-Forwarded-Host` are client-supplied.
     selfHost((n) => h.get(n)),
   );
-  return query ? `/api/auth/login?${query}` : '/api/auth/login';
+  return loginHandoffPath(query, wantsSignUp(params[SCREEN_PARAM]));
 }
 
 // Per-request render: the workos-vs-local branch reads RUNTIME env + cookies.
