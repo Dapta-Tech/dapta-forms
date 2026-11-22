@@ -5,6 +5,17 @@ const cookieJar = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
 const provider = vi.hoisted(() => ({ name: 'workos' }));
 vi.mock('next/headers', () => ({ cookies: vi.fn(async () => cookieJar) }));
 vi.mock('@/lib/auth-session', () => ({ authProvider: () => provider.name }));
+// `after` captured, never run: the send itself is lib/login-started.spec.ts's.
+// A plain function, not a `vi.fn`, so a task can be inspected without running it.
+const nextAfter = vi.hoisted(() => ({ tasks: [] as Array<() => unknown> }));
+vi.mock('next/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/server')>()),
+  after: (task: () => unknown) => {
+    nextAfter.tasks.push(task);
+  },
+}));
+const recordLoginStarted = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('@/lib/login-started', () => ({ recordLoginStarted }));
 
 import { GET } from './route';
 
@@ -343,5 +354,79 @@ describe('GET /api/auth/login sign-up screen', () => {
 
     expect(res.headers.get('location')).toBe('https://forms.example.com/login');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/auth/login records the start (forms_login_started)', () => {
+  const fetchMock = vi.fn();
+  const LANDING_ID = '0192f0a4-7c1e-7d2b-9a3c-5e6f7a8b9c0d';
+  const UA = 'Mozilla/5.0 Test';
+  const get = (path: string) => GET(new NextRequest(`https://forms.example.com${path}`, { headers: { 'user-agent': UA } }));
+  /** Run what the route handed to `after`, as Next would once the response is out. */
+  const flush = async () => {
+    for (const task of nextAfter.tasks.splice(0)) await task();
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    nextAfter.tasks = [];
+    provider.name = 'workos';
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('PUBLIC_APP_URL', '');
+    vi.stubEnv('IAM_BASE_URL', 'https://iam.example.com/iam');
+    vi.stubEnv('NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY', 'phc_test');
+    vi.stubEnv('NEXT_PUBLIC_PRODUCT_ANALYTICS_HOST', 'https://ingest.example.test');
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ loginUrl: AUTHORIZE }) });
+    cookieJar.get.mockReturnValue(undefined);
+  });
+
+  it('sends the sign-up start after the redirect, with the landing id and source of this attempt', async () => {
+    const res = await get(`/api/auth/login?utm_source=linkedin&ph_id=${LANDING_ID}&screen=sign-up`);
+
+    expect(res.headers.get('location')).toBe(AUTHORIZE);
+    // Scheduled, not sent: nothing waits on it.
+    expect(recordLoginStarted).not.toHaveBeenCalled();
+    await flush();
+    expect(recordLoginStarted).toHaveBeenCalledWith(
+      {
+        screen: 'sign-up',
+        landingId: LANDING_ID,
+        utmSource: 'linkedin',
+        origin: 'https://forms.example.com',
+        userAgent: UA,
+      },
+      { key: 'phc_test', host: 'https://ingest.example.test' },
+    );
+  });
+
+  it('a parked attempt wins over the arriving one, as for the cookies', async () => {
+    cookieJar.get.mockImplementation((name: string) =>
+      name === 'quill_ph_id'
+        ? { value: 'parked-id' }
+        : name === 'quill_attribution'
+          ? { value: JSON.stringify({ utmSource: 'google' }) }
+          : undefined,
+    );
+
+    await get(`/api/auth/login?utm_source=linkedin&ph_id=${LANDING_ID}&prompt=login`);
+    await flush();
+
+    expect(recordLoginStarted).toHaveBeenCalledWith(
+      expect.objectContaining({ screen: 'sign-in', landingId: 'parked-id', utmSource: 'google' }),
+      expect.anything(),
+    );
+  });
+
+  it('records nothing with analytics off, or when the login never reaches the hosted screen', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY', '');
+    await get('/api/auth/login?screen=sign-up');
+    vi.stubEnv('NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY', 'phc_test');
+    fetchMock.mockResolvedValue({ ok: false, json: async () => ({}) });
+    await get('/api/auth/login?screen=sign-up');
+    provider.name = 'local';
+    await get('/api/auth/login?screen=sign-up');
+
+    expect(nextAfter.tasks).toHaveLength(0);
   });
 });
