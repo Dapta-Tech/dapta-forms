@@ -95,8 +95,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // What this attempt is filed under for `forms_login_started`: what was parked
   // already wins, the same first-attempt rule as the cookies below. Read before
   // they are written.
+  // It is the cookie's PRESENCE that decides, not its source: a parked blob with
+  // a referrer and no `utmSource` is still the attribution the callback sends,
+  // so this attempt's tags must not stand in for the missing source.
   const parkedLandingId = jar.get(PH_ID_COOKIE)?.value;
-  const parkedSource = parkedUtmSource(jar.get(ATTRIBUTION_COOKIE)?.value);
+  const parkedAttribution = jar.get(ATTRIBUTION_COOKIE)?.value;
   const attribution = parseAttribution(
     Object.fromEntries([...new Set(sp.keys())].map((k) => [k, sp.getAll(k)])),
   );
@@ -166,7 +169,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     scheduleLoginStarted({
       screen: signUp ? 'sign-up' : 'sign-in',
       landingId: parkedLandingId ?? landingId,
-      utmSource: parkedSource ?? attribution?.utmSource,
+      utmSource: parkedAttribution ? parkedUtmSource(parkedAttribution) : attribution?.utmSource,
       origin,
       userAgent: req.headers.get('user-agent'),
     });

@@ -418,6 +418,17 @@ describe('GET /api/auth/login records the start (forms_login_started)', () => {
     );
   });
 
+  it('a parked blob without a source is still the parked attempt: no later source stands in', async () => {
+    cookieJar.get.mockImplementation((name: string) =>
+      name === 'quill_attribution' ? { value: JSON.stringify({ referrer: 'https://news.example/' }) } : undefined,
+    );
+
+    await get('/api/auth/login?utm_source=linkedin&screen=sign-up');
+    await flush();
+
+    expect(recordLoginStarted).toHaveBeenCalledWith(expect.objectContaining({ utmSource: null }), expect.anything());
+  });
+
   it('records nothing with analytics off, or when the login never reaches the hosted screen', async () => {
     vi.stubEnv('NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY', '');
     await get('/api/auth/login?screen=sign-up');
