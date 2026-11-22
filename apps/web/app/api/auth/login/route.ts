@@ -1,9 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
-import { NextResponse, type NextRequest } from 'next/server';
+import { after, NextResponse, type NextRequest } from 'next/server';
 import { parseAttribution } from '@quill/types';
 import { PH_ID_COOKIE, PH_ID_QUERY_KEY, sanitizeLandingDistinctId } from '@/lib/attribution';
 import { authProvider } from '@/lib/auth-session';
+import { recordLoginStarted, type LoginStart } from '@/lib/login-started';
+import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { SCREEN_PARAM, wantsSignUp } from '@/lib/login-screen';
 import { canonicalHop, requestOrigin } from '@/lib/request-origin';
 
@@ -17,6 +19,32 @@ const OAUTH_STATE_COOKIE = 'quill_oauth_state';
  * the login attempt — the callback is the only reader.
  */
 const ATTRIBUTION_COOKIE = 'quill_attribution';
+
+/** The campaign source of an already-parked attribution cookie, or null. */
+function parkedUtmSource(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const parked = JSON.parse(raw) as { utmSource?: unknown } | null;
+    return typeof parked?.utmSource === 'string' ? parked.utmSource : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `forms_login_started` (lib/login-started.ts), sent after the redirect has gone
+ * out, never in front of it. Outside a request (a script, a spec) `after`
+ * throws, and there is then nothing to record.
+ */
+function scheduleLoginStarted(start: LoginStart): void {
+  try {
+    const analytics = resolveProductAnalytics();
+    if (!analytics.key) return;
+    after(() => recordLoginStarted(start, analytics));
+  } catch {
+    /* not in a request: nothing to record */
+  }
+}
 
 /**
  * WorkOS login hand-off (AUTH-WEB-CONTRACT §3.1). The web holds NO WorkOS secret;
@@ -64,6 +92,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // — and this route is directly reachable, so it is the one surface that sees a
   // raw query string somebody else composed.
   const sp = new URL(req.url).searchParams;
+  // What this attempt is filed under for `forms_login_started`: what was parked
+  // already wins, the same first-attempt rule as the cookies below. Read before
+  // they are written.
+  // It is the cookie's PRESENCE that decides, not its source: a parked blob with
+  // a referrer and no `utmSource` is still the attribution the callback sends,
+  // so this attempt's tags must not stand in for the missing source.
+  const parkedLandingId = jar.get(PH_ID_COOKIE)?.value;
+  const parkedAttribution = jar.get(ATTRIBUTION_COOKIE)?.value;
   const attribution = parseAttribution(
     Object.fromEntries([...new Set(sp.keys())].map((k) => [k, sp.getAll(k)])),
   );
@@ -126,6 +162,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   ).catch(() => null);
   const loginUrl = res && res.ok ? ((await res.json().catch(() => ({}))) as { loginUrl?: string }).loginUrl : undefined;
   if (!loginUrl) return NextResponse.redirect(new URL('/login?error=login', origin));
+  // The only record of someone who opens the hosted screen and leaves. Called
+  // right before each redirect there, never on the way to the error card; a
+  // no-op with analytics off.
+  const at = new Date();
+  const started = () =>
+    scheduleLoginStarted({
+      screen: signUp ? 'sign-up' : 'sign-in',
+      landingId: parkedLandingId ?? landingId,
+      utmSource: parkedAttribution ? parkedUtmSource(parkedAttribution) : attribution?.utmSource,
+      origin,
+      userAgent: req.headers.get('user-agent'),
+      at,
+    });
   // The IAM currently drops the prompt param instead of forwarding it to the
   // authorize URL, so patch it on ourselves, exactly like Orbit's
   // enforcePromptOnLoginUrl ("if IAM forgets to propagate prompt to WorkOS,
@@ -134,10 +183,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     try {
       const patched = new URL(loginUrl);
       patched.searchParams.set('prompt', prompt);
-      return NextResponse.redirect(patched.toString());
+      const redirect = NextResponse.redirect(patched.toString());
+      started();
+      return redirect;
     } catch {
       return NextResponse.redirect(new URL('/login?error=login', origin));
     }
   }
-  return NextResponse.redirect(loginUrl);
+  const redirect = NextResponse.redirect(loginUrl);
+  started();
+  return redirect;
 }
