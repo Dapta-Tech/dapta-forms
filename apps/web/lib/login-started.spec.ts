@@ -65,6 +65,8 @@ describe('loginStartedEvent', () => {
     'facebookexternalhit/1.1',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0.0.0 Safari/537.36',
     'curl/8.4.0',
+    'WhatsApp/2.23.20.0 A',
+    'Viber/13.3.0.16',
   ])('sends nothing for an automated client (%s)', (userAgent) => {
     expect(loginStartedEvent(start({ userAgent }))).toBeNull();
   });
