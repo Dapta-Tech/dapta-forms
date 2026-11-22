@@ -196,3 +196,152 @@ describe('GET /api/auth/login on a host other than PUBLIC_APP_URL', () => {
     expect(cookieJar.set).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * `?screen=sign-up` (lib/login-screen.ts): a landing's "create an account"
+ * call to action, passed on by the root page, asks the identity service for
+ * its sign-up screen. The identity service call is asserted as a whole string,
+ * so "without the flag" means byte for byte the request this route has always
+ * sent, and "with it" means that same request plus one trailing parameter.
+ */
+describe('GET /api/auth/login sign-up screen', () => {
+  const fetchMock = vi.fn();
+  const iamCall = () => String(fetchMock.mock.calls[0]?.[0]);
+  const cookieSet = (name: string) => cookieJar.set.mock.calls.find((c) => c[0] === name);
+  /** The identity service request this route sent before the flag existed, plus `extra`. */
+  const iamUrl = (origin: string, extra = '') =>
+    'https://iam.example.com/iam/auth/login-url' +
+    `?returnTo=${encodeURIComponent(`${origin}/api/auth/callback`)}` +
+    `&state=${encodeURIComponent(String(cookieSet('quill_oauth_state')?.[1]))}` +
+    extra;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    provider.name = 'workos';
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('PUBLIC_APP_URL', '');
+    vi.stubEnv('IAM_BASE_URL', 'https://iam.example.com/iam');
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ loginUrl: AUTHORIZE }) });
+    cookieJar.get.mockReturnValue(undefined);
+  });
+
+  it('asks the identity service for the sign-up screen', async () => {
+    const res = await GET(req('/api/auth/login?screen=sign-up'));
+
+    expect(iamCall()).toBe(iamUrl('https://forms.example.com', '&screenHint=sign-up'));
+    // The identity service puts the hint on the authorize URL itself, so its
+    // answer is followed untouched.
+    expect(res.headers.get('location')).toBe(AUTHORIZE);
+  });
+
+  it('sends exactly the request it always sent without it', async () => {
+    const res = await GET(req('/api/auth/login'));
+
+    expect(iamCall()).toBe(iamUrl('https://forms.example.com'));
+    expect(res.headers.get('location')).toBe(AUTHORIZE);
+  });
+
+  it.each([
+    'screen=signup',
+    'screen=Sign-Up',
+    'screen=sign-in',
+    'screen=',
+    'screen',
+    'screen=sign-up%20',
+    'screen=%20sign-up',
+    // The decoded value is `sign-up&prompt=none`: never spliced onto the request.
+    'screen=sign-up%26prompt%3Dnone',
+    // A repeated parameter is not a choice, in either order, as on the root page.
+    'screen=evil&screen=sign-up',
+    'screen=sign-up&screen=evil',
+    'screen=sign-up&screen=sign-up',
+    // The identity service's own names are not this route's parameter.
+    'screenHint=sign-up',
+    'screen_hint=sign-up',
+  ])('ignores anything but exactly screen=sign-up (%s)', async (query) => {
+    const res = await GET(req(`/api/auth/login?${query}`));
+
+    expect(iamCall()).toBe(iamUrl('https://forms.example.com'));
+    expect(res.headers.get('location')).toBe(AUTHORIZE);
+  });
+
+  it('keeps prompt=login beside it, patched onto the answer as before', async () => {
+    const res = await GET(req('/api/auth/login?screen=sign-up&prompt=login'));
+
+    expect(iamCall()).toBe(iamUrl('https://forms.example.com', '&prompt=login&screenHint=sign-up'));
+    expect(new URL(res.headers.get('location')!).searchParams.get('prompt')).toBe('login');
+  });
+
+  it('parks the campaign tags and the landing id the root forwarded beside it, exactly as without it', async () => {
+    const tags = 'utm_source=dforms&utm_campaign=nov&ph_id=0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b';
+
+    await GET(req(`/api/auth/login?${tags}`));
+    const without = cookieJar.set.mock.calls.filter(([name]) => name !== 'quill_oauth_state');
+    cookieJar.set.mockClear();
+    fetchMock.mockClear();
+    await GET(req(`/api/auth/login?${tags}&screen=sign-up`));
+    const withIt = cookieJar.set.mock.calls.filter(([name]) => name !== 'quill_oauth_state');
+
+    expect(withIt).toEqual(without);
+    expect(withIt.map(([name]) => name)).toEqual(['quill_attribution', 'quill_ph_id']);
+    expect(JSON.parse(String(cookieSet('quill_attribution')?.[1]))).toEqual({ utmSource: 'dforms', utmCampaign: 'nov' });
+    expect(iamCall()).toBe(iamUrl('https://forms.example.com', '&screenHint=sign-up'));
+  });
+
+  it('is not a campaign tag: the flag alone parks no attribution', async () => {
+    await GET(req('/api/auth/login?screen=sign-up'));
+
+    expect(cookieJar.set.mock.calls.map(([name]) => name)).toEqual(['quill_oauth_state']);
+  });
+
+  it.each([
+    ['with it', '?screen=sign-up', '&screenHint=sign-up'],
+    ['without it', '', ''],
+  ])('returns to the public origin behind the proxy, %s', async (_label, query, extra) => {
+    // Behind the load balancer `req.url` is the bind address; the callback is
+    // built from the forwarded headers, as it always was.
+    const proxied = new NextRequest(`https://0.0.0.0:3000/api/auth/login${query}`, {
+      headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'app.example.org, internal.example' },
+    });
+
+    await GET(proxied);
+
+    expect(iamCall()).toBe(iamUrl('https://app.example.org', extra));
+  });
+
+  it('keeps it through the old-host hop, so the login that starts on PUBLIC_APP_URL still asks for sign-up', async () => {
+    vi.stubEnv('PUBLIC_APP_URL', 'https://app.example.com');
+    const query = '?utm_source=dforms&screen=sign-up';
+
+    const res = await GET(new NextRequest(`https://0.0.0.0:3000/api/auth/login${query}`, { headers: { host: 'forms.example.org' } }));
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`https://app.example.com/api/auth/login${query}`);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('parks the same state cookie, the login-CSRF guard the callback checks', async () => {
+    await GET(req('/api/auth/login?screen=sign-up'));
+
+    expect(cookieSet('quill_oauth_state')?.[1]).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(cookieSet('quill_oauth_state')?.[2]).toMatchObject({ httpOnly: true, sameSite: 'lax', path: '/', maxAge: 600 });
+  });
+
+  it('lands on the same error card when the identity service fails', async () => {
+    fetchMock.mockResolvedValue({ ok: false, json: async () => ({}) });
+
+    const res = await GET(req('/api/auth/login?screen=sign-up'));
+
+    expect(res.headers.get('location')).toBe('https://forms.example.com/login?error=login');
+  });
+
+  it('the local provider has no hosted screen to pick: the login form, as before', async () => {
+    provider.name = 'local';
+
+    const res = await GET(req('/api/auth/login?screen=sign-up'));
+
+    expect(res.headers.get('location')).toBe('https://forms.example.com/login');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

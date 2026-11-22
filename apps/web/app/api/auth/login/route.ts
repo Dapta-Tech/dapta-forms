@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { parseAttribution } from '@quill/types';
 import { PH_ID_COOKIE, PH_ID_QUERY_KEY, sanitizeLandingDistinctId } from '@/lib/attribution';
 import { authProvider } from '@/lib/auth-session';
+import { SCREEN_PARAM, wantsSignUp } from '@/lib/login-screen';
 import { canonicalHop, requestOrigin } from '@/lib/request-origin';
 
 const OAUTH_STATE_COOKIE = 'quill_oauth_state';
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // as /login?error=state. Hop to the same path and query, as this route got
   // them, on the PUBLIC_APP_URL origin BEFORE any cookie is written: the tags,
   // `ph_id`, `next` and `prompt` are then parked on the host whose callback
-  // reads them. The target is the configured origin, never taken from a
+  // reads them, and `screen` reaches the request below unchanged. The target is the configured origin, never taken from a
   // header, so this is no open redirect (`canonicalHop` has the rest).
   const hop = canonicalHop(req);
   if (hop) return hop;
@@ -104,11 +105,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ends up on a WorkOS URL. The bare auto-redirect from /login sends no
   // prompt, keeping the arriving-from-Dapta silent SSO.
   const prompt = sp.get('prompt') === 'login' ? 'login' : null;
+  // `?screen=sign-up` (lib/login-screen.ts): a landing's "create an account"
+  // call to action, passed on by the root page beside the campaign tags.
+  // Allowlisted the same way, and what goes on the wire is a constant, never
+  // the value that arrived. The identity service already carries its sign-up
+  // hint onto the authorize URL, so unlike `prompt` there is nothing to patch
+  // on its answer. Every other arrival, the /login redirect of a signed-out
+  // dashboard visit included, sends nothing and opens on the sign-in screen as
+  // before. A repeated parameter is not a choice, as on the root page: it
+  // reads as none.
+  const screens = sp.getAll(SCREEN_PARAM);
+  const signUp = screens.length === 1 && wantsSignUp(screens[0]);
 
   const returnTo = `${origin}/api/auth/callback`;
   const res = await fetch(
     `${iam}/auth/login-url?returnTo=${encodeURIComponent(returnTo)}&state=${encodeURIComponent(state)}` +
-      (prompt ? `&prompt=${prompt}` : ''),
+      (prompt ? `&prompt=${prompt}` : '') +
+      (signUp ? '&screenHint=sign-up' : ''),
     { cache: 'no-store' },
   ).catch(() => null);
   const loginUrl = res && res.ok ? ((await res.json().catch(() => ({}))) as { loginUrl?: string }).loginUrl : undefined;
