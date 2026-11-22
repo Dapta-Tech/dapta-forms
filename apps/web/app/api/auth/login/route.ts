@@ -165,6 +165,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // The only record of someone who opens the hosted screen and leaves. Called
   // right before each redirect there, never on the way to the error card; a
   // no-op with analytics off.
+  const at = new Date();
   const started = () =>
     scheduleLoginStarted({
       screen: signUp ? 'sign-up' : 'sign-in',
@@ -172,6 +173,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       utmSource: parkedAttribution ? parkedUtmSource(parkedAttribution) : attribution?.utmSource,
       origin,
       userAgent: req.headers.get('user-agent'),
+      at,
     });
   // The IAM currently drops the prompt param instead of forwarding it to the
   // authorize URL, so patch it on ourselves, exactly like Orbit's

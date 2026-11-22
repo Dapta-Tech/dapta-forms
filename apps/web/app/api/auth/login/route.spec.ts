@@ -395,6 +395,7 @@ describe('GET /api/auth/login records the start (forms_login_started)', () => {
         utmSource: 'linkedin',
         origin: 'https://forms.example.com',
         userAgent: UA,
+        at: expect.any(Date),
       },
       { key: 'phc_test', host: 'https://ingest.example.test' },
     );

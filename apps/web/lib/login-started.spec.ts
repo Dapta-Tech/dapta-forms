@@ -17,6 +17,7 @@ const start = (over: Partial<LoginStart> = {}): LoginStart => ({
   utmSource: 'linkedin',
   origin: 'https://app.forms.example',
   userAgent: CHROME,
+  at: new Date('2026-11-22T21:00:00.000Z'),
   ...over,
 });
 
@@ -25,6 +26,7 @@ describe('loginStartedEvent', () => {
     expect(loginStartedEvent(start())).toEqual({
       event: 'forms_login_started',
       distinct_id: LANDING_ID,
+      timestamp: '2026-11-22T21:00:00.000Z',
       properties: {
         product: 'forms',
         screen: 'sign-up',
@@ -41,6 +43,7 @@ describe('loginStartedEvent', () => {
     expect(body).toEqual({
       event: 'forms_login_started',
       distinct_id: 'forms-login-r-1',
+      timestamp: '2026-11-22T21:00:00.000Z',
       properties: {
         product: 'forms',
         screen: 'sign-in',
@@ -50,6 +53,11 @@ describe('loginStartedEvent', () => {
         $process_person_profile: false,
       },
     });
+  });
+
+  it('caps the source like parseAttribution does', () => {
+    const body = loginStartedEvent(start({ utmSource: 'x'.repeat(500) }));
+    expect(body?.properties.utm_source).toBe('x'.repeat(128));
   });
 
   it('refuses a landing id that is not id-shaped, like the login route does', () => {

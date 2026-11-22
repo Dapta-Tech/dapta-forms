@@ -55,7 +55,17 @@ export interface LoginStart {
   origin: string;
   /** The `user-agent` header. */
   userAgent: string | null;
+  /**
+   * When the route sent the redirect. The send runs later (after the response),
+   * and without its own timestamp the vendor would use ingestion time, which a
+   * fast sign-up could beat: the start would sort after `forms_signup_completed`
+   * and an ordered funnel would read a finished sign-up as a drop-off.
+   */
+  at: Date;
 }
+
+/** `parseAttribution`'s cap for `utm_source`, kept here for a caller that skips it. */
+const UTM_SOURCE_MAX = 128;
 
 /**
  * Clients that are not a person opening a login: crawlers and link previewers
@@ -82,14 +92,15 @@ function hostOf(origin: string): string | null {
 export function loginStartedEvent(
   start: LoginStart,
   newId: () => string = randomUUID,
-): { event: string; distinct_id: string; properties: Record<string, unknown> } | null {
+): { event: string; distinct_id: string; timestamp: string; properties: Record<string, unknown> } | null {
   if (!start.userAgent || AUTOMATED_AGENT.test(start.userAgent)) return null;
   const landingId = sanitizeLandingDistinctId(start.landingId);
-  const utmSource = typeof start.utmSource === 'string' ? start.utmSource.trim() : '';
+  const utmSource = typeof start.utmSource === 'string' ? start.utmSource.trim().slice(0, UTM_SOURCE_MAX) : '';
   const host = hostOf(start.origin);
   return {
     event: LOGIN_STARTED_EVENT,
     distinct_id: landingId ?? `forms-login-${newId()}`,
+    timestamp: start.at.toISOString(),
     properties: {
       product: 'forms',
       screen: start.screen,
