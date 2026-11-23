@@ -79,6 +79,9 @@ const DENIED = new Set([
   // dashboard, and its reads would count as sessions the person never had.
   'GET /v1/me/announcement',
   'POST /v1/me/announcements/:id',
+  // The referral claim: a person signing up, called by the sign-in callback.
+  // A key is no person and never signs up.
+  'POST /v1/me/referral/claim',
   // Connecting or disconnecting an integration.
   'POST /v1/integrations/:provider/connect',
   'DELETE /v1/integrations/:provider',

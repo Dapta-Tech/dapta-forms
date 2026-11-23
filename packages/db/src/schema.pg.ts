@@ -470,6 +470,25 @@ export const referrer = pgTable(
   }),
 );
 
+/**
+ * One referral: a new person (the referee) credited to a referrer (see 0031
+ * and ADR 0005). Both columns hold a person key, like `referrer.person_id`.
+ * The referee is the primary key, so the first credit wins; `source` is
+ * `link` or `invite`. Never deleted.
+ */
+export const referral = pgTable(
+  'referral',
+  {
+    refereePersonId: text('referee_person_id').primaryKey(),
+    referrerPersonId: text('referrer_person_id').notNull(),
+    source: text('source').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    referralReferrerIdx: index('referral_referrer_idx').on(t.referrerPersonId),
+  }),
+);
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -488,4 +507,5 @@ export const pgSchema = {
   linkPageAlias,
   announcementState,
   referrer,
+  referral,
 };

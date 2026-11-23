@@ -123,3 +123,110 @@ export async function ensureReferrer(
   }
   throw new Error('Could not issue a unique referral code.');
 }
+
+/** The referrer row holding a code, or null for a code nobody holds. */
+export async function getReferrerByCode(db: Db, code: string): Promise<ReferrerRow | null> {
+  const r = await db.get<ReferrerDbRow>(
+    sql`SELECT person_id, code, unlocked_at, banner_dismissed_until, nudge_sent_at, created_at
+        FROM referrer WHERE code = ${code} LIMIT 1`,
+  );
+  return r ? toRow(r) : null;
+}
+
+/** How a referee came to dForms: the referrer's link, or a teammate invite. */
+export type ReferralSource = 'link' | 'invite';
+
+/** Referrals credited to a person so far. Rows are never deleted, so it never goes down. */
+export async function countReferrals(db: Db, referrerPersonId: string): Promise<number> {
+  const r = await db.get<{ n: number | string }>(
+    sql`SELECT COUNT(*) AS n FROM referral WHERE referrer_person_id = ${referrerPersonId}`,
+  );
+  return Number(r?.n ?? 0);
+}
+
+const EMAIL_KEY = 'email:';
+
+/** Every address a person is known by, lowercased: the emails on their member rows. */
+async function personEmails(db: Db, person: string): Promise<Set<string>> {
+  if (person.startsWith(EMAIL_KEY)) return new Set([person.slice(EMAIL_KEY.length)]);
+  const rows = await db.all<{ email: string | null }>(
+    sql`SELECT email FROM member WHERE external_id = ${person} AND email IS NOT NULL`,
+  );
+  return new Set(rows.map((r) => r.email!.trim().toLowerCase()).filter(Boolean));
+}
+
+/** Same person, or another subject on one of the referrer's addresses. */
+async function isSelfReferral(db: Db, referee: string, referrer: string): Promise<boolean> {
+  if (referee === referrer) return true;
+  const [mine, theirs] = await Promise.all([personEmails(db, referee), personEmails(db, referrer)]);
+  for (const email of mine) if (theirs.has(email)) return true;
+  return false;
+}
+
+/**
+ * How long after a person first appears a referral can still be credited to
+ * them: the same 10 minutes the signup attribution gives a new account
+ * (`claimAccountAttribution`).
+ */
+export const REFERRAL_CLAIM_WINDOW_MS = 10 * 60_000;
+
+/**
+ * When the person first appeared in dForms: the oldest of their member rows,
+ * or null when they have none. A staff access grant is not a membership (the
+ * person never signed up for that workspace), so it does not count.
+ */
+export async function personFirstSeenAt(db: Db, person: string): Promise<number | null> {
+  const r = person.startsWith(EMAIL_KEY)
+    ? await db.get<{ first: number | string | null }>(
+        sql`SELECT MIN(created_at) AS first FROM member
+            WHERE (external_id IS NULL OR external_id = '')
+              AND lower(trim(email)) = ${person.slice(EMAIL_KEY.length)}
+              AND (access_grant IS NULL OR access_grant <> 'staff')`,
+      )
+    : await db.get<{ first: number | string | null }>(
+        sql`SELECT MIN(created_at) AS first FROM member
+            WHERE external_id = ${person}
+              AND (access_grant IS NULL OR access_grant <> 'staff')`,
+      );
+  return num(r?.first ?? null);
+}
+
+/**
+ * A new person: their first member row (staff grants aside) was written less
+ * than `REFERRAL_CLAIM_WINDOW_MS` ago. Derived from the member table, never
+ * stored (ADR 0005). A person with no row at all is not new: there is nobody.
+ */
+export async function isNewPerson(db: Db, person: string, now: number = Date.now()): Promise<boolean> {
+  const first = await personFirstSeenAt(db, person);
+  return first != null && first > now - REFERRAL_CLAIM_WINDOW_MS;
+}
+
+/**
+ * Credit one referee to one referrer; true when this call wrote the referral.
+ *
+ * The rules, every refusal a plain `false`:
+ *   - not a self-referral: the same person, or another subject on one of the
+ *     referrer's addresses;
+ *   - the referee is a new person (`isNewPerson`);
+ *   - first credit wins: `referee_person_id` is the primary key, so a referee
+ *     already credited (to anyone, by any source) inserts nothing. Two
+ *     concurrent claims race on that key and exactly one of them writes.
+ *
+ * Both sources go through here: the referral link (`link`) and a teammate
+ * invite (`invite`), so both obey the same rules.
+ */
+export async function creditReferral(
+  db: Db,
+  input: { referee: string; referrer: string; source: ReferralSource; now?: number },
+): Promise<boolean> {
+  const now = input.now ?? Date.now();
+  if (await isSelfReferral(db, input.referee, input.referrer)) return false;
+  if (!(await isNewPerson(db, input.referee, now))) return false;
+  const row = await db.get<{ referee_person_id: string }>(
+    sql`INSERT INTO referral (referee_person_id, referrer_person_id, source, created_at)
+        VALUES (${input.referee}, ${input.referrer}, ${input.source}, ${now})
+        ON CONFLICT DO NOTHING
+        RETURNING referee_person_id`,
+  );
+  return Boolean(row);
+}

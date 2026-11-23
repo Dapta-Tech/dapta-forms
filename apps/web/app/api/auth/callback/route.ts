@@ -12,7 +12,8 @@ const OAUTH_STATE_COOKIE = 'quill_oauth_state';
 const ATTRIBUTION_COOKIE = 'quill_attribution';
 
 /**
- * Hand the parked acquisition tags to the API, which stores them write-once.
+ * Hand the parked acquisition tags to the API, which stores them write-once,
+ * and a parked referral code to the referral claim, which credits it once.
  *
  * Uses the freshly-minted access token directly instead of reading the session
  * back: `setSession` writes its cookie on the OUTGOING response, so a read in
@@ -20,8 +21,9 @@ const ATTRIBUTION_COOKIE = 'quill_attribution';
  *
  * It runs BEFORE the redirect for a mundane reason: a route handler cannot
  * outlive its own response, so work started here and not awaited may simply be
- * killed. Nothing races it — `claimAccountAttribution` is the column's only
- * writer, so the dashboard's first request cannot claim anything.
+ * killed. Nothing races it: `claimAccountAttribution` is the column's only
+ * writer, so the dashboard's first request cannot claim anything, and the
+ * referral claim is only ever called from here.
  *
  * Do NOT read the timeout as "this is a cheap call". Being the first authenticated
  * request makes it the most expensive one in the product: `resolveHost` inserts the
@@ -44,26 +46,58 @@ async function recordAttribution(
 ): Promise<void> {
   const parked = jar.get(ATTRIBUTION_COOKIE)?.value;
   if (!parked) return;
+  const headers = {
+    'content-type': 'application/json',
+    authorization: `Bearer ${accessToken}`,
+    // A new member's signup is recorded on their first API call, which can be this one.
+    ...analyticsSessionHeaders(jar, resolveProductAnalytics()),
+  };
+  const code = parkedReferralCode(parked);
+  // One after the other, never together: for a brand-new person the first
+  // request projects their workspace and member, and two first requests at
+  // once would race that projection. The second one finds it done and is cheap.
+  const recorded = await answered('/v1/account/attribution', headers, parked);
+  // The referral is PERSON-level (ADR 0005), so it has its own route: the
+  // workspace record above is admin-only, and a referral counts for any role.
+  const claimed = code ? await answered('/v1/me/referral/claim', headers, JSON.stringify({ code })) : true;
+  // Deleted once BOTH have had their say. A retry is safe for each: the
+  // workspace record is written once, and a referral is credited once and only
+  // inside the person's first ten minutes.
+  if (recorded && claimed) jar.delete(ATTRIBUTION_COOKIE);
+}
+
+/**
+ * POST one parked value; true when the API ANSWERED (2xx or 4xx), false for
+ * a transport failure or a 5xx, which keep the cookie for the next login.
+ *
+ * `fetch` resolves for EVERY status, so the status has to be read: a 500 from a
+ * failed-over database, or a 502 from the ingress while a pod drains, is not the
+ * API having its say: it is the same transient failure as a dead socket, and
+ * deleting on it would lose the tags for good.
+ */
+async function answered(path: string, headers: Record<string, string>, body: string): Promise<boolean> {
   try {
-    const res = await fetch(`${serverApiUrl}/v1/account/attribution`, {
+    const res = await fetch(`${serverApiUrl}${path}`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${accessToken}`,
-        // A new member's signup is recorded on their first API call, which can be this one.
-        ...analyticsSessionHeaders(jar, resolveProductAnalytics()),
-      },
-      body: parked,
+      headers,
+      body,
       cache: 'no-store',
       signal: AbortSignal.timeout(3000),
     });
-    // `fetch` resolves for EVERY status, so the status has to be read: a 500 from a
-    // failed-over database, or a 502 from the ingress while a pod drains, is not the
-    // API having its say — it is the same transient failure as a dead socket, and
-    // deleting here would lose the tags for good.
-    if (res.status < 500) jar.delete(ATTRIBUTION_COOKIE);
+    return res.status < 500;
   } catch {
-    // Kept for a retry — see the note above. Never rethrown: the login succeeded.
+    // Kept for a retry, see above. Never rethrown: the login succeeded.
+    return false;
+  }
+}
+
+/** The referral code inside the parked attribution blob, or null. */
+function parkedReferralCode(parked: string): string | null {
+  try {
+    const value = (JSON.parse(parked) as { referralCode?: unknown } | null)?.referralCode;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
   }
 }
 

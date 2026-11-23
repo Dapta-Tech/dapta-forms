@@ -10,7 +10,7 @@ import { AdminShell } from '@/components/admin-shell';
 import { getLocale } from '@/lib/locale';
 import { getThemePref } from '@/lib/theme.server';
 import { ToastProvider } from '@/components/toast';
-import { PH_ID_COOKIE, sanitizeLandingDistinctId } from '@/lib/attribution';
+import { PH_ID_COOKIE, referralCodeOfLink, sanitizeLandingDistinctId } from '@/lib/attribution';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
 import { PlatformGtm, resolvePlatformGtmId } from '@/components/analytics/platform-gtm';
@@ -86,6 +86,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           // Re-sanitized on read — the cookie is ours, but the ten minutes
           // between write and read are not a chain of custody.
           landingDistinctId: sanitizeLandingDistinctId(jar.get(PH_ID_COOKIE)?.value),
+          // The person's referral code, for `referral_code` on the person.
+          referralCode: me.referral?.enabled ? referralCodeOfLink(me.referral.link) : null,
         }}
       />
       {/* The workspace's zone for every client component that prints a date,
