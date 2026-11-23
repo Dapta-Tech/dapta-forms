@@ -190,10 +190,12 @@ describe('AdminShell: the referral banner', () => {
     expect(bannerOf()).toBeNull();
   });
 
-  it('stays out of the form builder, which owns the full viewport height', async () => {
+  it('shows in the form builder too, above it', async () => {
     nav.pathname = '/admin/forms/f1/edit';
-    await mount(shell({ referral: BANNER }));
-    expect(bannerOf()).toBeNull();
+    await mount(shell({ referral: BANNER, page: <div data-testid="builder" /> }));
+    const main = document.querySelector('main')!;
+    expect(main.firstElementChild).toBe(bannerOf());
+    expect(bannerOf()!.nextElementSibling).toBe(document.querySelector('[data-testid="builder"]'));
   });
 
   it('"Remove the badge" opens the dialog, whose open, copy and shares say they came from the banner', async () => {
@@ -236,6 +238,55 @@ describe('AdminShell: the referral banner', () => {
     await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-close"]')!.click());
     expect(bannerOf()).toBeNull();
     expect(nav.dismissed).toBe(1);
+  });
+});
+
+/**
+ * The builder fills what the viewport leaves it, never the viewport itself: in
+ * the editor the shell is exactly one screen tall (`h-dvh`, no page scroll) and
+ * <main> a flex column, so the banner takes its 48px from the top and the
+ * builder (`flex-1 min-h-0`) the rest, down to its bottom edge. Closing the
+ * banner hands the builder those 48px back at once, with no reload. Elsewhere
+ * the shell is the page it always was: as tall as its content.
+ */
+describe('AdminShell: the builder fits under the banner', () => {
+  const outer = () => document.querySelector('main')!.parentElement!;
+  const classes = (el: Element) => el.className.split(/\s+/);
+
+  it('in the builder, the shell is one screen tall and <main> a column the builder fills', async () => {
+    nav.pathname = '/admin/forms/f1/edit';
+    await mount(shell({ referral: BANNER, page: <div data-testid="builder" /> }));
+    expect(classes(outer())).toEqual(expect.arrayContaining(['h-dvh', 'overflow-hidden']));
+    expect(classes(outer())).not.toContain('min-h-dvh');
+    expect(classes(document.querySelector('main')!)).toEqual(
+      expect.arrayContaining(['flex', 'flex-col', 'min-h-0', 'flex-1']),
+    );
+    // The strip never gives up its height to the builder under it.
+    expect(classes(bannerOf()!)).toContain('shrink-0');
+  });
+
+  it('the same without the banner (goal reached, paid workspace): the builder takes it all', async () => {
+    nav.pathname = '/admin/forms/f1/edit';
+    await mount(shell({ referral: { ...BANNER, banner: null }, page: <div data-testid="builder" /> }));
+    expect(bannerOf()).toBeNull();
+    expect(document.querySelector('main')!.firstElementChild).toBe(document.querySelector('[data-testid="builder"]'));
+    expect(classes(outer())).toContain('h-dvh');
+  });
+
+  it('closing the banner in the builder gives the builder the top at once', async () => {
+    nav.pathname = '/admin/forms/f1/edit';
+    await mount(shell({ referral: BANNER, page: <div data-testid="builder" /> }));
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-close"]')!.click());
+    expect(bannerOf()).toBeNull();
+    expect(document.querySelector('main')!.firstElementChild).toBe(document.querySelector('[data-testid="builder"]'));
+    expect(nav.dismissed).toBe(1);
+  });
+
+  it('every other page keeps the shell as tall as its content', async () => {
+    await mount(shell({ referral: BANNER }));
+    expect(classes(outer())).toContain('min-h-dvh');
+    expect(classes(outer())).not.toContain('overflow-hidden');
+    expect(classes(document.querySelector('main')!)).not.toContain('flex-col');
   });
 });
 
