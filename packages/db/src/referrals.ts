@@ -313,10 +313,12 @@ export async function hasSignedInByEmail(db: Db, email: string): Promise<boolean
   return Boolean(r);
 }
 
-/** The name and email on one of a person's member rows. */
+/** The name, email, language and workspace on one of a person's member rows. */
 export interface PersonNameRow {
   displayName: string | null;
   email: string | null;
+  locale: string | null;
+  accountId: string;
 }
 
 /**
@@ -328,21 +330,50 @@ export interface PersonNameRow {
  */
 export async function personNames(db: Db, personId: string): Promise<PersonNameRow[]> {
   const email = personId.startsWith('email:') ? personId.slice('email:'.length) : null;
+  type Row = { display_name: string | null; email: string | null; locale: string | null; account_id: string };
   const rows = email
-    ? await db.all<{ display_name: string | null; email: string | null }>(
-        sql`SELECT display_name, email FROM member
+    ? await db.all<Row>(
+        sql`SELECT display_name, email, locale, account_id FROM member
             WHERE external_id IS NULL AND lower(email) = ${email}
             ORDER BY COALESCE(last_seen_at, created_at) DESC`,
       )
-    : await db.all<{ display_name: string | null; email: string | null }>(
-        sql`SELECT display_name, email FROM member
+    : await db.all<Row>(
+        sql`SELECT display_name, email, locale, account_id FROM member
             WHERE external_id = ${personId}
             ORDER BY COALESCE(last_seen_at, created_at) DESC`,
       );
   return rows.map((r) => ({
     displayName: r.display_name == null ? null : String(r.display_name),
     email: r.email == null ? null : String(r.email),
+    locale: r.locale == null ? null : String(r.locale),
+    accountId: String(r.account_id),
   }));
+}
+
+/** Where and how to write to a person: see `personContact`. */
+export interface PersonContact {
+  email: string;
+  /** The workspace of the row the address came from (a signed transport's tenant). */
+  accountId: string;
+  /** The most recently seen row's language that has one, else null (English). */
+  locale: string | null;
+}
+
+/**
+ * The address to email a person at: the one on their most recently seen
+ * member row that has one, with that row's workspace, and the language of
+ * their most recently seen row that sets one. Null when no row has an
+ * address: nothing can be sent then.
+ */
+export async function personContact(db: Db, personId: string): Promise<PersonContact | null> {
+  const rows = await personNames(db, personId);
+  const addressed = rows.find((r) => r.email != null && r.email.trim() !== '');
+  if (!addressed) return null;
+  return {
+    email: addressed.email!.trim(),
+    accountId: addressed.accountId,
+    locale: rows.find((r) => r.locale != null && r.locale.trim() !== '')?.locale ?? null,
+  };
 }
 
 /**

@@ -7,7 +7,10 @@ import {
   normalizeLocale,
   notificationTokenValues,
   NOTIFICATION_TOKENS,
+  referralShareLabels,
   renderBodyLines,
+  renderReferralJoined,
+  renderReferralUnlocked,
   renderSubmissionEmail,
   renderSubmissionConfirmed,
   renderSubmissionReceived,
@@ -320,5 +323,70 @@ describe('renderBodyLines keeps a link the owner wrote', () => {
 
   it('still drops a token-only line with no link', () => {
     expect(renderBodyLines('Hola {{respondentName}}', text, html).text).toEqual([]);
+  });
+});
+
+describe('referral emails to the referrer', () => {
+  const badge = { en: 'Made with dForms', es: 'Hecho con dForms' } as const;
+
+  it('the countdown subject says how many are left, with its own subject at 4 of 5', () => {
+    const subjects = (locale: 'en' | 'es') =>
+      [1, 2, 3, 4].map(
+        (count) => renderReferralJoined(locale, { invitee: 'Ana', count, goal: 5, badgeLabel: badge[locale] }).subject,
+      );
+    expect(subjects('en')).toEqual([
+      'Ana joined. 4 to go to remove the badge',
+      'Ana joined. 3 to go to remove the badge',
+      'Ana joined. 2 to go to remove the badge',
+      'Just 1 to go! Ana joined',
+    ]);
+    expect(subjects('es')).toEqual([
+      'Ana se unió. Te faltan 4 para quitar el sello',
+      'Ana se unió. Te faltan 3 para quitar el sello',
+      'Ana se unió. Te faltan 2 para quitar el sello',
+      '¡Te falta 1! Ana se unió',
+    ]);
+  });
+
+  it('the body gives the count out of the goal and names the badge by its label', () => {
+    expect(renderReferralJoined('en', { invitee: 'Ana', count: 2, goal: 5, badgeLabel: badge.en }).lines).toEqual([
+      "Ana signed up for dForms with your link. You're at 2 of 5. 3 more and “Made with dForms” is gone from all your forms, for good.",
+    ]);
+    expect(renderReferralJoined('es', { invitee: 'Ana', count: 2, goal: 5, badgeLabel: badge.es }).lines).toEqual([
+      'Ana se registró en dForms con tu link. Vas 2 de 5. Con 3 más, «Hecho con dForms» se va de todos tus formularios, para siempre.',
+    ]);
+  });
+
+  it('an invitee with no name reads as Someone / Alguien', () => {
+    expect(renderReferralJoined('en', { invitee: null, count: 1, goal: 5, badgeLabel: badge.en }).subject).toBe(
+      'Someone joined. 4 to go to remove the badge',
+    );
+    expect(renderReferralJoined('es', { invitee: '  ', count: 1, goal: 5, badgeLabel: badge.es }).subject).toBe(
+      'Alguien se unió. Te faltan 4 para quitar el sello',
+    );
+  });
+
+  it('the unlock email names the badge in each language', () => {
+    expect(renderReferralUnlocked('en', { badgeLabel: badge.en }).subject).toBe(
+      'You did it: your forms no longer show “Made with dForms”',
+    );
+    expect(renderReferralUnlocked('es', { badgeLabel: badge.es }).subject).toBe(
+      'Lo lograste: tus formularios ya no llevan «Hecho con dForms»',
+    );
+  });
+
+  it('carries no em dash or horizontal bar anywhere', () => {
+    const all: string[] = [];
+    for (const locale of ['en', 'es'] as const) {
+      for (const count of [1, 2, 3, 4]) {
+        for (const invitee of ['Ana', null]) {
+          const r = renderReferralJoined(locale, { invitee, count, goal: 5, badgeLabel: badge[locale] });
+          all.push(r.subject, ...r.lines);
+        }
+      }
+      const u = renderReferralUnlocked(locale, { badgeLabel: badge[locale] });
+      all.push(u.subject, ...u.lines, ...Object.values(referralShareLabels(locale)));
+    }
+    expect(all.join('\n')).not.toMatch(/[\u2014\u2015]/);
   });
 });

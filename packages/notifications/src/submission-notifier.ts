@@ -3,7 +3,10 @@ import { escapeHtml } from './util';
 import { EMAIL_LOGO_PATH, emailDocument, type AnswerRow, type EmailCta } from './render-html';
 import {
   normalizeLocale,
+  referralShareLabels,
   renderMemberInvited,
+  renderReferralJoined,
+  renderReferralUnlocked,
   renderSubmissionEmail,
   type NotificationLocale,
 } from './templates';
@@ -42,6 +45,49 @@ export interface MemberInvitedNotification {
   accountName: string;
   invitedBy?: string | null;
   signInLink?: string | null;
+  locale?: string | null;
+}
+
+/**
+ * The referral link and its prefilled share links (`referralShareLinks` in
+ * @quill/shared), resolved by the caller in the referrer's language.
+ */
+export interface ReferralShare {
+  link: string;
+  whatsapp: string;
+  email: string;
+  x: string;
+}
+
+/** The countdown email to a referrer, resolved before it is enqueued. */
+export interface ReferralJoinedNotification {
+  /**
+   * The workspace of the referrer's most recently seen member row: the
+   * tenant a signed transport needs. The email itself is about the person.
+   */
+  accountId: string;
+  /** The referrer's person key (ADR 0005). */
+  referrerId: string;
+  /** The invitee's person key: one countdown per referral (the idempotency anchor). */
+  refereeId: string;
+  to: string;
+  /** The invitee's first name, or null for the generic "Someone". */
+  invitee: string | null;
+  count: number;
+  goal: number;
+  /** The badge's localized label (`growth.madeWith`). */
+  badgeLabel: string;
+  share: ReferralShare;
+  locale?: string | null;
+}
+
+/** The "you did it" email at the referral unlock. */
+export interface ReferralUnlockedNotification {
+  accountId: string;
+  /** The referrer's person key: the unlock happens once (the idempotency anchor). */
+  referrerId: string;
+  to: string;
+  badgeLabel: string;
   locale?: string | null;
 }
 
@@ -184,6 +230,59 @@ export class SubmissionNotifier {
       // One invite per member row — a retried delivery must not read as a second
       // invitation to a managed service that de-duplicates on this key.
       idempotencyKey: `member:${n.memberId}:invited`,
+    });
+  }
+
+  /**
+   * "{invitee} joined. {left} to go", to the referrer: the count, the badge,
+   * a button to their referral link and the share links under it. Platform
+   * copy with an interpolated name: every line is escaped (E8).
+   */
+  sendReferralJoined(n: ReferralJoinedNotification): Promise<EmailResult> {
+    const locale = normalizeLocale(n.locale);
+    const { subject, lines } = renderReferralJoined(locale, n);
+    const labels = referralShareLabels(locale);
+    const channels = [
+      { label: labels.whatsapp, href: n.share.whatsapp },
+      { label: labels.email, href: n.share.email },
+      { label: labels.x, href: n.share.x },
+    ];
+    const text = [
+      ...lines,
+      '',
+      `${labels.button}: ${n.share.link}`,
+      '',
+      `${labels.shareOn}:`,
+      ...channels.map((c) => `${c.label}: ${c.href}`),
+    ];
+    return this.email.send({
+      accountId: n.accountId,
+      to: [n.to],
+      subject: subject.replace(/[\r\n]+/g, ' ').trim(),
+      text: text.join('\n'),
+      html: emailDocument({
+        lang: locale,
+        lines: lines.map(escapeHtml),
+        logoUrl: this.logoUrl,
+        cta: { question: '', action: labels.button, href: n.share.link, links: channels, linksLead: `${labels.shareOn}:` },
+      }),
+      locale,
+      idempotencyKey: `referral:${n.refereeId}:joined`,
+    });
+  }
+
+  /** "You did it", once, at the referral unlock. */
+  sendReferralUnlocked(n: ReferralUnlockedNotification): Promise<EmailResult> {
+    const locale = normalizeLocale(n.locale);
+    const { subject, lines } = renderReferralUnlocked(locale, n);
+    return this.email.send({
+      accountId: n.accountId,
+      to: [n.to],
+      subject,
+      text: lines.join('\n'),
+      html: emailDocument({ lang: locale, lines: lines.map(escapeHtml), logoUrl: this.logoUrl }),
+      locale,
+      idempotencyKey: `referral:${n.referrerId}:unlocked`,
     });
   }
 

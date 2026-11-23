@@ -2,17 +2,22 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   enqueueOutbox,
   getNotificationSettings,
+  personContact,
   recordSettledDelivery,
   sql,
   type Db,
   type DeliveryTranscript,
 } from '@quill/db';
 import {
+  normalizeLocale,
   SubmissionNotifier,
   type EmailProvider,
   type MemberInvitedNotification,
+  type ReferralJoinedNotification,
+  type ReferralUnlockedNotification,
   type SubmissionNotification,
 } from '@quill/notifications';
+import { getMessages, referralShareLinks } from '@quill/shared';
 import type { ServerEnv } from '@quill/config/env';
 import { AttributionService } from './attribution.service';
 import { DB, EMAIL, ENV, NOTIFIER } from './tokens';
@@ -336,6 +341,85 @@ export class EmailEffects {
   }
 
   /**
+   * The countdown email to a referrer ("{invitee} joined. {left} to go"),
+   * queued on each credited referral that leaves them between 1 and 4.
+   *
+   * Addressed to the email on the referrer's most recently seen member row,
+   * in the language of their most recently seen row that has one; a person
+   * with no address on any row is sent nothing. The share links and the
+   * badge's label are resolved now, in that language, from the shared
+   * catalog (the same messages the share modal prefills).
+   *
+   * Never rejects: a referral is credited whether or not its email is queued.
+   */
+  async enqueueReferralJoined(input: {
+    referrer: string;
+    referee: string;
+    invitee: string | null;
+    count: number;
+    goal: number;
+    link: string;
+  }): Promise<void> {
+    try {
+      const contact = await personContact(this.db, input.referrer);
+      if (!contact) return;
+      const locale = normalizeLocale(contact.locale);
+      const m = getMessages(locale);
+      const share = referralShareLinks(input.link, m.admin.chrome.referral.share);
+      const payload: ReferralJoinedNotification = {
+        accountId: contact.accountId,
+        referrerId: input.referrer,
+        refereeId: input.referee,
+        to: contact.email,
+        invitee: input.invitee,
+        count: input.count,
+        goal: input.goal,
+        badgeLabel: m.growth.madeWith,
+        share: { link: input.link, ...share },
+        locale,
+      };
+      await enqueueOutbox(this.db, {
+        kind: 'email',
+        action: 'referral_joined',
+        accountId: contact.accountId,
+        subjectUid: input.referrer,
+        payload: JSON.stringify(payload),
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue referral_joined: ${String(err)}`);
+    }
+  }
+
+  /**
+   * The "you did it" email, queued once, by the call that unlocked the
+   * referrer (in place of the countdown). Addressed like the countdown.
+   * Never rejects.
+   */
+  async enqueueReferralUnlocked(input: { referrer: string }): Promise<void> {
+    try {
+      const contact = await personContact(this.db, input.referrer);
+      if (!contact) return;
+      const locale = normalizeLocale(contact.locale);
+      const payload: ReferralUnlockedNotification = {
+        accountId: contact.accountId,
+        referrerId: input.referrer,
+        to: contact.email,
+        badgeLabel: getMessages(locale).growth.madeWith,
+        locale,
+      };
+      await enqueueOutbox(this.db, {
+        kind: 'email',
+        action: 'referral_unlocked',
+        accountId: contact.accountId,
+        subjectUid: input.referrer,
+        payload: JSON.stringify(payload),
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue referral_unlocked: ${String(err)}`);
+    }
+  }
+
+  /**
    * A row with nobody to address is a DECISION (skip once), not a transport
    * failure to retry: rows enqueued before the producer guarded against an
    * empty recipient list would otherwise fail five times each. Mirrors how
@@ -382,6 +466,18 @@ export class EmailEffects {
           JSON.parse(payloadJson) as MemberInvitedNotification,
         );
         return;
+      case 'referral_joined': {
+        const r = JSON.parse(payloadJson) as ReferralJoinedNotification;
+        if (!r.to) throw new OutboxSkipError('no recipient');
+        await this.notifier.sendReferralJoined(r);
+        return;
+      }
+      case 'referral_unlocked': {
+        const r = JSON.parse(payloadJson) as ReferralUnlockedNotification;
+        if (!r.to) throw new OutboxSkipError('no recipient');
+        await this.notifier.sendReferralUnlocked(r);
+        return;
+      }
       case 'submission_received':
         this.assertRecipient(action, n);
         await this.notifier.sendSubmissionReceived(n, await this.sendOptions(n.accountId));

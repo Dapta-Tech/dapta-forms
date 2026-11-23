@@ -142,6 +142,99 @@ export function renderMemberInvited(
   };
 }
 
+// --- Referral program: emails to the referrer ---------------------------------
+//
+// Platform copy, never overridable. The badge is named by the label it carries
+// on a form (`growth.madeWith` in the shared catalog: "Made with dForms" /
+// "Hecho con dForms"), resolved by the caller and passed in, so the email
+// always names the badge the way the reader sees it.
+
+/** What the countdown email ("{invitee} joined. {left} to go") needs. */
+export interface ReferralJoinedCopyVars {
+  /** The invitee's first name, or null/blank when none is safe to show. */
+  invitee?: string | null;
+  /** Referrals credited to the referrer, this one included. */
+  count: number;
+  /** Referrals the referral unlock needs (5). */
+  goal: number;
+  /** The badge's localized label. */
+  badgeLabel: string;
+}
+
+/** The invitee as the copy names them: their first name, else a generic one. */
+function inviteeName(locale: NotificationLocale, invitee: string | null | undefined): string {
+  const name = invitee?.trim();
+  if (name) return name;
+  return locale === 'es' ? 'Alguien' : 'Someone';
+}
+
+/**
+ * "{invitee} joined. {left} to go to remove the badge", sent to the referrer
+ * on each referral that leaves them between 1 and 4. With one left the
+ * subject changes to push for the last one.
+ */
+export function renderReferralJoined(locale: NotificationLocale, v: ReferralJoinedCopyVars): RenderedCopy {
+  const name = inviteeName(locale, v.invitee);
+  const left = Math.max(v.goal - v.count, 0);
+  if (locale === 'es') {
+    return {
+      subject: left === 1 ? `¡Te falta 1! ${name} se unió` : `${name} se unió. Te faltan ${left} para quitar el sello`,
+      lines: [
+        `${name} se registró en dForms con tu link. Vas ${v.count} de ${v.goal}. Con ${left} más, «${v.badgeLabel}» se va de todos tus formularios, para siempre.`,
+      ],
+    };
+  }
+  return {
+    subject: left === 1 ? `Just 1 to go! ${name} joined` : `${name} joined. ${left} to go to remove the badge`,
+    lines: [
+      `${name} signed up for dForms with your link. You're at ${v.count} of ${v.goal}. ${left} more and “${v.badgeLabel}” is gone from all your forms, for good.`,
+    ],
+  };
+}
+
+/** What the unlock email needs. */
+export interface ReferralUnlockedCopyVars {
+  /** The badge's localized label. */
+  badgeLabel: string;
+}
+
+/** "You did it": sent once, when the referral unlock happens, instead of the countdown. */
+export function renderReferralUnlocked(locale: NotificationLocale, v: ReferralUnlockedCopyVars): RenderedCopy {
+  if (locale === 'es') {
+    return {
+      subject: `Lo lograste: tus formularios ya no llevan «${v.badgeLabel}»`,
+      lines: [
+        'Cinco personas se unieron con tu link. Quitamos el sello de todos tus formularios, también de los que crees después.',
+        'Es de por vida. Si algún día lo quieres de vuelta, actívalo en Diseño.',
+      ],
+    };
+  }
+  return {
+    subject: `You did it: your forms no longer show “${v.badgeLabel}”`,
+    lines: [
+      'Five people joined with your link. We removed the badge from all your forms, including the ones you create later.',
+      "It's for life. If you ever want it back, turn it on in Design.",
+    ],
+  };
+}
+
+/** The labels around the referral link in the countdown email. */
+export interface ReferralShareLabels {
+  /** The primary button, to the person's referral link. */
+  button: string;
+  /** The lead-in before the per-channel share links. */
+  shareOn: string;
+  whatsapp: string;
+  email: string;
+  x: string;
+}
+
+export function referralShareLabels(locale: NotificationLocale): ReferralShareLabels {
+  return locale === 'es'
+    ? { button: 'Compartir mi link', shareOn: 'O compártelo en', whatsapp: 'WhatsApp', email: 'Correo', x: 'X' }
+    : { button: 'Share my link', shareOn: 'Or share it on', whatsapp: 'WhatsApp', email: 'Email', x: 'X' };
+}
+
 // --- Account-editable overrides (Settings → Notifications) --------------------
 //
 // An account owner may replace the stock subject/body above with their own copy,
