@@ -74,3 +74,23 @@ describe('admin.developers: the connector, never keys, never the identity provid
     }
   });
 });
+
+describe('admin.chrome.referral: the badge is named by its localized label', () => {
+  it('the share modal body names it as the pill reads in each language', () => {
+    for (const locale of ['en', 'es'] as const) {
+      const m = getMessages(locale);
+      expect(m.admin.chrome.referral.body).toContain(m.growth.madeWith);
+    }
+    expect(getMessages('es').admin.chrome.referral.body).not.toContain('Made with');
+  });
+
+  it('every banner message carries the pill exactly once, by placeholder', () => {
+    for (const locale of ['en', 'es'] as const) {
+      const b = getMessages(locale).admin.chrome.referral.banner;
+      for (const key of ['message0', 'messageSome', 'messageLast', 'short0', 'shortSome', 'shortLast'] as const) {
+        expect(b[key].split('{badge}'), `${locale} ${key}`).toHaveLength(2);
+      }
+      expect(b.infoLabel).toContain('{badge}');
+    }
+  });
+});

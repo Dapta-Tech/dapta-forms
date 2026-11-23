@@ -41,7 +41,9 @@ afterEach(async () => {
   host = null;
 });
 
-async function mount(opts: { locale?: Locale; count?: number; onClose?: () => void } = {}) {
+async function mount(
+  opts: { locale?: Locale; count?: number; onClose?: () => void; surface?: 'menu' | 'banner' } = {},
+) {
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -54,6 +56,7 @@ async function mount(opts: { locale?: Locale; count?: number; onClose?: () => vo
         count={opts.count ?? 0}
         goal={5}
         m={getMessages(opts.locale ?? 'en').admin.chrome.referral}
+        surface={opts.surface}
       />,
     ),
   );
@@ -146,5 +149,24 @@ describe('ReferralShareModal', () => {
     const q = await mount({ onClose });
     await act(async () => q('referral-close')!.click());
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('opened from the banner, the copy and every share say so', async () => {
+    const q = await mount({ surface: 'banner' });
+    await act(async () => q('referral-copy')!.click());
+    const wa = q('referral-share-whatsapp') as HTMLAnchorElement;
+    wa.addEventListener('click', (e) => e.preventDefault(), { once: true });
+    await act(async () => wa.click());
+    expect(calls.events).toEqual([
+      ['referral_link_copied', { surface: 'banner' }],
+      ['referral_link_shared', { channel: 'whatsapp', surface: 'banner' }],
+    ]);
+  });
+
+  it('names the badge as the pill reads, in Spanish too', async () => {
+    await mount({ locale: 'es' });
+    const text = document.querySelector('[role="dialog"]')!.textContent;
+    expect(text).toContain('«Hecho con dForms»');
+    expect(text).not.toContain('Made with');
   });
 });

@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { referralShareLinks, type FormsMessages, type ReferralShareChannel } from '@quill/shared';
 import { Modal } from '@/components/modal';
 import { buttonVariants } from '@/components/ui/button';
 import { captureEvent } from '@/lib/product-analytics';
+import { surfaceProps, useReferralCopy, type ReferralSurface } from './use-referral-copy';
 
 export type ReferralMessages = FormsMessages['admin']['chrome']['referral'];
 
@@ -39,14 +40,12 @@ const CHANNELS: { channel: ReferralShareChannel; icon: ReactNode }[] = [
   { channel: 'x', icon: <XMark /> },
 ];
 
-/** How long "Copied" stays on the button before it reads "Copy link" again. */
-const COPIED_MS = 2000;
-
 /**
  * The referral link's share dialog, opened from the left-menu entry: what the
  * program is, the person's progress, their link with a copy button, and
  * WhatsApp, email and X with the message already written in the reader's
- * language. Each copy and share is recorded for the program's funnel.
+ * language. Each copy and share is recorded for the program's funnel, with
+ * the surface it was opened from when the caller says (`surface`).
  */
 export function ReferralShareModal({
   open,
@@ -55,6 +54,7 @@ export function ReferralShareModal({
   count,
   goal,
   m,
+  surface,
 }: {
   open: boolean;
   onClose: () => void;
@@ -62,31 +62,21 @@ export function ReferralShareModal({
   count: number;
   goal: number;
   m: ReferralMessages;
+  /** Where it was opened from, carried on the copy and share events. */
+  surface?: ReferralSurface;
 }) {
-  const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
+  const { copied, copy: copyLink, reset } = useReferralCopy(link, surface);
   useEffect(() => {
-    if (!open) setCopied(false);
-  }, [open]);
+    if (!open) reset();
+  }, [open, reset]);
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-    } catch {
-      // No clipboard (an insecure origin, a denied permission): hand the link
-      // over selected, so the keyboard shortcut copies it.
-      inputRef.current?.focus();
-      inputRef.current?.select();
-      return;
-    }
-    setCopied(true);
-    captureEvent('referral_link_copied');
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), COPIED_MS);
+    if (await copyLink()) return;
+    // No clipboard (an insecure origin, a denied permission): hand the link
+    // over selected, so the keyboard shortcut copies it.
+    inputRef.current?.focus();
+    inputRef.current?.select();
   };
 
   const shares = referralShareLinks(link, m.share);
@@ -168,7 +158,7 @@ export function ReferralShareModal({
                   // A mailto: hands off to the mail app; a new tab would stay blank.
                   {...(channel === 'email' ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
                   data-testid={`referral-share-${channel}`}
-                  onClick={() => captureEvent('referral_link_shared', { channel })}
+                  onClick={() => captureEvent('referral_link_shared', { channel, ...surfaceProps(surface) })}
                   className={`${buttonVariants({ variant: 'outline' })} h-11 w-full`}
                 >
                   {icon}

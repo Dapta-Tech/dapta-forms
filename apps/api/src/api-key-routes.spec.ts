@@ -75,6 +75,9 @@ const DENIED = new Set([
   'PUT /v1/me/profile',
   'PUT /v1/me/locale',
   'PUT /v1/vanity',
+  // Closing the referral banner: a person's dashboard choice. A key has no
+  // dashboard and is no person.
+  'POST /v1/me/referral/banner/dismiss',
   // In-app announcements: news for a person in the dashboard. An agent has no
   // dashboard, and its reads would count as sessions the person never had.
   'GET /v1/me/announcement',

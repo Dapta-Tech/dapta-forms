@@ -232,6 +232,18 @@ export type MeReferral =
        * that does not send it still parses.
        */
       campaignActive?: boolean;
+      /**
+       * Whether the top banner shows: the campaign runs, the person is below the
+       * goal and not unlocked, the workspace does not pay for Dapta AI, and the
+       * banner was not closed in the last 7 days. Optional for an older API,
+       * which then shows no banner (`referralBannerVisible`).
+       */
+      bannerVisible?: boolean;
+      /**
+       * The person holds the referral unlock. Not sent yet (the unlock lands
+       * later); `true` hides the banner whatever `bannerVisible` says.
+       */
+      unlocked?: boolean;
     };
 
 export interface Me {
@@ -1107,6 +1119,9 @@ export const adminApi = {
    *  server action: this is the durable copy, and the one the notification
    *  emails are rendered from. */
   setMyLocale: (locale: 'en' | 'es') => req<{ ok: boolean; locale: 'en' | 'es' }>('PUT', '/v1/me/locale', { locale }),
+  /** Close the referral banner for the caller, in every workspace, for 7 days. */
+  dismissReferralBanner: () =>
+    req<{ dismissedUntil: number | null }>('POST', '/v1/me/referral/banner/dismiss', {}),
   /** The one in-app announcement the caller gets now, or null (see `announcements.ts` in @quill/shared). */
   announcement: () =>
     req<{ announcement: AnnouncementView | null }>('GET', '/v1/me/announcement').then((r) => r.announcement ?? null),

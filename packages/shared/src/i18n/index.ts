@@ -438,6 +438,41 @@ export interface FormsMessages {
           emailBody: string;
           x: string;
         };
+        /**
+         * The top banner during the campaign. `{badge}` is where the replica of
+         * the real pill goes (mark + `growth.madeWith`), so the copy always
+         * names the badge as it reads on a form. `{left}` is how many more
+         * referrals the unlock needs, `{goal}` the total.
+         */
+        banner: {
+          /** The strip's landmark name. */
+          region: string;
+          /** At 0. // {badge} {goal} */
+          message0: string;
+          /** Between 1 and the second to last. // {badge} {left} */
+          messageSome: string;
+          /** One to go. // {badge} */
+          messageLast: string;
+          /** The narrow strip's short copy (below 600 px), at 0. // {badge} */
+          short0: string;
+          /** // {badge} {left} */
+          shortSome: string;
+          /** // {badge} */
+          shortLast: string;
+          /** The "?" button's name. // {badge} */
+          infoLabel: string;
+          /** The popover's name. */
+          popoverLabel: string;
+          /** The popover's lead, in bold. */
+          popoverTitle: string;
+          /** What the badge is and how it goes. // {goal} */
+          popoverBody: string;
+          /** The progress bar, read aloud. // {count} {goal} */
+          progressSr: string;
+          copy: string;
+          share: string;
+          close: string;
+        };
       };
       /** Left-nav item labels (icon + label). */
       nav: {
@@ -3449,6 +3484,24 @@ export const en: FormsMessages = {
             "Hi, I've been using dForms, the form builder for AI agents. You ask your agent and it builds the form, publishes it, scores every answer and sends hot leads to your calendar or CRM. Free for life, unlimited responses, open source. If it helps, sign up with my link: {link}",
           x: 'My AI agent builds my forms now with dForms. Free, unlimited responses, open source. {link}',
         },
+        banner: {
+          region: 'Referral program',
+          message0: 'Invite {goal} people and remove {badge} from your forms, for free',
+          messageSome: '{left} to go to remove {badge} from your forms',
+          messageLast: 'Just 1 to go to remove {badge} for good!',
+          short0: 'Remove {badge}',
+          shortSome: '{left} to go: {badge}',
+          shortLast: '1 to go! {badge}',
+          infoLabel: 'What is the {badge} badge?',
+          popoverLabel: 'What the badge is',
+          popoverTitle: 'This is the badge.',
+          popoverBody:
+            'It shows at the foot of every form, page and email you send with dForms. Invite {goal} people who sign up with your link and it is gone from everything you own, for good.',
+          progressSr: '{count} of {goal} referrals',
+          copy: 'Copy my link',
+          share: 'Share',
+          close: 'Close banner',
+        },
       },
       nav: {
         home: 'Home',
@@ -6454,7 +6507,7 @@ export const es: FormsMessages = {
         progress: '{count}/{goal}',
         progressSr: ', {count} de {goal} se unieron',
         title: 'Invita a 5 personas y quita el sello de por vida',
-        body: 'Cuenta cada persona que se registre en dForms con tu link. Con {goal}, «Made with dForms» se va de todos los workspaces que tienes, para siempre.',
+        body: 'Cuenta cada persona que se registre en dForms con tu link. Con {goal}, «Hecho con dForms» se va de todos los workspaces que tienes, para siempre.',
         progressLabel: '{count} de {goal} se unieron con tu link',
         linkLabel: 'Tu link de referido',
         copy: 'Copiar link',
@@ -6471,6 +6524,24 @@ export const es: FormsMessages = {
           emailBody:
             'Hola, estoy usando dForms, el creador de formularios para agentes de IA. Le pides a tu agente que arme el formulario y él lo crea, lo publica, califica cada respuesta y te manda los leads calientes a tu calendario o CRM. Es gratis de por vida, sin límite de respuestas y de código abierto. Si te sirve, entra con mi link: {link}',
           x: 'Mis formularios ahora los arma mi agente de IA con dForms. Gratis, sin límite de respuestas y open source. {link}',
+        },
+        banner: {
+          region: 'Programa de referidos',
+          message0: 'Invita a {goal} personas y quita {badge} de tus formularios, gratis',
+          messageSome: 'Te faltan {left} para quitar {badge} de tus formularios',
+          messageLast: '¡Te falta 1 para quitar {badge} para siempre!',
+          short0: 'Quita {badge}',
+          shortSome: 'Faltan {left}: {badge}',
+          shortLast: '¡Falta 1! {badge}',
+          infoLabel: '¿Qué es el sello {badge}?',
+          popoverLabel: 'Qué es el sello',
+          popoverTitle: 'Este es el sello.',
+          popoverBody:
+            'Sale al final de cada formulario, página y correo que mandas con dForms. Invita a {goal} personas que se registren con tu link y se va de todo lo tuyo, para siempre.',
+          progressSr: '{count} de {goal} referidos',
+          copy: 'Copiar mi link',
+          share: 'Compartir',
+          close: 'Cerrar banner',
         },
       },
       nav: {

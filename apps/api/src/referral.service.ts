@@ -3,7 +3,9 @@ import { referralCampaignEndsAt, type ServerEnv } from '@quill/config/env';
 import {
   countReferrals,
   creditReferral,
+  dismissReferralBanner,
   ensureReferrer,
+  getAttributionSwitch,
   getMe,
   getReferrerByCode,
   personNames,
@@ -12,8 +14,9 @@ import {
   referralPersonKey,
   type Db,
   type ReferralSource,
+  type ReferrerRow,
 } from '@quill/db';
-import { REFERRAL_GOAL, buildReferralLink, referralLinkBase } from '@quill/shared';
+import { REFERRAL_GOAL, buildReferralLink, paidVerdictFresh, referralLinkBase } from '@quill/shared';
 import { AnalyticsEffects } from './analytics-effects';
 import { DB, REFERRAL_OPTIONS } from './tokens';
 
@@ -84,7 +87,17 @@ export type ReferralView =
        * the link, the count and the menu entry stay after the campaign ends.
        */
       campaignActive: boolean;
+      /**
+       * Whether the top banner shows: the campaign is running, the person is
+       * below the goal and holds no referral unlock, this workspace does not
+       * pay for Dapta AI (a fresh paid verdict), and the person has not
+       * dismissed it in the last `REFERRAL_BANNER_SNOOZE_MS`.
+       */
+      bannerVisible: boolean;
     };
+
+/** How long closing the top banner hides it: 7 days. */
+export const REFERRAL_BANNER_SNOOZE_MS = 7 * 86_400_000;
 
 /** A referral code as the landing may send it: the alphabet of `generateReferralCode`, any case. */
 const CODE_SHAPE = /^[a-z0-9]{1,32}$/i;
@@ -132,7 +145,48 @@ export class ReferralService {
     const link = buildReferralLink(this.options.baseUrl, row.code);
     if (!link) return { enabled: false };
     const count = await countReferrals(this.db, person);
-    return { enabled: true, link, count, goal: REFERRAL_GOAL, campaignActive: this.campaignActive() };
+    return {
+      enabled: true,
+      link,
+      count,
+      goal: REFERRAL_GOAL,
+      campaignActive: this.campaignActive(),
+      bannerVisible: await this.bannerVisible(accountId, row, count),
+    };
+  }
+
+  /**
+   * The top banner's rule (see `ReferralView.bannerVisible`). The paid rule is
+   * read for THIS workspace: a person who pays in one workspace and not in
+   * another still sees the banner in the free one, where the badge shows.
+   */
+  private async bannerVisible(accountId: string, row: ReferrerRow, count: number): Promise<boolean> {
+    if (!this.campaignActive()) return false;
+    if (row.unlockedAt != null || count >= REFERRAL_GOAL) return false;
+    const now = this.now();
+    if (row.bannerDismissedUntil != null && now < row.bannerDismissedUntil) return false;
+    const badge = await getAttributionSwitch(this.db, accountId);
+    return !paidVerdictFresh(badge?.paid ?? null, badge?.paidCheckedAt ?? null, now);
+  }
+
+  /**
+   * Close the top banner for the person making the request, in every
+   * workspace, for `REFERRAL_BANNER_SNOOZE_MS`. With the program off nothing
+   * is written and the answer carries no date.
+   */
+  async dismissBanner(accountId: string, memberId: string): Promise<{ dismissedUntil: number | null }> {
+    if (!this.enabled) return { dismissedUntil: null };
+    const person = await referralPersonKey(this.db, accountId, memberId);
+    if (!person) return { dismissedUntil: null };
+    const now = this.now();
+    await ensureReferrer(this.db, person, { now, code: this.options.code });
+    const dismissedUntil = now + REFERRAL_BANNER_SNOOZE_MS;
+    await dismissReferralBanner(this.db, person, dismissedUntil);
+    return { dismissedUntil };
+  }
+
+  private now(): number {
+    return this.options.now?.() ?? Date.now();
   }
 
   /**

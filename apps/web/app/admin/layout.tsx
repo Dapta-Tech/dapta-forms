@@ -11,6 +11,7 @@ import { getLocale } from '@/lib/locale';
 import { getThemePref } from '@/lib/theme.server';
 import { ToastProvider } from '@/components/toast';
 import { PH_ID_COOKIE, referralCodeOfLink, sanitizeLandingDistinctId } from '@/lib/attribution';
+import { referralBannerVisible } from '@/lib/referral-banner';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
 import { PlatformGtm, resolvePlatformGtmId } from '@/components/analytics/platform-gtm';
@@ -43,7 +44,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   // Server-read the collapse pref so the sidebar renders at the right width on
   // first paint (no rail FOUC).
   const initialCollapsed = jar.get('forms.nav.collapsed')?.value === '1';
-  const adminMessages = getMessages(await getLocale()).admin;
+  const messages = getMessages(await getLocale());
+  const adminMessages = messages.admin;
   const chrome = adminMessages.chrome;
 
   // Best-effort: a failure here must never take down the dashboard. Without the
@@ -128,7 +130,15 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         // The referral program's menu entry, only while the API reports it on.
         referral={
           me.referral?.enabled
-            ? { link: me.referral.link, count: me.referral.count, goal: me.referral.goal }
+            ? {
+                link: me.referral.link,
+                count: me.referral.count,
+                goal: me.referral.goal,
+                // The top banner, while the API shows it (campaign, goal,
+                // unlock, paid workspace, dismissal), naming the badge as the
+                // pill reads in this language.
+                banner: referralBannerVisible(me.referral) ? { badgeLabel: messages.growth.madeWith } : null,
+              }
             : null
         }
         user={{ displayName: me.displayName, email: me.email }}
