@@ -422,6 +422,22 @@ export const announcementState = sqliteTable(
   }),
 );
 
+/** One referrer, keyed by the person (see 0030 and the Postgres twin). */
+export const referrer = sqliteTable(
+  'referrer',
+  {
+    personId: text('person_id').primaryKey(),
+    code: text('code').notNull(),
+    unlockedAt: integer('unlocked_at'),
+    bannerDismissedUntil: integer('banner_dismissed_until'),
+    nudgeSentAt: integer('nudge_sent_at'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    referrerCodeUq: uniqueIndex('referrer_code_uq').on(t.code),
+  }),
+);
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -439,4 +455,5 @@ export const sqliteSchema = {
   linkPage,
   linkPageAlias,
   announcementState,
+  referrer,
 };

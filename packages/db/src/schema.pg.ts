@@ -447,6 +447,29 @@ export const announcementState = pgTable(
   }),
 );
 
+/**
+ * One referrer: a person's referral link code and the program's per-person
+ * state (see 0030 and ADR 0005). Keyed by the PERSON, like
+ * `announcement_state`: `person_id` is the identity service's user id
+ * (`member.external_id`), or `email:{lowercased email}` for a member it does
+ * not know (local development). Created lazily the first time the link is
+ * asked for; no workspace id, never deleted with a workspace.
+ */
+export const referrer = pgTable(
+  'referrer',
+  {
+    personId: text('person_id').primaryKey(),
+    code: text('code').notNull(),
+    unlockedAt: bigint('unlocked_at', { mode: 'number' }),
+    bannerDismissedUntil: bigint('banner_dismissed_until', { mode: 'number' }),
+    nudgeSentAt: bigint('nudge_sent_at', { mode: 'number' }),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    referrerCodeUq: uniqueIndex('referrer_code_uq').on(t.code),
+  }),
+);
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -464,4 +487,5 @@ export const pgSchema = {
   linkPage,
   linkPageAlias,
   announcementState,
+  referrer,
 };

@@ -12,6 +12,8 @@ export const PREMIUM_MODE = Symbol('PREMIUM_MODE');
 /** `attributionPremiumMode(env)`: whether hiding the attribution needs the paid verdict. */
 export const ATTRIBUTION_MODE = Symbol('ATTRIBUTION_MODE');
 export const ONBOARDING_ENABLED = Symbol('ONBOARDING_ENABLED');
+/** `referralOptions(env)`: the referral program's switch and link base, resolved once. */
+export const REFERRAL_OPTIONS = Symbol('REFERRAL_OPTIONS');
 export const WORKSPACE_PROJECTION = Symbol('WORKSPACE_PROJECTION');
 export const STORAGE = Symbol('STORAGE');
 export const CAPTCHA = Symbol('CAPTCHA');

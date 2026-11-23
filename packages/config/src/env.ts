@@ -198,6 +198,15 @@ export const serverEnvSchema = z.object({
   // funnel can see. With a demo seeded for everyone, that state is invisible.
   ONBOARDING_WIZARD: boolish.default('true'),
 
+  // The referral program ("invite 5, remove the badge for life"): every
+  // signed-in person gets a personal referral link in the left menu. OFF by
+  // default, so a fork never shows a Dapta campaign; it is also the one switch
+  // that stops the whole program at once. Resolved ONCE in the API
+  // (`referralOptions`) and read by the web app off `/v1/me.referral`, never
+  // from its own copy. The link points at NEXT_PUBLIC_LANDING_URL when set,
+  // else at PUBLIC_APP_URL; with neither, the program stays off.
+  REFERRAL_PROGRAM: blankAsUnset(boolish.default('false')),
+
   // Auth — unset selects the local dev stub.
   AUTH_PROVIDER: z.enum(['local', 'workos']).default('local'),
 
