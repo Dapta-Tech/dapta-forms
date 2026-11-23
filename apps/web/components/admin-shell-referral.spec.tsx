@@ -28,7 +28,7 @@ vi.mock('@/lib/product-analytics', () => ({
   captureEvent: (event: string, props?: unknown) => nav.events.push([event, props]),
 }));
 
-import { AdminShell, type ShellReferral } from './admin-shell';
+import { AdminShell, PRODUCT_HUNT_REVIEW_URL, type ShellReferral } from './admin-shell';
 import { useOpenReferralDialog } from './referral/referral-dialog-context';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -46,6 +46,8 @@ function shell(
     locale?: Locale;
     referral?: ShellReferral | null;
     page?: React.ReactNode;
+    /** Left out: the build's own answer (a fork in tests). */
+    productHunt?: boolean;
   } = {},
 ) {
   const m = getMessages(opts.locale ?? 'en').admin;
@@ -56,6 +58,7 @@ function shell(
       accountNav={m.account.nav}
       initialCollapsed={opts.collapsed ?? false}
       referral={opts.referral === undefined ? REFERRAL : opts.referral}
+      {...(opts.productHunt === undefined ? {} : { productHunt: opts.productHunt })}
     >
       {opts.page ?? <p>page</p>}
     </AdminShell>
@@ -290,3 +293,58 @@ describe('AdminShell: the dialog, from a page', () => {
   });
 });
 
+const reviews = (html: string) =>
+  [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll<HTMLAnchorElement>('[data-testid="nav-product-hunt"]')];
+
+describe('AdminShell: the Product Hunt review row', () => {
+  it('on a Dapta build: under the referral entry, in the rail and the drawer, an external link', () => {
+    const html = renderToStaticMarkup(shell({ productHunt: true }));
+    const rows = reviews(html);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.tagName).toBe('A');
+      expect(row.getAttribute('href')).toBe(PRODUCT_HUNT_REVIEW_URL);
+      expect(row.getAttribute('target')).toBe('_blank');
+      expect(row.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(row.getAttribute('title')).toBe('Like dForms? Review us on Product Hunt');
+      expect(accessibleName(row)).toBe('Like dForms? Review on Product Hunt (opens in a new tab)');
+      expect(row.querySelector('.pi-external-link')).not.toBeNull();
+      // The mark in its own colours.
+      expect(row.querySelector('svg circle')!.getAttribute('fill')).toBe('#DA552F');
+      // Right after "Remove badge".
+      expect(row.parentElement!.previousElementSibling!.querySelector('[data-testid="nav-referral"]')).not.toBeNull();
+    }
+    expect(PRODUCT_HUNT_REVIEW_URL).toBe('https://www.producthunt.com/products/dforms/reviews/new');
+  });
+
+  it('in Spanish', () => {
+    const [row] = reviews(renderToStaticMarkup(shell({ productHunt: true, locale: 'es' })));
+    expect(row!.getAttribute('title')).toBe('¿Te gusta dForms? Déjanos una reseña en Product Hunt');
+    expect(accessibleName(row!)).toBe('¿Te gusta dForms? Reseña en Product Hunt (se abre en una pestaña nueva)');
+  });
+
+  it('collapsed to the 64px rail: the mark alone, the full sentence as tooltip and name', () => {
+    const [desktop] = reviews(renderToStaticMarkup(shell({ productHunt: true, collapsed: true })));
+    expect(desktop!.querySelector('.pi-external-link')).toBeNull();
+    expect(desktop!.querySelector('svg')).not.toBeNull();
+    expect(desktop!.getAttribute('title')).toBe('Like dForms? Review us on Product Hunt');
+    expect(accessibleName(desktop!)).toBe('Like dForms? Review us on Product Hunt (opens in a new tab)');
+  });
+
+  it('hidden on a fork, which is what a build without the Dapta name is', () => {
+    expect(reviews(renderToStaticMarkup(shell()))).toHaveLength(0);
+    expect(reviews(renderToStaticMarkup(shell({ productHunt: false })))).toHaveLength(0);
+  });
+
+  it('does not depend on the referral program', () => {
+    expect(reviews(renderToStaticMarkup(shell({ productHunt: true, referral: null })))).toHaveLength(2);
+  });
+
+  it('records the click', async () => {
+    await mount(shell({ productHunt: true }));
+    const row = document.querySelector<HTMLAnchorElement>('[data-testid="nav-product-hunt"]')!;
+    row.addEventListener('click', (e) => e.preventDefault(), { once: true });
+    await act(async () => row.click());
+    expect(nav.events).toEqual([['product_hunt_review_clicked', { collapsed: false }]]);
+  });
+});
