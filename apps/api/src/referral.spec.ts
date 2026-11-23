@@ -9,9 +9,13 @@
  *      different one for anybody else, even when a generated code collides.
  *   3. Switched off (the default), the block is `{ enabled: false }` and no
  *      referrer row is ever written.
+ *   4. `campaignActive` is true while now is before `REFERRAL_CAMPAIGN_ENDS_AT`,
+ *      or when none is set; after it the link, count and goal stay. A value
+ *      that is not an ISO date-time with a zone fails to resolve and to boot.
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { loadServerEnv } from '@quill/config/env';
 import { createDb, migrate, seed, sql, type Db } from '@quill/db';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
@@ -112,7 +116,7 @@ describe('/v1/me.referral, program on', () => {
   it('carries the link, a count of 0 and the goal of 5', async () => {
     const member = await addMember(acme, 'ana@example.com', { externalId: 'user_ana' });
     const referral = await referralOf(crud(ON), as(acme, member));
-    expect(referral).toEqual({ enabled: true, link: expect.any(String), count: 0, goal: 5 });
+    expect(referral).toEqual({ enabled: true, link: expect.any(String), count: 0, goal: 5, campaignActive: true });
     expect(referral.link).toMatch(/^https:\/\/landing\.example\.test\/\?ref=[a-z0-9]{8}$/);
   });
 
@@ -408,5 +412,74 @@ describe('POST /v1/me/referral/claim', () => {
       await controller.claim(as(self.account, self.member), { code: ana.code });
       expect(await events()).toHaveLength(0);
     });
+  });
+});
+
+describe('/v1/me.referral, the campaign window', () => {
+  const ENDS = Date.parse('2026-12-31T23:59:59Z');
+  const campaignOf = async (options: ReferralOptions) => {
+    const member = await addMember(acme, 'ana@example.com', { externalId: 'user_ana' });
+    return (await referralOf(crud(options), as(acme, member))) as { campaignActive?: boolean };
+  };
+
+  it('is active when no end is set', async () => {
+    expect((await campaignOf(ON)).campaignActive).toBe(true);
+  });
+
+  it('is active before the end', async () => {
+    expect((await campaignOf({ ...ON, campaignEndsAt: ENDS, now: () => ENDS - 1 })).campaignActive).toBe(true);
+  });
+
+  it('is over from the end on, while the link, count and goal stay', async () => {
+    for (const now of [ENDS, ENDS + 86_400_000]) {
+      await db.run(sql`DELETE FROM member WHERE email = 'ana@example.com'`);
+      const referral = await campaignOf({ ...ON, campaignEndsAt: ENDS, now: () => now });
+      expect(referral).toEqual({ enabled: true, link: expect.any(String), count: 0, goal: 5, campaignActive: false });
+    }
+  });
+
+  it('switched off is still { enabled: false }, whatever the campaign', async () => {
+    const off = { enabled: false, baseUrl: LANDING, campaignEndsAt: ENDS };
+    expect(await campaignOf({ ...off, now: () => ENDS - 1 })).toEqual({ enabled: false });
+    await db.run(sql`DELETE FROM member WHERE email = 'ana@example.com'`);
+    expect(await campaignOf({ ...off, now: () => ENDS + 1 })).toEqual({ enabled: false });
+    expect(await referrerRows()).toBe(0);
+  });
+});
+
+describe('referralOptions: the campaign end, resolved once from the environment', () => {
+  const env = { REFERRAL_PROGRAM: true, PUBLIC_APP_URL: APP };
+
+  it('reads REFERRAL_CAMPAIGN_ENDS_AT as an ISO date-time', () => {
+    expect(referralOptions({ ...env, REFERRAL_CAMPAIGN_ENDS_AT: '2026-12-31T23:59:59Z' }).campaignEndsAt).toBe(
+      Date.parse('2026-12-31T23:59:59Z'),
+    );
+    expect(referralOptions({ ...env, REFERRAL_CAMPAIGN_ENDS_AT: '2027-01-01T00:00:00-05:00' }).campaignEndsAt).toBe(
+      Date.parse('2027-01-01T05:00:00Z'),
+    );
+  });
+
+  it('unset means no end', () => {
+    expect(referralOptions(env).campaignEndsAt ?? null).toBeNull();
+    expect(referralOptions({ ...env, REFERRAL_CAMPAIGN_ENDS_AT: undefined }).campaignEndsAt ?? null).toBeNull();
+  });
+
+  it('an invalid value fails to resolve, even with the program off', () => {
+    for (const bad of ['tomorrow', '2026-13-01T00:00:00Z', '2026-12-31', '2026-12-31T23:59:59']) {
+      expect(() => referralOptions({ ...env, REFERRAL_CAMPAIGN_ENDS_AT: bad })).toThrow(/REFERRAL_CAMPAIGN_ENDS_AT/);
+      expect(() =>
+        referralOptions({ ...env, REFERRAL_PROGRAM: false, REFERRAL_CAMPAIGN_ENDS_AT: bad }),
+      ).toThrow(/REFERRAL_CAMPAIGN_ENDS_AT/);
+    }
+  });
+
+  it('an invalid value fails the boot', () => {
+    expect(() =>
+      loadServerEnv({ NODE_ENV: 'test', REFERRAL_CAMPAIGN_ENDS_AT: 'next friday' } as unknown as NodeJS.ProcessEnv),
+    ).toThrow(/REFERRAL_CAMPAIGN_ENDS_AT/);
+    expect(
+      loadServerEnv({ NODE_ENV: 'test', REFERRAL_CAMPAIGN_ENDS_AT: '' } as unknown as NodeJS.ProcessEnv)
+        .REFERRAL_CAMPAIGN_ENDS_AT,
+    ).toBeUndefined();
   });
 });

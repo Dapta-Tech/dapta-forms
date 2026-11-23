@@ -206,6 +206,12 @@ export const serverEnvSchema = z.object({
   // from its own copy. The link points at NEXT_PUBLIC_LANDING_URL when set,
   // else at PUBLIC_APP_URL; with neither, the program stays off.
   REFERRAL_PROGRAM: blankAsUnset(boolish.default('false')),
+  // When the referral CAMPAIGN ends, as an ISO 8601 date-time with a time
+  // zone (2026-12-31T23:59:59Z, or -05:00). Unset = no end. After it, only the
+  // campaign-scoped surfaces stop (the top banner, the nudge email); the link,
+  // the count, the menu entry and earned unlocks stay. Checked at boot
+  // (`referralCampaignEndsAt`) and exposed as `/v1/me.referral.campaignActive`.
+  REFERRAL_CAMPAIGN_ENDS_AT: blankAsUnset(z.string().optional()),
 
   // Auth — unset selects the local dev stub.
   AUTH_PROVIDER: z.enum(['local', 'workos']).default('local'),
@@ -693,7 +699,32 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
   apiDeprecation(parsed.data);
   // The same for the MCP OAuth settings: a login that cannot work never boots.
   mcpOAuth(parsed.data);
+  // And for the referral campaign's end: a typo must not silently run forever.
+  referralCampaignEndsAt(parsed.data);
   return parsed.data;
+}
+
+/** An ISO 8601 date-time with an explicit time zone (`Z` or `+hh:mm`). */
+const ISO_DATE_TIME_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * `REFERRAL_CAMPAIGN_ENDS_AT` in epoch ms, or null when unset (no end). Throws
+ * on anything that is not an ISO date-time with a time zone: a date alone or a
+ * zone-less time would end the campaign at a different hour on each server.
+ */
+export function referralCampaignEndsAt(
+  env: Partial<Pick<ServerEnv, 'REFERRAL_CAMPAIGN_ENDS_AT'>>,
+): number | null {
+  const raw = env.REFERRAL_CAMPAIGN_ENDS_AT?.trim();
+  if (!raw) return null;
+  const ms = ISO_DATE_TIME_WITH_ZONE.test(raw) ? Date.parse(raw) : Number.NaN;
+  if (Number.isNaN(ms)) {
+    throw new Error(
+      `Refusing to boot: REFERRAL_CAMPAIGN_ENDS_AT (${JSON.stringify(raw)}) is not an ISO date-time with a ` +
+        'time zone. Use e.g. 2026-12-31T23:59:59Z or 2026-12-31T23:59:59-05:00, or leave it unset for no end.',
+    );
+  }
+  return ms;
 }
 
 /** True when DATABASE_URL points at Postgres (vs SQLite). Scheme is case-insensitive. */

@@ -17,6 +17,7 @@ import { ZodError } from 'zod';
 import type { ServerEnv } from '@quill/config/env';
 import { SubmissionService } from './submission.service';
 import { LinkPageService } from './link-page.service';
+import { ReferralService } from './referral.service';
 import { FILE_LINK_NOT_FOUND, UploadService } from './upload.service';
 import { fileLinkKey, verifyFileToken } from './file-link';
 import { unwrap } from './http';
@@ -51,6 +52,9 @@ export class PublicController {
     // The workspace link page. Optional and LAST so every existing positional
     // construction keeps working; absent, its routes answer 404.
     @Optional() @Inject(LinkPageService) private readonly linkPages?: LinkPageService,
+    // The referral program, for the landing's greeting. Optional and LAST for
+    // the same reason; absent, its route answers 404.
+    @Optional() @Inject(ReferralService) private readonly referrals?: ReferralService,
   ) {
     this.trustProxyHops = env ? resolveTrustProxyHops(env) : 0;
     this.fileLinkKey = fileLinkKey(env);
@@ -119,6 +123,21 @@ export class PublicController {
     } catch (err) {
       badReq(err);
     }
+  }
+
+  /**
+   * The first name of the person a referral code belongs to, so the landing
+   * can say "Ana invited you". Exactly `{ firstName }` and nothing else about
+   * the person. An unknown code, the program switched off and a person with
+   * no name safe to show all answer the same 404, so the route tells them
+   * apart for nobody. Not cached: the switch and the name take effect at once.
+   */
+  @Get('referrals/:code')
+  @Header('Cache-Control', 'no-store')
+  async referralName(@Param('code') code: string): Promise<{ firstName: string }> {
+    const firstName = this.referrals ? await this.referrals.firstNameForCode(code) : null;
+    if (!firstName) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Referral not found.' });
+    return { firstName };
   }
 
   /**
