@@ -1,7 +1,7 @@
 'use server';
 
 import { unstable_rethrow } from 'next/navigation';
-import { adminApi } from '@/lib/admin-api';
+import { adminApi, type MeReferral } from '@/lib/admin-api';
 
 /**
  * Close the referral banner for the person, in every workspace, for 7 days.
@@ -18,5 +18,19 @@ export async function dismissReferralBanner(): Promise<{ ok: boolean }> {
   } catch (e) {
     unstable_rethrow(e);
     return { ok: false };
+  }
+}
+
+/**
+ * The person's referral progress, read again by the dashboard when its window
+ * gets focus (`ReferralMoments`), so a new referral shows without a reload.
+ * Null on any failure: a missed read only delays a toast.
+ */
+export async function readReferralProgress(): Promise<MeReferral | null> {
+  try {
+    return (await adminApi.me()).referral ?? null;
+  } catch (e) {
+    unstable_rethrow(e);
+    return null;
   }
 }

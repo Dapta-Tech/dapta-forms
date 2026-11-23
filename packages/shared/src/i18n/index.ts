@@ -473,6 +473,38 @@ export interface FormsMessages {
           share: string;
           close: string;
         };
+        /**
+         * The toast on a new referral, since the last count the person saw:
+         * who joined, then how many are left (`{left}` more referrals to the
+         * goal). The two parts are joined by a period and a space.
+         */
+        toast: {
+          /** One new referral. */
+          one: string;
+          /** Several since the last look. // {joined} */
+          many: string;
+          /** One more, after the goal was already reached. */
+          oneMore: string;
+          /** // {joined} */
+          manyMore: string;
+          /** // {left} */
+          left: string;
+          /** Exactly one left. */
+          lastOne: string;
+        };
+        /**
+         * The one-time celebration when the person reaches the goal. `{badge}`
+         * is the badge's label (`growth.madeWith`), shown burnt away.
+         */
+        celebration: {
+          /** The heading. // {badge} */
+          title: string;
+          /** // {goal} */
+          body: string;
+          /** The link to the badge setting (the brand kit). */
+          setting: string;
+          close: string;
+        };
       };
       /** Left-nav item labels (icon + label). */
       nav: {
@@ -3520,6 +3552,20 @@ export const en: FormsMessages = {
           copy: 'Copy my link',
           share: 'Share',
           close: 'Close banner',
+        },
+        toast: {
+          one: 'Someone joined with your link',
+          many: '{joined} people joined with your link',
+          oneMore: 'Someone else joined with your link',
+          manyMore: '{joined} more people joined with your link',
+          left: '{left} to go',
+          lastOne: 'Just 1 to go',
+        },
+        celebration: {
+          title: 'You did it: your forms no longer show {badge}',
+          body: '{goal} people joined with your link. The badge is gone from every workspace you own, for life, and from the ones you create later.',
+          setting: 'See the badge setting',
+          close: 'Close',
         },
       },
       nav: {
@@ -6569,6 +6615,20 @@ export const es: FormsMessages = {
           copy: 'Copiar mi link',
           share: 'Compartir',
           close: 'Cerrar banner',
+        },
+        toast: {
+          one: 'Alguien se unió con tu link',
+          many: '{joined} personas se unieron con tu link',
+          oneMore: 'Alguien más se unió con tu link',
+          manyMore: '{joined} personas más se unieron con tu link',
+          left: 'Te faltan {left}',
+          lastOne: 'Te falta solo 1',
+        },
+        celebration: {
+          title: 'Lo lograste: tus formularios ya no llevan {badge}',
+          body: '{goal} personas se unieron con tu link. El sello se fue de todos los workspaces que tienes, de por vida, y de los que crees después.',
+          setting: 'Ver el ajuste del sello',
+          close: 'Cerrar',
         },
       },
       nav: {
