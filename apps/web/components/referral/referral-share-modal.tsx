@@ -5,7 +5,9 @@ import { referralShareLinks, type FormsMessages, type ReferralShareChannel } fro
 import { Modal } from '@/components/modal';
 import { buttonVariants } from '@/components/ui/button';
 import { captureEvent } from '@/lib/product-analytics';
+import { BadgePill, ReferralTrack } from './referral-banner';
 import { surfaceProps, useReferralCopy, type ReferralSurface } from './use-referral-copy';
+import './referral-banner.css';
 
 export type ReferralMessages = FormsMessages['admin']['chrome']['referral'];
 
@@ -36,16 +38,24 @@ function XMark() {
 
 const CHANNELS: { channel: ReferralShareChannel; icon: ReactNode }[] = [
   { channel: 'whatsapp', icon: <WhatsAppMark /> },
-  { channel: 'email', icon: <i aria-hidden className="pi pi-envelope" style={{ fontSize: 14 }} /> },
+  {
+    channel: 'email',
+    icon: <i aria-hidden className="pi pi-envelope" style={{ fontSize: 14 }} />,
+  },
   { channel: 'x', icon: <XMark /> },
 ];
 
 /**
- * The referral link's share dialog, opened from the left-menu entry: what the
- * program is, the person's progress, their link with a copy button, and
- * WhatsApp, email and X with the message already written in the reader's
- * language. Each copy and share is recorded for the program's funnel, with
- * the surface it was opened from when the caller says (`surface`).
+ * The referral dialog, the one place the program is explained and shared
+ * from. The menu entry, the banner (its call to action and its "?") and the
+ * locked badge switch all open it. In order: the badge (a mini form with the
+ * pill highlighted at its foot, and what it is), how it works in three steps,
+ * the person's progress on the same flowing bar as the banner, their link
+ * with a copy button, and WhatsApp, email and X with the message already
+ * written in the reader's language.
+ *
+ * Opening it records `referral_dialog_opened`; each copy and share is recorded
+ * too, all with the surface it was opened from when the caller says.
  */
 export function ReferralShareModal({
   open,
@@ -53,6 +63,7 @@ export function ReferralShareModal({
   link,
   count,
   goal,
+  badgeLabel,
   m,
   surface,
 }: {
@@ -61,8 +72,10 @@ export function ReferralShareModal({
   link: string;
   count: number;
   goal: number;
+  /** The badge's localized label (`growth.madeWith`). */
+  badgeLabel: string;
   m: ReferralMessages;
-  /** Where it was opened from, carried on the copy and share events. */
+  /** Where it was opened from, carried on the open, copy and share events. */
   surface?: ReferralSurface;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +83,9 @@ export function ReferralShareModal({
   useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
+  useEffect(() => {
+    if (open) captureEvent('referral_dialog_opened', surfaceProps(surface));
+  }, [open, surface]);
 
   const copy = async () => {
     if (await copyLink()) return;
@@ -82,6 +98,7 @@ export function ReferralShareModal({
   const shares = referralShareLinks(link, m.share);
   const values = { count, goal };
   const labelId = 'referral-share-title';
+  const steps = [m.steps.share, m.steps.signup, fillReferral(m.steps.goal, values).replaceAll('{badge}', badgeLabel)];
   return (
     <Modal
       open={open}
@@ -90,9 +107,9 @@ export function ReferralShareModal({
       labelId={labelId}
       portal
       bare
-      panelClassName="max-w-md rounded-xl border border-border bg-popover shadow-lg"
+      panelClassName="max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto rounded-xl border border-border bg-popover shadow-lg"
     >
-      <div data-testid="referral-modal" className="relative flex flex-col gap-4 p-6">
+      <div data-testid="referral-modal" className="rb-theme relative flex flex-col gap-5 p-6">
         <button
           type="button"
           onClick={onClose}
@@ -107,18 +124,47 @@ export function ReferralShareModal({
           <h2 id={labelId} className="text-lg font-semibold leading-snug text-foreground">
             {m.title}
           </h2>
-          <p className="mt-2 text-sm text-muted-foreground">{fillReferral(m.body, values)}</p>
+        </div>
+
+        <div data-testid="referral-badge" className="grid grid-cols-[132px_1fr] items-center gap-4">
+          <div className="rb-mock" aria-hidden="true">
+            <div className="rb-mock-line" style={{ width: '55%' }} />
+            <div className="rb-mock-line rb-mock-line-sub" style={{ width: '80%' }} />
+            <div className="rb-mock-input" />
+            <div className="rb-mock-cta" />
+            <BadgePill label={badgeLabel} className="rb-mock-pill" testId="referral-mock-pill" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            <strong className="font-semibold text-foreground">{m.badgeTitle}</strong> {m.badgeBody}
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">
-          <div aria-hidden className="h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-signal transition-[width]"
-              style={{ width: `${Math.min(100, Math.round((count / Math.max(goal, 1)) * 100))}%` }}
-            />
-          </div>
-          <p data-testid="referral-progress" className="text-sm font-medium text-foreground">
-            {fillReferral(m.progressLabel, values)}
+          <h3 className="text-sm font-medium text-foreground">{m.stepsTitle}</h3>
+          <ol data-testid="referral-steps" className="flex flex-col gap-2">
+            {steps.map((step, i) => (
+              <li key={i} className="flex items-start gap-3 text-sm text-foreground">
+                <span
+                  aria-hidden
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums text-foreground"
+                >
+                  {i + 1}
+                </span>
+                <span className="pt-0.5">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <ReferralTrack
+            count={count}
+            goal={goal}
+            label={fillReferral(m.progressLabel, values)}
+            testId="referral-track"
+          />
+          <p data-testid="referral-progress" className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+            {fillReferral(m.progressCount, values)}
           </p>
         </div>
 
@@ -158,7 +204,12 @@ export function ReferralShareModal({
                   // A mailto: hands off to the mail app; a new tab would stay blank.
                   {...(channel === 'email' ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
                   data-testid={`referral-share-${channel}`}
-                  onClick={() => captureEvent('referral_link_shared', { channel, ...surfaceProps(surface) })}
+                  onClick={() =>
+                    captureEvent('referral_link_shared', {
+                      channel,
+                      ...surfaceProps(surface),
+                    })
+                  }
                   className={`${buttonVariants({ variant: 'outline' })} h-11 w-full`}
                 >
                   {icon}

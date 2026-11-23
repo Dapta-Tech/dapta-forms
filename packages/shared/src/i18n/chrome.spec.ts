@@ -76,12 +76,15 @@ describe('admin.developers: the connector, never keys, never the identity provid
 });
 
 describe('admin.chrome.referral: the badge is named by its localized label', () => {
-  it('the share modal body names it as the pill reads in each language', () => {
+  it('the dialog names it by placeholder, filled with the label the pill reads', () => {
     for (const locale of ['en', 'es'] as const) {
-      const m = getMessages(locale);
-      expect(m.admin.chrome.referral.body).toContain(m.growth.madeWith);
+      const r = getMessages(locale).admin.chrome.referral;
+      expect(r.steps.goal.split('{badge}'), locale).toHaveLength(2);
+      expect(r.steps.goal).toContain('{goal}');
+      // The label comes from `growth.madeWith`, never typed into this copy.
+      const copy = [r.title, r.badgeTitle, r.badgeBody, r.stepsTitle, ...Object.values(r.steps), r.banner.cta];
+      expect(copy.filter((x) => /made with|hecho con/i.test(x)), locale).toEqual([]);
     }
-    expect(getMessages('es').admin.chrome.referral.body).not.toContain('Made with');
   });
 
   it('every banner message carries the pill exactly once, by placeholder', () => {

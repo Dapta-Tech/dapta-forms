@@ -134,6 +134,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
                 link: me.referral.link,
                 count: me.referral.count,
                 goal: me.referral.goal,
+                badgeLabel: messages.growth.madeWith,
                 // The top banner, while the API shows it (campaign, goal,
                 // unlock, paid workspace, dismissal), naming the badge as the
                 // pill reads in this language.

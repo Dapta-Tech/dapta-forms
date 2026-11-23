@@ -28,12 +28,20 @@ vi.mock('@/lib/product-analytics', () => ({
 }));
 
 import { AdminShell, type ShellReferral } from './admin-shell';
+import { useOpenReferralDialog } from './referral/referral-dialog-context';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const REFERRAL: ShellReferral = { link: 'https://landing.example.test/?ref=abc23def', count: 0, goal: 5 };
+const REFERRAL: ShellReferral = {
+  link: 'https://landing.example.test/?ref=abc23def',
+  count: 0,
+  goal: 5,
+  badgeLabel: 'Made with dForms',
+};
 
-function shell(opts: { collapsed?: boolean; locale?: Locale; referral?: ShellReferral | null } = {}) {
+function shell(
+  opts: { collapsed?: boolean; locale?: Locale; referral?: ShellReferral | null; page?: React.ReactNode } = {},
+) {
   const m = getMessages(opts.locale ?? 'en').admin;
   return (
     <AdminShell
@@ -43,7 +51,7 @@ function shell(opts: { collapsed?: boolean; locale?: Locale; referral?: ShellRef
       initialCollapsed={opts.collapsed ?? false}
       referral={opts.referral === undefined ? REFERRAL : opts.referral}
     >
-      <p>page</p>
+      {opts.page ?? <p>page</p>}
     </AdminShell>
   );
 }
@@ -119,12 +127,14 @@ describe('AdminShell: the referral entry', () => {
     expect(entries(renderToStaticMarkup(shell({ referral: null })))).toHaveLength(0);
   });
 
-  it('opens the share modal with the link', async () => {
+  it('opens the referral dialog with the link and the badge, and records it from the menu', async () => {
     await mount(shell());
     expect(document.querySelector('[data-testid="referral-modal"]')).toBeNull();
     await act(async () => document.querySelector<HTMLElement>('[data-testid="nav-referral"]')!.click());
     expect(document.querySelector('[data-testid="referral-modal"]')).not.toBeNull();
     expect(document.querySelector<HTMLInputElement>('[data-testid="referral-link"]')!.value).toBe(REFERRAL.link);
+    expect(document.querySelector('[data-testid="referral-mock-pill"]')!.textContent).toContain('Made with dForms');
+    expect(nav.events).toEqual([['referral_dialog_opened', { surface: 'menu' }]]);
   });
 
   it('from the drawer, the drawer closes as the modal opens', async () => {
@@ -164,21 +174,39 @@ describe('AdminShell: the referral banner', () => {
     expect(bannerOf()).toBeNull();
   });
 
-  it('Share opens the share modal, whose copy and shares say they came from the banner', async () => {
+  it('"Remove the badge" opens the dialog, whose open, copy and shares say they came from the banner', async () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} }, configurable: true });
     await mount(shell({ referral: BANNER }));
-    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-share"]')!.click());
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-cta"]')!.click());
     expect(document.querySelector('[data-testid="referral-modal"]')).not.toBeNull();
     await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-copy"]')!.click());
-    expect(nav.events).toEqual([['referral_link_copied', { surface: 'banner' }]]);
+    expect(nav.events).toEqual([
+      ['referral_dialog_opened', { surface: 'banner' }],
+      ['referral_link_copied', { surface: 'banner' }],
+    ]);
   });
 
-  it('opened from the menu, the modal says so', async () => {
+  it('the "?" opens the same dialog, told apart as banner_help', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} }, configurable: true });
+    await mount(shell({ referral: BANNER }));
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-info"]')!.click());
+    expect(document.querySelectorAll('[data-testid="referral-modal"]')).toHaveLength(1);
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-copy"]')!.click());
+    expect(nav.events).toEqual([
+      ['referral_dialog_opened', { surface: 'banner_help' }],
+      ['referral_link_copied', { surface: 'banner_help' }],
+    ]);
+  });
+
+  it('opened from the menu, the dialog says so', async () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} }, configurable: true });
     await mount(shell({ referral: BANNER }));
     await act(async () => document.querySelector<HTMLElement>('[data-testid="nav-referral"]')!.click());
     await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-copy"]')!.click());
-    expect(nav.events).toEqual([['referral_link_copied', { surface: 'menu' }]]);
+    expect(nav.events).toEqual([
+      ['referral_dialog_opened', { surface: 'menu' }],
+      ['referral_link_copied', { surface: 'menu' }],
+    ]);
   });
 
   it('close hides it at once and tells the API', async () => {
@@ -186,5 +214,31 @@ describe('AdminShell: the referral banner', () => {
     await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-close"]')!.click());
     expect(bannerOf()).toBeNull();
     expect(nav.dismissed).toBe(1);
+  });
+});
+
+/** A page under the shell that opens the dialog the way the badge switch does. */
+function BadgeSwitchProbe() {
+  const open = useOpenReferralDialog();
+  return (
+    <button type="button" data-testid="probe" data-has={open ? 'yes' : 'no'} onClick={() => open?.('badge_switch')}>
+      share
+    </button>
+  );
+}
+
+describe('AdminShell: the dialog, from a page', () => {
+  it('pages under the shell open the same dialog, from the badge switch', async () => {
+    await mount(shell({ page: <BadgeSwitchProbe /> }));
+    const probe = document.querySelector<HTMLElement>('[data-testid="probe"]')!;
+    expect(probe.dataset.has).toBe('yes');
+    await act(async () => probe.click());
+    expect(document.querySelector('[data-testid="referral-modal"]')).not.toBeNull();
+    expect(nav.events).toEqual([['referral_dialog_opened', { surface: 'badge_switch' }]]);
+  });
+
+  it('with the program off, pages get no opener (and offer no Share)', async () => {
+    await mount(shell({ referral: null, page: <BadgeSwitchProbe /> }));
+    expect(document.querySelector<HTMLElement>('[data-testid="probe"]')!.dataset.has).toBe('no');
   });
 });
