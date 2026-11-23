@@ -213,7 +213,7 @@ loud** on a bad value. Copy [`.env.example`](.env.example) to `.env` to override
 | `OUTBOX_MAX_ATTEMPTS` | `5` | — | no |
 | `ONBOARDING_WIZARD` | `true` | set `false` to skip the first-run wizard (and get `SEED_DEMO_FORM` back) | no |
 | `SEED_DEMO_FORM` | `true` | **inert while `ONBOARDING_WIZARD` is on**; set `false` to ship empty new workspaces | no |
-| `REFERRAL_PROGRAM` | `false` | set `true` to give every signed-in person a referral link in the left menu. It links to `NEXT_PUBLIC_LANDING_URL`, else `PUBLIC_APP_URL`, and stays off with neither. Read by the API only; the web app takes it from `/v1/me` | no |
+| `REFERRAL_PROGRAM` | `false` | set `true` to give every signed-in person a referral link in the left menu. It links to `NEXT_PUBLIC_LANDING_URL`, else `PUBLIC_APP_URL`, and stays off with neither. Read by the API only; the web app takes it from `/v1/me`. A landing on another origin that greets invitees by name (`GET /v1/public/referrals/{code}`) must be listed in `CORS_ORIGINS` | no |
 | `REFERRAL_CAMPAIGN_ENDS_AT` | unset (no end) | an ISO 8601 date-time with a time zone, e.g. `2026-12-31T23:59:59Z`, when the referral campaign ends. After it the top banner and the reminder email stop; the link, the count, the menu entry and earned unlocks stay. Any other value refuses to boot. Read by the API only; the web app takes `campaignActive` from `/v1/me` | no |
 
 The two form-seeding knobs are mutually exclusive by construction. A new

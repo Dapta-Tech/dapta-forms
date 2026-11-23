@@ -123,3 +123,44 @@ export async function ensureReferrer(
   }
   throw new Error('Could not issue a unique referral code.');
 }
+
+/** The referrer row holding a code, or null for a code nobody holds. Codes are lowercase. */
+export async function getReferrerByCode(db: Db, code: string): Promise<ReferrerRow | null> {
+  const r = await db.get<ReferrerDbRow>(
+    sql`SELECT person_id, code, unlocked_at, banner_dismissed_until, nudge_sent_at, created_at
+        FROM referrer WHERE code = ${code.toLowerCase()} LIMIT 1`,
+  );
+  return r ? toRow(r) : null;
+}
+
+/** The name and email on one of a person's member rows. */
+export interface PersonNameRow {
+  displayName: string | null;
+  email: string | null;
+}
+
+/**
+ * The names a person carries across their member rows (the inverse of
+ * `referralPersonKey`): every row with their identity service id, or, for an
+ * `email:` key from local development, every row with that email and no id.
+ * The row seen most recently comes first, so a name the person changed wins
+ * over an old one.
+ */
+export async function personNames(db: Db, personId: string): Promise<PersonNameRow[]> {
+  const email = personId.startsWith('email:') ? personId.slice('email:'.length) : null;
+  const rows = email
+    ? await db.all<{ display_name: string | null; email: string | null }>(
+        sql`SELECT display_name, email FROM member
+            WHERE external_id IS NULL AND lower(email) = ${email}
+            ORDER BY COALESCE(last_seen_at, created_at) DESC`,
+      )
+    : await db.all<{ display_name: string | null; email: string | null }>(
+        sql`SELECT display_name, email FROM member
+            WHERE external_id = ${personId}
+            ORDER BY COALESCE(last_seen_at, created_at) DESC`,
+      );
+  return rows.map((r) => ({
+    displayName: r.display_name == null ? null : String(r.display_name),
+    email: r.email == null ? null : String(r.email),
+  }));
+}

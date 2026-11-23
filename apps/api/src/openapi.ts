@@ -409,6 +409,19 @@ export const openapiSpec = {
         responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' }, '404': { description: 'Not found' } },
       },
     },
+    '/v1/public/referrals/{code}': {
+      get: {
+        summary: 'First name behind a referral code (public)',
+        description:
+          'Body { firstName }: the first word of the name of the person the referral code belongs to, for a landing page to greet the invitee with. Nothing else about the person is returned. An unknown code, a deployment with the referral program off and a person with no name that is safe to show all answer the same 404; a name that is the person\'s email, or the part of it before the @, is never shown. Not cached (`Cache-Control: no-store`). Rate limited per client like the rest of the public surface. A browser on another site can read it only when that site is in `CORS_ORIGINS`.',
+        parameters: [{ name: 'code', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'The first name' },
+          '404': { description: 'NOT_FOUND, for every kind of miss' },
+          '429': { description: 'RATE_LIMITED' },
+        },
+      },
+    },
     '/v1/link-page': {
       get: {
         summary: 'Read the workspace default link page',
