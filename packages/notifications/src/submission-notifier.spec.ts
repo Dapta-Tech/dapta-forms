@@ -443,6 +443,28 @@ describe('SubmissionNotifier referral emails', () => {
     expect(provider.sent[0]!.html).not.toContain('javascript:');
   });
 
+  it('sends the nudge once per referrer, with the share button, every value escaped', async () => {
+    const provider = new CaptureProvider();
+    await new SubmissionNotifier(provider).sendReferralNudge({
+      accountId: 'acc-1',
+      referrerId: 'user_ana',
+      to: 'ana@example.com',
+      count: 3,
+      goal: 5,
+      badgeLabel: '<i>Made</i> with dForms',
+      share,
+      locale: 'en',
+    });
+    const m = provider.sent[0]!;
+    expect(m.subject).toBe('2 to go. Your badge is still there');
+    expect(m.idempotencyKey).toBe('referral:user_ana:nudge');
+    expect(m.html).toContain('&lt;i&gt;Made&lt;/i&gt; with dForms');
+    expect(m.html).not.toContain('<i>Made</i>');
+    expect(m.html).toContain('href="https://dforms.ai/?ref=abc23456"');
+    expect(m.html).toContain('>Share my link<');
+    expect(m.text).toContain('Share my link: https://dforms.ai/?ref=abc23456');
+  });
+
   it('sends the unlock email once per referrer, in Spanish when asked', async () => {
     const provider = new CaptureProvider();
     await new SubmissionNotifier(provider).sendReferralUnlocked({

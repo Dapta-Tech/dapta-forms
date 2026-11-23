@@ -11,6 +11,7 @@ import {
   renderBodyLines,
   renderReferralJoined,
   renderReferralUnlocked,
+  renderReferralNudge,
   renderSubmissionEmail,
   renderSubmissionConfirmed,
   renderSubmissionReceived,
@@ -375,6 +376,19 @@ describe('referral emails to the referrer', () => {
     );
   });
 
+  it('the nudge says how many are left and names the badge by its label', () => {
+    const en = renderReferralNudge('en', { count: 3, left: 2, goal: 5, badgeLabel: badge.en });
+    expect(en.subject).toBe('2 to go. Your badge is still there');
+    expect(en.lines).toEqual([
+      "You're at 3 of 5. Send your link to someone who uses Typeform or Google Forms today and remove the “Made with dForms” badge for life.",
+    ]);
+    const es = renderReferralNudge('es', { count: 3, left: 2, goal: 5, badgeLabel: badge.es });
+    expect(es.subject).toBe('Te faltan 2. Tu sello sigue ahí');
+    expect(es.lines).toEqual([
+      'Vas 3 de 5. Manda tu link a alguien que hoy usa Typeform o Google Forms y quita el sello «Hecho con dForms» de por vida.',
+    ]);
+  });
+
   it('carries no em dash or horizontal bar anywhere', () => {
     const all: string[] = [];
     for (const locale of ['en', 'es'] as const) {
@@ -386,6 +400,10 @@ describe('referral emails to the referrer', () => {
       }
       const u = renderReferralUnlocked(locale, { badgeLabel: badge[locale] });
       all.push(u.subject, ...u.lines, ...Object.values(referralShareLabels(locale)));
+      for (const count of [1, 2, 3, 4]) {
+        const n = renderReferralNudge(locale, { count, left: 5 - count, goal: 5, badgeLabel: badge[locale] });
+        all.push(n.subject, ...n.lines);
+      }
     }
     expect(all.join('\n')).not.toMatch(/[\u2014\u2015]/);
   });

@@ -139,7 +139,9 @@ interface QueuedEmail {
 const queued = async (): Promise<QueuedEmail[]> =>
   (
     await db.all<{ action: string; account_id: string | null; payload: string }>(
-      sql`SELECT action, account_id, payload FROM outbox WHERE kind = 'email' ORDER BY created_at, rowid`,
+      // The 7-day nudge rides the same queue, scheduled for later: `referral-nudge.spec.ts`.
+      sql`SELECT action, account_id, payload FROM outbox
+          WHERE kind = 'email' AND action <> 'referral_nudge' ORDER BY created_at, rowid`,
     )
   ).map((r) => ({ action: r.action, accountId: r.account_id, payload: r.payload }));
 

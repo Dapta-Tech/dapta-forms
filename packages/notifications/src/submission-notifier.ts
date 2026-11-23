@@ -6,6 +6,7 @@ import {
   referralShareLabels,
   renderMemberInvited,
   renderReferralJoined,
+  renderReferralNudge,
   renderReferralUnlocked,
   renderSubmissionEmail,
   type NotificationLocale,
@@ -73,6 +74,25 @@ export interface ReferralJoinedNotification {
   to: string;
   /** The invitee's first name, or null for the generic "Someone". */
   invitee: string | null;
+  count: number;
+  goal: number;
+  /** The badge's localized label (`growth.madeWith`). */
+  badgeLabel: string;
+  share: ReferralShare;
+  locale?: string | null;
+}
+
+/**
+ * The 7-day nudge to a referrer stuck between 1 and 4, resolved before it is
+ * enqueued. `count` is the count that scheduled it: delivery sends it only
+ * while that is still the person's count.
+ */
+export interface ReferralNudgeNotification {
+  /** The workspace of the referrer's most recently seen member row (the transport's tenant). */
+  accountId: string;
+  /** The referrer's person key: one nudge per person (the idempotency anchor). */
+  referrerId: string;
+  to: string;
   count: number;
   goal: number;
   /** The badge's localized label (`growth.madeWith`). */
@@ -240,7 +260,30 @@ export class SubmissionNotifier {
    */
   sendReferralJoined(n: ReferralJoinedNotification): Promise<EmailResult> {
     const locale = normalizeLocale(n.locale);
-    const { subject, lines } = renderReferralJoined(locale, n);
+    return this.sendReferralShare(n, locale, renderReferralJoined(locale, n), `referral:${n.refereeId}:joined`);
+  }
+
+  /**
+   * "{left} to go. Your badge is still there", once per person: the count,
+   * the badge, and the same button and share links as the countdown.
+   */
+  sendReferralNudge(n: ReferralNudgeNotification): Promise<EmailResult> {
+    const locale = normalizeLocale(n.locale);
+    const copy = renderReferralNudge(locale, { ...n, left: Math.max(n.goal - n.count, 0) });
+    return this.sendReferralShare(n, locale, copy, `referral:${n.referrerId}:nudge`);
+  }
+
+  /**
+   * A referral email whose call to action is the person's link: a button to
+   * it and the share links under it. Platform copy with interpolated values:
+   * every line is escaped (E8).
+   */
+  private sendReferralShare(
+    n: { accountId: string; to: string; share: ReferralShare },
+    locale: NotificationLocale,
+    { subject, lines }: { subject: string; lines: string[] },
+    idempotencyKey: string,
+  ): Promise<EmailResult> {
     const labels = referralShareLabels(locale);
     const channels = [
       { label: labels.whatsapp, href: n.share.whatsapp },
@@ -267,7 +310,7 @@ export class SubmissionNotifier {
         cta: { question: '', action: labels.button, href: n.share.link, links: channels, linksLead: `${labels.shareOn}:` },
       }),
       locale,
-      idempotencyKey: `referral:${n.refereeId}:joined`,
+      idempotencyKey,
     });
   }
 
