@@ -1,34 +1,55 @@
 /* ── Referral program: the top banner ("C con el sello visible") ─────────────
 
-   A 48 px strip at the top of the dashboard's main area, in the fire theme in
-   both colour schemes (its palette is its own, like a promo bar). The heat
-   (`data-heat`: cold at 0, warm on the way, hot at one to go) tints the bottom
-   border, the bar, the tip and the pill's fire line.
+   A 48 px strip at the top of the dashboard's main area. It follows the app's
+   theme: every surface, line and letter resolves through the semantic tokens
+   (packages/shared/src/tokens.css), so it reads native in light and in dark.
+   The fire details keep their own hues (amber, gold, coral on the bar, the
+   tip, the sparks and the pill's fire line), each derived from a token with
+   `color-mix()` so it darkens on paper and stays bright on ink, with no theme
+   selector of its own. The race flag is fixed artwork, like a brand mark.
+
+   A dForms green beam runs around the strip's edge (`.rb-beam`, end of the
+   strip block): it is the strip's frame, so the strip has no bottom border of
+   its own and the heat lives in the bar, the tip, the pill and the flag.
+
+   The heat (`data-heat`: cold at 0, warm on the way, hot at one to go) is set
+   on the banner and on every `.rb-track`, so the same bar works in the dialog.
 
    It sizes itself by container query, never by the viewport: below 1024 px the
-   copy is short; below 600 px the buttons are icons with 44 px targets and the
-   sparks rest.
+   copy is short; below 600 px the call to action is one word and the sparks
+   rest. The pill never shrinks: the words around it truncate first.
    The strip clips its own overflow, so it can never scroll the page sideways.
    Every animation stops under `prefers-reduced-motion` (end of file). */
 
-/* The fire palette, shared with the celebration at the goal (`.rc`). */
 .rb,
-.rc {
-  --rb-bg: #222225;
-  --rb-ink: #fefefe;
-  --rb-ink-2: #d4d4da;
-  --rb-ink-3: #a9a9b1;
-  --rb-green: #3ddc84;
-  --rb-green-2: #5fe39b;
-  --rb-amber: #f5a524;
-  --rb-gold: #ffcb70;
-  --rb-coral: #f2686c;
+.rb-theme {
+  --rb-bg: var(--card);
+  --rb-ink: var(--foreground);
+  --rb-ink-2: var(--muted-foreground);
+  --rb-ink-3: var(--faint);
+  /* Low-alpha washes of the ink: the track, hovers, the mock's lines. */
+  --rb-wash: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --rb-wash-2: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --rb-green: var(--signal);
+  --rb-green-2: color-mix(in srgb, var(--signal) 78%, #fff);
+  --rb-amber: var(--warning);
+  /* Gold: bright on ink (#ffcb70-ish), a deep amber on paper. */
+  --rb-gold: color-mix(in srgb, var(--warning-ink) 45%, var(--warning));
+  /* Coral: #f2686c on ink; on paper it leans to the error red, 4.4:1. */
+  --rb-coral: color-mix(in srgb, #f2686c 35%, var(--destructive));
+  /* The pill's fire line starts here: 3.4:1 on paper, so it reads as a line. */
+  --rb-strike-from: color-mix(in srgb, var(--warning) 50%, var(--warning-ink));
+  /* The beam: #3ddc84 on ink; a step deeper on paper, where the brand green
+     alone is 1.8:1. Its head is paler on ink and deeper on paper. */
+  --rb-beam: color-mix(in srgb, var(--signal) 50%, var(--signal-edge));
+  --rb-beam-core: color-mix(in srgb, var(--signal) 50%, var(--foreground));
+  --rb-ring: color-mix(in srgb, var(--signal) 26%, transparent);
 }
+
 .rb {
   position: relative;
   container-name: rb;
   container-type: inline-size;
-  z-index: 20;
 }
 
 .rb-strip {
@@ -42,32 +63,95 @@
   box-sizing: border-box;
   overflow: hidden;
   background: var(--rb-bg);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  /* The faint static ring under the beam; all that stays with reduced motion. */
+  box-shadow: inset 0 0 0 1px var(--rb-ring);
   color: var(--rb-ink);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
 }
-.rb[data-heat='warm'] .rb-strip {
-  border-bottom-color: rgba(245, 165, 36, 0.6);
+
+/* ── The beam: a dForms green laser running around the strip's edge ──
+   The adminpanel sidebar's technique (a conic gradient whose start angle is a
+   registered, animated property, masked down to a thin ring), scaled to a
+   strip some 20 times wider than tall. A conic gradient turns about the
+   centre, so on a strip that shape alone crawls across the middle of the long
+   edges and whips round the ends. The gradient is therefore drawn on a square
+   (`::before`) squashed to the strip's height, and the keyframes spend time on
+   each edge in proportion to its length: the head runs round at an even pace.
+   The ring mask sits on `.rb-beam` itself, so the squash never thins it.
+   Absolutely placed, pointer-events off: it never touches the layout. */
+.rb-beam {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 1.5px;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
 }
-.rb[data-heat='hot'] .rb-strip {
-  border-bottom-color: var(--rb-coral);
+.rb-beam::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  aspect-ratio: 1;
+  /* 48 px / the strip's width, as a number: the square lands on the strip. */
+  transform: translateY(-50%) scaleY(tan(atan2(48px, 100cqw)));
+  background: conic-gradient(
+    from var(--rb-beam-angle),
+    transparent 0 328deg,
+    color-mix(in srgb, var(--rb-beam) 20%, transparent) 340deg,
+    var(--rb-beam) 353deg,
+    var(--rb-beam-core) 356deg,
+    var(--rb-beam) 357.5deg,
+    transparent 359deg
+  );
+  animation: rb-beam 3.6s linear infinite;
+}
+/* One to go: the beam runs a little faster. */
+.rb[data-heat='hot'] .rb-beam::before {
+  animation-duration: 2.6s;
 }
 
 /* ── The message, with the pill in it ── */
 .rb-msg {
   flex: 0 1 auto;
+  display: flex;
   min-width: 0;
   margin: 0;
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+.rb-long,
+.rb-short {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 .rb-short {
   display: none;
 }
+/* Only the words give way; `pre` keeps the space next to the pill. */
+.rb-words {
+  min-width: 0;
+  overflow: hidden;
+  white-space: pre;
+  text-overflow: ellipsis;
+}
+.rb-badge {
+  flex: none;
+  display: flex;
+}
 
+/* The replica of `.pf__attribution-link`, at the strip's size. */
 .rb-pill {
   position: relative;
   display: inline-flex;
@@ -77,13 +161,16 @@
   padding: 3px 10px 3px 8px;
   vertical-align: middle;
   overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   font-size: 12.5px;
   font-weight: 500;
   line-height: 1.1;
-  color: var(--rb-ink);
-  background: #2e2e33;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 999px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.14);
 }
 .rb-pill-mark {
   flex: none;
@@ -100,8 +187,8 @@
   height: 2px;
   margin-top: -1px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--rb-amber), var(--rb-coral));
-  box-shadow: 0 0 6px rgba(242, 104, 108, 0.7);
+  background: linear-gradient(90deg, var(--rb-strike-from), var(--rb-coral));
+  box-shadow: 0 0 6px color-mix(in srgb, var(--rb-coral) 70%, transparent);
 }
 .rb[data-heat='hot'] .rb-pill {
   color: var(--rb-ink-2);
@@ -110,7 +197,7 @@
   animation: rb-sizzle 0.6s steps(2) infinite;
 }
 
-/* ── The "?" ── */
+/* ── The "?": opens the dialog, like the call to action ── */
 .rb-info {
   flex: none;
   display: flex;
@@ -121,7 +208,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--rb-ink-3);
+  color: var(--rb-ink-2);
   cursor: pointer;
 }
 .rb-info > span {
@@ -136,20 +223,21 @@
   font-weight: 700;
   line-height: 1;
 }
-.rb-info:hover,
-.rb-info[aria-expanded='true'] {
+.rb-info:hover {
   color: var(--rb-ink);
 }
 
 /* ── The track, the flowing fill, the tip, the sparks and the flag ── */
 .rb-track {
   position: relative;
-  flex: 1 1 120px;
+  /* Basis 0: the bar takes the room that is left, and gives it up before the
+     message does, down to its minimum. */
+  flex: 1 1 0;
   min-width: 80px;
   height: 6px;
   margin-right: 12px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--rb-wash);
 }
 .rb-fill {
   position: absolute;
@@ -159,14 +247,21 @@
   background-size: 200% 100%;
   animation: rb-flow 3s linear infinite;
 }
-.rb[data-heat='warm'] .rb-fill {
+[data-heat='warm'] .rb-fill {
   background-image: linear-gradient(90deg, var(--rb-green), var(--rb-amber), var(--rb-gold), var(--rb-amber));
   animation-duration: 2s;
 }
-.rb[data-heat='hot'] .rb-fill {
-  background-image: linear-gradient(90deg, var(--rb-green), var(--rb-amber), var(--rb-coral), var(--rb-gold), var(--rb-coral));
+[data-heat='hot'] .rb-fill {
+  background-image: linear-gradient(
+    90deg,
+    var(--rb-green),
+    var(--rb-amber),
+    var(--rb-coral),
+    var(--rb-gold),
+    var(--rb-coral)
+  );
   animation-duration: 1s;
-  box-shadow: 0 0 10px rgba(242, 104, 108, 0.5);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--rb-coral) 50%, transparent);
 }
 .rb-tip {
   position: absolute;
@@ -182,14 +277,14 @@
   height: 12px;
   border-radius: 50%;
   background: var(--rb-ink);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--foreground) 12%, transparent);
 }
-.rb[data-heat='warm'] .rb-dot {
+[data-heat='warm'] .rb-dot {
   background: var(--rb-gold);
   box-shadow: 0 0 10px var(--rb-amber);
 }
-.rb[data-heat='hot'] .rb-dot {
-  background: #ffd4d5;
+[data-heat='hot'] .rb-dot {
+  background: var(--rb-coral);
   box-shadow: 0 0 14px var(--rb-coral);
 }
 .rb-spark {
@@ -211,10 +306,10 @@
   margin-left: -5px;
   animation-delay: 0.6s;
 }
-.rb[data-heat='cold'] .rb-spark {
+[data-heat='cold'] .rb-spark {
   display: none;
 }
-.rb[data-heat='hot'] .rb-strip .rb-spark {
+.rb-track[data-heat='hot'] .rb-spark {
   animation-duration: 0.9s;
 }
 .rb-flag {
@@ -226,16 +321,16 @@
   transform-origin: 14% 100%;
   animation: rb-wave 1.8s ease-in-out infinite;
 }
-.rb[data-heat='cold'] .rb-strip .rb-flag {
+.rb-track[data-heat='cold'] .rb-flag {
   opacity: 0.55;
   animation-duration: 3s;
 }
-.rb[data-heat='hot'] .rb-strip .rb-flag {
+.rb-track[data-heat='hot'] .rb-flag {
   animation-duration: 0.7s;
-  filter: drop-shadow(0 0 5px rgba(242, 104, 108, 0.7));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--rb-coral) 70%, transparent));
 }
 
-/* ── Copy link, Share, close: 44 px targets around a 32 px face ── */
+/* ── The call to action and close: 44 px targets around a 32 px face ── */
 .rb-btn {
   flex: none;
   display: flex;
@@ -254,33 +349,34 @@
 .rb-face {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 32px;
   padding: 0 14px;
   border-radius: 9px;
-  transition: background-color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s,
+    box-shadow 0.15s;
 }
 .rb-btn-primary .rb-face {
-  background: var(--rb-ink);
-  color: #1a1a1c;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 .rb-btn-primary:hover .rb-face {
-  background: #e9e9ee;
+  background: color-mix(in srgb, var(--primary) 86%, var(--background));
 }
-.rb-btn-secondary .rb-face {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
-}
-.rb-btn-secondary:hover .rb-face {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+.rb-btn-label-short {
+  display: none;
 }
 .rb-btn-close .rb-face {
-  justify-content: center;
   width: 32px;
   padding: 0;
   color: var(--rb-ink-2);
 }
 .rb-btn-close:hover .rb-face {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--rb-wash-2);
+  color: var(--rb-ink);
 }
 .rb-btn:focus-visible,
 .rb-info:focus-visible {
@@ -288,44 +384,10 @@
 }
 .rb-btn:focus-visible .rb-face,
 .rb-info:focus-visible > span {
-  box-shadow: 0 0 0 2px var(--rb-gold);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
-/* ── The "?" popover: a mini form with the pill at its foot ── */
-.rb-pop {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: var(--rb-pop-x, 8px);
-  width: min(330px, calc(100% - 16px));
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 14px;
-  background: #2a2a2f;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  color: var(--rb-ink);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-.rb-pop::before {
-  content: '';
-  position: absolute;
-  top: -7px;
-  left: var(--rb-arrow-x, 40px);
-  width: 12px;
-  height: 12px;
-  background: #2a2a2f;
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  transform: rotate(45deg);
-}
-.rb-pop-text {
-  margin: 0;
-}
+/* ── The badge, in the dialog: a mini form with the pill at its foot ── */
 .rb-mock {
   display: flex;
   flex-direction: column;
@@ -333,36 +395,38 @@
   gap: 7px;
   padding: 12px 12px 10px;
   border-radius: 10px;
-  background: #141416;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--background);
+  border: 1px solid var(--border);
 }
 .rb-mock-line {
   height: 7px;
   border-radius: 4px;
-  background: #3a3a40;
+  background: var(--rb-wash);
 }
 .rb-mock-line-sub {
   height: 5px;
-  background: #2e2e33;
+  background: var(--rb-wash-2);
 }
 .rb-mock-input {
   height: 16px;
   border-radius: 5px;
-  background: var(--rb-bg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--card);
+  border: 1px solid var(--input);
 }
 .rb-mock-cta {
   align-self: flex-start;
   width: 64px;
   height: 16px;
   border-radius: 5px;
-  background: #d4e95c;
+  background: var(--primary);
 }
+/* Highlighted: an amber ring that stays still with reduced motion. */
 .rb-mock .rb-mock-pill {
   align-self: center;
   margin-top: 4px;
   padding: 2px 8px 2px 6px;
   font-size: 10.5px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rb-amber) 40%, transparent);
   animation: rb-ring 1.6s ease-in-out infinite;
 }
 .rb-mock .rb-pill-mark {
@@ -370,18 +434,18 @@
 }
 
 /* ── Below 1024 px of its own width the long copy (up to ~490 px, next to
-   ~520 px of "?", bar and labelled buttons) would cut the pill off: the short
-   copy keeps the pill whole. ── */
+   the "?", the bar and the labelled button) would crowd the pill: the short
+   copy keeps it whole. ── */
 @container rb (max-width: 1023.98px) {
   .rb-long {
     display: none;
   }
   .rb-short {
-    display: inline;
+    display: flex;
   }
 }
 
-/* ── Narrow (below 600 px of its own width): icon buttons, smaller pill ── */
+/* ── Narrow (below 600 px of its own width): a one-word call to action ── */
 @container rb (max-width: 599.98px) {
   .rb-strip {
     gap: 6px;
@@ -406,7 +470,6 @@
     font-size: 11px;
   }
   .rb-track {
-    flex-basis: 40px;
     min-width: 36px;
     height: 5px;
     margin-right: 10px;
@@ -426,26 +489,28 @@
     height: 17px;
   }
   .rb-btn {
-    justify-content: center;
-    width: 36px;
     padding: 0;
-  }
-  .rb-face {
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border-radius: 8px;
+    font-size: 12.5px;
   }
   .rb-btn-label {
     display: none;
   }
-  .rb-pop {
-    left: 16px;
-    width: calc(100% - 32px);
+  .rb-btn-label-short {
+    display: inline;
   }
-  .rb-pop::before {
-    left: calc(var(--rb-arrow-x, 40px) + var(--rb-pop-x, 8px) - 16px);
+  .rb-btn-primary .rb-face {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 8px;
+  }
+  .rb-btn-close {
+    justify-content: center;
+    width: 36px;
+  }
+  .rb-btn-close .rb-face {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
   }
 }
 
@@ -467,13 +532,16 @@
     width: 24px;
   }
   .rb-track {
-    flex-basis: 28px;
     min-width: 28px;
     margin-right: 9px;
   }
+  .rb-btn-primary .rb-face {
+    padding: 0 8px;
+  }
 }
 
-/* ── Down to 320 px: the pill alone says it, the "?" explains it ── */
+/* ── Down to 320 px: the pill alone says it; the "?" goes before the pill or
+   the call to action would ── */
 @container rb (max-width: 359.98px) {
   .rb-short .rb-words {
     display: none;
@@ -481,11 +549,68 @@
   .rb-track {
     min-width: 20px;
   }
-  .rb-btn {
+  .rb-btn-close {
     width: 34px;
   }
 }
+@container rb (max-width: 309.98px) {
+  .rb-info {
+    display: none;
+  }
+}
 
+/* Registered so the beam's start angle turns (a plain custom property would
+   jump instead). */
+@property --rb-beam-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* In the square's own angles, the corners sit at 45, 135, 225 and 315 deg and
+   each half edge is split at atan(1/2): time on the long edges and on the
+   short ones follows their length on the strip (the ends take ~3% each). */
+@keyframes rb-beam {
+  0% {
+    --rb-beam-angle: 0deg;
+  }
+  11.75% {
+    --rb-beam-angle: 26.565deg;
+  }
+  23.5% {
+    --rb-beam-angle: 45deg;
+  }
+  25% {
+    --rb-beam-angle: 90deg;
+  }
+  26.5% {
+    --rb-beam-angle: 135deg;
+  }
+  38.25% {
+    --rb-beam-angle: 153.435deg;
+  }
+  50% {
+    --rb-beam-angle: 180deg;
+  }
+  61.75% {
+    --rb-beam-angle: 206.565deg;
+  }
+  73.5% {
+    --rb-beam-angle: 225deg;
+  }
+  75% {
+    --rb-beam-angle: 270deg;
+  }
+  76.5% {
+    --rb-beam-angle: 315deg;
+  }
+  88.25% {
+    --rb-beam-angle: 333.435deg;
+  }
+  100% {
+    --rb-beam-angle: 360deg;
+  }
+}
 @keyframes rb-flow {
   from {
     background-position: 0 0;
@@ -521,22 +646,26 @@
 @keyframes rb-ring {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(245, 165, 36, 0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--rb-amber) 0%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(245, 165, 36, 0.45);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--rb-amber) 45%, transparent);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rb .rb-fill,
-  .rb .rb-spark,
-  .rb .rb-flag,
+  /* No moving beam: the strip's faint static ring stays. */
+  .rb .rb-beam {
+    display: none;
+  }
+  .rb-track .rb-fill,
+  .rb-track .rb-spark,
+  .rb-track .rb-flag,
   .rb .rb-pill::after,
-  .rb .rb-mock-pill {
+  .rb-mock .rb-mock-pill {
     animation: none !important;
   }
-  .rb .rb-spark {
+  .rb-track .rb-spark {
     display: none;
   }
   .rb .rb-face {

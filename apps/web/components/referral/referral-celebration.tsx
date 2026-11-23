@@ -86,7 +86,9 @@ export function ReferralCelebration({
       lockScroll
       panelClassName="rc max-w-md overflow-hidden rounded-2xl shadow-2xl"
     >
-      <div data-testid="referral-celebration" data-motion={motion} className="rc-card">
+      {/* A dark card in both colour schemes: the dark tokens, re-established on
+          this subtree, feed the banner's palette (`rb-theme`). */}
+      <div data-testid="referral-celebration" data-motion={motion} data-theme="dark" className="rb-theme rc-card">
         <div className="rc-stage" aria-hidden="true">
           <div className="rc-glow" />
           <div className="rc-burn">

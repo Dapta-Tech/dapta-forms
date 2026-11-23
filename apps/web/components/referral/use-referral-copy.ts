@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { captureEvent } from '@/lib/product-analytics';
 
 /**
- * Where a copy or a share started: the left-menu entry's modal, the top
- * banner, or the locked badge switch (Brand kit and the Design panel).
+ * Where a copy or a share started: the left-menu entry, the top banner's call
+ * to action (`banner`) or its "?" (`banner_help`), or the locked badge switch
+ * (Brand kit and the Design panel).
  */
-export type ReferralSurface = 'menu' | 'banner' | 'badge_switch';
+export type ReferralSurface = 'menu' | 'banner' | 'banner_help' | 'badge_switch';
 
 /** How long "Copied" stays before the button reads "Copy link" again. */
 const COPIED_MS = 2000;

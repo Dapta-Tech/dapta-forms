@@ -24,6 +24,7 @@ vi.mock('@/lib/product-analytics', () => ({
   captureEvent: (event: string, props?: unknown) => events.push([event, props]),
 }));
 
+import { ReferralDialogContext } from '@/components/referral/referral-dialog-context';
 import { AttributionSetting } from './attribution-setting';
 
 let root: Root | null = null;
@@ -55,7 +56,13 @@ const PAID: AttributionStatus = { hideAttribution: true, canHide: true, showing:
 
 async function mount(
   initial: AttributionStatus,
-  opts: { referral?: ReferralLock | null; locale?: 'en' | 'es'; canEdit?: boolean } = {},
+  opts: {
+    referral?: ReferralLock | null;
+    locale?: 'en' | 'es';
+    canEdit?: boolean;
+    /** The shell's dialog opener; absent, as outside the admin shell. */
+    openDialog?: (surface: string) => void;
+  } = {},
 ) {
   const locale = opts.locale ?? 'en';
   container = document.createElement('div');
@@ -63,14 +70,16 @@ async function mount(
   root = createRoot(container);
   await act(async () =>
     root!.render(
-      <AttributionSetting
-        initial={initial}
-        canEdit={opts.canEdit ?? true}
-        daptaAiUrl={LANDING}
-        referral={opts.referral === undefined ? THREE : opts.referral}
-        madeWith={getMessages(locale).growth.madeWith}
-        m={getMessages(locale).admin.attributionSetting}
-      />,
+      <ReferralDialogContext.Provider value={opts.openDialog ?? null}>
+        <AttributionSetting
+          initial={initial}
+          canEdit={opts.canEdit ?? true}
+          daptaAiUrl={LANDING}
+          referral={opts.referral === undefined ? THREE : opts.referral}
+          madeWith={getMessages(locale).growth.madeWith}
+          m={getMessages(locale).admin.attributionSetting}
+        />
+      </ReferralDialogContext.Provider>,
     ),
   );
   const el = container;
@@ -109,6 +118,22 @@ describe('AttributionSetting, referral program on, locked', () => {
     expect(writeText).toHaveBeenCalledWith(LINK);
     expect(q('referral-copy')!.textContent).toBe('Copied');
     expect(events).toEqual([['referral_link_copied', { surface: 'badge_switch' }]]);
+  });
+
+  it('Share opens the referral dialog, from the badge switch', async () => {
+    const openDialog = vi.fn();
+    const { q } = await mount(NOT_PAID, { openDialog });
+    const share = q('referral-share')!;
+    expect(share.textContent).toBe('Share');
+    expect(share.getAttribute('aria-haspopup')).toBe('dialog');
+    await act(async () => share.click());
+    expect(openDialog).toHaveBeenCalledWith('badge_switch');
+  });
+
+  it('outside the admin shell there is no dialog, so no Share', async () => {
+    const { q } = await mount(NOT_PAID);
+    expect(q('referral-share')).toBeNull();
+    expect(q('referral-copy')).not.toBeNull();
   });
 
   it('in Spanish, the badge is named by its own label', async () => {

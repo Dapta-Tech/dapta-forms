@@ -418,9 +418,20 @@ export interface FormsMessages {
         /** Read after the label instead of the pill. // {count} {goal} */
         progressSr: string;
         title: string;
-        /** What the link does and what 5 earns. // {goal} */
-        body: string;
-        /** // {count} {goal} */
+        /** The dialog's badge block: the lead, in bold, next to the mini form whose foot shows the pill. */
+        badgeTitle: string;
+        /** Where the badge shows. */
+        badgeBody: string;
+        /** Heading over the three steps. */
+        stepsTitle: string;
+        /**
+         * How the program works, in three steps. `goal` names the badge by
+         * its localized label (`growth.madeWith`). // {goal} {badge}
+         */
+        steps: { share: string; signup: string; goal: string };
+        /** The count next to the bar: "3 of 5". // {count} {goal} */
+        progressCount: string;
+        /** The bar, read aloud. // {count} {goal} */
         progressLabel: string;
         linkLabel: string;
         copy: string;
@@ -459,18 +470,14 @@ export interface FormsMessages {
           shortSome: string;
           /** // {badge} */
           shortLast: string;
-          /** The "?" button's name. // {badge} */
+          /** The "?" button's name; it opens the dialog too. // {badge} */
           infoLabel: string;
-          /** The popover's name. */
-          popoverLabel: string;
-          /** The popover's lead, in bold. */
-          popoverTitle: string;
-          /** What the badge is and how it goes. // {goal} */
-          popoverBody: string;
           /** The progress bar, read aloud. // {count} {goal} */
           progressSr: string;
-          copy: string;
-          share: string;
+          /** The one call to action: opens the dialog. */
+          cta: string;
+          /** The same, on the narrow strip (below 600 px). */
+          ctaShort: string;
           close: string;
         };
         /**
@@ -686,6 +693,8 @@ export interface FormsMessages {
       referralLinkLabel: string;
       referralCopy: string;
       referralCopied: string;
+      /** Opens the referral dialog (link, share buttons, progress). */
+      referralShare: string;
       /** The switch works because an owner of the workspace reached the goal. // {goal} */
       referralUnlocked: string;
     };
@@ -3517,7 +3526,15 @@ export const en: FormsMessages = {
         progress: '{count}/{goal}',
         progressSr: ', {count} of {goal} joined',
         title: 'Invite 5 people, remove the badge for life',
-        body: 'Everyone who signs up to dForms with your link counts. At {goal}, “Made with dForms” is gone from every workspace you own, for good.',
+        badgeTitle: 'This is the badge.',
+        badgeBody: 'It shows at the foot of every form, page and email you send with dForms.',
+        stepsTitle: 'How it works',
+        steps: {
+          share: 'Copy your link or share it.',
+          signup: 'Each person who signs up to dForms with it counts.',
+          goal: 'At {goal}, “{badge}” disappears from all your forms, for life.',
+        },
+        progressCount: '{count} of {goal}',
         progressLabel: '{count} of {goal} joined with your link',
         linkLabel: 'Your referral link',
         copy: 'Copy link',
@@ -3544,13 +3561,9 @@ export const en: FormsMessages = {
           shortSome: '{left} to go: {badge}',
           shortLast: '1 to go! {badge}',
           infoLabel: 'What is the {badge} badge?',
-          popoverLabel: 'What the badge is',
-          popoverTitle: 'This is the badge.',
-          popoverBody:
-            'It shows at the foot of every form, page and email you send with dForms. Invite {goal} people who sign up with your link and it is gone from everything you own, for good.',
           progressSr: '{count} of {goal} referrals',
-          copy: 'Copy my link',
-          share: 'Share',
+          cta: 'Remove the badge',
+          ctaShort: 'Remove',
           close: 'Close banner',
         },
         toast: {
@@ -3691,6 +3704,7 @@ export const en: FormsMessages = {
       referralLinkLabel: 'Your referral link',
       referralCopy: 'Copy link',
       referralCopied: 'Copied',
+      referralShare: 'Share',
       referralUnlocked: 'Unlocked for life: an owner of this workspace brought {goal} people to dForms.',
     },
     brandKit: {
@@ -6580,7 +6594,15 @@ export const es: FormsMessages = {
         progress: '{count}/{goal}',
         progressSr: ', {count} de {goal} se unieron',
         title: 'Invita a 5 personas y quita el sello de por vida',
-        body: 'Cuenta cada persona que se registre en dForms con tu link. Con {goal}, «Hecho con dForms» se va de todos los workspaces que tienes, para siempre.',
+        badgeTitle: 'Este es el sello.',
+        badgeBody: 'Sale al final de cada formulario, página y correo que mandas con dForms.',
+        stepsTitle: 'Cómo funciona',
+        steps: {
+          share: 'Copia tu link o compártelo.',
+          signup: 'Cuenta cada persona que se registre en dForms con él.',
+          goal: 'Con {goal}, «{badge}» desaparece de todos tus formularios, de por vida.',
+        },
+        progressCount: '{count} de {goal}',
         progressLabel: '{count} de {goal} se unieron con tu link',
         linkLabel: 'Tu link de referido',
         copy: 'Copiar link',
@@ -6607,13 +6629,9 @@ export const es: FormsMessages = {
           shortSome: 'Faltan {left}: {badge}',
           shortLast: '¡Falta 1! {badge}',
           infoLabel: '¿Qué es el sello {badge}?',
-          popoverLabel: 'Qué es el sello',
-          popoverTitle: 'Este es el sello.',
-          popoverBody:
-            'Sale al final de cada formulario, página y correo que mandas con dForms. Invita a {goal} personas que se registren con tu link y se va de todo lo tuyo, para siempre.',
           progressSr: '{count} de {goal} referidos',
-          copy: 'Copiar mi link',
-          share: 'Compartir',
+          cta: 'Quitar el sello',
+          ctaShort: 'Quitar',
           close: 'Cerrar banner',
         },
         toast: {
@@ -6754,6 +6772,7 @@ export const es: FormsMessages = {
       referralLinkLabel: 'Tu link de referido',
       referralCopy: 'Copiar link',
       referralCopied: 'Copiado',
+      referralShare: 'Compartir',
       referralUnlocked: 'Desbloqueado de por vida: un dueño de este workspace trajo a {goal} personas a dForms.',
     },
     brandKit: {

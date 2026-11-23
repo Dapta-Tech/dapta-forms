@@ -1,7 +1,8 @@
 /* ── Referral program: the celebration at the goal ───────────────────────────
 
    The banner's family (its fire palette, `.rb-pill`, `.rb-flag`), on a dark
-   card in both colour schemes. The sequence, from the moment it opens:
+   card in both colour schemes: `.rc-card` carries `data-theme="dark"` and the
+   banner's `rb-theme`, so the palette resolves from the dark tokens. The sequence, from the moment it opens:
 
      0.0 to 0.9 s   the fire line runs from 80% (where the banner left it)
                     across the whole pill;
@@ -23,6 +24,8 @@
 .rc-card {
   display: flex;
   flex-direction: column;
+  background: var(--rb-bg);
+  color: var(--rb-ink);
 }
 
 /* ── The stage: the pill, the sparks, the track and the flag ── */

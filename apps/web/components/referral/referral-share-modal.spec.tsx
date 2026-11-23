@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 /**
- * The referral share modal: the person's link with a copy button, and one-tap
- * sharing to WhatsApp, email and X with the message already written in the
- * reader's language. Copying puts the link on the clipboard and records
- * `referral_link_copied`; each share link carries the link and the text,
- * encoded, and records `referral_link_shared` with its channel.
+ * The referral dialog: the badge (a mini form with the pill at its foot, and
+ * what it is), how it works in three steps, the progress on the flowing bar,
+ * the person's link with a copy button, and one-tap sharing to WhatsApp, email
+ * and X with the message already written in the reader's language. Opening it
+ * records `referral_dialog_opened`; copying puts the link on the clipboard and
+ * records `referral_link_copied`; each share link carries the link and the
+ * text, encoded, and records `referral_link_shared` with its channel.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -16,7 +18,13 @@ vi.mock('@/lib/product-analytics', () => ({
   captureEvent: (event: string, props?: unknown) => calls.events.push([event, props]),
 }));
 
+// The real mark, swapped for a marker: which artwork it draws depends on the build.
+vi.mock('@/components/brand/brand', () => ({
+  BrandMark: ({ className }: { className?: string }) => <svg data-testid="brand-mark" className={className} />,
+}));
+
 import { ReferralShareModal } from './referral-share-modal';
+import type { ReferralSurface } from './use-referral-copy';
 
 const LINK = 'https://landing.example.test/?ref=abc23def';
 
@@ -42,8 +50,16 @@ afterEach(async () => {
 });
 
 async function mount(
-  opts: { locale?: Locale; count?: number; onClose?: () => void; surface?: 'menu' | 'banner' } = {},
+  opts: {
+    locale?: Locale;
+    count?: number;
+    onClose?: () => void;
+    surface?: ReferralSurface;
+    /** Keep the open event in `calls.events` (the other tests start after it). */
+    keepOpenEvent?: boolean;
+  } = {},
 ) {
+  const m = getMessages(opts.locale ?? 'en');
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -55,11 +71,13 @@ async function mount(
         link={LINK}
         count={opts.count ?? 0}
         goal={5}
-        m={getMessages(opts.locale ?? 'en').admin.chrome.referral}
+        badgeLabel={m.growth.madeWith}
+        m={m.admin.chrome.referral}
         surface={opts.surface}
       />,
     ),
   );
+  if (!opts.keepOpenEvent) calls.events = [];
   return (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 }
 
@@ -72,7 +90,50 @@ describe('ReferralShareModal', () => {
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(dialog.textContent).toContain('Invite 5 people');
     expect((q('referral-link') as HTMLInputElement).value).toBe(LINK);
-    expect(q('referral-progress')!.textContent).toBe('0 of 5 joined with your link');
+    expect(q('referral-progress')!.textContent).toBe('0 of 5');
+  });
+
+  it('shows the badge: the mini form with the pill at its foot, and what it is', async () => {
+    const q = await mount();
+    const badge = q('referral-badge')!;
+    const pill = q('referral-mock-pill')!;
+    expect(badge.contains(pill)).toBe(true);
+    expect(pill.textContent).toBe('Made with dForms');
+    expect(pill.dataset.strike).toBe('0');
+    expect(pill.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(badge.textContent).toContain('This is the badge. It shows at the foot of every form, page and email');
+  });
+
+  it('says how it works in three steps, the goal naming the badge', async () => {
+    const q = await mount();
+    const steps = [...q('referral-steps')!.querySelectorAll('li')].map((li) => li.textContent);
+    expect(steps).toEqual([
+      '1Copy your link or share it.',
+      '2Each person who signs up to dForms with it counts.',
+      '3At 5, “Made with dForms” disappears from all your forms, for life.',
+    ]);
+  });
+
+  it('the progress: the count and the same flowing bar as the banner', async () => {
+    const q = await mount({ count: 3 });
+    expect(q('referral-progress')!.textContent).toBe('3 of 5');
+    const track = q('referral-track')!;
+    expect(track.getAttribute('role')).toBe('img');
+    expect(track.getAttribute('aria-label')).toBe('3 of 5 joined with your link');
+    expect(track.dataset.heat).toBe('warm');
+    expect(q('referral-track-fill')!.style.width).toBe('60%');
+    expect(track.querySelector('.rb-flag')).not.toBeNull();
+  });
+
+  it('records each opening with the surface it came from', async () => {
+    for (const surface of ['menu', 'banner', 'banner_help', 'badge_switch'] as const) {
+      calls.events = [];
+      await mount({ surface, keepOpenEvent: true });
+      expect(calls.events).toEqual([['referral_dialog_opened', { surface }]]);
+      await act(async () => root!.unmount());
+      host!.remove();
+      root = null;
+    }
   });
 
   it('copy puts the link on the clipboard, says so, and records the copy', async () => {
@@ -164,9 +225,13 @@ describe('ReferralShareModal', () => {
   });
 
   it('names the badge as the pill reads, in Spanish too', async () => {
-    await mount({ locale: 'es' });
+    const q = await mount({ locale: 'es', count: 1 });
     const text = document.querySelector('[role="dialog"]')!.textContent;
     expect(text).toContain('«Hecho con dForms»');
     expect(text).not.toContain('Made with');
+    expect(q('referral-mock-pill')!.textContent).toBe('Hecho con dForms');
+    expect(q('referral-steps')!.textContent).toContain('Con 5, «Hecho con dForms» desaparece de todos tus formularios, de por vida.');
+    expect(q('referral-progress')!.textContent).toBe('1 de 5');
+    expect(text).toContain('Cómo funciona');
   });
 });

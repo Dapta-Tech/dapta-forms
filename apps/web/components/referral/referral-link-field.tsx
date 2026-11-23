@@ -10,7 +10,8 @@ import { useReferralCopy, type ReferralSurface } from './use-referral-copy';
  * settings row: the locked badge switch's (Brand kit and the Design panel).
  * A copy records `referral_link_copied` with its `surface`. Without a
  * clipboard (an insecure origin, a denied permission) the link is handed over
- * selected instead, so the keyboard shortcut copies it.
+ * selected instead, so the keyboard shortcut copies it. With `onShare`, a
+ * Share button next to Copy opens the referral dialog.
  */
 export function ReferralLinkField({
   link,
@@ -19,6 +20,8 @@ export function ReferralLinkField({
   copied,
   inputId,
   surface,
+  share,
+  onShare,
 }: {
   link: string;
   label: string;
@@ -27,6 +30,10 @@ export function ReferralLinkField({
   /** Unique on the page: the label points at it. */
   inputId: string;
   surface?: ReferralSurface;
+  /** The Share button's label, shown with `onShare`. */
+  share?: string;
+  /** Open the referral dialog. Absent: no Share button. */
+  onShare?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { copied: done, copy: copyLink } = useReferralCopy(link, surface);
@@ -60,6 +67,17 @@ export function ReferralLinkField({
         >
           {done ? copied : copy}
         </button>
+        {onShare && share ? (
+          <button
+            type="button"
+            onClick={onShare}
+            aria-haspopup="dialog"
+            data-testid="referral-share"
+            className={cn(buttonVariants({ variant: 'outline' }), 'h-9 shrink-0')}
+          >
+            {share}
+          </button>
+        ) : null}
       </div>
     </div>
   );

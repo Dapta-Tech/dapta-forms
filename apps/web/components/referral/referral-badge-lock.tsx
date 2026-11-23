@@ -4,6 +4,7 @@ import { Fragment, type ReactNode } from 'react';
 import type { FormsMessages } from '@quill/shared';
 import { BrandMark } from '@/components/brand/brand';
 import { fillLock, type ReferralLock } from '@/lib/referral-lock';
+import { useOpenReferralDialog } from './referral-dialog-context';
 import { ReferralLinkField } from './referral-link-field';
 
 type AttributionMessages = FormsMessages['admin']['attributionSetting'];
@@ -57,6 +58,8 @@ export function ReferralBadgeLock({
   testId: string;
 }) {
   const { count, goal, link } = lock;
+  // The shell's referral dialog (the share buttons), when there is one.
+  const openDialog = useOpenReferralDialog();
   const shown = Math.min(count, goal);
   const product = daptaAiUrl ? (
     <a href={daptaAiUrl} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
@@ -98,6 +101,8 @@ export function ReferralBadgeLock({
         copied={m.referralCopied}
         inputId={`${idPrefix}-referral-link`}
         surface="badge_switch"
+        share={m.referralShare}
+        onShare={openDialog ? () => openDialog('badge_switch') : undefined}
       />
     </div>
   );
