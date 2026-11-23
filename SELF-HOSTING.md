@@ -213,6 +213,8 @@ loud** on a bad value. Copy [`.env.example`](.env.example) to `.env` to override
 | `OUTBOX_MAX_ATTEMPTS` | `5` | — | no |
 | `ONBOARDING_WIZARD` | `true` | set `false` to skip the first-run wizard (and get `SEED_DEMO_FORM` back) | no |
 | `SEED_DEMO_FORM` | `true` | **inert while `ONBOARDING_WIZARD` is on**; set `false` to ship empty new workspaces | no |
+| `REFERRAL_PROGRAM` | `false` | set `true` to give every signed-in person a referral link in the left menu. It links to `NEXT_PUBLIC_LANDING_URL`, else `PUBLIC_APP_URL`, and stays off with neither; the API builds the link, so `NEXT_PUBLIC_LANDING_URL` must be in the API's runtime env too, not only a web build arg. Read by the API only; the web app takes it from `/v1/me`. A landing on another origin that greets invitees by name (`GET /v1/public/referrals/{code}`) from the browser must be listed in `CORS_ORIGINS`; a same-origin proxy needs no entry. Setting it back to `false` is the kill switch: the menu, banner, claims and name lookup stop, earned unlocks stay. Launch steps: [docs/referral-program-launch.md](docs/referral-program-launch.md) | no |
+| `REFERRAL_CAMPAIGN_ENDS_AT` | unset (no end) | an ISO 8601 date-time with a time zone, e.g. `2026-12-31T23:59:59Z`, when the referral campaign ends. After it the top banner and the reminder email stop; the link, the count, the menu entry and earned unlocks stay. Any other value refuses to boot. Read by the API only; the web app takes `campaignActive` from `/v1/me` | no |
 
 The two form-seeding knobs are mutually exclusive by construction. A new
 workspace gets exactly one of: the wizard's chosen template (`ONBOARDING_WIZARD`

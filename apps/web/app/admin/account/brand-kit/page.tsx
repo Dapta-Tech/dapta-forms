@@ -6,6 +6,7 @@ import { daptaAiUrl } from '@/lib/dapta-ai-url';
 import { BrandKitPanel } from './brand-kit-panel';
 import { AttributionSetting } from './attribution-setting';
 import { ManagingChip } from '../_components/managing-chip';
+import { referralLockOf } from '@/lib/referral-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,9 @@ export default async function BrandKitPage() {
               initial={attribution}
               canEdit={isAdminRole(me.role)}
               daptaAiUrl={daptaAiUrl()}
+              // While locked, an owner is offered the referral program too.
+              referral={referralLockOf(me)}
+              madeWith={getMessages(locale).growth.madeWith}
               m={messages.attributionSetting}
             />
           ) : null

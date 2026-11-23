@@ -10,6 +10,7 @@
  * on a half-empty blob: unrecoverable. `attribution.spec.ts` pins both hops.
  */
 import { parseAttribution, ATTRIBUTION_QUERY_KEYS } from '@quill/types';
+import { REFERRAL_QUERY_KEY } from '@quill/shared';
 
 /**
  * Forwarded values are capped here as well as at the far end. The inbound URL was
@@ -118,4 +119,14 @@ export function attributionHandoffQuery(
   }
   if (landingId) qs.set(PH_ID_QUERY_KEY, landingId);
   return qs.toString();
+}
+
+/** The referral code a referral link carries (`?ref=`), or null. */
+export function referralCodeOfLink(link: string | null | undefined): string | null {
+  if (!link) return null;
+  try {
+    return new URL(link).searchParams.get(REFERRAL_QUERY_KEY)?.trim() || null;
+  } catch {
+    return null;
+  }
 }

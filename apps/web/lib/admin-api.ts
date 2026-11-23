@@ -217,6 +217,36 @@ export interface AnnouncementView {
   followed: boolean;
 }
 
+/** `/v1/me.referral`. Later steps of the program add fields; unknown ones are ignored. */
+export type MeReferral =
+  | { enabled: false }
+  | {
+      enabled: true;
+      link: string;
+      count: number;
+      goal: number;
+      /**
+       * The campaign is running (no end set, or before `REFERRAL_CAMPAIGN_ENDS_AT`).
+       * Only the campaign-scoped surfaces key off it (the top banner); the link,
+       * the count and the menu entry stay after it ends. Optional so an older API
+       * that does not send it still parses.
+       */
+      campaignActive?: boolean;
+      /**
+       * Whether the top banner shows: the campaign runs, the person is below the
+       * goal and not unlocked, the workspace does not pay for Dapta AI, and the
+       * banner was not closed in the last 7 days. Optional for an older API,
+       * which then shows no banner (`referralBannerVisible`).
+       */
+      bannerVisible?: boolean;
+      /**
+       * The person reached the goal: the badge is gone from every workspace
+       * they own, for life; `true` hides the banner whatever `bannerVisible`
+       * says. Optional so an older API still parses.
+       */
+      unlocked?: boolean;
+    };
+
 export interface Me {
   accountId: string;
   /** The workspace's display name. */
@@ -265,6 +295,13 @@ export interface Me {
    * `attribution`, which is the signup's acquisition tags above.
    */
   attributionBadge?: { showing: boolean };
+  /**
+   * The referral program for this PERSON (the same in every workspace): their
+   * referral link and progress, or `{ enabled: false }` while the API has the
+   * program switched off. Optional so an older API reads as off. The web app
+   * never reads the switch itself.
+   */
+  referral?: MeReferral;
   /** `'staff'` when the caller is in this workspace by access grant, not by membership. */
   accessGrant: 'staff' | null;
   /** Staff of the deployment (by email domain, identity-backed only): may search and enter the whole estate. */
@@ -904,6 +941,11 @@ export interface AttributionStatus {
    * API older than the field reads as seen (the old wording).
    */
   verdictSeen?: boolean;
+  /**
+   * The workspace holds a referral unlock (an owner of it reached the goal):
+   * the switch works, with no expiry. Optional: an older API reads as false.
+   */
+  referralUnlocked?: boolean;
 }
 
 export const adminApi = {
@@ -1083,6 +1125,9 @@ export const adminApi = {
    *  server action: this is the durable copy, and the one the notification
    *  emails are rendered from. */
   setMyLocale: (locale: 'en' | 'es') => req<{ ok: boolean; locale: 'en' | 'es' }>('PUT', '/v1/me/locale', { locale }),
+  /** Close the referral banner for the caller, in every workspace, for 7 days. */
+  dismissReferralBanner: () =>
+    req<{ dismissedUntil: number | null }>('POST', '/v1/me/referral/banner/dismiss', {}),
   /** The one in-app announcement the caller gets now, or null (see `announcements.ts` in @quill/shared). */
   announcement: () =>
     req<{ announcement: AnnouncementView | null }>('GET', '/v1/me/announcement').then((r) => r.announcement ?? null),

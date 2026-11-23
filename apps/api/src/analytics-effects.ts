@@ -15,6 +15,18 @@ import { currentAnalyticsSessionId } from './analytics-session';
  * data, no secrets. A form's respondents are NOT users of this product and are
  * never captured.
  */
+/** Flat primitives only: the vendor indexes them, and nested values would hide PII. */
+export type AnalyticsProperties = Record<string, string | number | boolean | null>;
+
+/** What a call site passes to `capture` / `captureRaw`. */
+export interface AnalyticsCaptureInput {
+  distinctId: string;
+  accountId: string | null;
+  properties?: AnalyticsProperties;
+  /** Set on the person (`$set`) besides the email. See AnalyticsEventPayload. */
+  personProperties?: AnalyticsProperties;
+}
+
 export interface AnalyticsEventPayload {
   /**
    * Event name. Always `forms_`-prefixed (see AnalyticsEffects.capture), except
@@ -24,7 +36,14 @@ export interface AnalyticsEventPayload {
   /** Who the event is about: the member's email. */
   distinctId: string;
   /** Free-form event properties. Keep them small, flat, and free of PII. */
-  properties?: Record<string, string | number | boolean | null>;
+  properties?: AnalyticsProperties;
+  /**
+   * Properties to set on the PERSON (the vendor's `$set`), not on the event:
+   * who referred them, their referral code. Same shape rules as `properties`.
+   * Absent on every event that sets none, so older rows read exactly as before.
+   * `email` is not set through here: delivery derives it from `distinctId`.
+   */
+  personProperties?: AnalyticsProperties;
   /** The account the event belongs to; becomes the `forms_account` group. */
   accountId: string | null;
   /** Epoch-ms the event actually happened — NOT when the row is drained. */
@@ -94,11 +113,7 @@ export class AnalyticsEffects {
    */
   async capture(
     event: string,
-    input: {
-      distinctId: string;
-      accountId: string | null;
-      properties?: Record<string, string | number | boolean | null>;
-    },
+    input: AnalyticsCaptureInput,
     now: number = Date.now(),
   ): Promise<void> {
     await this.enqueue(`${EVENT_PREFIX}${event}`, input, now);
@@ -113,11 +128,7 @@ export class AnalyticsEffects {
    */
   async captureRaw(
     event: string,
-    input: {
-      distinctId: string;
-      accountId: string | null;
-      properties?: Record<string, string | number | boolean | null>;
-    },
+    input: AnalyticsCaptureInput,
     now: number = Date.now(),
   ): Promise<void> {
     if (!RAW_EVENT_PATTERN.test(event)) {
@@ -129,11 +140,7 @@ export class AnalyticsEffects {
 
   private async enqueue(
     event: string,
-    input: {
-      distinctId: string;
-      accountId: string | null;
-      properties?: Record<string, string | number | boolean | null>;
-    },
+    input: AnalyticsCaptureInput,
     now: number,
   ): Promise<void> {
     if (!this.enabled) return;
@@ -150,6 +157,7 @@ export class AnalyticsEffects {
         event,
         distinctId: input.distinctId,
         properties,
+        ...(input.personProperties ? { personProperties: input.personProperties } : {}),
         accountId: input.accountId,
         // Stamped at ENQUEUE time. The row may be drained seconds or minutes
         // later (or retried for much longer); sending the drain time would

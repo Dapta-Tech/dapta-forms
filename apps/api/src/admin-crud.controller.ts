@@ -117,6 +117,7 @@ import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
 import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } from './submission-filter';
 import type { CaptchaVerifier } from './captcha';
 import { AttributionService } from './attribution.service';
+import { ReferralService } from './referral.service';
 import { CAPTCHA, DB, ENV } from './tokens';
 
 function unwrapCrud<T>(r: CrudResult<T>): T {
@@ -215,6 +216,9 @@ export class AdminCrudController {
     // surfaces carry the "Made with dForms" attribution. Last and optional for
     // the positional reason; absent reads as showing, as before the setting.
     @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
+    // The person's referral link and progress (`me`). Last and optional for
+    // the positional reason; absent reads as the program switched off.
+    @Optional() @Inject(ReferralService) private readonly referrals?: ReferralService,
   ) {}
 
   /**
@@ -277,7 +281,15 @@ export class AdminCrudController {
     // `attributionBadge`, not `attribution`: that key is the signup's UTM
     // record, already on `view`.
     const attributionBadge = { showing: this.attribution ? await this.attribution.showFor(p.accountId) : true };
-    return { ...view, staff, uploads, captcha, attributionBadge };
+    // The referral program, for the left menu: the person's link and progress,
+    // keyed by the person rather than this workspace (ADR 0005). Switched off,
+    // `{ enabled: false }` and nothing is written. An agent (API key, MCP) is
+    // not a person sharing a link: it gets the program off and writes nothing.
+    const referral =
+      this.referrals && !isAgentPrincipal(p)
+        ? await this.referrals.forMember(p.accountId, p.memberId)
+        : { enabled: false };
+    return { ...view, staff, uploads, captcha, attributionBadge, referral };
   }
 
   /**
@@ -1047,11 +1059,19 @@ export class AdminCrudController {
   async inviteMember(@Req() req: ReqLike, @Body() body: unknown) {
     const input = parse(memberInviteSchema, body);
     if (this.workspacesSvc && (await this.workspacesSvc.hasUpstream(req))) {
-      return this.workspacesSvc.inviteUpstream(req, input);
+      const invited = await this.workspacesSvc.inviteUpstream(req, input);
+      // Who invited whom, for the referral program: the identity service's
+      // invitation has no inviter. After the invitation went out; never throws.
+      if (this.referrals?.enabled) {
+        const inviter = await this.auth.resolveHost(req).catch(() => null);
+        if (inviter) await this.referrals.recordInvite(inviter, invited.email ?? input.email);
+      }
+      return invited;
     }
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     const member = unwrapCrud(await inviteMember(this.db, p.accountId, input));
+    await this.referrals?.recordInvite(p, member.email ?? input.email);
     // Tell them. Until now the row was created and nobody was ever notified.
     // Enqueued (never sent inline) and fire-and-forget: a mail provider being
     // down must not fail an invite that already succeeded.

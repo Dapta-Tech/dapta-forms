@@ -9,10 +9,13 @@
  * subscription, and the paid verdict is cached on the workspace's `account`
  * row from what the identity service already tells dForms with the caller's
  * own token (`isPaid` on the workspace search, `account.account_status_id` on
- * the workspace detail). So the attribution is hidden only when BOTH hold:
+ * the workspace detail). A workspace that earned a referral unlock may hide it
+ * too. So the attribution is hidden only when BOTH hold:
  *  - the workspace asked for it (`hideAttribution`, its CHOICE), and
- *  - the deployment runs with `PREMIUM_FEATURES=open`, or the cached verdict
- *    reads paid and was written within `ATTRIBUTION_VERDICT_MAX_AGE_MS`.
+ *  - the deployment runs with `PREMIUM_FEATURES=open`, or an unlock source
+ *    holds (`unlockSources`): the cached verdict reads paid and was written
+ *    within `ATTRIBUTION_VERDICT_MAX_AGE_MS`, or the workspace is referral
+ *    unlocked (no expiry).
  * Anything else shows it: a lapsed verdict, a stale one, one never written.
  *
  * The deploy-level rule (`NEXT_PUBLIC_SIGNUP_URL` / `NEXT_PUBLIC_HIDE_BADGE`,
@@ -46,8 +49,15 @@ export const ATTRIBUTION_VERDICT_MAX_AGE_MS = 30 * 24 * 3_600_000;
  */
 export const ATTRIBUTION_VERDICT_MAX_SKEW_MS = 5 * 60_000;
 
-/** `PREMIUM_FEATURES`: `open` lets any workspace hide it; `locked` needs the paid verdict. */
+/** `PREMIUM_FEATURES`: `open` lets any workspace hide it; `locked` needs an unlock source. */
 export type PremiumMode = 'open' | 'locked';
+
+/**
+ * A reason a workspace may hide the attribution in locked mode:
+ *  - `paid`: a fresh paid Dapta AI verdict (30-day window);
+ *  - `referral`: a referral unlock, which never expires.
+ */
+export type UnlockSource = 'paid' | 'referral';
 
 export interface AttributionInput {
   /** The workspace's stored choice. */
@@ -56,6 +66,8 @@ export interface AttributionInput {
   paid: boolean | null;
   /** Epoch ms the verdict was written, or null. */
   checkedAt: number | null;
+  /** The workspace holds a referral unlock. No expiry. */
+  referralUnlocked: boolean;
   premiumMode: PremiumMode;
   /** Epoch ms of the decision. */
   now: number;
@@ -69,9 +81,17 @@ export function paidVerdictFresh(paid: boolean | null, checkedAt: number | null,
   return age < ATTRIBUTION_VERDICT_MAX_AGE_MS;
 }
 
+/** The unlock sources that hold right now, paid first. The premium mode is not a source. */
+export function unlockSources(input: Omit<AttributionInput, 'hideAttribution' | 'premiumMode'>): UnlockSource[] {
+  const sources: UnlockSource[] = [];
+  if (paidVerdictFresh(input.paid, input.checkedAt, input.now)) sources.push('paid');
+  if (input.referralUnlocked) sources.push('referral');
+  return sources;
+}
+
 /** May this workspace hide the attribution right now (the switch's "can turn it off")? */
 export function canHideAttribution(input: Omit<AttributionInput, 'hideAttribution'>): boolean {
-  return input.premiumMode === 'open' || paidVerdictFresh(input.paid, input.checkedAt, input.now);
+  return input.premiumMode === 'open' || unlockSources(input).length > 0;
 }
 
 /** Does the workspace's public surface carry the attribution? */

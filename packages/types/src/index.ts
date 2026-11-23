@@ -1710,6 +1710,13 @@ export const attributionSchema = z.object({
   /** Path-only entry point (never the query string — it can carry PII). */
   landingPath: z.string().max(512).nullable().optional(),
   /**
+   * The referral code of the referral link the person arrived through (`?ref=`).
+   * Kept here so it rides the same hops as the UTMs; the sign-in callback hands
+   * it to the person-level referral claim, which looks it up and credits the
+   * link's owner. Codes are 8 characters; the cap only bounds a hostile URL.
+   */
+  referralCode: z.string().max(32).nullable().optional(),
+  /**
    * RESERVED — epoch-ms of that first visit, as the CLIENT clock reported it.
    * Structurally unwritable today: `ATTRIBUTION_QUERY_MAP` only carries the
    * string-valued fields, so nothing can populate a number. Kept because the
@@ -2474,6 +2481,7 @@ const ATTRIBUTION_QUERY_MAP = [
   ['fbclid', 'fbclid', 512],
   ['referrer', 'referrer', 512],
   ['landing_path', 'landingPath', 512],
+  ['ref', 'referralCode', 32],
 ] as const satisfies ReadonlyArray<readonly [string, AttributionStringKey, number]>;
 
 /** The query parameters this product reads. Everything else is ignored. */

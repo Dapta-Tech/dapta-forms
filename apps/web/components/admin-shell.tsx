@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -37,6 +38,11 @@ import {
   takeAnnouncementSurface,
 } from '@/components/announcement/announcement-client';
 import { AnnouncementModal } from '@/components/announcement/announcement-modal';
+import { ReferralShareModal, fillReferral } from '@/components/referral/referral-share-modal';
+import { ReferralBanner } from '@/components/referral/referral-banner';
+import { ReferralDialogContext } from '@/components/referral/referral-dialog-context';
+import { ReferralMoments } from '@/components/referral/referral-moments';
+import type { ReferralSurface } from '@/components/referral/use-referral-copy';
 import type { Workspace } from '@/lib/admin-api';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
@@ -58,7 +64,8 @@ type IconName =
   | 'mcp'
   | 'tools'
   | 'docs'
-  | 'agents';
+  | 'agents'
+  | 'referral';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -157,6 +164,7 @@ const PI_BY_NAME: Record<Exclude<IconName, AnimatedIcon>, string> = {
   tools: 'pi-sparkles',
   docs: 'pi-book',
   agents: 'pi-bot',
+  referral: 'pi-gift',
 };
 
 function Icon({ name, className, paused }: { name: IconName; className?: string; paused?: boolean }) {
@@ -323,6 +331,9 @@ function NavLinks({
   onNavigate,
   badgeItem = null,
   badge,
+  referral = null,
+  referralM,
+  onReferral,
 }: {
   collapsed: boolean;
   nav: ChromeMessages['nav'];
@@ -334,6 +345,11 @@ function NavLinks({
   /** The item an announcement marks "New", or null. */
   badgeItem?: AnnouncementRailItem | null;
   badge: NavBadge;
+  /** The referral program's entry, or null while the program is off. */
+  referral?: ShellReferral | null;
+  referralM: ChromeMessages['referral'];
+  /** Opens the share modal. */
+  onReferral?: () => void;
 }) {
   const pathname = usePathname();
   return (
@@ -431,7 +447,57 @@ function NavLinks({
           </li>
         );
       })}
+      {referral ? (
+        <li>
+          <ReferralNavEntry referral={referral} m={referralM} collapsed={collapsed} onOpen={onReferral} />
+        </li>
+      ) : null}
     </ul>
+  );
+}
+
+/**
+ * The referral program's rail row: a button (it opens the share modal, it is
+ * not a page) with the person's progress as a pill after the label. The pill
+ * is hidden from the accessibility tree and its words are read instead, so the
+ * row's name is "Invite friends, 0 of 5 joined". Collapsed to 64px, the icon
+ * alone, with the same words as its tooltip.
+ */
+function ReferralNavEntry({
+  referral,
+  m,
+  collapsed,
+  onOpen,
+}: {
+  referral: ShellReferral;
+  m: ChromeMessages['referral'];
+  collapsed: boolean;
+  onOpen?: () => void;
+}) {
+  const values = { count: referral.count, goal: referral.goal };
+  const sr = fillReferral(m.progressSr, values);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={collapsed ? `${m.nav}${sr}` : undefined}
+      aria-haspopup="dialog"
+      data-testid="nav-referral"
+      className={navRowClass(collapsed, 'idle')}
+    >
+      <Icon name="referral" />
+      <span className={collapsed ? 'sr-only' : ''}>{m.nav}</span>
+      {!collapsed ? (
+        <span
+          aria-hidden
+          data-testid="nav-referral-progress"
+          className="ml-auto shrink-0 rounded-full bg-signal/15 px-2 py-0.5 text-2xs font-semibold leading-4 tabular-nums text-signal-ink"
+        >
+          {fillReferral(m.progress, values)}
+        </span>
+      ) : null}
+      <span className="sr-only">{sr}</span>
+    </button>
   );
 }
 
@@ -456,6 +522,26 @@ export interface ShellAnnouncement {
   visual: AnnouncementVideo;
 }
 
+/** The referral program's entry, from `/v1/me.referral` while it is on. */
+export interface ShellReferral {
+  link: string;
+  count: number;
+  goal: number;
+  /**
+   * The top banner, while the API shows it (`referralBannerVisible`), with the
+   * badge's localized label (`growth.madeWith`) for its replica of the pill.
+   * Absent or null: no banner.
+   */
+  banner?: { badgeLabel: string } | null;
+  /**
+   * The person reached the goal (`/v1/me.referral.unlocked`). The live
+   * moments celebrate it once, when it flips on. Absent: not unlocked.
+   */
+  unlocked?: boolean;
+  /** The badge's localized label (`growth.madeWith`), for the dialog and the celebration. */
+  badgeLabel: string;
+}
+
 export interface ShellUser {
   displayName: string | null;
   email: string | null;
@@ -471,6 +557,7 @@ export function AdminShell({
   currentAccountId,
   staff = false,
   announcement = null,
+  referral = null,
   children,
 }: {
   user: ShellUser | null;
@@ -490,6 +577,8 @@ export function AdminShell({
   staff?: boolean;
   /** The announcement this person gets, or null (see `ShellAnnouncement`). */
   announcement?: ShellAnnouncement | null;
+  /** The referral program's entry, or null while the program is off. */
+  referral?: ShellReferral | null;
   children: ReactNode;
 }) {
   // Tagged once for both rails (desktop and drawer), like the other suite doors.
@@ -497,6 +586,19 @@ export function AdminShell({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [referralOpen, setReferralOpen] = useState(false);
+  // Where the referral dialog was opened from, for its open, copy and share events.
+  const [referralSurface, setReferralSurface] = useState<ReferralSurface>('menu');
+  // One door for every opener: the menu, the banner's call to action and its
+  // "?", the badge switch. From the drawer, the drawer closes first: the
+  // dialog belongs over the page, not over a drawer that would keep the page
+  // inert under it.
+  const openReferralDialog = useCallback((surface: ReferralSurface) => {
+    setDrawerOpen(false);
+    setReferralSurface(surface);
+    setReferralOpen(true);
+  }, []);
+  const openReferral = () => openReferralDialog('menu');
   const drawerRef = useRef<HTMLElement>(null);
   const railRef = useRef<HTMLElement>(null);
   const [peeking, setPeeking] = useState(false);
@@ -875,6 +977,9 @@ export function AdminShell({
             newTab={messages.switcher.opensNewTab}
             badgeItem={badgeItem}
             badge={messages.newBadge}
+            referral={referral}
+            referralM={messages.referral}
+            onReferral={openReferral}
           />
         </nav>
         {renderFooter(railCollapsed)}
@@ -931,13 +1036,31 @@ export function AdminShell({
             onNavigate={() => setDrawerOpen(false)}
             badgeItem={badgeItem}
             badge={messages.newBadge}
+            referral={referral}
+            referralM={messages.referral}
+            onReferral={openReferral}
           />
         </nav>
         {renderFooter(false, () => setDrawerOpen(false))}
       </aside>
 
       <main inert={drawerOpen || undefined} className="min-w-0 flex-1 bg-background">
-        {children}
+        {/* The referral banner, at the top of the main area. Not in the form
+            builder: it owns the full viewport height (`h-[100dvh]`), and a
+            strip above it would push its bottom edge off screen. */}
+        {referral?.banner && !studio ? (
+          <ReferralBanner
+            count={referral.count}
+            goal={referral.goal}
+            badgeLabel={referral.banner.badgeLabel}
+            m={messages.referral}
+            onOpen={openReferralDialog}
+          />
+        ) : null}
+        {/* The badge switch opens the same dialog, from Brand kit or the Design panel. */}
+        <ReferralDialogContext.Provider value={referral ? openReferralDialog : null}>
+          {children}
+        </ReferralDialogContext.Provider>
       </main>
       {announcement?.copy ? (
         <AnnouncementModal
@@ -949,6 +1072,31 @@ export function AdminShell({
           visual={announcement.visual}
           closeLabel={announcement.closeLabel}
           theme={themePref}
+        />
+      ) : null}
+      {/* The toast on a new referral and the celebration at the goal. On
+          every page, the form builder included: the banner is gone at the
+          goal, so the celebration stands on its own. */}
+      {referral ? (
+        <ReferralMoments
+          link={referral.link}
+          count={referral.count}
+          goal={referral.goal}
+          unlocked={referral.unlocked === true}
+          badgeLabel={referral.badgeLabel}
+          m={messages.referral}
+        />
+      ) : null}
+      {referral ? (
+        <ReferralShareModal
+          open={referralOpen}
+          onClose={() => setReferralOpen(false)}
+          link={referral.link}
+          count={referral.count}
+          goal={referral.goal}
+          badgeLabel={referral.badgeLabel}
+          m={messages.referral}
+          surface={referralSurface}
         />
       ) : null}
     </div>

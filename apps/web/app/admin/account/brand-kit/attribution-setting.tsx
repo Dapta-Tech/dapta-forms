@@ -1,12 +1,14 @@
 'use client';
 
 import { useId, useState, useTransition } from 'react';
-import { t, type FormsMessages } from '@quill/shared';
+import { REFERRAL_GOAL, t, type FormsMessages } from '@quill/shared';
 import type { AttributionStatus } from '@/lib/admin-api';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
 import { SettingsRow } from '@/components/ui/settings';
 import { Switch } from '@/components/ui/switch';
+import { ReferralBadgeLock } from '@/components/referral/referral-badge-lock';
+import { fillLock, type ReferralLock } from '@/lib/referral-lock';
 import { saveAttributionAction } from './actions';
 import { DAPTA_SUBSCRIPTION_REQUIRED } from './attribution-codes';
 
@@ -46,6 +48,12 @@ export function attributionMode(s: AttributionStatus): AttributionMode {
  * by the server page: no host is written in this tree). Members see the row
  * read-only: only owners and admins change it.
  *
+ * Referral program on, and the reader an owner (`referral`): while locked,
+ * the subscribers note gives way to "Invite 5 or pay for Dapta AI" with the
+ * pill replica, the progress bar and the person's link
+ * (`ReferralBadgeLock`). Unlocked by a referral (`referralUnlocked`): the
+ * switch works as for a paying workspace, with one line saying why.
+ *
  * The page hides the whole row on a deployment with no attribution at all
  * (`signupHref` null): a switch for something that never shows is dead.
  */
@@ -54,6 +62,8 @@ export function AttributionSetting({
   canEdit,
   daptaAiUrl,
   first = false,
+  referral = null,
+  madeWith = 'Made with dForms',
   m,
 }: {
   initial: AttributionStatus;
@@ -61,6 +71,10 @@ export function AttributionSetting({
   /** The Dapta AI landing, or null: then the note is plain text. */
   daptaAiUrl: string | null;
   first?: boolean;
+  /** The reader's referral progress, when the program is on and they own the workspace (`referralLockOf`). */
+  referral?: ReferralLock | null;
+  /** `growth.madeWith` in the reader's language: the pill replica's label. */
+  madeWith?: string;
   m: AttributionMessages;
 }) {
   const [state, setState] = useState<AttributionStatus>(initial);
@@ -68,12 +82,16 @@ export function AttributionSetting({
   const [notice, setNotice] = useState<'saved' | 'failed' | 'notSubscribed' | null>(null);
   const lapsedId = useId();
   const subscribersId = useId();
+  const fieldId = useId();
   const mode = attributionMode(state);
   // Only turning the attribution OFF needs the subscription. Turning it back
   // ON never does, so a lapsed choice (stored off, not paying) stays usable.
   const usable = state.canHide || state.hideAttribution;
   const enabled = canEdit && !pending && usable;
-  const subscribersOnly = t(m.subscribersOnly, { product: m.product });
+  // Locked with the referral program on: the way out is invite or pay.
+  const lock = !state.canHide && referral ? referral : null;
+  const lockedLine = referral ? fillLock(m.referralLocked, { goal: referral.goal, product: m.product }) : null;
+  const subscribersOnly = lock && lockedLine ? lockedLine : t(m.subscribersOnly, { product: m.product });
   const [before, after = ''] = m.subscribersOnly.split('{product}');
 
   const save = (show: boolean) =>
@@ -106,8 +124,18 @@ export function AttributionSetting({
         {m.lapsed}
       </p>
     ) : null;
-  const subscribersNote =
-    showSubscribersOnly ? (
+  const subscribersNote = lock ? (
+    <div id={subscribersId}>
+      <ReferralBadgeLock
+        lock={lock}
+        daptaAiUrl={daptaAiUrl}
+        madeWith={madeWith}
+        m={m}
+        idPrefix={fieldId}
+        testId="attribution-referral-lock"
+      />
+    </div>
+  ) : showSubscribersOnly ? (
       <p id={subscribersId} data-testid="attribution-subscribers-only" className="text-xs text-muted-foreground">
         {before}
         {daptaAiUrl ? (
@@ -147,6 +175,11 @@ export function AttributionSetting({
         </span>
         {lapsedNote}
         {subscribersNote}
+        {state.canHide && state.referralUnlocked ? (
+          <p data-testid="attribution-referral-unlocked" className="text-xs text-muted-foreground">
+            {fillLock(m.referralUnlocked, { goal: referral?.goal ?? REFERRAL_GOAL, product: m.product })}
+          </p>
+        ) : null}
         {!canEdit ? (
           <p data-testid="attribution-read-only" className="text-xs text-muted-foreground">
             {m.readOnly}
@@ -158,7 +191,7 @@ export function AttributionSetting({
           </p>
         ) : notice === 'failed' || notice === 'notSubscribed' ? (
           <p role="alert" data-testid="attribution-save-error" className="text-xs text-destructive">
-            {notice === 'notSubscribed' ? m.notSubscribed : m.saveFailed}
+            {notice === 'notSubscribed' ? (lockedLine ?? m.notSubscribed) : m.saveFailed}
           </p>
         ) : null}
       </div>

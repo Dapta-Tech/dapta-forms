@@ -39,7 +39,7 @@ export class AttributionController {
     if (!out.ok) {
       throw new ForbiddenException({
         error: DAPTA_SUBSCRIPTION_REQUIRED,
-        message: 'Hiding the dForms attribution is only for Dapta AI subscribers.',
+        message: 'Hiding the dForms attribution needs a Dapta AI subscription or a referral unlock.',
       });
     }
     return out.status;

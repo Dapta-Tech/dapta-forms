@@ -53,6 +53,14 @@ describe('openapi spec', () => {
     expect(paths).toContain('/health');
   });
 
+  it('documents the public referral first-name lookup: the body, the single 404 and the rate limit', () => {
+    const op = (openapiSpec.paths as Record<string, { get?: { description?: string; responses: Record<string, unknown> } }>)[
+      '/v1/public/referrals/{code}'
+    ]?.get;
+    expect(op?.description).toContain('{ firstName }');
+    expect(Object.keys(op?.responses ?? {})).toEqual(['200', '404', '429']);
+  });
+
   it('documents the visit on the submit, and only its safe view on the dashboard read', () => {
     const submit = JSON.stringify(openapiSpec.paths['/v1/public/forms/{accountCode}/{slug}/submissions'].post);
     for (const key of ['visit', 'pageUri', 'pageName', 'pageId', 'hutk', 'hsPortalId', 'embedded']) {
