@@ -218,7 +218,21 @@ export interface AnnouncementView {
 }
 
 /** `/v1/me.referral`. Later steps of the program add fields; unknown ones are ignored. */
-export type MeReferral = { enabled: false } | { enabled: true; link: string; count: number; goal: number };
+export type MeReferral =
+  | { enabled: false }
+  | {
+      enabled: true;
+      link: string;
+      count: number;
+      goal: number;
+      /**
+       * The campaign is running (no end set, or before `REFERRAL_CAMPAIGN_ENDS_AT`).
+       * Only the campaign-scoped surfaces key off it (the top banner); the link,
+       * the count and the menu entry stay after it ends. Optional so an older API
+       * that does not send it still parses.
+       */
+      campaignActive?: boolean;
+    };
 
 export interface Me {
   accountId: string;
