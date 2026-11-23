@@ -52,9 +52,10 @@ function compose(template: string, values: { count: number; goal: number }, badg
 /**
  * A replica of the real "Made with dForms" pill (`MadeWithBadge`): the same
  * mark and the same localized label, so a new person sees what "the badge" is.
- * The fire line across it is `::after`, as wide as `--rb-strike`.
+ * The fire line across it is `::after`, as wide as `--rb-strike`. Shared with
+ * the celebration at the goal (`ReferralCelebration`), which burns it away.
  */
-function BadgePill({ label, strike, className = '', testId }: { label: string; strike: number; className?: string; testId?: string }) {
+export function BadgePill({ label, strike, className = '', testId }: { label: string; strike: number; className?: string; testId?: string }) {
   return (
     <span
       className={`rb-pill ${className}`}
@@ -69,7 +70,7 @@ function BadgePill({ label, strike, className = '', testId }: { label: string; s
 }
 
 /** The checkered race flag at the end of the track. Decorative. */
-function RaceFlag() {
+export function RaceFlag() {
   const id = useId().replace(/:/g, '');
   const check = `rb-chk-${id}`;
   return (

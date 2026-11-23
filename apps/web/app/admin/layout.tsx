@@ -138,6 +138,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
                 // unlock, paid workspace, dismissal), naming the badge as the
                 // pill reads in this language.
                 banner: referralBannerVisible(me.referral) ? { badgeLabel: messages.growth.madeWith } : null,
+                // For the toast and the one-time celebration at the goal.
+                unlocked: me.referral.unlocked === true,
+                badgeLabel: messages.growth.madeWith,
               }
             : null
         }

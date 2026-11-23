@@ -22,6 +22,7 @@ vi.mock('@/app/admin/referral-actions', () => ({
     nav.dismissed += 1;
     return { ok: true };
   },
+  readReferralProgress: async () => null,
 }));
 vi.mock('@/lib/product-analytics', () => ({
   captureEvent: (event: string, props?: unknown) => nav.events.push([event, props]),
@@ -31,7 +32,12 @@ import { AdminShell, type ShellReferral } from './admin-shell';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const REFERRAL: ShellReferral = { link: 'https://landing.example.test/?ref=abc23def', count: 0, goal: 5 };
+const REFERRAL: ShellReferral = {
+  link: 'https://landing.example.test/?ref=abc23def',
+  count: 0,
+  goal: 5,
+  badgeLabel: 'Made with dForms',
+};
 
 function shell(opts: { collapsed?: boolean; locale?: Locale; referral?: ShellReferral | null } = {}) {
   const m = getMessages(opts.locale ?? 'en').admin;
@@ -75,6 +81,7 @@ async function mount(node: React.ReactNode) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   nav.pathname = '/admin';
   nav.events = [];
   nav.dismissed = 0;
@@ -186,5 +193,33 @@ describe('AdminShell: the referral banner', () => {
     await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-close"]')!.click());
     expect(bannerOf()).toBeNull();
     expect(nav.dismissed).toBe(1);
+  });
+});
+
+describe('AdminShell: the referral moments', () => {
+  const SEEN_KEY = 'dforms.referral.seen.abc23def';
+  const celebration = () => document.querySelector('[data-testid="referral-celebration"]');
+
+  it('celebrates the unlock over any page, the form builder too, naming the badge', async () => {
+    window.localStorage.setItem(SEEN_KEY, JSON.stringify({ count: 4, unlocked: false }));
+    nav.pathname = '/admin/forms/f1/edit';
+    await mount(shell({ referral: { ...REFERRAL, count: 5, unlocked: true } }));
+    expect(celebration()).not.toBeNull();
+    expect(document.querySelector('[data-testid="referral-celebration-title"]')!.textContent).toBe(
+      'You did it: your forms no longer show Made with dForms',
+    );
+    expect(nav.events.filter(([e]) => e === 'referral_celebration_shown')).toHaveLength(1);
+  });
+
+  it('remembers the count on the first load, with nothing shown', async () => {
+    await mount(shell({ referral: { ...REFERRAL, count: 2 } }));
+    expect(JSON.parse(window.localStorage.getItem(SEEN_KEY)!)).toEqual({ count: 2, unlocked: false });
+    expect(celebration()).toBeNull();
+  });
+
+  it('renders nothing and stores nothing while the program is off', async () => {
+    await mount(shell({ referral: null }));
+    expect(window.localStorage.length).toBe(0);
+    expect(celebration()).toBeNull();
   });
 });
