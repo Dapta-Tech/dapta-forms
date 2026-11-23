@@ -123,6 +123,12 @@ export default async function AdminLayout({ children }: { children: ReactNode })
               }
             : null
         }
+        // The referral program's menu entry, only while the API reports it on.
+        referral={
+          me.referral?.enabled
+            ? { link: me.referral.link, count: me.referral.count, goal: me.referral.goal }
+            : null
+        }
         user={{ displayName: me.displayName, email: me.email }}
       >
         <WorkspaceTimeZoneProvider timeZone={me.timezone}>

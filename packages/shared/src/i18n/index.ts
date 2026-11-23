@@ -405,6 +405,40 @@ export interface FormsMessages {
         label: string;
         sr: string;
       };
+      /**
+       * The referral program: the left-menu entry and its share modal. Shown
+       * only while the API reports the program on (`/v1/me.referral`).
+       * `{count}` and `{goal}` are the person's referrals and the 5 they need.
+       */
+      referral: {
+        /** The menu entry's label. */
+        nav: string;
+        /** The pill after it: "0/5". // {count} {goal} */
+        progress: string;
+        /** Read after the label instead of the pill. // {count} {goal} */
+        progressSr: string;
+        title: string;
+        /** What the link does and what 5 earns. // {goal} */
+        body: string;
+        /** // {count} {goal} */
+        progressLabel: string;
+        linkLabel: string;
+        copy: string;
+        copied: string;
+        /** Heading over the share buttons. */
+        shareOn: string;
+        whatsapp: string;
+        email: string;
+        x: string;
+        close: string;
+        /** The prefilled messages. `{link}` is the person's referral link. */
+        share: {
+          whatsapp: string;
+          emailSubject: string;
+          emailBody: string;
+          x: string;
+        };
+      };
       /** Left-nav item labels (icon + label). */
       nav: {
         home: string;
@@ -3391,6 +3425,30 @@ export const en: FormsMessages = {
       newBadge: {
         label: 'New',
         sr: ', new',
+      },
+      referral: {
+        nav: 'Invite friends',
+        progress: '{count}/{goal}',
+        progressSr: ', {count} of {goal} joined',
+        title: 'Invite 5 people, remove the badge for life',
+        body: 'Everyone who signs up to dForms with your link counts. At {goal}, “Made with dForms” is gone from every workspace you own, for good.',
+        progressLabel: '{count} of {goal} joined with your link',
+        linkLabel: 'Your referral link',
+        copy: 'Copy link',
+        copied: 'Copied',
+        shareOn: 'Share on',
+        whatsapp: 'WhatsApp',
+        email: 'Email',
+        x: 'X',
+        close: 'Close',
+        share: {
+          whatsapp:
+            "I've been using dForms for my forms. You ask your AI agent (Claude, ChatGPT) and it builds the form, publishes it and sends you the leads. Free, with unlimited responses. Try it with my link: {link}",
+          emailSubject: 'You should try dForms for your forms',
+          emailBody:
+            "Hi, I've been using dForms, the form builder for AI agents. You ask your agent and it builds the form, publishes it, scores every answer and sends hot leads to your calendar or CRM. Free for life, unlimited responses, open source. If it helps, sign up with my link: {link}",
+          x: 'My AI agent builds my forms now with dForms. Free, unlimited responses, open source. {link}',
+        },
       },
       nav: {
         home: 'Home',
@@ -6390,6 +6448,30 @@ export const es: FormsMessages = {
       newBadge: {
         label: 'Nuevo',
         sr: ', nuevo',
+      },
+      referral: {
+        nav: 'Invita amigos',
+        progress: '{count}/{goal}',
+        progressSr: ', {count} de {goal} se unieron',
+        title: 'Invita a 5 personas y quita el sello de por vida',
+        body: 'Cuenta cada persona que se registre en dForms con tu link. Con {goal}, «Made with dForms» se va de todos los workspaces que tienes, para siempre.',
+        progressLabel: '{count} de {goal} se unieron con tu link',
+        linkLabel: 'Tu link de referido',
+        copy: 'Copiar link',
+        copied: 'Copiado',
+        shareOn: 'Compartir en',
+        whatsapp: 'WhatsApp',
+        email: 'Correo',
+        x: 'X',
+        close: 'Cerrar',
+        share: {
+          whatsapp:
+            'Estoy usando dForms para mis formularios. Le pides a tu agente de IA (Claude, ChatGPT) que lo arme y él lo crea, lo publica y te manda los leads. Es gratis y sin límite de respuestas. Pruébalo con mi link: {link}',
+          emailSubject: 'Te recomiendo dForms para tus formularios',
+          emailBody:
+            'Hola, estoy usando dForms, el creador de formularios para agentes de IA. Le pides a tu agente que arme el formulario y él lo crea, lo publica, califica cada respuesta y te manda los leads calientes a tu calendario o CRM. Es gratis de por vida, sin límite de respuestas y de código abierto. Si te sirve, entra con mi link: {link}',
+          x: 'Mis formularios ahora los arma mi agente de IA con dForms. Gratis, sin límite de respuestas y open source. {link}',
+        },
       },
       nav: {
         home: 'Inicio',

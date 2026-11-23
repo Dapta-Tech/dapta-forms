@@ -217,6 +217,9 @@ export interface AnnouncementView {
   followed: boolean;
 }
 
+/** `/v1/me.referral`. Later steps of the program add fields; unknown ones are ignored. */
+export type MeReferral = { enabled: false } | { enabled: true; link: string; count: number; goal: number };
+
 export interface Me {
   accountId: string;
   /** The workspace's display name. */
@@ -265,6 +268,13 @@ export interface Me {
    * `attribution`, which is the signup's acquisition tags above.
    */
   attributionBadge?: { showing: boolean };
+  /**
+   * The referral program for this PERSON (the same in every workspace): their
+   * referral link and progress, or `{ enabled: false }` while the API has the
+   * program switched off. Optional so an older API reads as off. The web app
+   * never reads the switch itself.
+   */
+  referral?: MeReferral;
   /** `'staff'` when the caller is in this workspace by access grant, not by membership. */
   accessGrant: 'staff' | null;
   /** Staff of the deployment (by email domain, identity-backed only): may search and enter the whole estate. */
