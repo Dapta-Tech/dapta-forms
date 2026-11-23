@@ -20,7 +20,7 @@ API (runtime env, read once at boot, so a change needs a restart):
 
 | Var | Value | Why |
 |---|---|---|
-| `REFERRAL_PROGRAM` | `true` | Turns the program on. Default `false`. |
+| `REFERRAL_PROGRAM` | leave unset | Unset, the program is on wherever the identity service runs (`AUTH_PROVIDER=workos` with `IAM_BASE_URL`), so dev and prod need nothing. `false` turns it off. |
 | `REFERRAL_CAMPAIGN_ENDS_AT` | the end, ISO 8601 with a zone, e.g. `2027-01-31T23:59:59-05:00`; or unset for no end | Ends the banner and the reminder email. A value without a zone refuses to boot. |
 | `NEXT_PUBLIC_LANDING_URL` | `https://dforms.ai/` | The API builds the link `<landing>/?ref=<code>`. It must be in the API env, not only the web build arg. Unset, links fall back to `PUBLIC_APP_URL` and skip the landing greeting. |
 | `PUBLIC_APP_URL` | the app's public URL (already set) | Fallback link base. With neither URL set the program stays off. |
