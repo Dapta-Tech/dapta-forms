@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * The referral program's happy path, end to end on the local stack.
  *
- *  1. A referrer opens the dashboard: the left menu reads "Invite friends 0/5",
+ *  1. A referrer opens the dashboard: the left menu reads "Remove badge 0/5",
  *     the top banner is up, its "Remove the badge" opens the share dialog, and
  *     the link is copied to the clipboard.
  *  2. A NEW person opens that link and signs up, and lands in the dashboard.
@@ -152,7 +152,7 @@ test.describe('referral program, happy path', () => {
     const code = new URL(link).searchParams.get('ref')!;
 
     const nav = referrer.locator(NAV_ENTRY);
-    await expect(nav).toContainText('Invite friends');
+    await expect(nav).toContainText('Remove badge');
     await expect(referrer.locator(NAV_PROGRESS)).toHaveText('0/5');
 
     const banner = referrer.getByTestId('referral-banner');

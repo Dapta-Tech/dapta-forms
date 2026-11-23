@@ -28,7 +28,7 @@ vi.mock('@/lib/product-analytics', () => ({
   captureEvent: (event: string, props?: unknown) => nav.events.push([event, props]),
 }));
 
-import { AdminShell, type ShellReferral } from './admin-shell';
+import { AdminShell, PRODUCT_HUNT_REVIEW_URL, type ShellReferral } from './admin-shell';
 import { useOpenReferralDialog } from './referral/referral-dialog-context';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -41,7 +41,14 @@ const REFERRAL: ShellReferral = {
 };
 
 function shell(
-  opts: { collapsed?: boolean; locale?: Locale; referral?: ShellReferral | null; page?: React.ReactNode } = {},
+  opts: {
+    collapsed?: boolean;
+    locale?: Locale;
+    referral?: ShellReferral | null;
+    page?: React.ReactNode;
+    /** Left out: the build's own answer (a fork in tests). */
+    productHunt?: boolean;
+  } = {},
 ) {
   const m = getMessages(opts.locale ?? 'en').admin;
   return (
@@ -51,6 +58,7 @@ function shell(
       accountNav={m.account.nav}
       initialCollapsed={opts.collapsed ?? false}
       referral={opts.referral === undefined ? REFERRAL : opts.referral}
+      {...(opts.productHunt === undefined ? {} : { productHunt: opts.productHunt })}
     >
       {opts.page ?? <p>page</p>}
     </AdminShell>
@@ -108,21 +116,33 @@ describe('AdminShell: the referral entry', () => {
     for (const entry of [desktop!, drawer!]) {
       expect(entry.tagName).toBe('BUTTON');
       expect(entry.querySelector('[data-testid="nav-referral-progress"]')!.textContent).toBe('0/5');
-      expect(accessibleName(entry)).toBe('Invite friends, 0 of 5 joined');
+      expect(accessibleName(entry)).toBe('Remove badge, 0 of 5 referrals');
+    }
+  });
+
+  it('wears the banner\'s race flag, not the gift', () => {
+    const [desktop, drawer] = entries(renderToStaticMarkup(shell()));
+    for (const entry of [desktop!, drawer!]) {
+      expect(entry.querySelector('svg.rb-flag-icon')).not.toBeNull();
+      // Still, unlike the waving flag at the end of the track.
+      expect(entry.querySelector('svg.rb-flag')).toBeNull();
+      expect(entry.querySelector('.pi-gift')).toBeNull();
+      expect(entry.textContent).not.toContain('Invite friends');
     }
   });
 
   it('shows the count it is given, in Spanish too', () => {
     const [desktop] = entries(renderToStaticMarkup(shell({ locale: 'es', referral: { ...REFERRAL, count: 3 } })));
     expect(desktop!.querySelector('[data-testid="nav-referral-progress"]')!.textContent).toBe('3/5');
-    expect(accessibleName(desktop!)).toBe('Invita amigos, 3 de 5 se unieron');
+    expect(accessibleName(desktop!)).toBe('Quitar sello, 3 de 5 referidos');
   });
 
   it('collapsed to the 64px rail: the icon alone, the name and progress still read', () => {
     const [desktop] = entries(renderToStaticMarkup(shell({ collapsed: true })));
     expect(desktop!.querySelector('[data-testid="nav-referral-progress"]')).toBeNull();
-    expect(desktop!.getAttribute('title')).toBe('Invite friends, 0 of 5 joined');
-    expect(accessibleName(desktop!)).toBe('Invite friends, 0 of 5 joined');
+    expect(desktop!.getAttribute('title')).toBe('Remove badge, 0 of 5 referrals');
+    expect(accessibleName(desktop!)).toBe('Remove badge, 0 of 5 referrals');
+    expect(desktop!.querySelector('svg.rb-flag-icon')).not.toBeNull();
   });
 
   it('is absent while the program is off', () => {
@@ -270,5 +290,61 @@ describe('AdminShell: the dialog, from a page', () => {
   it('with the program off, pages get no opener (and offer no Share)', async () => {
     await mount(shell({ referral: null, page: <BadgeSwitchProbe /> }));
     expect(document.querySelector<HTMLElement>('[data-testid="probe"]')!.dataset.has).toBe('no');
+  });
+});
+
+const reviews = (html: string) =>
+  [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll<HTMLAnchorElement>('[data-testid="nav-product-hunt"]')];
+
+describe('AdminShell: the Product Hunt review row', () => {
+  it('on a Dapta build: under the referral entry, in the rail and the drawer, an external link', () => {
+    const html = renderToStaticMarkup(shell({ productHunt: true }));
+    const rows = reviews(html);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.tagName).toBe('A');
+      expect(row.getAttribute('href')).toBe(PRODUCT_HUNT_REVIEW_URL);
+      expect(row.getAttribute('target')).toBe('_blank');
+      expect(row.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(row.getAttribute('title')).toBe('Like dForms? Review us on Product Hunt');
+      expect(accessibleName(row)).toBe('Like dForms? Review on Product Hunt (opens in a new tab)');
+      expect(row.querySelector('.pi-external-link')).not.toBeNull();
+      // The mark in its own colours.
+      expect(row.querySelector('svg circle')!.getAttribute('fill')).toBe('#DA552F');
+      // Right after "Remove badge".
+      expect(row.parentElement!.previousElementSibling!.querySelector('[data-testid="nav-referral"]')).not.toBeNull();
+    }
+    expect(PRODUCT_HUNT_REVIEW_URL).toBe('https://www.producthunt.com/products/dforms/reviews/new');
+  });
+
+  it('in Spanish', () => {
+    const [row] = reviews(renderToStaticMarkup(shell({ productHunt: true, locale: 'es' })));
+    expect(row!.getAttribute('title')).toBe('¿Te gusta dForms? Déjanos una reseña en Product Hunt');
+    expect(accessibleName(row!)).toBe('¿Te gusta dForms? Reseña en Product Hunt (se abre en una pestaña nueva)');
+  });
+
+  it('collapsed to the 64px rail: the mark alone, the full sentence as tooltip and name', () => {
+    const [desktop] = reviews(renderToStaticMarkup(shell({ productHunt: true, collapsed: true })));
+    expect(desktop!.querySelector('.pi-external-link')).toBeNull();
+    expect(desktop!.querySelector('svg')).not.toBeNull();
+    expect(desktop!.getAttribute('title')).toBe('Like dForms? Review us on Product Hunt');
+    expect(accessibleName(desktop!)).toBe('Like dForms? Review us on Product Hunt (opens in a new tab)');
+  });
+
+  it('hidden on a fork, which is what a build without the Dapta name is', () => {
+    expect(reviews(renderToStaticMarkup(shell()))).toHaveLength(0);
+    expect(reviews(renderToStaticMarkup(shell({ productHunt: false })))).toHaveLength(0);
+  });
+
+  it('does not depend on the referral program', () => {
+    expect(reviews(renderToStaticMarkup(shell({ productHunt: true, referral: null })))).toHaveLength(2);
+  });
+
+  it('records the click', async () => {
+    await mount(shell({ productHunt: true }));
+    const row = document.querySelector<HTMLAnchorElement>('[data-testid="nav-product-hunt"]')!;
+    row.addEventListener('click', (e) => e.preventDefault(), { once: true });
+    await act(async () => row.click());
+    expect(nav.events).toEqual([['product_hunt_review_clicked', { collapsed: false }]]);
   });
 });

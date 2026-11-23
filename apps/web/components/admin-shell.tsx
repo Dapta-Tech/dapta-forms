@@ -39,11 +39,13 @@ import {
 } from '@/components/announcement/announcement-client';
 import { AnnouncementModal } from '@/components/announcement/announcement-modal';
 import { ReferralShareModal, fillReferral } from '@/components/referral/referral-share-modal';
-import { ReferralBanner } from '@/components/referral/referral-banner';
+import { RaceFlag, ReferralBanner } from '@/components/referral/referral-banner';
 import { ReferralDialogContext } from '@/components/referral/referral-dialog-context';
 import { ReferralMoments } from '@/components/referral/referral-moments';
 import type { ReferralSurface } from '@/components/referral/use-referral-copy';
 import type { Workspace } from '@/lib/admin-api';
+import { captureEvent } from '@/lib/product-analytics';
+import { IS_DAPTA_BRAND } from '@/lib/product-name';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
 
@@ -64,8 +66,7 @@ type IconName =
   | 'mcp'
   | 'tools'
   | 'docs'
-  | 'agents'
-  | 'referral';
+  | 'agents';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -164,7 +165,6 @@ const PI_BY_NAME: Record<Exclude<IconName, AnimatedIcon>, string> = {
   tools: 'pi-sparkles',
   docs: 'pi-book',
   agents: 'pi-bot',
-  referral: 'pi-gift',
 };
 
 function Icon({ name, className, paused }: { name: IconName; className?: string; paused?: boolean }) {
@@ -334,6 +334,7 @@ function NavLinks({
   referral = null,
   referralM,
   onReferral,
+  productHunt,
 }: {
   collapsed: boolean;
   nav: ChromeMessages['nav'];
@@ -350,6 +351,8 @@ function NavLinks({
   referralM: ChromeMessages['referral'];
   /** Opens the share modal. */
   onReferral?: () => void;
+  /** The Product Hunt review row's copy, or null when this build has none (forks). */
+  productHunt: ChromeMessages['productHunt'] | null;
 }) {
   const pathname = usePathname();
   return (
@@ -452,16 +455,23 @@ function NavLinks({
           <ReferralNavEntry referral={referral} m={referralM} collapsed={collapsed} onOpen={onReferral} />
         </li>
       ) : null}
+      {productHunt ? (
+        <li>
+          <ProductHuntNavEntry m={productHunt} newTab={newTab} collapsed={collapsed} onNavigate={onNavigate} />
+        </li>
+      ) : null}
     </ul>
   );
 }
 
 /**
  * The referral program's rail row: a button (it opens the share modal, it is
- * not a page) with the person's progress as a pill after the label. The pill
- * is hidden from the accessibility tree and its words are read instead, so the
- * row's name is "Invite friends, 0 of 5 joined". Collapsed to 64px, the icon
- * alone, with the same words as its tooltip.
+ * not a page) with the person's progress as a pill after the label. Its icon
+ * is the banner's checkered race flag, so the menu, the banner and the dialog
+ * share one symbol. The pill is hidden from the accessibility tree and its
+ * words are read instead, so the row's name is "Remove badge, 0 of 5
+ * referrals". Collapsed to 64px, the flag alone, with the same words as its
+ * tooltip.
  */
 function ReferralNavEntry({
   referral,
@@ -485,7 +495,9 @@ function ReferralNavEntry({
       data-testid="nav-referral"
       className={navRowClass(collapsed, 'idle')}
     >
-      <Icon name="referral" />
+      <span aria-hidden className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+        <RaceFlag className="rb-flag-icon" />
+      </span>
       <span className={collapsed ? 'sr-only' : ''}>{m.nav}</span>
       {!collapsed ? (
         <span
@@ -498,6 +510,80 @@ function ReferralNavEntry({
       ) : null}
       <span className="sr-only">{sr}</span>
     </button>
+  );
+}
+
+/** dForms' review page on Product Hunt, the rail's review row's one destination. */
+export const PRODUCT_HUNT_REVIEW_URL = 'https://www.producthunt.com/products/dforms/reviews/new';
+
+/** Product Hunt's mark in its own colours: the orange circle and the white "P". Fixed artwork. */
+function ProductHuntMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 40 40" width="20" height="20" focusable="false" className="shrink-0">
+      <circle cx="20" cy="20" r="20" fill="#DA552F" />
+      <path
+        fill="#fff"
+        d="M22.667 20H17v-6h5.667a3 3 0 0 1 0 6Zm0-10H13v20h4v-6h5.667a7 7 0 1 0 0-14Z"
+      />
+    </svg>
+  );
+}
+
+/**
+ * The Product Hunt review row, under the referral entry, on Dapta's own builds
+ * only (a fork never links to dForms' page). External like Docs: a new tab,
+ * the trailing arrow, "(opens in a new tab)" read after its name. A light
+ * Product Hunt orange tint sets it apart the way "Connect your agent" is in
+ * green. The open rail reads "Like dForms?" over "Review on Product Hunt", so
+ * the visible words are its name; the tooltip is the full sentence. Collapsed
+ * to 64px, the mark alone, the full sentence as its tooltip and name.
+ * Clicking records `product_hunt_review_clicked`.
+ */
+function ProductHuntNavEntry({
+  m,
+  newTab,
+  collapsed,
+  onNavigate,
+}: {
+  m: ChromeMessages['productHunt'];
+  newTab: string;
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <a
+      href={PRODUCT_HUNT_REVIEW_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={m.title}
+      data-testid="nav-product-hunt"
+      onClick={() => {
+        captureEvent('product_hunt_review_clicked', { collapsed });
+        onNavigate?.();
+      }}
+      className={[
+        navRowClass(collapsed, 'idle'),
+        // Product Hunt orange (#da552f), kept light: ink letters stay ink.
+        'bg-[#da552f]/[0.07] text-foreground ring-1 ring-inset ring-[#da552f]/30 hover:bg-[#da552f]/[0.13] hover:text-foreground',
+      ].join(' ')}
+    >
+      <ProductHuntMark />
+      {collapsed ? (
+        <span className="sr-only">{m.title}</span>
+      ) : (
+        // Two lines, so the label gets the row's whole width: the lead and the
+        // external arrow on top, the label under them on one line (it fits the
+        // 240px rail and the 280px drawer in both languages).
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="flex items-center gap-2 text-2xs font-medium text-muted-foreground">
+            <span>{m.lead} </span>
+            <i aria-hidden className="pi pi-external-link ml-auto shrink-0" style={{ fontSize: 11 }} />
+          </span>
+          <span className="truncate whitespace-nowrap text-[13px] font-medium">{m.label}</span>
+        </span>
+      )}
+      <span className="sr-only"> {newTab}</span>
+    </a>
   );
 }
 
@@ -558,6 +644,7 @@ export function AdminShell({
   staff = false,
   announcement = null,
   referral = null,
+  productHunt = IS_DAPTA_BRAND,
   children,
 }: {
   user: ShellUser | null;
@@ -579,6 +666,8 @@ export function AdminShell({
   announcement?: ShellAnnouncement | null;
   /** The referral program's entry, or null while the program is off. */
   referral?: ShellReferral | null;
+  /** Show the Product Hunt review row: Dapta's own builds only (the default says which). */
+  productHunt?: boolean;
   children: ReactNode;
 }) {
   // Tagged once for both rails (desktop and drawer), like the other suite doors.
@@ -980,6 +1069,7 @@ export function AdminShell({
             referral={referral}
             referralM={messages.referral}
             onReferral={openReferral}
+            productHunt={productHunt ? messages.productHunt : null}
           />
         </nav>
         {renderFooter(railCollapsed)}
@@ -1039,6 +1129,7 @@ export function AdminShell({
             referral={referral}
             referralM={messages.referral}
             onReferral={openReferral}
+            productHunt={productHunt ? messages.productHunt : null}
           />
         </nav>
         {renderFooter(false, () => setDrawerOpen(false))}

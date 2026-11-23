@@ -406,6 +406,17 @@ export interface FormsMessages {
         sr: string;
       };
       /**
+       * The Product Hunt review row under the referral entry, on Dapta's own
+       * builds only. The open rail shows it on two lines, `lead` (small) over
+       * `label`, which together are its name; `title` is the full sentence, the
+       * tooltip, and the name of the collapsed rail's mark.
+       */
+      productHunt: {
+        lead: string;
+        label: string;
+        title: string;
+      };
+      /**
        * The referral program: the left-menu entry and its share modal. Shown
        * only while the API reports the program on (`/v1/me.referral`).
        * `{count}` and `{goal}` are the person's referrals and the 5 they need.
@@ -3521,10 +3532,15 @@ export const en: FormsMessages = {
         label: 'New',
         sr: ', new',
       },
+      productHunt: {
+        lead: 'Like dForms?',
+        label: 'Review on Product Hunt',
+        title: 'Like dForms? Review us on Product Hunt',
+      },
       referral: {
-        nav: 'Invite friends',
+        nav: 'Remove badge',
         progress: '{count}/{goal}',
-        progressSr: ', {count} of {goal} joined',
+        progressSr: ', {count} of {goal} referrals',
         title: 'Invite 5 people, remove the badge for life',
         badgeTitle: 'This is the badge.',
         badgeBody: 'It shows at the foot of every form, page and email you send with dForms.',
@@ -6589,10 +6605,15 @@ export const es: FormsMessages = {
         label: 'Nuevo',
         sr: ', nuevo',
       },
+      productHunt: {
+        lead: '¿Te gusta dForms?',
+        label: 'Reseña en Product Hunt',
+        title: '¿Te gusta dForms? Déjanos una reseña en Product Hunt',
+      },
       referral: {
-        nav: 'Invita amigos',
+        nav: 'Quitar sello',
         progress: '{count}/{goal}',
-        progressSr: ', {count} de {goal} se unieron',
+        progressSr: ', {count} de {goal} referidos',
         title: 'Invita a 5 personas y quita el sello de por vida',
         badgeTitle: 'Este es el sello.',
         badgeBody: 'Sale al final de cada formulario, página y correo que mandas con dForms.',
