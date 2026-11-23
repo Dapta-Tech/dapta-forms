@@ -117,6 +117,7 @@ import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
 import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } from './submission-filter';
 import type { CaptchaVerifier } from './captcha';
 import { AttributionService } from './attribution.service';
+import { ReferralService } from './referral.service';
 import { CAPTCHA, DB, ENV } from './tokens';
 
 function unwrapCrud<T>(r: CrudResult<T>): T {
@@ -215,6 +216,9 @@ export class AdminCrudController {
     // surfaces carry the "Made with dForms" attribution. Last and optional for
     // the positional reason; absent reads as showing, as before the setting.
     @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
+    // The person's referral link and progress (`me`). Last and optional for
+    // the positional reason; absent reads as the program switched off.
+    @Optional() @Inject(ReferralService) private readonly referrals?: ReferralService,
   ) {}
 
   /**
@@ -277,7 +281,11 @@ export class AdminCrudController {
     // `attributionBadge`, not `attribution`: that key is the signup's UTM
     // record, already on `view`.
     const attributionBadge = { showing: this.attribution ? await this.attribution.showFor(p.accountId) : true };
-    return { ...view, staff, uploads, captcha, attributionBadge };
+    // The referral program, for the left menu: the person's link and progress,
+    // keyed by the person rather than this workspace (ADR 0005). Switched off,
+    // `{ enabled: false }` and nothing is written.
+    const referral = this.referrals ? await this.referrals.forMember(p.accountId, p.memberId) : { enabled: false };
+    return { ...view, staff, uploads, captcha, attributionBadge, referral };
   }
 
   /**

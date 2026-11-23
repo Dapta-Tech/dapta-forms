@@ -21,6 +21,7 @@ import {
   MCP_OAUTH,
   NOTIFIER,
   ONBOARDING_ENABLED,
+  REFERRAL_OPTIONS,
   PREMIUM_MODE,
   ATTRIBUTION_MODE,
   RATE_LIMITER,
@@ -63,6 +64,7 @@ import { BrandingController } from './branding.controller';
 import { AttributionController } from './attribution.controller';
 import { ANNOUNCEMENTS_OPTIONS, AnnouncementsController, isDaptaDeployment } from './announcements.controller';
 import { AttributionService } from './attribution.service';
+import { ReferralService, referralOptions } from './referral.service';
 import { LinkPageController } from './link-page.controller';
 import { LinkPageService } from './link-page.service';
 import { AnalyticsController } from './analytics.controller';
@@ -183,6 +185,11 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
       useFactory: (env: ServerEnv) => env.ONBOARDING_WIZARD,
       inject: [ENV],
     },
+    // The referral program's switch (REFERRAL_PROGRAM, off by default) and the
+    // base its links point at, resolved once like the wizard's. The web app
+    // reads it off `/v1/me.referral`.
+    { provide: REFERRAL_OPTIONS, useFactory: (env: ServerEnv) => referralOptions(env), inject: [ENV] },
+    ReferralService,
     // The identity service's workspaces ARE the workspaces (0015). Present only
     // when IAM_BASE_URL is configured AND the workos provider is selected; a
     // fork / plain local dev gets null and every workspace path stays local.
