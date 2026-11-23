@@ -43,7 +43,7 @@ Check after the deploy:
 - [ ] Pages env var `FORMS_API_URL`: leave unset in production. The proxy
       `functions/invite/[code].js` (`GET /invite/<code>`) then calls
       `https://api.dforms.ai/v1/public/referrals/<code>`. For a preview, set
-      `FORMS_API_URL=https://forms-api.dapta.dev`.
+      `FORMS_API_URL` to that environment's API origin.
 - [ ] Open `https://dforms.ai/?ref=<a real code>`: the greeting shows the
       referrer's first name, and every app link on the page carries `ref`.
 
