@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { referralCampaignEndsAt, type ServerEnv } from '@quill/config/env';
 import {
   countReferrals,
@@ -7,6 +7,8 @@ import {
   getMe,
   getReferrerByCode,
   personNames,
+  recordReferralInvite,
+  referralInviterOf,
   referralPersonKey,
   type Db,
   type ReferralSource,
@@ -107,6 +109,8 @@ function firstNameOf(displayName: string | null, emailLocals: ReadonlySet<string
  */
 @Injectable()
 export class ReferralService {
+  private readonly log = new Logger('ReferralService');
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(REFERRAL_OPTIONS) private readonly options: ReferralOptions,
@@ -148,8 +152,75 @@ export class ReferralService {
     if (!referee || !owner) return { credited: false };
     const now = this.options.now?.() ?? Date.now();
     const credited = await creditReferral(this.db, { referee, referrer: owner.personId, source: 'link', now });
-    if (credited) await this.signupEvent(principal, owner.code, 'link', now);
+    if (credited) {
+      await this.afterCredited(owner.personId, now);
+      await this.signupEvent(principal, owner.code, 'link', now);
+    }
     return { credited };
+  }
+
+  /**
+   * Record that the member making the request invited a teammate by email
+   * (both invite paths: the identity service's and local development's). The
+   * identity service's invitation has no inviter, so this record is the only
+   * place one lives. The first inviter of an address keeps it. Never throws:
+   * the invitation already went out, and a failure here must not undo it.
+   */
+  async recordInvite(principal: { accountId: string; memberId: string }, email: string): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      const inviter = await referralPersonKey(this.db, principal.accountId, principal.memberId);
+      if (!inviter) return;
+      const now = this.options.now?.() ?? Date.now();
+      await recordReferralInvite(this.db, { email, inviter, accountId: principal.accountId, now });
+    } catch (err) {
+      this.log.error(`referral invite record failed: ${String(err)}`);
+    }
+  }
+
+  /**
+   * A person's first sign-in (`NewPersonObserver`): when a teammate invited
+   * their address, credit that inviter with a referral of source `invite`.
+   * The caller established that the person is new (no bound member row
+   * before this sign-in), so the link's 10-minute window is not asked: the
+   * adopted invite row keeps the invite's age. Self-invites, a person already
+   * credited (by a link or anyone) and first-wins are `creditReferral`'s.
+   * Never throws: it runs on the sign-in path.
+   */
+  async creditInvite(person: { accountId: string; memberId: string; email: string | null }): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      const inviter = await referralInviterOf(this.db, person.email);
+      if (!inviter) return;
+      const referee = await referralPersonKey(this.db, person.accountId, person.memberId);
+      if (!referee) return;
+      const now = this.options.now?.() ?? Date.now();
+      const credited = await creditReferral(this.db, {
+        referee,
+        referrer: inviter,
+        source: 'invite',
+        now,
+        newPerson: true,
+      });
+      if (!credited) return;
+      await this.afterCredited(inviter, now);
+      // The inviter's code rides on the event, as with a link, so the funnel
+      // is cut by referrer the same way. Their link row is made if they never
+      // opened it: it is theirs either way.
+      const row = await ensureReferrer(this.db, inviter, { now, code: this.options.code });
+      await this.signupEvent(person, row.code, 'invite', now);
+    } catch (err) {
+      this.log.error(`referral invite credit failed: ${String(err)}`);
+    }
+  }
+
+  /**
+   * What follows every credited referral, whichever its source: the one
+   * place the next steps hang off (the unlock at the goal), so a link and an
+   * invite can never drift apart.
+   */
+  private async afterCredited(_referrer: string, _now: number): Promise<void> {
+    // The unlock at the goal lands here.
   }
 
   /**

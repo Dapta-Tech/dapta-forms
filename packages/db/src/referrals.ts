@@ -217,11 +217,24 @@ export async function isNewPerson(db: Db, person: string, now: number = Date.now
  */
 export async function creditReferral(
   db: Db,
-  input: { referee: string; referrer: string; source: ReferralSource; now?: number },
+  input: {
+    referee: string;
+    referrer: string;
+    source: ReferralSource;
+    now?: number;
+    /**
+     * The caller already judged the referee new at this sign-in (the invite
+     * source: no bound member row before it), so the 10-minute window is not
+     * asked. An adopted invite row keeps the invite's `created_at`, so its
+     * age says nothing about the person.
+     */
+    newPerson?: boolean;
+  },
 ): Promise<boolean> {
   const now = input.now ?? Date.now();
   if (await isSelfReferral(db, input.referee, input.referrer)) return false;
-  if (!(await isNewPerson(db, input.referee, now))) return false;
+  if (input.newPerson === false) return false;
+  if (input.newPerson !== true && !(await isNewPerson(db, input.referee, now))) return false;
   const row = await db.get<{ referee_person_id: string }>(
     sql`INSERT INTO referral (referee_person_id, referrer_person_id, source, created_at)
         VALUES (${input.referee}, ${input.referrer}, ${input.source}, ${now})
@@ -229,6 +242,75 @@ export async function creditReferral(
         RETURNING referee_person_id`,
   );
   return Boolean(row);
+}
+
+/** An invited address as the invite record keys it: trimmed and lowercased, or null when empty. */
+export function inviteEmailKey(email: string | null | undefined): string | null {
+  const key = email?.trim().toLowerCase();
+  return key ? key : null;
+}
+
+/**
+ * Record that a person invited an address as a teammate (0033): true when
+ * this call wrote the record. The first inviter of an address keeps it; a
+ * re-invite, from them or anyone else, writes nothing.
+ */
+export async function recordReferralInvite(
+  db: Db,
+  input: { email: string; inviter: string; accountId: string; now?: number },
+): Promise<boolean> {
+  const email = inviteEmailKey(input.email);
+  if (!email) return false;
+  const row = await db.get<{ email: string }>(
+    sql`INSERT INTO referral_invite (email, inviter_person_id, account_id, created_at)
+        VALUES (${email}, ${input.inviter}, ${input.accountId}, ${input.now ?? Date.now()})
+        ON CONFLICT DO NOTHING
+        RETURNING email`,
+  );
+  return Boolean(row);
+}
+
+/** The person who first invited an address as a teammate, or null when nobody did. */
+export async function referralInviterOf(db: Db, email: string | null | undefined): Promise<string | null> {
+  const key = inviteEmailKey(email);
+  if (!key) return null;
+  const r = await db.get<{ inviter_person_id: string }>(
+    sql`SELECT inviter_person_id FROM referral_invite WHERE email = ${key} LIMIT 1`,
+  );
+  return r?.inviter_person_id ?? null;
+}
+
+/**
+ * Whether the identity service's user already has a member row bound to them
+ * (any workspace, any status), a staff access grant aside. Read BEFORE a
+ * sign-in writes its rows: false there means this sign-in is the person's
+ * first, the invite source's test for a new person.
+ */
+export async function hasBoundMembership(db: Db, externalId: string): Promise<boolean> {
+  const r = await db.get<{ id: string }>(
+    sql`SELECT id FROM member
+        WHERE external_id = ${externalId} AND (access_grant IS NULL OR access_grant <> 'staff')
+        LIMIT 1`,
+  );
+  return Boolean(r);
+}
+
+/**
+ * Local development's twin of `hasBoundMembership`, for a person keyed by
+ * email: whether a member row with that address (and no identity service id)
+ * was ever more than an invitation, a staff grant aside. False while every
+ * row of theirs is still `invited`, so their first sign-in is told apart.
+ */
+export async function hasSignedInByEmail(db: Db, email: string): Promise<boolean> {
+  const key = inviteEmailKey(email);
+  if (!key) return false;
+  const r = await db.get<{ id: string }>(
+    sql`SELECT id FROM member
+        WHERE (external_id IS NULL OR external_id = '') AND lower(trim(email)) = ${key}
+          AND status <> 'invited' AND (access_grant IS NULL OR access_grant <> 'staff')
+        LIMIT 1`,
+  );
+  return Boolean(r);
 }
 
 /** The name and email on one of a person's member rows. */
