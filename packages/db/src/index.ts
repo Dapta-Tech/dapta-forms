@@ -29,6 +29,7 @@ export * from './notification-settings';
 export * from './announcements';
 export * from './referrals';
 export * from './referral-banner';
+export * from './referral-nudge';
 export { migrate } from './migrate';
 export { seed, type SeedResult } from './seed';
 export { sqliteSchema } from './schema.sqlite';

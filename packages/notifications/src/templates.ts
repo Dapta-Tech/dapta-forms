@@ -218,6 +218,39 @@ export function renderReferralUnlocked(locale: NotificationLocale, v: ReferralUn
   };
 }
 
+/** What the 7-day nudge needs. */
+export interface ReferralNudgeCopyVars {
+  /** Referrals credited to the referrer so far (1 to 4). */
+  count: number;
+  /** Referrals still needed for the referral unlock. */
+  left: number;
+  /** Referrals the referral unlock needs (5). */
+  goal: number;
+  /** The badge's localized label. */
+  badgeLabel: string;
+}
+
+/**
+ * "{left} to go. Your badge is still there": the one reminder per campaign to
+ * a referrer stuck between 1 and 4 for 7 days without a new referral.
+ */
+export function renderReferralNudge(locale: NotificationLocale, v: ReferralNudgeCopyVars): RenderedCopy {
+  if (locale === 'es') {
+    return {
+      subject: `Te faltan ${v.left}. Tu sello sigue ahí`,
+      lines: [
+        `Vas ${v.count} de ${v.goal}. Manda tu link a alguien que hoy usa Typeform o Google Forms y quita el sello «${v.badgeLabel}» de por vida.`,
+      ],
+    };
+  }
+  return {
+    subject: `${v.left} to go. Your badge is still there`,
+    lines: [
+      `You're at ${v.count} of ${v.goal}. Send your link to someone who uses Typeform or Google Forms today and remove the “${v.badgeLabel}” badge for life.`,
+    ],
+  };
+}
+
 /** The labels around the referral link in the countdown email. */
 export interface ReferralShareLabels {
   /** The primary button, to the person's referral link. */
