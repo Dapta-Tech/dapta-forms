@@ -2,7 +2,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { ServerEnv } from '@quill/config/env';
 import { ENV } from './tokens';
 import { OutboxSkipError } from './email-effects';
-import type { AnalyticsEventPayload } from './analytics-effects';
+import type { AnalyticsEventPayload, AnalyticsProperties } from './analytics-effects';
 
 /**
  * The vendor's ingestion endpoint, relative to the configured host. PostHog's
@@ -19,9 +19,24 @@ const EMAIL_SHAPE = /^[^\s@:]+@[^\s@]+\.[^\s@]+$/;
 
 /** The email to store on the person, or null when the event must not set one. */
 function personEmail(payload: AnalyticsEventPayload): string | null {
-  if (payload.properties?.$process_person_profile === false) return null;
   const id = payload.distinctId;
   return typeof id === 'string' && EMAIL_SHAPE.test(id) ? id : null;
+}
+
+/**
+ * The person's `$set`, or null when the event sets nothing. A profile-less
+ * event sets nothing at all: it must not mint or touch a person. The email
+ * comes from the distinct id and is written last, so a stray `email` in the
+ * caller's properties cannot repoint the person at another address.
+ */
+function personSet(payload: AnalyticsEventPayload): AnalyticsProperties | null {
+  if (payload.properties?.$process_person_profile === false) return null;
+  const email = personEmail(payload);
+  const set: AnalyticsProperties = {
+    ...(payload.personProperties ?? {}),
+    ...(email ? { email } : {}),
+  };
+  return Object.keys(set).length > 0 ? set : null;
 }
 
 /**
@@ -59,7 +74,7 @@ export class AnalyticsCapture {
       '',
     );
 
-    const email = personEmail(payload);
+    const set = personSet(payload);
     const body = {
       api_key: key,
       event: payload.event,
@@ -85,8 +100,9 @@ export class AnalyticsCapture {
         // or a browser with the tracker blocked never run the browser identify,
         // so this is the only place their person record learns its email. Skipped
         // for profile-less events (they must not mint a person) and for
-        // `account:<id>` ids.
-        ...(email ? { $set: { email } } : {}),
+        // `account:<id>` ids. The caller's person properties (`referred_by`,
+        // `referral_code`) ride in the same `$set`.
+        ...(set ? { $set: set } : {}),
       },
     };
 
