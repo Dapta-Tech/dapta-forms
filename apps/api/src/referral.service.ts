@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ServerEnv } from '@quill/config/env';
-import { ensureReferrer, referralPersonKey, type Db } from '@quill/db';
+import { ensureReferrer, getReferrerByCode, personNames, referralPersonKey, type Db } from '@quill/db';
 import { REFERRAL_GOAL, buildReferralLink, referralLinkBase } from '@quill/shared';
 import { DB, REFERRAL_OPTIONS } from './tokens';
 
@@ -45,6 +45,22 @@ export type ReferralView =
       goal: number;
     };
 
+/** A referral code as the landing may send it: the alphabet of `generateReferralCode`, any case. */
+const CODE_SHAPE = /^[a-z0-9]{1,32}$/i;
+
+/**
+ * The first word of a display name, or null when the name could be (or could
+ * be made from) the person's email: the local development stub stores the
+ * email as the name, and an invited member starts with the email's local
+ * part. Null rather than a guess, so the landing greets nobody instead of
+ * showing an address or a piece of one.
+ */
+function firstNameOf(displayName: string | null, emailLocals: ReadonlySet<string>): string | null {
+  const name = displayName?.trim() ?? '';
+  if (!name || name.includes('@') || emailLocals.has(name.toLowerCase())) return null;
+  return name.split(/\s+/)[0] || null;
+}
+
 /**
  * The person's referral link and progress (ADR 0005: keyed by the person,
  * never by the workspace). The referrer row is created lazily, on the first
@@ -71,5 +87,24 @@ export class ReferralService {
     if (!link) return { enabled: false };
     // The count arrives with referrals (they are not recorded yet).
     return { enabled: true, link, count: 0, goal: REFERRAL_GOAL };
+  }
+
+  /**
+   * The first name behind a referral code, for the landing's greeting. Null
+   * for an unknown code, with the program off, and when the person has no
+   * name that is safe to show. Nothing else about the person leaves here.
+   */
+  async firstNameForCode(code: string): Promise<string | null> {
+    if (!this.enabled || !CODE_SHAPE.test(code)) return null;
+    const referrer = await getReferrerByCode(this.db, code);
+    if (!referrer) return null;
+    const rows = await personNames(this.db, referrer.personId);
+    // Any of the person's emails: a name made from one must not show up on another row either.
+    const locals = new Set(rows.map((r) => r.email?.split('@')[0]?.trim().toLowerCase()).filter((l): l is string => !!l));
+    for (const row of rows) {
+      const first = firstNameOf(row.displayName, locals);
+      if (first) return first;
+    }
+    return null;
   }
 }
