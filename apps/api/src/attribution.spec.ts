@@ -11,6 +11,9 @@
  *      (decided at send time).
  *   3. The mode: unset is locked with the identity service, open without.
  *   4. `attribution_hidden_toggled` fires on a real change only.
+ *   5. Unlock sources: a referral unlock lets a locked workspace hide it like
+ *      a paid verdict, with no expiry. A construction without the source
+ *      reads none (the app binds the real one, see `referral-unlock.spec.ts`).
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -29,7 +32,7 @@ import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
 import { AnalyticsEffects } from './analytics-effects';
 import { AttributionController } from './attribution.controller';
-import { AttributionService, DAPTA_SUBSCRIPTION_REQUIRED } from './attribution.service';
+import { AttributionService, DAPTA_SUBSCRIPTION_REQUIRED, type ReferralUnlocks } from './attribution.service';
 import { AdminCrudController } from './admin-crud.controller';
 import { AdminService } from './admin.service';
 import { EmailEffects } from './email-effects';
@@ -51,9 +54,9 @@ async function addMember(email: string, role: 'admin' | 'member'): Promise<void>
   );
 }
 
-function wire(mode: PremiumMode) {
+function wire(mode: PremiumMode, referralUnlocks?: ReferralUnlocks) {
   const analytics = new AnalyticsEffects(db, ANALYTICS_ON);
-  const service = new AttributionService(db, mode, analytics);
+  const service = new AttributionService(db, mode, analytics, referralUnlocks);
   return { service, controller: new AttributionController(auth, service) };
 }
 
@@ -94,8 +97,8 @@ afterEach(async () => {
 describe('GET / PUT /v1/account/attribution-badge', () => {
   it('reads the default: showing, not hidden', async () => {
     const { controller } = wire('locked');
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: false, showing: true, verdictSeen: false });
-    expect(await wire('open').controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true, verdictSeen: false });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: false, showing: true, verdictSeen: false, referralUnlocked: false });
+    expect(await wire('open').controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true, verdictSeen: false, referralUnlocked: false });
   });
 
   it('locked, not paid: turning it off is a 403 with a stable code, and nothing is stored', async () => {
@@ -117,6 +120,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
       canHide: true,
       showing: false,
       verdictSeen: true,
+      referralUnlocked: false,
     });
   });
 
@@ -128,7 +132,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     await cacheDaptaPaid(db, accountId, true);
     await controller.set(asOwner(), { hideAttribution: true });
     service.now = () => Date.now() + ATTRIBUTION_VERDICT_MAX_AGE_MS + 1000;
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true, referralUnlocked: false });
   });
 
   it('a lapse keeps the choice, shows the attribution again, and turning it back on needs nothing', async () => {
@@ -136,12 +140,13 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     await cacheDaptaPaid(db, accountId, true);
     await controller.set(asOwner(), { hideAttribution: true });
     await cacheDaptaPaid(db, accountId, false);
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true, referralUnlocked: false });
     expect(await controller.set(asOwner(), { hideAttribution: false })).toEqual({
       hideAttribution: false,
       canHide: false,
       showing: true,
       verdictSeen: true,
+      referralUnlocked: false,
     });
   });
 
@@ -152,6 +157,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
       canHide: true,
       showing: false,
       verdictSeen: false,
+      referralUnlocked: false,
     });
   });
 
@@ -161,7 +167,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     await wire('open').controller.set(asOwner(), { hideAttribution: true });
     const { controller } = wire('locked');
     const never = await controller.status(asOwner());
-    expect(never).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: false });
+    expect(never).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: false, referralUnlocked: false });
     await cacheDaptaPaid(db, accountId, false);
     expect(await controller.status(asOwner())).toMatchObject({ canHide: false, verdictSeen: true });
     // Nothing about billing beyond booleans.
@@ -204,6 +210,66 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     const { controller } = wire('locked');
     await failure(controller.set(asOwner(), { hideAttribution: true }));
     expect(await toggles()).toHaveLength(0);
+  });
+});
+
+describe('unlock sources: paid or referral', () => {
+  const unlocked = (ids: string[]): ReferralUnlocks => ({ referralUnlocked: async (id) => ids.includes(id) });
+
+  it('locked, not paid, referral unlocked: an owner turns it off and the public form hides it', async () => {
+    const { controller, service } = wire('locked', unlocked([accountId]));
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true, verdictSeen: false, referralUnlocked: true });
+    expect(await controller.set(asOwner(), { hideAttribution: true })).toEqual({
+      hideAttribution: true,
+      canHide: true,
+      showing: false,
+      verdictSeen: false,
+      referralUnlocked: true,
+    });
+    const submissions = new SubmissionService(
+      db,
+      new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      service,
+    );
+    expect((await submissions.publicForm('acme', 'lead-qualifier'))!.showAttribution).toBe(false);
+  });
+
+  it('a referral unlock has no expiry: a lapsed or stale paid verdict keeps it hidden', async () => {
+    const { controller, service } = wire('locked', unlocked([accountId]));
+    await cacheDaptaPaid(db, accountId, true);
+    await controller.set(asOwner(), { hideAttribution: true });
+    await cacheDaptaPaid(db, accountId, false);
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: true, showing: false, verdictSeen: true, referralUnlocked: true });
+    await cacheDaptaPaid(db, accountId, true);
+    service.now = () => Date.now() + ATTRIBUTION_VERDICT_MAX_AGE_MS + 1000;
+    expect(await service.showFor(accountId)).toBe(false);
+  });
+
+  it('an unlock held by another workspace does not count here', async () => {
+    const { controller } = wire('locked', unlocked(['some-other-workspace']));
+    expect((await failure(controller.set(asOwner(), { hideAttribution: true }))).status).toBe(403);
+  });
+
+  it('without the source wired, a locked, unpaid workspace still cannot hide it', async () => {
+    const { controller } = wire('locked');
+    expect(await controller.status(asOwner())).toMatchObject({ canHide: false });
+    const out = await failure(controller.set(asOwner(), { hideAttribution: true }));
+    expect(out).toMatchObject({ status: 403, body: { error: DAPTA_SUBSCRIPTION_REQUIRED } });
+  });
+
+  it('a referral read that fails on the public path shows the attribution', async () => {
+    await wire('open').service.set({ accountId, memberId: 'x' }, true);
+    const broken: ReferralUnlocks = {
+      referralUnlocked: async () => {
+        throw new Error('db down');
+      },
+    };
+    expect(await wire('locked', broken).service.showFor(accountId)).toBe(true);
   });
 });
 

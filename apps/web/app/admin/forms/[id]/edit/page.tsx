@@ -4,6 +4,7 @@ import { getMessages } from '@quill/shared';
 import { lockedOptionValues } from '@quill/engine';
 import { adminApi, ApiError, isAdminRole, type AttributionStatus } from '@/lib/admin-api';
 import { daptaAiUrl } from '@/lib/dapta-ai-url';
+import { referralLockOf } from '@/lib/referral-lock';
 import { signupHref } from '@/lib/growth';
 import { getLocale } from '@/lib/locale';
 import { publicFormPath } from '@/lib/public-form-path';
@@ -66,7 +67,15 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // The full switch state for the Design panel's "Off" option: the same
         // workspace setting as Brand kit, editable by owners and admins.
         attribution={
-          attribution ? { initial: attribution, canEdit: isAdminRole(me.role), daptaAiUrl: daptaAiUrl() } : null
+          attribution
+            ? {
+                initial: attribution,
+                canEdit: isAdminRole(me.role),
+                daptaAiUrl: daptaAiUrl(),
+                // While locked, an owner is offered the referral program too.
+                referral: referralLockOf(me),
+              }
+            : null
         }
         updatedAt={form.updatedAt}
         publicPath={publicPath}

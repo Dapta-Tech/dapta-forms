@@ -405,6 +405,125 @@ export interface FormsMessages {
         label: string;
         sr: string;
       };
+      /**
+       * The Product Hunt review row under the referral entry, on Dapta's own
+       * builds only. The open rail shows it on two lines, `lead` (small) over
+       * `label`, which together are its name; `title` is the full sentence, the
+       * tooltip, and the name of the collapsed rail's mark.
+       */
+      productHunt: {
+        lead: string;
+        label: string;
+        title: string;
+      };
+      /**
+       * The referral program: the left-menu entry and its share modal. Shown
+       * only while the API reports the program on (`/v1/me.referral`).
+       * `{count}` and `{goal}` are the person's referrals and the 5 they need.
+       */
+      referral: {
+        /** The menu entry's label. */
+        nav: string;
+        /** The pill after it: "0/5". // {count} {goal} */
+        progress: string;
+        /** Read after the label instead of the pill. // {count} {goal} */
+        progressSr: string;
+        title: string;
+        /** The dialog's badge block: the lead, in bold, next to the mini form whose foot shows the pill. */
+        badgeTitle: string;
+        /** Where the badge shows. */
+        badgeBody: string;
+        /** Heading over the three steps. */
+        stepsTitle: string;
+        /**
+         * How the program works, in three steps. `goal` names the badge by
+         * its localized label (`growth.madeWith`). // {goal} {badge}
+         */
+        steps: { share: string; signup: string; goal: string };
+        /** The count next to the bar: "3 of 5". // {count} {goal} */
+        progressCount: string;
+        /** The bar, read aloud. // {count} {goal} */
+        progressLabel: string;
+        linkLabel: string;
+        copy: string;
+        copied: string;
+        /** Heading over the share buttons. */
+        shareOn: string;
+        whatsapp: string;
+        email: string;
+        x: string;
+        close: string;
+        /** The prefilled messages. `{link}` is the person's referral link. */
+        share: {
+          whatsapp: string;
+          emailSubject: string;
+          emailBody: string;
+          x: string;
+        };
+        /**
+         * The top banner during the campaign. `{badge}` is where the replica of
+         * the real pill goes (mark + `growth.madeWith`), so the copy always
+         * names the badge as it reads on a form. `{left}` is how many more
+         * referrals the unlock needs, `{goal}` the total.
+         */
+        banner: {
+          /** The strip's landmark name. */
+          region: string;
+          /** At 0. // {badge} {goal} */
+          message0: string;
+          /** Between 1 and the second to last. // {badge} {left} */
+          messageSome: string;
+          /** One to go. // {badge} */
+          messageLast: string;
+          /** The narrow strip's short copy (below 600 px), at 0. // {badge} */
+          short0: string;
+          /** // {badge} {left} */
+          shortSome: string;
+          /** // {badge} */
+          shortLast: string;
+          /** The "?" button's name; it opens the dialog too. // {badge} */
+          infoLabel: string;
+          /** The progress bar, read aloud. // {count} {goal} */
+          progressSr: string;
+          /** The one call to action: opens the dialog. */
+          cta: string;
+          /** The same, on the narrow strip (below 600 px). */
+          ctaShort: string;
+          close: string;
+        };
+        /**
+         * The toast on a new referral, since the last count the person saw:
+         * who joined, then how many are left (`{left}` more referrals to the
+         * goal). The two parts are joined by a period and a space.
+         */
+        toast: {
+          /** One new referral. */
+          one: string;
+          /** Several since the last look. // {joined} */
+          many: string;
+          /** One more, after the goal was already reached. */
+          oneMore: string;
+          /** // {joined} */
+          manyMore: string;
+          /** // {left} */
+          left: string;
+          /** Exactly one left. */
+          lastOne: string;
+        };
+        /**
+         * The one-time celebration when the person reaches the goal. `{badge}`
+         * is the badge's label (`growth.madeWith`), shown burnt away.
+         */
+        celebration: {
+          /** The heading. // {badge} */
+          title: string;
+          /** // {goal} */
+          body: string;
+          /** The link to the badge setting (the brand kit). */
+          setting: string;
+          close: string;
+        };
+      };
       /** Left-nav item labels (icon + label). */
       nav: {
         home: string;
@@ -568,6 +687,27 @@ export interface FormsMessages {
       saveFailed: string;
       /** The API refused turning it off: no paid verdict (it lapsed since the page loaded). */
       notSubscribed: string;
+      /**
+       * Locked, with the referral program on and the reader an owner: the line
+       * that replaces `subscribersOnly`, and its tooltip. `{product}` as there.
+       * // {goal} {product}
+       */
+      referralLocked: string;
+      /**
+       * Under it: how the referrals unlock it. `{badge}` is where the replica
+       * of the real pill goes (mark + `growth.madeWith`), so the badge is
+       * named as it reads on a form. // {goal} {badge}
+       */
+      referralLockedBody: string;
+      /** The progress bar's caption. // {count} {goal} */
+      referralProgress: string;
+      referralLinkLabel: string;
+      referralCopy: string;
+      referralCopied: string;
+      /** Opens the referral dialog (link, share buttons, progress). */
+      referralShare: string;
+      /** The switch works because an owner of the workspace reached the goal. // {goal} */
+      referralUnlocked: string;
     };
     /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
@@ -3392,6 +3532,71 @@ export const en: FormsMessages = {
         label: 'New',
         sr: ', new',
       },
+      productHunt: {
+        lead: 'Like dForms?',
+        label: 'Review on Product Hunt',
+        title: 'Like dForms? Review us on Product Hunt',
+      },
+      referral: {
+        nav: 'Remove badge',
+        progress: '{count}/{goal}',
+        progressSr: ', {count} of {goal} referrals',
+        title: 'Invite 5 people, remove the badge for life',
+        badgeTitle: 'This is the badge.',
+        badgeBody: 'It shows at the foot of every form, page and email you send with dForms.',
+        stepsTitle: 'How it works',
+        steps: {
+          share: 'Copy your link or share it.',
+          signup: 'Each person who signs up to dForms with it counts.',
+          goal: 'At {goal}, “{badge}” disappears from all your forms, for life.',
+        },
+        progressCount: '{count} of {goal}',
+        progressLabel: '{count} of {goal} joined with your link',
+        linkLabel: 'Your referral link',
+        copy: 'Copy link',
+        copied: 'Copied',
+        shareOn: 'Share on',
+        whatsapp: 'WhatsApp',
+        email: 'Email',
+        x: 'X',
+        close: 'Close',
+        share: {
+          whatsapp:
+            "I've been using dForms for my forms. You ask your AI agent (Claude, ChatGPT) and it builds the form, publishes it and sends you the leads. Free, with unlimited responses. Try it with my link: {link}",
+          emailSubject: 'You should try dForms for your forms',
+          emailBody:
+            "Hi, I've been using dForms, the form builder for AI agents. You ask your agent and it builds the form, publishes it, scores every answer and sends hot leads to your calendar or CRM. Free for life, unlimited responses, open source. If it helps, sign up with my link: {link}",
+          x: 'My AI agent builds my forms now with dForms. Free, unlimited responses, open source. {link}',
+        },
+        banner: {
+          region: 'Referral program',
+          message0: 'Invite {goal} people and remove {badge} from your forms, for free!',
+          messageSome: '{left} to go to remove {badge} from your forms',
+          messageLast: 'Just 1 to go to remove {badge} for good!',
+          short0: 'Remove {badge}',
+          shortSome: '{left} to go: {badge}',
+          shortLast: '1 to go! {badge}',
+          infoLabel: 'What is the {badge} badge?',
+          progressSr: '{count} of {goal} referrals',
+          cta: 'Remove the badge',
+          ctaShort: 'Remove',
+          close: 'Close banner',
+        },
+        toast: {
+          one: 'Someone joined with your link',
+          many: '{joined} people joined with your link',
+          oneMore: 'Someone else joined with your link',
+          manyMore: '{joined} more people joined with your link',
+          left: '{left} to go',
+          lastOne: 'Just 1 to go',
+        },
+        celebration: {
+          title: 'You did it: your forms no longer show {badge}',
+          body: '{goal} people joined with your link. The badge is gone from every workspace you own, for life, and from the ones you create later.',
+          setting: 'See the badge setting',
+          close: 'Close',
+        },
+      },
       nav: {
         home: 'Home',
         forms: 'Forms',
@@ -3508,6 +3713,15 @@ export const en: FormsMessages = {
       saved: 'Saved.',
       saveFailed: 'Could not save. Try again.',
       notSubscribed: 'Hiding the attribution is only for Dapta AI subscribers.',
+      referralLocked: 'Invite {goal} or pay for {product}',
+      referralLockedBody:
+        'Each person who signs up with your link counts. With {goal}, {badge} is gone from every workspace you own, for good.',
+      referralProgress: '{count} of {goal} joined',
+      referralLinkLabel: 'Your referral link',
+      referralCopy: 'Copy link',
+      referralCopied: 'Copied',
+      referralShare: 'Share',
+      referralUnlocked: 'Unlocked for life: an owner of this workspace brought {goal} people to dForms.',
     },
     brandKit: {
       title: 'Brand kit',
@@ -6391,6 +6605,71 @@ export const es: FormsMessages = {
         label: 'Nuevo',
         sr: ', nuevo',
       },
+      productHunt: {
+        lead: '¿Te gusta dForms?',
+        label: 'Reseña en Product Hunt',
+        title: '¿Te gusta dForms? Déjanos una reseña en Product Hunt',
+      },
+      referral: {
+        nav: 'Quitar sello',
+        progress: '{count}/{goal}',
+        progressSr: ', {count} de {goal} referidos',
+        title: 'Invita a 5 personas y quita el sello de por vida',
+        badgeTitle: 'Este es el sello.',
+        badgeBody: 'Sale al final de cada formulario, página y correo que mandas con dForms.',
+        stepsTitle: 'Cómo funciona',
+        steps: {
+          share: 'Copia tu link o compártelo.',
+          signup: 'Cuenta cada persona que se registre en dForms con él.',
+          goal: 'Con {goal}, «{badge}» desaparece de todos tus formularios, de por vida.',
+        },
+        progressCount: '{count} de {goal}',
+        progressLabel: '{count} de {goal} se unieron con tu link',
+        linkLabel: 'Tu link de referido',
+        copy: 'Copiar link',
+        copied: 'Copiado',
+        shareOn: 'Compartir en',
+        whatsapp: 'WhatsApp',
+        email: 'Correo',
+        x: 'X',
+        close: 'Cerrar',
+        share: {
+          whatsapp:
+            'Estoy usando dForms para mis formularios. Le pides a tu agente de IA (Claude, ChatGPT) que lo arme y él lo crea, lo publica y te manda los leads. Es gratis y sin límite de respuestas. Pruébalo con mi link: {link}',
+          emailSubject: 'Te recomiendo dForms para tus formularios',
+          emailBody:
+            'Hola, estoy usando dForms, el creador de formularios para agentes de IA. Le pides a tu agente que arme el formulario y él lo crea, lo publica, califica cada respuesta y te manda los leads calientes a tu calendario o CRM. Es gratis de por vida, sin límite de respuestas y de código abierto. Si te sirve, entra con mi link: {link}',
+          x: 'Mis formularios ahora los arma mi agente de IA con dForms. Gratis, sin límite de respuestas y open source. {link}',
+        },
+        banner: {
+          region: 'Programa de referidos',
+          message0: 'Invita a {goal} personas y quita {badge} de tus formularios, ¡gratis!',
+          messageSome: 'Te faltan {left} para quitar {badge} de tus formularios',
+          messageLast: '¡Te falta 1 para quitar {badge} para siempre!',
+          short0: 'Quita {badge}',
+          shortSome: 'Faltan {left}: {badge}',
+          shortLast: '¡Falta 1! {badge}',
+          infoLabel: '¿Qué es el sello {badge}?',
+          progressSr: '{count} de {goal} referidos',
+          cta: 'Quitar el sello',
+          ctaShort: 'Quitar',
+          close: 'Cerrar banner',
+        },
+        toast: {
+          one: 'Alguien se unió con tu link',
+          many: '{joined} personas se unieron con tu link',
+          oneMore: 'Alguien más se unió con tu link',
+          manyMore: '{joined} personas más se unieron con tu link',
+          left: 'Te faltan {left}',
+          lastOne: 'Te falta solo 1',
+        },
+        celebration: {
+          title: 'Lo lograste: tus formularios ya no llevan {badge}',
+          body: '{goal} personas se unieron con tu link. El sello se fue de todos los workspaces que tienes, de por vida, y de los que crees después.',
+          setting: 'Ver el ajuste del sello',
+          close: 'Cerrar',
+        },
+      },
       nav: {
         home: 'Inicio',
         forms: 'Formularios',
@@ -6507,6 +6786,15 @@ export const es: FormsMessages = {
       saved: 'Guardado.',
       saveFailed: 'No se pudo guardar. Inténtalo de nuevo.',
       notSubscribed: 'Ocultar la atribución es solo para suscriptores de Dapta AI.',
+      referralLocked: 'Invita a {goal} o paga {product}',
+      referralLockedBody:
+        'Cuenta cada persona que se registre con tu link. Con {goal}, {badge} se va de todos los workspaces que tienes, para siempre.',
+      referralProgress: '{count} de {goal} se unieron',
+      referralLinkLabel: 'Tu link de referido',
+      referralCopy: 'Copiar link',
+      referralCopied: 'Copiado',
+      referralShare: 'Compartir',
+      referralUnlocked: 'Desbloqueado de por vida: un dueño de este workspace trajo a {goal} personas a dForms.',
     },
     brandKit: {
       title: 'Kit de marca',

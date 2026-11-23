@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -37,7 +38,14 @@ import {
   takeAnnouncementSurface,
 } from '@/components/announcement/announcement-client';
 import { AnnouncementModal } from '@/components/announcement/announcement-modal';
+import { ReferralShareModal, fillReferral } from '@/components/referral/referral-share-modal';
+import { RaceFlag, ReferralBanner } from '@/components/referral/referral-banner';
+import { ReferralDialogContext } from '@/components/referral/referral-dialog-context';
+import { ReferralMoments } from '@/components/referral/referral-moments';
+import type { ReferralSurface } from '@/components/referral/use-referral-copy';
 import type { Workspace } from '@/lib/admin-api';
+import { captureEvent } from '@/lib/product-analytics';
+import { IS_DAPTA_BRAND } from '@/lib/product-name';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
 
@@ -174,10 +182,10 @@ function Icon({ name, className, paused }: { name: IconName; className?: string;
 /**
  * The look of one rail row: the page you are on, or any other.
  */
-function navRowClass(collapsed: boolean, state: 'active' | 'idle') {
+function navRowClass(collapsed: boolean, state: 'active' | 'idle', padY = 'py-2.5') {
   return [
     'relative flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
-    collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : 'min-h-[44px] w-full px-3 py-2.5 text-left',
+    collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : `min-h-[44px] w-full px-3 ${padY} text-left`,
     state === 'active'
       ? 'bg-muted font-medium text-foreground'
       : 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -323,6 +331,10 @@ function NavLinks({
   onNavigate,
   badgeItem = null,
   badge,
+  referral = null,
+  referralM,
+  onReferral,
+  productHunt,
 }: {
   collapsed: boolean;
   nav: ChromeMessages['nav'];
@@ -334,6 +346,13 @@ function NavLinks({
   /** The item an announcement marks "New", or null. */
   badgeItem?: AnnouncementRailItem | null;
   badge: NavBadge;
+  /** The referral program's entry, or null while the program is off. */
+  referral?: ShellReferral | null;
+  referralM: ChromeMessages['referral'];
+  /** Opens the share modal. */
+  onReferral?: () => void;
+  /** The Product Hunt review row's copy, or null when this build has none (forks). */
+  productHunt: ChromeMessages['productHunt'] | null;
 }) {
   const pathname = usePathname();
   return (
@@ -431,7 +450,160 @@ function NavLinks({
           </li>
         );
       })}
+      {referral ? (
+        <li>
+          <ReferralNavEntry referral={referral} m={referralM} collapsed={collapsed} onOpen={onReferral} />
+        </li>
+      ) : null}
+      {productHunt ? (
+        <li>
+          <ProductHuntNavEntry m={productHunt} newTab={newTab} collapsed={collapsed} onNavigate={onNavigate} />
+        </li>
+      ) : null}
     </ul>
+  );
+}
+
+/**
+ * The referral program's rail row: a button (it opens the share modal, it is
+ * not a page) with the person's progress as a pill after the label. Its icon
+ * is the banner's checkered race flag, so the menu, the banner and the dialog
+ * share one symbol. The pill is hidden from the accessibility tree and its
+ * words are read instead, so the row's name is "Remove badge, 0 of 5
+ * referrals". Collapsed to 64px, the flag alone, with the same words as its
+ * tooltip.
+ */
+function ReferralNavEntry({
+  referral,
+  m,
+  collapsed,
+  onOpen,
+}: {
+  referral: ShellReferral;
+  m: ChromeMessages['referral'];
+  collapsed: boolean;
+  onOpen?: () => void;
+}) {
+  const values = { count: referral.count, goal: referral.goal };
+  const sr = fillReferral(m.progressSr, values);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={collapsed ? `${m.nav}${sr}` : undefined}
+      aria-haspopup="dialog"
+      data-testid="nav-referral"
+      className={navRowClass(collapsed, 'idle')}
+    >
+      <span aria-hidden className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+        <RaceFlag className="rb-flag-icon" />
+      </span>
+      <span className={collapsed ? 'sr-only' : ''}>{m.nav}</span>
+      {!collapsed ? (
+        <span
+          aria-hidden
+          data-testid="nav-referral-progress"
+          className="ml-auto shrink-0 rounded-full bg-signal/15 px-2 py-0.5 text-2xs font-semibold leading-4 tabular-nums text-signal-ink"
+        >
+          {fillReferral(m.progress, values)}
+        </span>
+      ) : null}
+      <span className="sr-only">{sr}</span>
+    </button>
+  );
+}
+
+/** dForms' review page on Product Hunt, the rail's review row's one destination. */
+export const PRODUCT_HUNT_REVIEW_URL = 'https://www.producthunt.com/products/dforms/reviews/new';
+
+/** Product Hunt's mark in its own colours: the orange circle and the white "P". Fixed artwork. */
+function ProductHuntMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 40 40" width="20" height="20" focusable="false" className="shrink-0">
+      <circle cx="20" cy="20" r="20" fill="#DA552F" />
+      <path
+        fill="#fff"
+        d="M22.667 20H17v-6h5.667a3 3 0 0 1 0 6Zm0-10H13v20h4v-6h5.667a7 7 0 1 0 0-14Z"
+      />
+    </svg>
+  );
+}
+
+/** Five filled stars in Product Hunt orange: a rating cue, decorative. */
+function ProductHuntStars() {
+  return (
+    <span aria-hidden="true" data-testid="nav-product-hunt-stars" className="mt-1 flex items-center gap-px">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <svg key={i} viewBox="0 0 24 24" width="11" height="11" focusable="false" className="shrink-0">
+          <path
+            fill="#DA552F"
+            d="M12 2.6l2.85 5.9 6.5.85-4.75 4.5 1.2 6.45L12 17.2l-5.8 3.1 1.2-6.45-4.75-4.5 6.5-.85z"
+          />
+        </svg>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The Product Hunt review row, under the referral entry, on Dapta's own builds
+ * only (a fork never links to dForms' page). External like Docs: a new tab,
+ * the trailing arrow, "(opens in a new tab)" read after its name. A light
+ * Product Hunt orange tint sets it apart the way "Connect your agent" is in
+ * green. The open rail reads "Like dForms?" over "Review on Product Hunt" (in
+ * semibold), over five orange stars; the stars are hidden from assistive tech,
+ * so the visible words are its name; the tooltip is the full sentence. A
+ * little taller than its neighbours (py-3). Collapsed to 64px, the mark alone,
+ * the full sentence as its tooltip and name.
+ * Clicking records `product_hunt_review_clicked`.
+ */
+function ProductHuntNavEntry({
+  m,
+  newTab,
+  collapsed,
+  onNavigate,
+}: {
+  m: ChromeMessages['productHunt'];
+  newTab: string;
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <a
+      href={PRODUCT_HUNT_REVIEW_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={m.title}
+      data-testid="nav-product-hunt"
+      onClick={() => {
+        captureEvent('product_hunt_review_clicked', { collapsed });
+        onNavigate?.();
+      }}
+      className={[
+        navRowClass(collapsed, 'idle', 'py-3'),
+        // Product Hunt orange (#da552f), kept light: ink letters stay ink.
+        'bg-[#da552f]/[0.07] text-foreground ring-1 ring-inset ring-[#da552f]/30 hover:bg-[#da552f]/[0.13] hover:text-foreground',
+      ].join(' ')}
+    >
+      <ProductHuntMark />
+      {collapsed ? (
+        <span className="sr-only">{m.title}</span>
+      ) : (
+        // Three lines, so the label gets the row's whole width: the lead and
+        // the external arrow on top, the label under them on one line (it fits
+        // the 240px rail and the 280px drawer in both languages), the stars
+        // at the foot.
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="flex items-center gap-2 text-2xs font-medium text-muted-foreground">
+            <span>{m.lead} </span>
+            <i aria-hidden className="pi pi-external-link ml-auto shrink-0" style={{ fontSize: 11 }} />
+          </span>
+          <span className="truncate whitespace-nowrap text-[13px] font-semibold">{m.label}</span>
+          <ProductHuntStars />
+        </span>
+      )}
+      <span className="sr-only"> {newTab}</span>
+    </a>
   );
 }
 
@@ -456,6 +628,26 @@ export interface ShellAnnouncement {
   visual: AnnouncementVideo;
 }
 
+/** The referral program's entry, from `/v1/me.referral` while it is on. */
+export interface ShellReferral {
+  link: string;
+  count: number;
+  goal: number;
+  /**
+   * The top banner, while the API shows it (`referralBannerVisible`), with the
+   * badge's localized label (`growth.madeWith`) for its replica of the pill.
+   * Absent or null: no banner.
+   */
+  banner?: { badgeLabel: string } | null;
+  /**
+   * The person reached the goal (`/v1/me.referral.unlocked`). The live
+   * moments celebrate it once, when it flips on. Absent: not unlocked.
+   */
+  unlocked?: boolean;
+  /** The badge's localized label (`growth.madeWith`), for the dialog and the celebration. */
+  badgeLabel: string;
+}
+
 export interface ShellUser {
   displayName: string | null;
   email: string | null;
@@ -471,6 +663,8 @@ export function AdminShell({
   currentAccountId,
   staff = false,
   announcement = null,
+  referral = null,
+  productHunt = IS_DAPTA_BRAND,
   children,
 }: {
   user: ShellUser | null;
@@ -490,6 +684,10 @@ export function AdminShell({
   staff?: boolean;
   /** The announcement this person gets, or null (see `ShellAnnouncement`). */
   announcement?: ShellAnnouncement | null;
+  /** The referral program's entry, or null while the program is off. */
+  referral?: ShellReferral | null;
+  /** Show the Product Hunt review row: Dapta's own builds only (the default says which). */
+  productHunt?: boolean;
   children: ReactNode;
 }) {
   // Tagged once for both rails (desktop and drawer), like the other suite doors.
@@ -497,6 +695,19 @@ export function AdminShell({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [referralOpen, setReferralOpen] = useState(false);
+  // Where the referral dialog was opened from, for its open, copy and share events.
+  const [referralSurface, setReferralSurface] = useState<ReferralSurface>('menu');
+  // One door for every opener: the menu, the banner's call to action and its
+  // "?", the badge switch. From the drawer, the drawer closes first: the
+  // dialog belongs over the page, not over a drawer that would keep the page
+  // inert under it.
+  const openReferralDialog = useCallback((surface: ReferralSurface) => {
+    setDrawerOpen(false);
+    setReferralSurface(surface);
+    setReferralOpen(true);
+  }, []);
+  const openReferral = () => openReferralDialog('menu');
   const drawerRef = useRef<HTMLElement>(null);
   const railRef = useRef<HTMLElement>(null);
   const [peeking, setPeeking] = useState(false);
@@ -786,7 +997,13 @@ export function AdminShell({
   );
 
   return (
-    <div className="flex min-h-dvh flex-col md:flex-row">
+    // In the builder the shell is exactly one screen tall and never scrolls as
+    // a page: <main> becomes a column, the referral banner (when shown) takes
+    // its 48px from the top and the builder (`flex-1 min-h-0`) the rest, so
+    // its bottom edge is on screen whatever sits above it (the banner, the
+    // mobile top bar). Closing the banner unmounts it and the builder grows
+    // into the room at once. Every other page is as tall as its content.
+    <div className={studio ? 'flex h-dvh flex-col overflow-hidden md:flex-row' : 'flex min-h-dvh flex-col md:flex-row'}>
       {/* Mobile top bar (<768px). Inert while the drawer is open so focus can't
           escape the modal (WCAG 2.4.3 / APG modal-dialog). */}
       <header
@@ -815,13 +1032,13 @@ export function AdminShell({
           with the page. As a plain flex item it grew to the FULL document
           height — 2834px on Settings — which dragged the `mt-auto` footer, and
           with it the account name and sign-out, ~2000px below the fold. The
-          editor never showed the bug only because that route is its own
-          `h-[100dvh] overflow-hidden` shell. `overflow-y-auto` keeps the rail
+          editor never showed the bug only because that route is a one-screen
+          `h-dvh overflow-hidden` shell. `overflow-y-auto` keeps the rail
           usable if the nav ever outgrows a short viewport. */}
       {/* In the editor the rail leaves the flow and this spacer holds its
           column, so `<main>`'s box is identical at every peek state: the rail
           widens OVER the canvas rather than pushing it. Reflowing a
-          `h-[100dvh] overflow-hidden` three-column builder every time the
+          one-screen, `overflow-hidden` three-column builder every time the
           pointer passes the left edge is not something anyone could work in. */}
       {studio ? <div aria-hidden className="hidden w-[64px] shrink-0 md:block" /> : null}
       <aside
@@ -875,6 +1092,10 @@ export function AdminShell({
             newTab={messages.switcher.opensNewTab}
             badgeItem={badgeItem}
             badge={messages.newBadge}
+            referral={referral}
+            referralM={messages.referral}
+            onReferral={openReferral}
+            productHunt={productHunt ? messages.productHunt : null}
           />
         </nav>
         {renderFooter(railCollapsed)}
@@ -931,13 +1152,35 @@ export function AdminShell({
             onNavigate={() => setDrawerOpen(false)}
             badgeItem={badgeItem}
             badge={messages.newBadge}
+            referral={referral}
+            referralM={messages.referral}
+            onReferral={openReferral}
+            productHunt={productHunt ? messages.productHunt : null}
           />
         </nav>
         {renderFooter(false, () => setDrawerOpen(false))}
       </aside>
 
-      <main inert={drawerOpen || undefined} className="min-w-0 flex-1 bg-background">
-        {children}
+      <main
+        inert={drawerOpen || undefined}
+        className={studio ? 'flex min-h-0 min-w-0 flex-1 flex-col bg-background' : 'min-w-0 flex-1 bg-background'}
+      >
+        {/* The referral banner, at the top of the main area, the form builder
+            included: there <main> is a column and the builder fills what the
+            strip leaves it (see the shell's root above). */}
+        {referral?.banner ? (
+          <ReferralBanner
+            count={referral.count}
+            goal={referral.goal}
+            badgeLabel={referral.banner.badgeLabel}
+            m={messages.referral}
+            onOpen={openReferralDialog}
+          />
+        ) : null}
+        {/* The badge switch opens the same dialog, from Brand kit or the Design panel. */}
+        <ReferralDialogContext.Provider value={referral ? openReferralDialog : null}>
+          {children}
+        </ReferralDialogContext.Provider>
       </main>
       {announcement?.copy ? (
         <AnnouncementModal
@@ -949,6 +1192,31 @@ export function AdminShell({
           visual={announcement.visual}
           closeLabel={announcement.closeLabel}
           theme={themePref}
+        />
+      ) : null}
+      {/* The toast on a new referral and the celebration at the goal. On
+          every page, the form builder included: the banner is gone at the
+          goal, so the celebration stands on its own. */}
+      {referral ? (
+        <ReferralMoments
+          link={referral.link}
+          count={referral.count}
+          goal={referral.goal}
+          unlocked={referral.unlocked === true}
+          badgeLabel={referral.badgeLabel}
+          m={messages.referral}
+        />
+      ) : null}
+      {referral ? (
+        <ReferralShareModal
+          open={referralOpen}
+          onClose={() => setReferralOpen(false)}
+          link={referral.link}
+          count={referral.count}
+          goal={referral.goal}
+          badgeLabel={referral.badgeLabel}
+          m={messages.referral}
+          surface={referralSurface}
         />
       ) : null}
     </div>

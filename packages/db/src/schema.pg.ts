@@ -27,6 +27,11 @@ export const account = pgTable('account', {
   daptaPaid: integer('dapta_paid'),
   /** Epoch ms that verdict was written (0028). */
   daptaPaidCheckedAt: bigint('dapta_paid_checked_at', { mode: 'number' }),
+  /**
+   * Epoch ms of the workspace's last EXPLICIT choice on the attribution switch
+   * (0032); NULL = it never chose, so a referral unlock may hide it for them.
+   */
+  hideAttributionChosenAt: bigint('hide_attribution_chosen_at', { mode: 'number' }),
   /** First-touch acquisition context (see 0010). Written once by `claimAccountAttribution`. */
   attribution: jsonb('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */
@@ -447,6 +452,60 @@ export const announcementState = pgTable(
   }),
 );
 
+/**
+ * One referrer: a person's referral link code and the program's per-person
+ * state (see 0030 and ADR 0005). Keyed by the PERSON, like
+ * `announcement_state`: `person_id` is the identity service's user id
+ * (`member.external_id`), or `email:{lowercased email}` for a member it does
+ * not know (local development). Created lazily the first time the link is
+ * asked for; no workspace id, never deleted with a workspace.
+ */
+export const referrer = pgTable(
+  'referrer',
+  {
+    personId: text('person_id').primaryKey(),
+    code: text('code').notNull(),
+    unlockedAt: bigint('unlocked_at', { mode: 'number' }),
+    bannerDismissedUntil: bigint('banner_dismissed_until', { mode: 'number' }),
+    nudgeSentAt: bigint('nudge_sent_at', { mode: 'number' }),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    referrerCodeUq: uniqueIndex('referrer_code_uq').on(t.code),
+  }),
+);
+
+/**
+ * One referral: a new person (the referee) credited to a referrer (see 0031
+ * and ADR 0005). Both columns hold a person key, like `referrer.person_id`.
+ * The referee is the primary key, so the first credit wins; `source` is
+ * `link` or `invite`. Never deleted.
+ */
+export const referral = pgTable(
+  'referral',
+  {
+    refereePersonId: text('referee_person_id').primaryKey(),
+    referrerPersonId: text('referrer_person_id').notNull(),
+    source: text('source').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    referralReferrerIdx: index('referral_referrer_idx').on(t.referrerPersonId),
+  }),
+);
+
+/**
+ * Who invited which address as a teammate (see 0033). The address (trimmed,
+ * lowercased) is the primary key, so the first inviter keeps it. The identity
+ * service's invitation has no inviter: this is the only record of one.
+ */
+export const referralInvite = pgTable('referral_invite', {
+  email: text('email').primaryKey(),
+  inviterPersonId: text('inviter_person_id').notNull(),
+  accountId: text('account_id').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+});
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -464,4 +523,7 @@ export const pgSchema = {
   linkPage,
   linkPageAlias,
   announcementState,
+  referrer,
+  referral,
+  referralInvite,
 };

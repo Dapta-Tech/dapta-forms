@@ -442,3 +442,49 @@ describe('GET /api/auth/login records the start (forms_login_started)', () => {
     expect(nextAfter.tasks).toHaveLength(0);
   });
 });
+
+/**
+ * The referral code parks in the attribution cookie like the UTMs: same
+ * cookie, same lifetime, same first-attempt-wins rule. The callback is its
+ * only reader.
+ */
+describe('GET /api/auth/login parks ref in the attribution cookie', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    provider.name = 'workos';
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('PUBLIC_APP_URL', '');
+    vi.stubEnv('IAM_BASE_URL', 'https://iam.example.com/iam');
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ loginUrl: AUTHORIZE }) });
+    cookieJar.get.mockReturnValue(undefined);
+  });
+
+  const parked = () => {
+    const call = cookieJar.set.mock.calls.find(([name]) => name === 'quill_attribution');
+    return call ? { value: JSON.parse(call[1] as string), options: call[2] } : null;
+  };
+
+  it('a referral link alone sets the cookie, httpOnly and for the login attempt only', async () => {
+    await GET(req('/api/auth/login?ref=k7m2p9qx'));
+    expect(parked()).toEqual({
+      value: { referralCode: 'k7m2p9qx' },
+      options: expect.objectContaining({ httpOnly: true, maxAge: 600 }),
+    });
+  });
+
+  it('rides beside the campaign tags', async () => {
+    await GET(req('/api/auth/login?ref=k7m2p9qx&utm_source=whatsapp'));
+    expect(parked()?.value).toEqual({ referralCode: 'k7m2p9qx', utmSource: 'whatsapp' });
+  });
+
+  it('an attempt already parked keeps its own: the first link wins', async () => {
+    cookieJar.get.mockImplementation((name: string) =>
+      name === 'quill_attribution' ? { value: JSON.stringify({ referralCode: 'first111' }) } : undefined,
+    );
+    await GET(req('/api/auth/login?ref=second22'));
+    expect(parked()).toBeNull();
+  });
+});

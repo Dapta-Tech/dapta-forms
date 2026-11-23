@@ -85,6 +85,7 @@ const MAP = {
   'flag-fill': 'flag:fill',
   folder: 'folder',
   'folder-plus': 'folder-plus',
+  gift: 'gift',
   globe: 'globe',
   history: 'history',
   home: 'house',

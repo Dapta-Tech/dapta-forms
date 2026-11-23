@@ -32,6 +32,8 @@ export const account = sqliteTable('account', {
   daptaPaid: integer('dapta_paid'),
   /** Epoch ms that verdict was written (0028). */
   daptaPaidCheckedAt: integer('dapta_paid_checked_at'),
+  /** Epoch ms of the last explicit choice on the switch (0032); NULL = never chose. See the Postgres twin. */
+  hideAttributionChosenAt: integer('hide_attribution_chosen_at'),
   /** First-touch acquisition context (TEXT JSON, see 0010). Written once by `claimAccountAttribution`. */
   attribution: text('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */
@@ -422,6 +424,44 @@ export const announcementState = sqliteTable(
   }),
 );
 
+/** One referrer, keyed by the person (see 0030 and the Postgres twin). */
+export const referrer = sqliteTable(
+  'referrer',
+  {
+    personId: text('person_id').primaryKey(),
+    code: text('code').notNull(),
+    unlockedAt: integer('unlocked_at'),
+    bannerDismissedUntil: integer('banner_dismissed_until'),
+    nudgeSentAt: integer('nudge_sent_at'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    referrerCodeUq: uniqueIndex('referrer_code_uq').on(t.code),
+  }),
+);
+
+/** One referral, keyed by the referee person (see 0031 and the Postgres twin). */
+export const referral = sqliteTable(
+  'referral',
+  {
+    refereePersonId: text('referee_person_id').primaryKey(),
+    referrerPersonId: text('referrer_person_id').notNull(),
+    source: text('source').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    referralReferrerIdx: index('referral_referrer_idx').on(t.referrerPersonId),
+  }),
+);
+
+/** Who invited which address as a teammate (see 0033 and the Postgres twin). */
+export const referralInvite = sqliteTable('referral_invite', {
+  email: text('email').primaryKey(),
+  inviterPersonId: text('inviter_person_id').notNull(),
+  accountId: text('account_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -439,4 +479,7 @@ export const sqliteSchema = {
   linkPage,
   linkPageAlias,
   announcementState,
+  referrer,
+  referral,
+  referralInvite,
 };

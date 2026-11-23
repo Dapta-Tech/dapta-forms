@@ -74,3 +74,26 @@ describe('admin.developers: the connector, never keys, never the identity provid
     }
   });
 });
+
+describe('admin.chrome.referral: the badge is named by its localized label', () => {
+  it('the dialog names it by placeholder, filled with the label the pill reads', () => {
+    for (const locale of ['en', 'es'] as const) {
+      const r = getMessages(locale).admin.chrome.referral;
+      expect(r.steps.goal.split('{badge}'), locale).toHaveLength(2);
+      expect(r.steps.goal).toContain('{goal}');
+      // The label comes from `growth.madeWith`, never typed into this copy.
+      const copy = [r.title, r.badgeTitle, r.badgeBody, r.stepsTitle, ...Object.values(r.steps), r.banner.cta];
+      expect(copy.filter((x) => /made with|hecho con/i.test(x)), locale).toEqual([]);
+    }
+  });
+
+  it('every banner message carries the pill exactly once, by placeholder', () => {
+    for (const locale of ['en', 'es'] as const) {
+      const b = getMessages(locale).admin.chrome.referral.banner;
+      for (const key of ['message0', 'messageSome', 'messageLast', 'short0', 'shortSome', 'shortLast'] as const) {
+        expect(b[key].split('{badge}'), `${locale} ${key}`).toHaveLength(2);
+      }
+      expect(b.infoLabel).toContain('{badge}');
+    }
+  });
+});
