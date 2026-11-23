@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createDb, migrate, seed, sql, type Db } from '@quill/db';
+import { createDb, creditReferral, migrate, seed, sql, type Db } from '@quill/db';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
 import { AdminCrudController } from './admin-crud.controller';
@@ -107,6 +107,19 @@ describe('/v1/me.referral.bannerVisible', () => {
     const { crud } = wire({ ...ON, campaignEndsAt: T0 + DAY });
     expect(await bannerVisible(crud, as(acme, ana))).toBe(true);
     clock = T0 + DAY;
+    expect(await bannerVisible(crud, as(acme, ana))).toBe(false);
+  });
+
+  it('is true below the goal and false from the goal on', async () => {
+    const ana = await addMember(acme, 'ana@example.com', 'user_ana');
+    const { crud } = wire(ON);
+    const credit = async (i: number) => {
+      await addMember(await addAccount(`ws${i}`), `friend${i}@example.com`, `user_friend${i}`);
+      expect(await creditReferral(db, { referee: `user_friend${i}`, referrer: 'user_ana', source: 'link', now: clock })).toBe(true);
+    };
+    for (let i = 1; i <= 4; i++) await credit(i);
+    expect(await bannerVisible(crud, as(acme, ana))).toBe(true);
+    await credit(5);
     expect(await bannerVisible(crud, as(acme, ana))).toBe(false);
   });
 
