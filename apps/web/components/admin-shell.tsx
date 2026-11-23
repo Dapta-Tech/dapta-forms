@@ -976,9 +976,35 @@ export function AdminShell({
   // The mobile drawer is always full-width, so its footer renders expanded
   // regardless of the DESKTOP rail state — hence a param, not the shared const.
   // `onNavigate` lets the drawer close itself when an account entry is chosen.
+  //
+  // `shrink-0`: the footer never gives up height. When the menu is taller than
+  // the window it is the nav between the header and this footer that scrolls
+  // (see `navScrollClass`), so the theme toggle and the profile row stay at
+  // the foot of the sidebar whatever the length of the list.
+  // The sidebar is three stacked parts in a full-height column: the header
+  // (wordmark, workspace switcher) and the footer keep their height, and the
+  // nav between them takes the rest and is the ONLY thing that scrolls. Before,
+  // the whole <aside> was the scroll container, so on a window shorter than the
+  // menu (now longer, with "Remove badge" and the taller Product Hunt row) the
+  // wheel over the rail slid the wordmark off the top and the footer up with
+  // it, and a page scrolled with the pointer over the rail left the logo row
+  // clipped at the top edge.
+  //
+  // The nav is a scroll box, and a scroll box clips on both axes. The negative
+  // margin and the matching padding hand it the sidebar's own padding as room,
+  // so the focus outline (2px at a 2px offset) and the glow of "Connect your
+  // agent" paint inside it as they did when the <aside> was the scroller,
+  // while the rows sit exactly where they did: nothing moves when everything
+  // fits. The vertical 12px is taken from the 24px gaps around the nav.
+  const navScrollClass = (navCollapsed: boolean) =>
+    `min-h-0 flex-1 overflow-y-auto no-scrollbar -my-3 py-3 ${
+      navCollapsed ? '-mx-2 px-2' : '-mx-4 px-4'
+    }`;
+
   const renderFooter = (footerCollapsed: boolean, onNavigate?: () => void) => (
     <div
-      className={`mt-auto flex flex-col border-t border-border pt-3 ${
+      data-testid="sidebar-footer"
+      className={`mt-auto flex shrink-0 flex-col border-t border-border pt-3 ${
         footerCollapsed ? 'items-center gap-1' : 'gap-1'
       }`}
     >
@@ -1033,8 +1059,9 @@ export function AdminShell({
           height — 2834px on Settings — which dragged the `mt-auto` footer, and
           with it the account name and sign-out, ~2000px below the fold. The
           editor never showed the bug only because that route is a one-screen
-          `h-dvh overflow-hidden` shell. `overflow-y-auto` keeps the rail
-          usable if the nav ever outgrows a short viewport. */}
+          `h-dvh overflow-hidden` shell. The rail itself never scrolls: on a
+          window shorter than the menu only the nav does (`navScrollClass`),
+          between a header and a footer that stay put. */}
       {/* In the editor the rail leaves the flow and this spacer holds its
           column, so `<main>`'s box is identical at every peek state: the rail
           widens OVER the canvas rather than pushing it. Reflowing a
@@ -1061,30 +1088,33 @@ export function AdminShell({
         // The width transition needs no `motion-reduce:` variant: globals.css
         // already zeroes every transition under prefers-reduced-motion.
         //
-        // The scrollbar is hidden, the scrolling is not. On a short window
-        // (under ~690px collapsed, ~660px expanded) the rail overflows, and a
-        // classic scrollbar drew a gray track down its right edge and took
-        // 11px of a 64px column, shoving every icon left. Wheel, touch and a
-        // Tab into an off-screen link still scroll it. See `.no-scrollbar`.
-        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-sidebar py-4 transition-[width] no-scrollbar md:flex md:h-dvh md:overflow-y-auto ${
+        // No overflow of its own: the nav inside scrolls (`navScrollClass`).
+        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-sidebar py-4 transition-[width] md:flex md:h-dvh ${
           studio ? 'md:fixed md:left-0 md:top-0 md:z-30' : 'md:sticky md:top-0'
         } ${railCollapsed ? 'w-[64px] px-2' : 'w-60 px-4'}`}
       >
-        {brand}
-        {/* Directly under the wordmark and above the nav: which tenant every
-            link below belongs to, and where a new one is made. Always
-            rendered: "New workspace" has to exist before there is a second
-            workspace to switch to. */}
-        {currentAccountId ? (
-          <WorkspaceSwitcher
-            workspaces={workspaces}
-            currentAccountId={currentAccountId}
-            collapsed={railCollapsed}
-            staff={staff}
-            m={messages.workspaces}
-          />
-        ) : null}
-        <nav aria-label="Primary">
+        <div data-testid="sidebar-header" className="flex shrink-0 flex-col gap-6">
+          {brand}
+          {/* Directly under the wordmark and above the nav: which tenant every
+              link below belongs to, and where a new one is made. Always
+              rendered: "New workspace" has to exist before there is a second
+              workspace to switch to. */}
+          {currentAccountId ? (
+            <WorkspaceSwitcher
+              workspaces={workspaces}
+              currentAccountId={currentAccountId}
+              collapsed={railCollapsed}
+              staff={staff}
+              m={messages.workspaces}
+            />
+          ) : null}
+        </div>
+        {/* The scrollbar is hidden, the scrolling is not. On a short window
+            the nav overflows, and a classic scrollbar drew a gray track down
+            the rail and took 11px of a 64px column, shoving every icon left.
+            Wheel, touch and a Tab into an off-screen link still scroll it.
+            See `.no-scrollbar`. */}
+        <nav aria-label="Primary" data-testid="sidebar-nav" className={navScrollClass(railCollapsed)}>
           <NavLinks
             collapsed={railCollapsed}
             nav={messages.nav}
@@ -1113,8 +1143,9 @@ export function AdminShell({
       ) : null}
       <aside
         ref={drawerRef}
-        // Scrollbar hidden as on the desktop rail; the drawer still scrolls.
-        className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[320px] flex-col gap-6 overflow-y-auto border-r border-border bg-sidebar p-4 transition-transform no-scrollbar md:hidden ${
+        // Built like the desktop rail: header and footer fixed, the nav between
+        // them is what scrolls on a short screen (`navScrollClass`).
+        className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[320px] flex-col gap-6 border-r border-border bg-sidebar p-4 transition-transform md:hidden ${
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         role="dialog"
@@ -1130,20 +1161,22 @@ export function AdminShell({
         // was there to express, minus the collateral damage.
         inert={!drawerOpen || undefined}
       >
-        <div className="flex items-center gap-2 px-2">
-          {/* The drawer is 82vw capped at 320px, so the wordmark always fits. */}
-          <BrandWordmark className="h-6 w-auto text-foreground" labelled />
-          <AppSwitcher messages={messages.switcher} />
+        <div data-testid="sidebar-header" className="flex shrink-0 flex-col gap-6">
+          <div className="flex items-center gap-2 px-2">
+            {/* The drawer is 82vw capped at 320px, so the wordmark always fits. */}
+            <BrandWordmark className="h-6 w-auto text-foreground" labelled />
+            <AppSwitcher messages={messages.switcher} />
+          </div>
+          {currentAccountId ? (
+            <WorkspaceSwitcher
+              workspaces={workspaces}
+              currentAccountId={currentAccountId}
+              staff={staff}
+              m={messages.workspaces}
+            />
+          ) : null}
         </div>
-        {currentAccountId ? (
-          <WorkspaceSwitcher
-            workspaces={workspaces}
-            currentAccountId={currentAccountId}
-            staff={staff}
-            m={messages.workspaces}
-          />
-        ) : null}
-        <nav>
+        <nav data-testid="sidebar-nav" className={navScrollClass(false)}>
           <NavLinks
             collapsed={false}
             nav={messages.nav}
