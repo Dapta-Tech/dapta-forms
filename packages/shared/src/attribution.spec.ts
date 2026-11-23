@@ -5,11 +5,19 @@ import {
   canHideAttribution,
   paidVerdictFresh,
   showAttribution,
+  unlockSources,
   type AttributionInput,
 } from './attribution';
 
 const NOW = 1_800_000_000_000;
-const base: AttributionInput = { hideAttribution: false, paid: null, checkedAt: null, premiumMode: 'locked', now: NOW };
+const base: AttributionInput = {
+  hideAttribution: false,
+  paid: null,
+  checkedAt: null,
+  referralUnlocked: false,
+  premiumMode: 'locked',
+  now: NOW,
+};
 
 describe('showAttribution', () => {
   it('shows it when there is no row at all', () => {
@@ -74,13 +82,44 @@ describe('paidVerdictFresh / canHideAttribution', () => {
     expect(paidVerdictFresh(true, NOW + ATTRIBUTION_VERDICT_MAX_SKEW_MS + 1, NOW)).toBe(false);
     expect(paidVerdictFresh(true, NOW + 365 * 24 * 3_600_000, NOW)).toBe(false);
     expect(
-      showAttribution({ hideAttribution: true, paid: true, checkedAt: NOW + 3_600_000, premiumMode: 'locked', now: NOW }),
+      showAttribution({ hideAttribution: true, paid: true, checkedAt: NOW + 3_600_000, referralUnlocked: false, premiumMode: 'locked', now: NOW }),
     ).toBe(true);
   });
 
   it('open mode can always hide; locked needs the fresh verdict', () => {
-    expect(canHideAttribution({ paid: null, checkedAt: null, premiumMode: 'open', now: NOW })).toBe(true);
-    expect(canHideAttribution({ paid: false, checkedAt: NOW, premiumMode: 'locked', now: NOW })).toBe(false);
-    expect(canHideAttribution({ paid: true, checkedAt: NOW, premiumMode: 'locked', now: NOW })).toBe(true);
+    expect(canHideAttribution({ paid: null, checkedAt: null, referralUnlocked: false, premiumMode: 'open', now: NOW })).toBe(true);
+    expect(canHideAttribution({ paid: false, checkedAt: NOW, referralUnlocked: false, premiumMode: 'locked', now: NOW })).toBe(false);
+    expect(canHideAttribution({ paid: true, checkedAt: NOW, referralUnlocked: false, premiumMode: 'locked', now: NOW })).toBe(true);
+  });
+});
+
+describe('unlock sources: paid or referral', () => {
+  it('locked mode: a referral unlock hides it with no paid verdict at all', () => {
+    expect(showAttribution({ ...base, hideAttribution: true, referralUnlocked: true })).toBe(false);
+    expect(canHideAttribution({ ...base, referralUnlocked: true })).toBe(true);
+  });
+
+  it('a referral unlock has no expiry: it holds when the paid verdict lapsed or went stale', () => {
+    const stale = NOW - ATTRIBUTION_VERDICT_MAX_AGE_MS - 1;
+    expect(showAttribution({ ...base, hideAttribution: true, referralUnlocked: true, paid: false, checkedAt: NOW })).toBe(false);
+    expect(showAttribution({ ...base, hideAttribution: true, referralUnlocked: true, paid: true, checkedAt: stale })).toBe(false);
+  });
+
+  it('a referral unlock still needs the choice: not asked, it shows', () => {
+    expect(showAttribution({ ...base, hideAttribution: false, referralUnlocked: true })).toBe(true);
+  });
+
+  it('names which sources hold right now, paid first', () => {
+    expect(unlockSources(base)).toEqual([]);
+    expect(unlockSources({ ...base, paid: true, checkedAt: NOW })).toEqual(['paid']);
+    expect(unlockSources({ ...base, referralUnlocked: true })).toEqual(['referral']);
+    expect(unlockSources({ ...base, paid: true, checkedAt: NOW, referralUnlocked: true })).toEqual(['paid', 'referral']);
+    // A stale paid verdict is not a source.
+    expect(unlockSources({ ...base, paid: true, checkedAt: NOW - ATTRIBUTION_VERDICT_MAX_AGE_MS })).toEqual([]);
+  });
+
+  it('open mode needs no source to hide it, and names none', () => {
+    expect(canHideAttribution({ ...base, premiumMode: 'open' })).toBe(true);
+    expect(unlockSources({ ...base, premiumMode: 'open' })).toEqual([]);
   });
 });
