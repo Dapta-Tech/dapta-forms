@@ -49,7 +49,7 @@ const CHANNELS: { channel: ReferralShareChannel; icon: ReactNode }[] = [
  * The referral dialog, the one place the program is explained and shared
  * from. The menu entry, the banner (its call to action and its "?") and the
  * locked badge switch all open it. Framed by the banner's double green beam,
- * with a green glow behind its header, green step numbers and a green "Copy
+ * on the theme's plain card, with green step numbers and a green "Copy
  * link". In order: the badge (a mini form with the
  * pill highlighted at its foot, and what it is), how it works in three steps,
  * the person's progress on the same flowing bar as the banner, their link
@@ -109,13 +109,13 @@ export function ReferralShareModal({
       labelId={labelId}
       portal
       bare
-      panelClassName="rb-theme rb-dialog max-w-md rounded-xl bg-popover"
+      panelClassName="rb-theme rb-dialog max-w-md rounded-xl bg-card"
     >
       {/* The banner's double dForms green beam, round the panel's edge. The
           panel clips it to its corners and stays put; the box inside scrolls. */}
       <span className="rb-beam rb-beam-box" aria-hidden="true" data-testid="referral-modal-beam" />
       <div className="rb-dialog-scroll">
-        <div data-testid="referral-modal" className="rb-dialog-body relative flex flex-col gap-5 p-6">
+        <div data-testid="referral-modal" className="relative flex flex-col gap-5 p-6">
           <button
             type="button"
             onClick={onClose}

@@ -182,10 +182,10 @@ function Icon({ name, className, paused }: { name: IconName; className?: string;
 /**
  * The look of one rail row: the page you are on, or any other.
  */
-function navRowClass(collapsed: boolean, state: 'active' | 'idle') {
+function navRowClass(collapsed: boolean, state: 'active' | 'idle', padY = 'py-2.5') {
   return [
     'relative flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
-    collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : 'min-h-[44px] w-full px-3 py-2.5 text-left',
+    collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : `min-h-[44px] w-full px-3 ${padY} text-left`,
     state === 'active'
       ? 'bg-muted font-medium text-foreground'
       : 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -529,14 +529,32 @@ function ProductHuntMark() {
   );
 }
 
+/** Five filled stars in Product Hunt orange: a rating cue, decorative. */
+function ProductHuntStars() {
+  return (
+    <span aria-hidden="true" data-testid="nav-product-hunt-stars" className="mt-1 flex items-center gap-px">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <svg key={i} viewBox="0 0 24 24" width="11" height="11" focusable="false" className="shrink-0">
+          <path
+            fill="#DA552F"
+            d="M12 2.6l2.85 5.9 6.5.85-4.75 4.5 1.2 6.45L12 17.2l-5.8 3.1 1.2-6.45-4.75-4.5 6.5-.85z"
+          />
+        </svg>
+      ))}
+    </span>
+  );
+}
+
 /**
  * The Product Hunt review row, under the referral entry, on Dapta's own builds
  * only (a fork never links to dForms' page). External like Docs: a new tab,
  * the trailing arrow, "(opens in a new tab)" read after its name. A light
  * Product Hunt orange tint sets it apart the way "Connect your agent" is in
- * green. The open rail reads "Like dForms?" over "Review on Product Hunt", so
- * the visible words are its name; the tooltip is the full sentence. Collapsed
- * to 64px, the mark alone, the full sentence as its tooltip and name.
+ * green. The open rail reads "Like dForms?" over "Review on Product Hunt" (in
+ * semibold), over five orange stars; the stars are hidden from assistive tech,
+ * so the visible words are its name; the tooltip is the full sentence. A
+ * little taller than its neighbours (py-3). Collapsed to 64px, the mark alone,
+ * the full sentence as its tooltip and name.
  * Clicking records `product_hunt_review_clicked`.
  */
 function ProductHuntNavEntry({
@@ -562,7 +580,7 @@ function ProductHuntNavEntry({
         onNavigate?.();
       }}
       className={[
-        navRowClass(collapsed, 'idle'),
+        navRowClass(collapsed, 'idle', 'py-3'),
         // Product Hunt orange (#da552f), kept light: ink letters stay ink.
         'bg-[#da552f]/[0.07] text-foreground ring-1 ring-inset ring-[#da552f]/30 hover:bg-[#da552f]/[0.13] hover:text-foreground',
       ].join(' ')}
@@ -571,15 +589,17 @@ function ProductHuntNavEntry({
       {collapsed ? (
         <span className="sr-only">{m.title}</span>
       ) : (
-        // Two lines, so the label gets the row's whole width: the lead and the
-        // external arrow on top, the label under them on one line (it fits the
-        // 240px rail and the 280px drawer in both languages).
+        // Three lines, so the label gets the row's whole width: the lead and
+        // the external arrow on top, the label under them on one line (it fits
+        // the 240px rail and the 280px drawer in both languages), the stars
+        // at the foot.
         <span className="flex min-w-0 flex-1 flex-col leading-tight">
           <span className="flex items-center gap-2 text-2xs font-medium text-muted-foreground">
             <span>{m.lead} </span>
             <i aria-hidden className="pi pi-external-link ml-auto shrink-0" style={{ fontSize: 11 }} />
           </span>
-          <span className="truncate whitespace-nowrap text-[13px] font-medium">{m.label}</span>
+          <span className="truncate whitespace-nowrap text-[13px] font-semibold">{m.label}</span>
+          <ProductHuntStars />
         </span>
       )}
       <span className="sr-only"> {newTab}</span>

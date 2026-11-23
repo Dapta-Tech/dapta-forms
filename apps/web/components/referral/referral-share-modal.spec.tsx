@@ -257,10 +257,20 @@ describe('ReferralShareModal: the colour', () => {
     expect(body('.rb-dialog-scroll')).toMatch(/overflow-y: auto;/);
   });
 
-  it('a green glow behind the header', async () => {
+  it('sits on the theme\'s plain card: no green glow or tint behind the header or on the panel', async () => {
     const q = await mount();
-    expect(q('referral-modal')!.className).toContain('rb-dialog-body');
-    expect(body('.rb-dialog-body')).toMatch(/radial-gradient\([\s\S]*var\(--signal\)/);
+    const panel = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(panel.className).toContain('bg-card');
+    expect(panel.className).not.toContain('bg-popover');
+    expect(q('referral-modal')!.className).not.toContain('rb-dialog-body');
+    expect(css).not.toContain('.rb-dialog-body');
+    expect(css).not.toContain('radial-gradient');
+    const dialog = body('.rb-dialog');
+    expect(dialog).not.toMatch(/background/);
+    // The green stays on the ring only: the drop shadow is neutral.
+    const shadow = dialog.slice(dialog.indexOf('box-shadow:'));
+    expect(shadow).toMatch(/0 0 0 1px var\(--rb-ring\)/);
+    expect(shadow.replace('var(--rb-ring)', '')).not.toMatch(/--signal/);
   });
 
   it('the step numbers are green circles with ink numbers', async () => {

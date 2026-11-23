@@ -103,6 +103,10 @@ describe('AttributionSetting, referral program on, locked', () => {
     const pill = q('badge-pill')!;
     expect(pill.lastElementChild!.textContent).toBe('Made with dForms');
     expect(pill.children).toHaveLength(2); // the mark, then the label
+    // Neutral, as the real public pill: the card ground and the normal border, no green chip.
+    expect(pill.className).toContain('bg-card');
+    expect(pill.className).toContain('border-border');
+    expect(pill.className).not.toContain('rb-chip');
     expect(lock.textContent).toContain('is gone from every workspace you own');
     expect(q('attribution-referral-lock-progress')!.textContent).toBe('3 of 5 joined');
     expect(lock.querySelector('[role="progressbar"]')!.getAttribute('aria-valuenow')).toBe('3');

@@ -11,6 +11,8 @@
    A dForms green beam runs around the strip's edge (`.rb-beam`, end of the
    strip block): it is the strip's frame, so the strip has no bottom border of
    its own and the heat lives in the bar, the tip, the pill and the flag.
+   The strip itself is a soft green bar: dForms green mixed into the card
+   (`--rb-tint`), a touch more on ink, where the same mix would read grey.
 
    The heat (`data-heat`: cold at 0, warm on the way, hot at one to go) is set
    on the banner and on every `.rb-track`, so the same bar works in the dialog.
@@ -23,6 +25,8 @@
 
 .rb,
 .rb-theme {
+  /* The plain card: the dialog's and the celebration's ground. The strip
+     tints its own below (`.rb`). */
   --rb-bg: var(--card);
   --rb-ink: var(--foreground);
   --rb-ink-2: var(--muted-foreground);
@@ -53,9 +57,17 @@
 }
 
 .rb {
+  /* The strip's ground (after the shared block, so it wins there): a soft
+     dForms green bar in either theme. Ink letters stay 16:1 on paper (12%)
+     and 11.7:1 on ink (14%); the muted ones 8.8:1 and 5.1:1. */
+  --rb-tint: 12%;
+  --rb-bg: color-mix(in srgb, var(--signal) var(--rb-tint), var(--card));
   position: relative;
   container-name: rb;
   container-type: inline-size;
+}
+[data-theme='dark'] .rb {
+  --rb-tint: 14%;
 }
 
 .rb-strip {
@@ -183,7 +195,9 @@
 }
 
 /* The replica of `.pf__attribution-link` (the mark, the label, the round
-   shape), at the strip's size. */
+   shape, its neutral card ground and border), at the strip's size. On the
+   green strip it reads as the real badge does on a form. Every `BadgePill`
+   wears it: the banner, the dialog's mini form and the celebration. */
 .rb-pill {
   position: relative;
   display: inline-flex;
@@ -198,25 +212,11 @@
   font-size: 12.5px;
   font-weight: 500;
   line-height: 1.1;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 999px;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.14);
-}
-/* The badge as a chip of its own: a soft dForms green ground and rim, so it
-   stands out from the strip, the dialog and the setting around it. Every
-   `BadgePill` wears it (the banner, the dialog's mini form, the celebration)
-   and so does the badge switch's replica (`rb-chip`). Ink letters on it:
-   15:1 on paper and 12:1 on ink. A touch more green on ink, where the same mix
-   would read grey. */
-.rb-pill,
-.rb-chip {
-  --rb-chip-mix: 16%;
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--signal) var(--rb-chip-mix), var(--card));
-  border: 1px solid color-mix(in srgb, var(--signal) 38%, transparent);
-}
-[data-theme='dark'] .rb-pill,
-[data-theme='dark'] .rb-chip {
-  --rb-chip-mix: 22%;
 }
 .rb-pill-mark {
   flex: none;
@@ -495,7 +495,7 @@
   border-radius: 5px;
   background: var(--primary);
 }
-/* Highlighted: a fire ring pulsing round the green chip ("this one"). With
+/* Highlighted: a fire ring pulsing round the pill ("this one"). With
    reduced motion it stays, still. */
 .rb-mock .rb-mock-pill {
   align-self: center;
@@ -511,8 +511,8 @@
   height: 10px;
 }
 
-/* ── The referral dialog: framed by the banner's beam, a green glow behind
-   its header ── */
+/* ── The referral dialog: framed by the banner's beam, on the theme's plain
+   card (no green wash behind it) ── */
 .rb-dialog {
   --rb-beam-width: 2px;
   overflow: hidden;
@@ -520,22 +520,12 @@
   border: 1px solid color-mix(in srgb, var(--signal) 45%, var(--border));
   box-shadow:
     0 0 0 1px var(--rb-ring),
-    0 24px 60px -18px color-mix(in srgb, var(--signal) 35%, transparent),
     0 10px 30px -10px rgba(0, 0, 0, 0.25);
 }
 /* The panel clips the beam to its corners; this inner box scrolls. */
 .rb-dialog-scroll {
   max-height: calc(100dvh - 2rem);
   overflow-y: auto;
-}
-.rb-dialog-body {
-  background: radial-gradient(
-      120% 190px at 50% 0%,
-      color-mix(in srgb, var(--signal) 22%, transparent),
-      color-mix(in srgb, var(--signal) 6%, transparent) 60%,
-      transparent
-    )
-    no-repeat;
 }
 /* The three steps, numbered on dForms green: ink on it, 10:1. */
 .rb-step {
