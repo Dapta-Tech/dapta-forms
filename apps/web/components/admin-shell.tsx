@@ -38,6 +38,8 @@ import {
 } from '@/components/announcement/announcement-client';
 import { AnnouncementModal } from '@/components/announcement/announcement-modal';
 import { ReferralShareModal, fillReferral } from '@/components/referral/referral-share-modal';
+import { ReferralBanner } from '@/components/referral/referral-banner';
+import type { ReferralSurface } from '@/components/referral/use-referral-copy';
 import type { Workspace } from '@/lib/admin-api';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
@@ -522,6 +524,12 @@ export interface ShellReferral {
   link: string;
   count: number;
   goal: number;
+  /**
+   * The top banner, while the API shows it (`referralBannerVisible`), with the
+   * badge's localized label (`growth.madeWith`) for its replica of the pill.
+   * Absent or null: no banner.
+   */
+  banner?: { badgeLabel: string } | null;
 }
 
 export interface ShellUser {
@@ -569,10 +577,17 @@ export function AdminShell({
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [referralOpen, setReferralOpen] = useState(false);
+  // Where the share modal was opened from, for its copy and share events.
+  const [referralSurface, setReferralSurface] = useState<ReferralSurface>('menu');
   // From the drawer, the drawer closes first: the dialog belongs over the page,
   // not over a drawer that would keep the page inert under it.
   const openReferral = () => {
     setDrawerOpen(false);
+    setReferralSurface('menu');
+    setReferralOpen(true);
+  };
+  const shareFromBanner = () => {
+    setReferralSurface('banner');
     setReferralOpen(true);
   };
   const drawerRef = useRef<HTMLElement>(null);
@@ -1021,6 +1036,19 @@ export function AdminShell({
       </aside>
 
       <main inert={drawerOpen || undefined} className="min-w-0 flex-1 bg-background">
+        {/* The referral banner, at the top of the main area. Not in the form
+            builder: it owns the full viewport height (`h-[100dvh]`), and a
+            strip above it would push its bottom edge off screen. */}
+        {referral?.banner && !studio ? (
+          <ReferralBanner
+            link={referral.link}
+            count={referral.count}
+            goal={referral.goal}
+            badgeLabel={referral.banner.badgeLabel}
+            m={messages.referral}
+            onShare={shareFromBanner}
+          />
+        ) : null}
         {children}
       </main>
       {announcement?.copy ? (
@@ -1043,6 +1071,7 @@ export function AdminShell({
           count={referral.count}
           goal={referral.goal}
           m={messages.referral}
+          surface={referralSurface}
         />
       ) : null}
     </div>
