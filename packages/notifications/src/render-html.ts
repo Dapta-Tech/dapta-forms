@@ -39,10 +39,20 @@ const ON_ACCENT = "#0b2e1a";
  * means the deployment has the growth loop off, and nothing is drawn.
  */
 export interface EmailCta {
+  /** The line over the button; blank draws none. */
   question: string;
   action: string;
   href: string;
+  /**
+   * Secondary links under the button (the referral email's share channels),
+   * after `linksLead`. Only http(s) and `mailto:` links are drawn.
+   */
+  links?: { label: string; href: string }[];
+  linksLead?: string;
 }
+
+/** A link the CTA row may draw: http(s), or `mailto:` for a share-by-email link. */
+const SAFE_LINK = /^(https?:\/\/|mailto:)/i;
 
 /** Where the dForms wordmark PNG lives under the web app (`apps/web/public`). */
 export const EMAIL_LOGO_PATH = "/email/dforms-wordmark.png";
@@ -186,13 +196,30 @@ export function emailDocument(input: {
 function ctaRow(cta: EmailCta | null | undefined): string {
   if (!cta || !/^https?:\/\//i.test(cta.href.trim())) return "";
   const href = escapeHtml(cta.href);
+  const question = cta.question.trim()
+    ? `<p style="margin:0 0 14px;font-size:14px;line-height:1.5;color:${MUTED};">${escapeHtml(cta.question)}</p>`
+    : "";
+  const links = (cta.links ?? []).filter((l) => SAFE_LINK.test(l.href.trim()));
+  const linksRow =
+    links.length > 0
+      ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.5;color:${MUTED};">` +
+        (cta.linksLead ? `${escapeHtml(cta.linksLead)} ` : "") +
+        links
+          .map(
+            (l) =>
+              `<a href="${escapeHtml(l.href)}" target="_blank" rel="noopener" style="color:${LINK};font-weight:600;text-decoration:underline;">${escapeHtml(l.label)}</a>`,
+          )
+          .join(" &middot; ") +
+        `</p>`
+      : "";
   return (
     `<tr><td class="dfm-pad" align="center" style="border-top:1px solid ${HAIRLINE};padding:24px 32px 28px;font-family:${FONT_STACK};">` +
-    `<p style="margin:0 0 14px;font-size:14px;line-height:1.5;color:${MUTED};">${escapeHtml(cta.question)}</p>` +
+    question +
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin:0 auto;">` +
     `<tr><td align="center" bgcolor="${ACCENT}" style="border-radius:10px;background:${ACCENT};">` +
     `<a href="${href}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 26px;font-family:${FONT_STACK};font-size:15px;font-weight:700;line-height:1.2;color:${ON_ACCENT};text-decoration:none;border-radius:10px;">${escapeHtml(cta.action)}</a>` +
     `</td></tr></table>` +
+    linksRow +
     `</td></tr>`
   );
 }
