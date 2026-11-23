@@ -10,6 +10,7 @@ The referral program rewards a person for bringing new people to dForms: five re
 - **New-person detection is derived, not stored.** A person is new when no member row exists for their subject outside staff access grants, and a claim is accepted only while their earliest member row is under 10 minutes old. No person flag is added.
 - **Scope of reads.** Referral state is read and written only for the caller about themselves. The one cross-person read is the unlock rule, which asks whether any owner of a workspace holds a referral unlock; it exposes a boolean, never who referred whom.
 - **First credit wins.** The referee person is unique in `referral`, so a person is credited once, and rows are never deleted when a person leaves a workspace.
+- **Teammate invites are recorded by address.** The identity provider's invitations carry no inviter, so `referral_invite` keeps the first inviter (a person) of each invited address, with the workspace it was sent from for the record only. It is read once, on the invitee's first sign-in, to credit that inviter; an invite credit judges newness as "no bound member row before this sign-in", because an adopted invite row keeps the invite's age. This is the second cross-person read, and it writes a referral, never exposes one.
 
 ## Consequences
 

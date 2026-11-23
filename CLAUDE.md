@@ -138,8 +138,8 @@ layer, run this before you push.
    account), so an announcement closed in one workspace stays closed in the
    others. It holds nothing about any account and is never read for anyone
    but the caller.
-   The referral state (`referrer`, `referral`) is the second such exception, keyed by the
-   person too ([ADR 0005](docs/adr/0005-referral-state-is-keyed-by-person.md)).
+   The referral state (`referrer`, `referral`, `referral_invite`) is the second such
+   exception, keyed by the person too ([ADR 0005](docs/adr/0005-referral-state-is-keyed-by-person.md)).
 4. **Config is a versioned zod schema — extend, never break v1.** The form config
    contract is `formConfigSchema` in `packages/types/src/index.ts` with
    `version: z.literal(1)`. Add optional fields; do not remove or repurpose

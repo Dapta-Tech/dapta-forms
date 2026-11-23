@@ -452,6 +452,14 @@ export const referral = sqliteTable(
   }),
 );
 
+/** Who invited which address as a teammate (see 0033 and the Postgres twin). */
+export const referralInvite = sqliteTable('referral_invite', {
+  email: text('email').primaryKey(),
+  inviterPersonId: text('inviter_person_id').notNull(),
+  accountId: text('account_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -471,4 +479,5 @@ export const sqliteSchema = {
   announcementState,
   referrer,
   referral,
+  referralInvite,
 };

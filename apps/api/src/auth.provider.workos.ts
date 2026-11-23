@@ -25,13 +25,15 @@
 import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Db, AccountRole } from '@quill/db';
-import { deriveUniqueHandle, insertAccountWithShortCode, sql } from '@quill/db';
+import { deriveUniqueHandle, hasBoundMembership, insertAccountWithShortCode, sql } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 import {
   header,
   maybeSeedDemoForm,
+  notifyNewPerson,
   notifySignup,
   type AuthProvider,
+  type NewPersonObserver,
   type ResolvedHost,
   type ReqLike,
   type SignupObserver,
@@ -97,6 +99,11 @@ export class WorkOsAuthProvider implements AuthProvider {
      * one local account (pre-0015 shape; still what tests and forks get).
      */
     private readonly projection?: WorkspaceProjection,
+    /**
+     * Optional; a person's first sign-in on this fallback path (see
+     * `NewPersonObserver`). The projection path has its own.
+     */
+    private readonly onNewPerson?: NewPersonObserver,
   ) {
     if (!env.JWT_SECRET) {
       // Defensive: the factory already guards this, but never run without a key.
@@ -221,6 +228,10 @@ export class WorkOsAuthProvider implements AuthProvider {
 
     const email = typeof claims.email === 'string' ? claims.email : null;
     const displayName = typeof claims.name === 'string' ? claims.name : null;
+    // Read before this sign-in writes a row: a person with no bound member row
+    // anywhere (staff grants aside) is new, whatever the age of the invite row
+    // adopted below. Asked only when someone observes new people.
+    const newPerson = this.onNewPerson ? !(await hasBoundMembership(this.db, sub)) : false;
 
     // Adopt a pending invite: a member invited by email exists with no external_id
     // yet. Bind this login's `sub` to it (keeping its granted role) and activate,
@@ -268,6 +279,7 @@ export class WorkOsAuthProvider implements AuthProvider {
             fromInvite: true,
           });
         }
+        if (newPerson) await notifyNewPerson(this.onNewPerson, this.log, { accountId, memberId: invited.id, email });
         return invited.id;
       }
     }
@@ -308,6 +320,7 @@ export class WorkOsAuthProvider implements AuthProvider {
       isFirstMember: role === 'owner',
       fromInvite: false,
     });
+    if (newPerson && row.id === id) await notifyNewPerson(this.onNewPerson, this.log, { accountId, memberId: row.id, email });
     return row.id;
   }
 }

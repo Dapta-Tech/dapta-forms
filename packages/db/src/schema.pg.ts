@@ -489,6 +489,18 @@ export const referral = pgTable(
   }),
 );
 
+/**
+ * Who invited which address as a teammate (see 0033). The address (trimmed,
+ * lowercased) is the primary key, so the first inviter keeps it. The identity
+ * service's invitation has no inviter: this is the only record of one.
+ */
+export const referralInvite = pgTable('referral_invite', {
+  email: text('email').primaryKey(),
+  inviterPersonId: text('inviter_person_id').notNull(),
+  accountId: text('account_id').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+});
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -508,4 +520,5 @@ export const pgSchema = {
   announcementState,
   referrer,
   referral,
+  referralInvite,
 };
