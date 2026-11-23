@@ -30,6 +30,26 @@ _Avoid_: Impersonation, guest membership
 Someone who answers a published form. Never a member by virtue of answering.
 _Avoid_: User, lead, contact
 
+**Person**:
+One human across workspaces, identified by the identity provider's subject. A person has a member in each workspace they belong to; there is no person table, and a person is known only through those member rows.
+_Avoid_: User, account holder
+
+**Referral link**:
+A person's personal link to dForms, carrying a short random code. Whoever signs up through it is credited to that person.
+_Avoid_: Invite link, affiliate link
+
+**Referrer**:
+The person who owns a referral link. Their referral state (code, unlock, banner and nudge timestamps) is kept per person, not per workspace.
+_Avoid_: Affiliate, sponsor
+
+**Referral**:
+One new person credited to one referrer, by link or by a teammate invite. A person is credited at most once, and the first credit wins.
+_Avoid_: Conversion, signup
+
+**Referral unlock**:
+What a referrer earns on reaching five referrals: the badge can be hidden on every workspace they own, with no expiry. Unlike a paid verdict, it never lapses.
+_Avoid_: Reward, perk
+
 ### How agents get in
 
 **API key**:
