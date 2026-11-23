@@ -17,6 +17,10 @@ export AUTH_PROVIDER="local"
 # this instance refuses to start whenever the developer's :3000 is already up —
 # exactly the situation this script exists for. See apps/web/next.config.mjs.
 export NEXT_DIST_DIR=".next-qa"
+# The referral program stays OFF by default: its banner sits on top of every
+# admin page the other specs drive. Boot with REFERRAL_PROGRAM=true for
+# qa/e2e/v21-referral-happy-path.spec.ts, which skips while it is off.
+export REFERRAL_PROGRAM="${REFERRAL_PROGRAM:-false}"
 
 pnpm run build:packages
 pnpm run db:migrate
