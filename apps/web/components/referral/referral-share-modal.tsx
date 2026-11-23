@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { referralShareLinks, type FormsMessages, type ReferralShareChannel } from '@quill/shared';
 import { Modal } from '@/components/modal';
 import { buttonVariants } from '@/components/ui/button';
 import { captureEvent } from '@/lib/product-analytics';
+import { ReferralLinkField } from './referral-link-field';
 
 export type ReferralMessages = FormsMessages['admin']['chrome']['referral'];
 
@@ -39,9 +40,6 @@ const CHANNELS: { channel: ReferralShareChannel; icon: ReactNode }[] = [
   { channel: 'x', icon: <XMark /> },
 ];
 
-/** How long "Copied" stays on the button before it reads "Copy link" again. */
-const COPIED_MS = 2000;
-
 /**
  * The referral link's share dialog, opened from the left-menu entry: what the
  * program is, the person's progress, their link with a copy button, and
@@ -63,32 +61,6 @@ export function ReferralShareModal({
   goal: number;
   m: ReferralMessages;
 }) {
-  const [copied, setCopied] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-  useEffect(() => {
-    if (!open) setCopied(false);
-  }, [open]);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-    } catch {
-      // No clipboard (an insecure origin, a denied permission): hand the link
-      // over selected, so the keyboard shortcut copies it.
-      inputRef.current?.focus();
-      inputRef.current?.select();
-      return;
-    }
-    setCopied(true);
-    captureEvent('referral_link_copied');
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), COPIED_MS);
-  };
-
   const shares = referralShareLinks(link, m.share);
   const values = { count, goal };
   const labelId = 'referral-share-title';
@@ -132,31 +104,14 @@ export function ReferralShareModal({
           </p>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <label htmlFor="referral-link-input" className="text-sm font-medium text-foreground">
-            {m.linkLabel}
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              ref={inputRef}
-              id="referral-link-input"
-              data-testid="referral-link"
-              readOnly
-              value={link}
-              onFocus={(e) => e.currentTarget.select()}
-              className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm text-foreground"
-            />
-            <button
-              type="button"
-              onClick={copy}
-              data-testid="referral-copy"
-              aria-live="polite"
-              className={`${buttonVariants({ variant: 'default' })} h-11 shrink-0`}
-            >
-              {copied ? m.copied : m.copy}
-            </button>
-          </div>
-        </div>
+        <ReferralLinkField
+          link={link}
+          label={m.linkLabel}
+          copy={m.copy}
+          copied={m.copied}
+          inputId="referral-link-input"
+          resetKey={open}
+        />
 
         <div className="flex flex-col gap-2">
           <p className="text-sm font-medium text-foreground">{m.shareOn}</p>

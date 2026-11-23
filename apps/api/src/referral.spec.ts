@@ -116,7 +116,7 @@ describe('/v1/me.referral, program on', () => {
   it('carries the link, a count of 0 and the goal of 5', async () => {
     const member = await addMember(acme, 'ana@example.com', { externalId: 'user_ana' });
     const referral = await referralOf(crud(ON), as(acme, member));
-    expect(referral).toEqual({ enabled: true, link: expect.any(String), count: 0, goal: 5, campaignActive: true });
+    expect(referral).toEqual({ enabled: true, link: expect.any(String), count: 0, goal: 5, campaignActive: true, unlocked: false });
     expect(referral.link).toMatch(/^https:\/\/landing\.example\.test\/\?ref=[a-z0-9]{8}$/);
   });
 
@@ -434,7 +434,14 @@ describe('/v1/me.referral, the campaign window', () => {
     for (const now of [ENDS, ENDS + 86_400_000]) {
       await db.run(sql`DELETE FROM member WHERE email = 'ana@example.com'`);
       const referral = await campaignOf({ ...ON, campaignEndsAt: ENDS, now: () => now });
-      expect(referral).toEqual({ enabled: true, link: expect.any(String), count: 0, goal: 5, campaignActive: false });
+      expect(referral).toEqual({
+        enabled: true,
+        link: expect.any(String),
+        count: 0,
+        goal: 5,
+        campaignActive: false,
+        unlocked: false,
+      });
     }
   });
 

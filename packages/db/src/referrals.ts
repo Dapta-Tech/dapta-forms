@@ -262,3 +262,79 @@ export async function personNames(db: Db, personId: string): Promise<PersonNameR
     email: r.email == null ? null : String(r.email),
   }));
 }
+
+/**
+ * Mark the person referral unlocked at `now`; true only for the call that
+ * wrote it. `unlocked_at` is set once (`WHERE unlocked_at IS NULL`), so two
+ * credits racing to the goal unlock the person exactly once. The person needs
+ * a referrer row (`ensureReferrer`); without one nothing is written.
+ */
+export async function markReferralUnlocked(db: Db, personId: string, now: number): Promise<boolean> {
+  const row = await db.get<{ person_id: string }>(
+    sql`UPDATE referrer SET unlocked_at = ${now}
+        WHERE person_id = ${personId} AND unlocked_at IS NULL
+        RETURNING person_id`,
+  );
+  return Boolean(row);
+}
+
+/**
+ * The member rows that make a person an OWNER of a workspace: an active owner
+ * row bound to them (their identity service id, or, for an `email:` key from
+ * local development, their email on a row with no id). An invitation not yet
+ * accepted and a staff access grant are not ownership.
+ */
+function ownedAccountIdsSql(personId: string) {
+  const email = personId.startsWith(EMAIL_KEY) ? personId.slice(EMAIL_KEY.length) : null;
+  return email
+    ? sql`SELECT account_id FROM member
+          WHERE (external_id IS NULL OR external_id = '') AND lower(trim(email)) = ${email}
+            AND role = 'owner' AND status = 'active' AND access_grant IS NULL`
+    : sql`SELECT account_id FROM member
+          WHERE external_id = ${personId}
+            AND role = 'owner' AND status = 'active' AND access_grant IS NULL`;
+}
+
+/**
+ * Hide the attribution, on behalf of a referral-unlocked person, on the
+ * workspaces they own that never made an explicit choice
+ * (`hide_attribution_chosen_at IS NULL`, 0032). `accountId` narrows it to one
+ * workspace (one just created for them). A person who is not unlocked changes
+ * nothing, so it is safe to call from any path that creates a workspace.
+ * Returns the workspaces this call hid. The choice stays unstamped: it is
+ * dForms acting for them, and a later save through the switch still wins.
+ */
+export async function applyReferralUnlock(
+  db: Db,
+  personId: string,
+  opts: { accountId?: string } = {},
+): Promise<string[]> {
+  const only = opts.accountId ? sql`AND id = ${opts.accountId}` : sql``;
+  const rows = await db.all<{ id: string }>(
+    sql`UPDATE account SET hide_attribution = 1
+        WHERE hide_attribution = 0 AND hide_attribution_chosen_at IS NULL ${only}
+          AND id IN (${ownedAccountIdsSql(personId)})
+          AND EXISTS (SELECT 1 FROM referrer WHERE person_id = ${personId} AND unlocked_at IS NOT NULL)
+        RETURNING id`,
+  );
+  return rows.map((r) => String(r.id));
+}
+
+/**
+ * Is this workspace referral unlocked: does any of its owners (an active,
+ * bound owner row) hold a referral unlock? No expiry. The one cross-person
+ * read of referral state (ADR 0005), and it answers a boolean only.
+ */
+export async function isAccountReferralUnlocked(db: Db, accountId: string): Promise<boolean> {
+  const row = await db.get<{ one: number }>(
+    sql`SELECT 1 AS one FROM member m
+        JOIN referrer r ON r.person_id = CASE
+            WHEN m.external_id IS NULL OR m.external_id = '' THEN 'email:' || lower(trim(m.email))
+            ELSE m.external_id
+          END
+        WHERE m.account_id = ${accountId} AND m.role = 'owner' AND m.status = 'active'
+          AND m.access_grant IS NULL AND r.unlocked_at IS NOT NULL
+        LIMIT 1`,
+  );
+  return Boolean(row);
+}

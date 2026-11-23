@@ -232,6 +232,11 @@ export type MeReferral =
        * that does not send it still parses.
        */
       campaignActive?: boolean;
+      /**
+       * The person reached the goal: the badge is gone from every workspace
+       * they own, for life. Optional so an older API still parses.
+       */
+      unlocked?: boolean;
     };
 
 export interface Me {
@@ -928,6 +933,11 @@ export interface AttributionStatus {
    * API older than the field reads as seen (the old wording).
    */
   verdictSeen?: boolean;
+  /**
+   * The workspace holds a referral unlock (an owner of it reached the goal):
+   * the switch works, with no expiry. Optional: an older API reads as false.
+   */
+  referralUnlocked?: boolean;
 }
 
 export const adminApi = {

@@ -44,7 +44,15 @@ describe('attribution switch', () => {
       hideAttribution: false,
       paid: null,
       paidCheckedAt: null,
+      chosenAt: null,
     });
+  });
+
+  it('stamps an explicit choice, in either direction', async () => {
+    await setHideAttribution(db, accountId, false, 1_700_000_000_000);
+    expect(await getAttributionSwitch(db, accountId)).toMatchObject({ hideAttribution: false, chosenAt: 1_700_000_000_000 });
+    await setHideAttribution(db, accountId, true, 1_700_000_100_000);
+    expect(await getAttributionSwitch(db, accountId)).toMatchObject({ hideAttribution: true, chosenAt: 1_700_000_100_000 });
   });
 
   it('answers null for an account that does not exist', async () => {

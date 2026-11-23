@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import type { FormBranding, FormConfig, FormCover, FormLabels, FormLanguage, FormLayout } from '@quill/engine';
-import { getMessages } from '@quill/shared';
+import { REFERRAL_GOAL, getMessages } from '@quill/shared';
 import {
   DEFAULT_FORM_FONT,
   FORM_BACKGROUND_STYLES,
@@ -33,6 +33,8 @@ import { ThemePresets } from './theme-presets';
 import { PreviewFrame, type PreviewDevice } from './preview-frame';
 import { cn } from '@/lib/cn';
 import type { AttributionStatus } from '@/lib/admin-api';
+import { fillLock, type ReferralLock } from '@/lib/referral-lock';
+import { ReferralBadgeLock } from '@/components/referral/referral-badge-lock';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { saveAttributionAction } from '@/app/admin/account/brand-kit/actions';
 import { DAPTA_SUBSCRIPTION_REQUIRED } from '@/app/admin/account/brand-kit/attribution-codes';
@@ -109,6 +111,8 @@ export function DesignPanel({
     status: AttributionStatus;
     canEdit: boolean;
     daptaAiUrl: string | null;
+    /** The owner's referral progress while the program is on: shown while locked. */
+    referral?: ReferralLock | null;
     onChange: (next: AttributionStatus) => void;
   } | null;
   m: EditorMessages;
@@ -1112,6 +1116,12 @@ function SharePreview({
  * is the workspace's call too). Lapsed (stored off, no longer paid): the
  * attribution is showing again, so the size is selected, with the lapsed
  * sentence; any size click shows it for good.
+ *
+ * Referral program on and the reader an owner (`referral`): while Off is
+ * locked, the subscribers note gives way to "Invite 5 or pay for Dapta AI"
+ * with the pill replica, the progress bar and the link (`ReferralBadgeLock`),
+ * as in Brand kit. A workspace unlocked by a referral offers Off with one
+ * line saying why.
  */
 function BadgeControl({
   size,
@@ -1126,18 +1136,23 @@ function BadgeControl({
     status: AttributionStatus;
     canEdit: boolean;
     daptaAiUrl: string | null;
+    referral?: ReferralLock | null;
     onChange: (next: AttributionStatus) => void;
   };
   locale: string;
   d: EditorMessages['design'];
 }) {
-  const { status, canEdit, daptaAiUrl, onChange } = attribution;
-  const a = getMessages(locale === 'es' ? 'es' : 'en').admin.attributionSetting;
+  const { status, canEdit, daptaAiUrl, onChange, referral = null } = attribution;
+  const messages = getMessages(locale === 'es' ? 'es' : 'en');
+  const a = messages.admin.attributionSetting;
   const [pending, start] = useTransition();
   const [error, setError] = useState<'failed' | 'notSubscribed' | null>(null);
   const mode = attributionMode(status);
   const off = mode === 'off';
-  const subscribersOnly = a.subscribersOnly.replace('{product}', a.product);
+  // Locked with the referral program on: the way out is invite or pay.
+  const lock = !status.canHide && referral ? referral : null;
+  const lockedLine = referral ? fillLock(a.referralLocked, { goal: referral.goal, product: a.product }) : null;
+  const subscribersOnly = lock && lockedLine ? lockedLine : a.subscribersOnly.replace('{product}', a.product);
   const [before, after = ''] = a.subscribersOnly.split('{product}');
 
   const save = (hide: boolean, then?: () => void) =>
@@ -1192,7 +1207,16 @@ function BadgeControl({
             {a.lapsed}
           </p>
         ) : null}
-        {!status.canHide ? (
+        {lock ? (
+          <ReferralBadgeLock
+            lock={lock}
+            daptaAiUrl={daptaAiUrl}
+            madeWith={messages.growth.madeWith}
+            m={a}
+            idPrefix="design-badge"
+            testId="design-badge-referral-lock"
+          />
+        ) : !status.canHide ? (
           <p data-testid="design-badge-subscribers-only" className="text-xs text-muted-foreground">
             {before}
             {daptaAiUrl ? (
@@ -1205,6 +1229,11 @@ function BadgeControl({
             {after}
           </p>
         ) : null}
+        {status.canHide && status.referralUnlocked ? (
+          <p data-testid="design-badge-referral-unlocked" className="text-xs text-muted-foreground">
+            {fillLock(a.referralUnlocked, { goal: referral?.goal ?? REFERRAL_GOAL, product: a.product })}
+          </p>
+        ) : null}
         {!canEdit && status.canHide ? (
           <p data-testid="design-badge-read-only" className="text-xs text-muted-foreground">
             {a.readOnly}
@@ -1212,7 +1241,7 @@ function BadgeControl({
         ) : null}
         {error ? (
           <p role="alert" data-testid="design-badge-error" className="text-xs text-destructive">
-            {error === 'notSubscribed' ? a.notSubscribed : a.saveFailed}
+            {error === 'notSubscribed' ? (lockedLine ?? a.notSubscribed) : a.saveFailed}
           </p>
         ) : null}
       </div>

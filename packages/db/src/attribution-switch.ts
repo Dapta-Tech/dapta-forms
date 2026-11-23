@@ -13,6 +13,10 @@
  *
  * Whether a surface shows the attribution is decided from both by
  * `showAttribution` in @quill/shared, never here.
+ *
+ * `hide_attribution_chosen_at` (0032) tells an EXPLICIT choice (a save through
+ * the switch, either way) from the default: a referral unlock hides the
+ * attribution only on a workspace that never chose (`applyReferralUnlock`).
  */
 import { sql, type Db } from './client';
 
@@ -23,6 +27,8 @@ export interface AttributionSwitchRow {
   paid: boolean | null;
   /** Epoch ms the verdict was written, or null. */
   paidCheckedAt: number | null;
+  /** Epoch ms of the workspace's last explicit choice, or null when it never chose. */
+  chosenAt: number | null;
 }
 
 interface RawRow {
@@ -30,6 +36,7 @@ interface RawRow {
   hide_attribution: number | string | null;
   dapta_paid: number | string | null;
   dapta_paid_checked_at: number | string | null;
+  hide_attribution_chosen_at: number | string | null;
 }
 
 function toRow(r: RawRow): AttributionSwitchRow {
@@ -38,21 +45,33 @@ function toRow(r: RawRow): AttributionSwitchRow {
     hideAttribution: Number(r.hide_attribution) === 1,
     paid: r.dapta_paid == null ? null : Number(r.dapta_paid) === 1,
     paidCheckedAt: r.dapta_paid_checked_at == null ? null : Number(r.dapta_paid_checked_at),
+    chosenAt: r.hide_attribution_chosen_at == null ? null : Number(r.hide_attribution_chosen_at),
   };
 }
 
 /** The workspace's switch and cached verdict, by account id (null: no such account). */
 export async function getAttributionSwitch(db: Db, accountId: string): Promise<AttributionSwitchRow | null> {
   const r = await db.get<RawRow>(
-    sql`SELECT id, hide_attribution, dapta_paid, dapta_paid_checked_at
+    sql`SELECT id, hide_attribution, dapta_paid, dapta_paid_checked_at, hide_attribution_chosen_at
         FROM account WHERE id = ${accountId} LIMIT 1`,
   );
   return r ? toRow(r) : null;
 }
 
-/** Store the workspace's choice. Whether it is honoured is the render's call. */
-export async function setHideAttribution(db: Db, accountId: string, hide: boolean): Promise<void> {
-  await db.run(sql`UPDATE account SET hide_attribution = ${hide ? 1 : 0} WHERE id = ${accountId}`);
+/**
+ * Store the workspace's EXPLICIT choice, stamped `now` as made: from here on a
+ * referral unlock leaves it alone. Whether it is honoured is the render's call.
+ */
+export async function setHideAttribution(
+  db: Db,
+  accountId: string,
+  hide: boolean,
+  now: number = Date.now(),
+): Promise<void> {
+  await db.run(
+    sql`UPDATE account SET hide_attribution = ${hide ? 1 : 0}, hide_attribution_chosen_at = ${now}
+        WHERE id = ${accountId}`,
+  );
 }
 
 /** Cache the identity service's paid verdict for one workspace, stamped `now`. */

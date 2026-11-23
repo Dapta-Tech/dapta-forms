@@ -11,7 +11,8 @@ import { ATTRIBUTION_MODE, DB, REFERRAL_UNLOCKS } from './tokens';
 
 /**
  * Where the attribution reads the referral unlock source from: does this
- * workspace hold a referral unlock? Nothing feeds it yet, so the default
+ * workspace hold a referral unlock (any of its owners does)? The app binds
+ * `PersonReferralUnlocks`; the default, for a construction without it,
  * answers false for every workspace and the rule behaves as paid-only.
  */
 export interface ReferralUnlocks {
@@ -36,9 +37,18 @@ export interface AttributionStatus {
    * claims a subscription that did not exist. A boolean only.
    */
   verdictSeen: boolean;
+  /**
+   * The workspace holds a referral unlock (one of its owners invited 5 people):
+   * an unlock source with no expiry. A boolean only, never who or how many.
+   */
+  referralUnlocked: boolean;
 }
 
-/** The stable error code a refused "turn it off" answers with. */
+/**
+ * The stable error code a refused "turn it off" answers with: no unlock source
+ * holds (no fresh paid verdict, no referral unlock). Kept as it was before the
+ * referral source existed, since clients match on it; the message names both.
+ */
 export const DAPTA_SUBSCRIPTION_REQUIRED = 'DAPTA_SUBSCRIPTION_REQUIRED';
 
 /**
@@ -123,6 +133,7 @@ export class AttributionService {
       canHide: canHideAttribution(input),
       showing: showAttribution({ ...input, hideAttribution }),
       verdictSeen: row?.paid != null,
+      referralUnlocked: input.referralUnlocked,
     };
   }
 
@@ -139,7 +150,7 @@ export class AttributionService {
     if (hideAttribution && !canHideAttribution(await this.unlockInput(p.accountId, before))) {
       return { ok: false, reason: DAPTA_SUBSCRIPTION_REQUIRED };
     }
-    await setHideAttribution(this.db, p.accountId, hideAttribution);
+    await setHideAttribution(this.db, p.accountId, hideAttribution, this.now());
     // A save that changes nothing is not a toggle.
     if (before && before.hideAttribution !== hideAttribution) {
       await this.analytics?.captureForMember('attribution_hidden_toggled', p, { hidden: hideAttribution });
