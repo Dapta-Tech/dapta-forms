@@ -15,7 +15,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadServerEnv } from '@quill/config/env';
+import { loadServerEnv, serverEnvSchema } from '@quill/config/env';
 import { createDb, migrate, seed, sql, type Db } from '@quill/db';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
@@ -186,8 +186,27 @@ describe('/v1/me.referral, program off', () => {
 });
 
 describe('referralOptions: the switch, resolved once from the environment', () => {
-  it('is off by default', () => {
+  it('is off when switched off', () => {
     expect(referralOptions({ REFERRAL_PROGRAM: false, PUBLIC_APP_URL: APP }).enabled).toBe(false);
+  });
+
+  it('unset, it is on exactly where the identity service runs (a Dapta deployment)', () => {
+    const iam = { AUTH_PROVIDER: 'workos', IAM_BASE_URL: 'https://iam.example.test' } as const;
+    expect(referralOptions({ PUBLIC_APP_URL: APP, ...iam }).enabled).toBe(true);
+    // A fork, or local development, never shows the campaign unless asked to.
+    expect(referralOptions({ PUBLIC_APP_URL: APP, AUTH_PROVIDER: 'local' }).enabled).toBe(false);
+    expect(referralOptions({ PUBLIC_APP_URL: APP, AUTH_PROVIDER: 'workos' }).enabled).toBe(false);
+    // Explicit wins both ways.
+    expect(referralOptions({ PUBLIC_APP_URL: APP, ...iam, REFERRAL_PROGRAM: false }).enabled).toBe(false);
+    expect(referralOptions({ PUBLIC_APP_URL: APP, AUTH_PROVIDER: 'local', REFERRAL_PROGRAM: true }).enabled).toBe(true);
+  });
+
+  it('reads blank as unset in the environment schema', () => {
+    const base = { DATABASE_URL: 'file:./x.db', AUTH_PROVIDER: 'local' };
+    expect(serverEnvSchema.parse({ ...base }).REFERRAL_PROGRAM).toBeUndefined();
+    expect(serverEnvSchema.parse({ ...base, REFERRAL_PROGRAM: '' }).REFERRAL_PROGRAM).toBeUndefined();
+    expect(serverEnvSchema.parse({ ...base, REFERRAL_PROGRAM: 'false' }).REFERRAL_PROGRAM).toBe(false);
+    expect(serverEnvSchema.parse({ ...base, REFERRAL_PROGRAM: 'true' }).REFERRAL_PROGRAM).toBe(true);
   });
 
   it('links to the landing when the deployment has one, else to the app', () => {

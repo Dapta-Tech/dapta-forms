@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { referralCampaignEndsAt, type ServerEnv } from '@quill/config/env';
+import { referralCampaignEndsAt, referralProgramEnabled, type ServerEnv } from '@quill/config/env';
 import {
   applyReferralUnlock,
   countReferrals,
@@ -26,7 +26,7 @@ import { DB, REFERRAL_OPTIONS } from './tokens';
 
 /** The referral program's switch and where its links point, resolved once from env. */
 export interface ReferralOptions {
-  /** `REFERRAL_PROGRAM`, and a base to link to. Off by default. */
+  /** `REFERRAL_PROGRAM` (`referralProgramEnabled`), and a base to link to. */
   enabled: boolean;
   /** The landing, else the app (`referralLinkBase`). Null only when off. */
   baseUrl: string | null;
@@ -47,14 +47,19 @@ export interface ReferralOptions {
  * to link to, the program stays off rather than handing out a dead link.
  */
 export function referralOptions(
-  env: Pick<ServerEnv, 'REFERRAL_PROGRAM' | 'PUBLIC_APP_URL'> &
-    Partial<Pick<ServerEnv, 'NEXT_PUBLIC_LANDING_URL' | 'REFERRAL_CAMPAIGN_ENDS_AT'>>,
+  env: Pick<ServerEnv, 'PUBLIC_APP_URL'> &
+    Partial<
+      Pick<
+        ServerEnv,
+        'REFERRAL_PROGRAM' | 'IAM_BASE_URL' | 'AUTH_PROVIDER' | 'NEXT_PUBLIC_LANDING_URL' | 'REFERRAL_CAMPAIGN_ENDS_AT'
+      >
+    >,
 ): ReferralOptions {
   // Parsed even with the program off, so a bad value fails before it is turned on.
   const campaignEndsAt = referralCampaignEndsAt(env);
   const baseUrl = referralLinkBase({ landingUrl: env.NEXT_PUBLIC_LANDING_URL, appUrl: env.PUBLIC_APP_URL });
   const end = campaignEndsAt == null ? {} : { campaignEndsAt };
-  return env.REFERRAL_PROGRAM && baseUrl
+  return referralProgramEnabled(env) && baseUrl
     ? { enabled: true, baseUrl, ...end }
     : { enabled: false, baseUrl: null, ...end };
 }

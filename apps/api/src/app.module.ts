@@ -207,7 +207,7 @@ function newPersonObserver(referrals: ReferralService): NewPersonObserver | unde
       useFactory: (env: ServerEnv) => env.ONBOARDING_WIZARD,
       inject: [ENV],
     },
-    // The referral program's switch (REFERRAL_PROGRAM, off by default) and the
+    // The referral program's switch (REFERRAL_PROGRAM; unset = on with the IAM) and the
     // base its links point at, resolved once like the wizard's. The web app
     // reads it off `/v1/me.referral`.
     { provide: REFERRAL_OPTIONS, useFactory: (env: ServerEnv) => referralOptions(env), inject: [ENV] },

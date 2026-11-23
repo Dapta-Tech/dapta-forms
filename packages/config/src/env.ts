@@ -199,13 +199,15 @@ export const serverEnvSchema = z.object({
   ONBOARDING_WIZARD: boolish.default('true'),
 
   // The referral program ("invite 5, remove the badge for life"): every
-  // signed-in person gets a personal referral link in the left menu. OFF by
-  // default, so a fork never shows a Dapta campaign; it is also the one switch
-  // that stops the whole program at once. Resolved ONCE in the API
+  // signed-in person gets a personal referral link in the left menu. Explicit
+  // wins; UNSET means on exactly where the identity service runs
+  // (`referralProgramEnabled`: Dapta's own deployments), and off everywhere
+  // else, so a fork or a local dev never shows a Dapta campaign. `false` is the
+  // one switch that stops the whole program at once. Resolved ONCE in the API
   // (`referralOptions`) and read by the web app off `/v1/me.referral`, never
   // from its own copy. The link points at NEXT_PUBLIC_LANDING_URL when set,
   // else at PUBLIC_APP_URL; with neither, the program stays off.
-  REFERRAL_PROGRAM: blankAsUnset(boolish.default('false')),
+  REFERRAL_PROGRAM: blankAsUnset(boolish.optional()),
   // When the referral CAMPAIGN ends, as an ISO 8601 date-time with a time
   // zone (2026-12-31T23:59:59Z, or -05:00). Unset = no end. After it, only the
   // campaign-scoped surfaces stop (the top banner, the nudge email); the link,
@@ -513,6 +515,19 @@ export function vanityPremiumMode(env: Pick<ServerEnv, 'PREMIUM_FEATURES'>): 'op
  * then, and the projection is what writes the Dapta AI paid verdict.
  */
 export function iamWorkspacesEnabled(env: Pick<ServerEnv, 'IAM_BASE_URL' | 'AUTH_PROVIDER'>): boolean {
+  return env.AUTH_PROVIDER === 'workos' && !!env.IAM_BASE_URL;
+}
+
+/**
+ * `REFERRAL_PROGRAM`: explicit wins; unset is on exactly when the identity
+ * service runs (`iamWorkspacesEnabled`), which is Dapta's own deployments, and
+ * off for a fork or a local dev. The same "unset follows the deployment"
+ * rule as `attributionPremiumMode`.
+ */
+export function referralProgramEnabled(
+  env: Partial<Pick<ServerEnv, 'REFERRAL_PROGRAM' | 'IAM_BASE_URL' | 'AUTH_PROVIDER'>>,
+): boolean {
+  if (typeof env.REFERRAL_PROGRAM === 'boolean') return env.REFERRAL_PROGRAM;
   return env.AUTH_PROVIDER === 'workos' && !!env.IAM_BASE_URL;
 }
 
