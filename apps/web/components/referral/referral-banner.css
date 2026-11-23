@@ -1,0 +1,541 @@
+/* ── Referral program: the top banner ("C con el sello visible") ─────────────
+
+   A 48 px strip at the top of the dashboard's main area, in the fire theme in
+   both colour schemes (its palette is its own, like a promo bar). The heat
+   (`data-heat`: cold at 0, warm on the way, hot at one to go) tints the bottom
+   border, the bar, the tip and the pill's fire line.
+
+   It sizes itself by container query, never by the viewport: below 1024 px the
+   copy is short; below 600 px the buttons are icons with 44 px targets and the
+   sparks rest.
+   The strip clips its own overflow, so it can never scroll the page sideways.
+   Every animation stops under `prefers-reduced-motion` (end of file). */
+
+.rb {
+  --rb-bg: #222225;
+  --rb-ink: #fefefe;
+  --rb-ink-2: #d4d4da;
+  --rb-ink-3: #a9a9b1;
+  --rb-green: #3ddc84;
+  --rb-green-2: #5fe39b;
+  --rb-amber: #f5a524;
+  --rb-gold: #ffcb70;
+  --rb-coral: #f2686c;
+  position: relative;
+  container-name: rb;
+  container-type: inline-size;
+  z-index: 20;
+}
+
+.rb-strip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  min-width: 0;
+  padding: 0 6px 0 18px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--rb-bg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--rb-ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.rb[data-heat='warm'] .rb-strip {
+  border-bottom-color: rgba(245, 165, 36, 0.6);
+}
+.rb[data-heat='hot'] .rb-strip {
+  border-bottom-color: var(--rb-coral);
+}
+
+/* ── The message, with the pill in it ── */
+.rb-msg {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rb-short {
+  display: none;
+}
+
+.rb-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 2px;
+  padding: 3px 10px 3px 8px;
+  vertical-align: middle;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--rb-ink);
+  background: #2e2e33;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+.rb-pill-mark {
+  flex: none;
+  width: auto;
+  height: 12px;
+}
+/* The fire line: as wide as the count has burnt (`--rb-strike`). */
+.rb-pill::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: var(--rb-strike, 0%);
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--rb-amber), var(--rb-coral));
+  box-shadow: 0 0 6px rgba(242, 104, 108, 0.7);
+}
+.rb[data-heat='hot'] .rb-pill {
+  color: var(--rb-ink-2);
+}
+.rb[data-heat='hot'] .rb-strip .rb-pill::after {
+  animation: rb-sizzle 0.6s steps(2) infinite;
+}
+
+/* ── The "?" ── */
+.rb-info {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rb-ink-3);
+  cursor: pointer;
+}
+.rb-info > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.rb-info:hover,
+.rb-info[aria-expanded='true'] {
+  color: var(--rb-ink);
+}
+
+/* ── The track, the flowing fill, the tip, the sparks and the flag ── */
+.rb-track {
+  position: relative;
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: 6px;
+  margin-right: 12px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.rb-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 99px;
+  background-image: linear-gradient(90deg, var(--rb-green), var(--rb-green-2), var(--rb-green));
+  background-size: 200% 100%;
+  animation: rb-flow 3s linear infinite;
+}
+.rb[data-heat='warm'] .rb-fill {
+  background-image: linear-gradient(90deg, var(--rb-green), var(--rb-amber), var(--rb-gold), var(--rb-amber));
+  animation-duration: 2s;
+}
+.rb[data-heat='hot'] .rb-fill {
+  background-image: linear-gradient(90deg, var(--rb-green), var(--rb-amber), var(--rb-coral), var(--rb-gold), var(--rb-coral));
+  animation-duration: 1s;
+  box-shadow: 0 0 10px rgba(242, 104, 108, 0.5);
+}
+.rb-tip {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.rb-dot {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--rb-ink);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
+}
+.rb[data-heat='warm'] .rb-dot {
+  background: var(--rb-gold);
+  box-shadow: 0 0 10px var(--rb-amber);
+}
+.rb[data-heat='hot'] .rb-dot {
+  background: #ffd4d5;
+  box-shadow: 0 0 14px var(--rb-coral);
+}
+.rb-spark {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: 0;
+  background: var(--rb-gold);
+  animation: rb-spark 1.4s ease-out infinite;
+}
+.rb-spark-2 {
+  margin-left: 4px;
+  animation-delay: 0.3s;
+}
+.rb-spark-3 {
+  margin-left: -5px;
+  animation-delay: 0.6s;
+}
+.rb[data-heat='cold'] .rb-spark {
+  display: none;
+}
+.rb[data-heat='hot'] .rb-strip .rb-spark {
+  animation-duration: 0.9s;
+}
+.rb-flag {
+  position: absolute;
+  right: -10px;
+  bottom: -2px;
+  width: 17px;
+  height: 20px;
+  transform-origin: 14% 100%;
+  animation: rb-wave 1.8s ease-in-out infinite;
+}
+.rb[data-heat='cold'] .rb-strip .rb-flag {
+  opacity: 0.55;
+  animation-duration: 3s;
+}
+.rb[data-heat='hot'] .rb-strip .rb-flag {
+  animation-duration: 0.7s;
+  filter: drop-shadow(0 0 5px rgba(242, 104, 108, 0.7));
+}
+
+/* ── Copy link, Share, close: 44 px targets around a 32 px face ── */
+.rb-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+.rb-face {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 9px;
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+.rb-btn-primary .rb-face {
+  background: var(--rb-ink);
+  color: #1a1a1c;
+}
+.rb-btn-primary:hover .rb-face {
+  background: #e9e9ee;
+}
+.rb-btn-secondary .rb-face {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+.rb-btn-secondary:hover .rb-face {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+.rb-btn-close .rb-face {
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+  color: var(--rb-ink-2);
+}
+.rb-btn-close:hover .rb-face {
+  background: rgba(255, 255, 255, 0.08);
+}
+.rb-btn:focus-visible,
+.rb-info:focus-visible {
+  outline: none;
+}
+.rb-btn:focus-visible .rb-face,
+.rb-info:focus-visible > span {
+  box-shadow: 0 0 0 2px var(--rb-gold);
+}
+
+/* ── The "?" popover: a mini form with the pill at its foot ── */
+.rb-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: var(--rb-pop-x, 8px);
+  width: min(330px, calc(100% - 16px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #2a2a2f;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: var(--rb-ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.rb-pop::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: var(--rb-arrow-x, 40px);
+  width: 12px;
+  height: 12px;
+  background: #2a2a2f;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  transform: rotate(45deg);
+}
+.rb-pop-text {
+  margin: 0;
+}
+.rb-mock {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  padding: 12px 12px 10px;
+  border-radius: 10px;
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.rb-mock-line {
+  height: 7px;
+  border-radius: 4px;
+  background: #3a3a40;
+}
+.rb-mock-line-sub {
+  height: 5px;
+  background: #2e2e33;
+}
+.rb-mock-input {
+  height: 16px;
+  border-radius: 5px;
+  background: var(--rb-bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.rb-mock-cta {
+  align-self: flex-start;
+  width: 64px;
+  height: 16px;
+  border-radius: 5px;
+  background: #d4e95c;
+}
+.rb-mock .rb-mock-pill {
+  align-self: center;
+  margin-top: 4px;
+  padding: 2px 8px 2px 6px;
+  font-size: 10.5px;
+  animation: rb-ring 1.6s ease-in-out infinite;
+}
+.rb-mock .rb-pill-mark {
+  height: 10px;
+}
+
+/* ── Below 1024 px of its own width the long copy (up to ~490 px, next to
+   ~520 px of "?", bar and labelled buttons) would cut the pill off: the short
+   copy keeps the pill whole. ── */
+@container rb (max-width: 1023.98px) {
+  .rb-long {
+    display: none;
+  }
+  .rb-short {
+    display: inline;
+  }
+}
+
+/* ── Narrow (below 600 px of its own width): icon buttons, smaller pill ── */
+@container rb (max-width: 599.98px) {
+  .rb-strip {
+    gap: 6px;
+    padding: 0 2px 0 12px;
+    font-size: 13px;
+  }
+  .rb-pill {
+    gap: 4px;
+    margin: 0 0 0 3px;
+    padding: 2px 8px 2px 6px;
+    font-size: 11px;
+  }
+  .rb-pill-mark {
+    height: 10px;
+  }
+  .rb-info {
+    width: 26px;
+  }
+  .rb-info > span {
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+  }
+  .rb-track {
+    flex-basis: 40px;
+    min-width: 36px;
+    height: 5px;
+    margin-right: 10px;
+  }
+  .rb-dot {
+    left: -5px;
+    top: -5px;
+    width: 10px;
+    height: 10px;
+  }
+  .rb-strip .rb-spark {
+    display: none;
+  }
+  .rb-flag {
+    right: -9px;
+    width: 14px;
+    height: 17px;
+  }
+  .rb-btn {
+    justify-content: center;
+    width: 36px;
+    padding: 0;
+  }
+  .rb-face {
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 8px;
+  }
+  .rb-btn-label {
+    display: none;
+  }
+  .rb-pop {
+    left: 16px;
+    width: calc(100% - 32px);
+  }
+  .rb-pop::before {
+    left: calc(var(--rb-arrow-x, 40px) + var(--rb-pop-x, 8px) - 16px);
+  }
+}
+
+/* ── Phone widths: tighter spacing so the short copy keeps the pill whole ── */
+@container rb (max-width: 419.98px) {
+  .rb-strip {
+    gap: 4px;
+    padding-left: 10px;
+  }
+  .rb-pill {
+    gap: 3px;
+    padding: 2px 6px 2px 5px;
+    font-size: 10.5px;
+  }
+  .rb-pill-mark {
+    height: 9px;
+  }
+  .rb-info {
+    width: 24px;
+  }
+  .rb-track {
+    flex-basis: 28px;
+    min-width: 28px;
+    margin-right: 9px;
+  }
+}
+
+/* ── Down to 320 px: the pill alone says it, the "?" explains it ── */
+@container rb (max-width: 359.98px) {
+  .rb-short .rb-words {
+    display: none;
+  }
+  .rb-track {
+    min-width: 20px;
+  }
+  .rb-btn {
+    width: 34px;
+  }
+}
+
+@keyframes rb-flow {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes rb-spark {
+  0% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(10px, -20px);
+    opacity: 0;
+  }
+}
+@keyframes rb-wave {
+  0%,
+  100% {
+    transform: rotate(-5deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+@keyframes rb-sizzle {
+  50% {
+    filter: brightness(1.5);
+  }
+}
+@keyframes rb-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 165, 36, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(245, 165, 36, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rb .rb-fill,
+  .rb .rb-spark,
+  .rb .rb-flag,
+  .rb .rb-pill::after,
+  .rb .rb-mock-pill {
+    animation: none !important;
+  }
+  .rb .rb-spark {
+    display: none;
+  }
+  .rb .rb-face {
+    transition: none;
+  }
+}

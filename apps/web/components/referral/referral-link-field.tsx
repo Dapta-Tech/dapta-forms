@@ -1,20 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { captureEvent } from '@/lib/product-analytics';
-
-/** How long "Copied" stays on the button before it reads "Copy link" again. */
-const COPIED_MS = 2000;
+import { useReferralCopy, type ReferralSurface } from './use-referral-copy';
 
 /**
- * The person's referral link, read-only, with a copy button: the share
- * dialog's field, and the locked badge switch's. A copy records
- * `referral_link_copied` (with `surface` when the caller names one, so the
- * funnel tells the dialog from the switch). Without a clipboard (an insecure
- * origin, a denied permission) the link is handed over selected instead, so
- * the keyboard shortcut copies it.
+ * The person's referral link, read-only, with a copy button, at the size of a
+ * settings row: the locked badge switch's (Brand kit and the Design panel).
+ * A copy records `referral_link_copied` with its `surface`. Without a
+ * clipboard (an insecure origin, a denied permission) the link is handed over
+ * selected instead, so the keyboard shortcut copies it.
  */
 export function ReferralLinkField({
   link,
@@ -23,8 +19,6 @@ export function ReferralLinkField({
   copied,
   inputId,
   surface,
-  compact = false,
-  resetKey,
 }: {
   link: string;
   label: string;
@@ -32,44 +26,19 @@ export function ReferralLinkField({
   copied: string;
   /** Unique on the page: the label points at it. */
   inputId: string;
-  /** Where the copy happened, for the event. Omitted: no property, as the dialog always sent it. */
-  surface?: string;
-  /** The settings rows' size: a smaller label and field. */
-  compact?: boolean;
-  /** Changing it puts the button back to "Copy link" (the dialog closing). */
-  resetKey?: unknown;
+  surface?: ReferralSurface;
 }) {
-  const [done, setDone] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
-  useEffect(() => {
-    setDone(false);
-  }, [resetKey]);
-
+  const { copied: done, copy: copyLink } = useReferralCopy(link, surface);
   const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-    } catch {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-      return;
-    }
-    setDone(true);
-    if (surface) captureEvent('referral_link_copied', { surface });
-    else captureEvent('referral_link_copied');
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setDone(false), COPIED_MS);
+    if (await copyLink()) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
   };
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={inputId} className={cn('font-medium text-foreground', compact ? 'text-xs' : 'text-sm')}>
+      <label htmlFor={inputId} className="text-xs font-medium text-foreground">
         {label}
       </label>
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -80,17 +49,14 @@ export function ReferralLinkField({
           readOnly
           value={link}
           onFocus={(e) => e.currentTarget.select()}
-          className={cn(
-            'min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-foreground',
-            compact ? 'h-9 text-xs' : 'h-11 text-sm',
-          )}
+          className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-xs text-foreground"
         />
         <button
           type="button"
           onClick={onCopy}
           data-testid="referral-copy"
           aria-live="polite"
-          className={cn(buttonVariants({ variant: compact ? 'outline' : 'default' }), compact ? 'h-9' : 'h-11', 'shrink-0')}
+          className={cn(buttonVariants({ variant: 'outline' }), 'h-9 shrink-0')}
         >
           {done ? copied : copy}
         </button>

@@ -98,7 +98,6 @@ export function ReferralBadgeLock({
         copied={m.referralCopied}
         inputId={`${idPrefix}-referral-link`}
         surface="badge_switch"
-        compact
       />
     </div>
   );

@@ -17,6 +17,7 @@ import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
   getAccountByExternalId,
+  hasBoundMembership,
   humanHasCompletedOnboarding,
   listWorkspacesForIdentity,
   pickHomeAccount,
@@ -34,7 +35,14 @@ import {
   roleFromIam,
   type IamWorkspace,
 } from './iam-workspaces';
-import { maybeSeedDemoForm, notifySignup, type SeedDemoEnv, type SignupObserver } from './auth.provider';
+import {
+  maybeSeedDemoForm,
+  notifyNewPerson,
+  notifySignup,
+  type NewPersonObserver,
+  type SeedDemoEnv,
+  type SignupObserver,
+} from './auth.provider';
 import { isStaffEmail } from './staff';
 
 /** What the auth provider proved about the caller — never read from the request body. */
@@ -91,6 +99,12 @@ export class WorkspaceProjection {
       ttlMs?: number;
       seedEnv?: SeedDemoEnv;
       onSignup?: SignupObserver;
+      /**
+       * A person's first sign-in: no member row bound to them before this
+       * refresh (staff grants aside), and this refresh created one. Once per
+       * person, not per workspace. See `NewPersonObserver`.
+       */
+      onNewPerson?: NewPersonObserver;
       now?: () => number;
       /**
        * Email domains (lowercase, no `@`) whose people are STAFF of the
@@ -197,6 +211,11 @@ export class WorkspaceProjection {
     const lastWorkspace =
       typeof featureFlags?.last_workspace === 'string' ? (featureFlags.last_workspace as string) : null;
 
+    // Read before anything below writes a row (the legacy rebind included):
+    // a person with no bound member row yet is new on this refresh. Asked
+    // only when someone observes new people.
+    const knownBefore = this.opts.onNewPerson ? await hasBoundMembership(this.db, id.sub) : true;
+
     await this.rebindLegacy(id, workspaces, lastWorkspace);
 
     const memberships: ProjectedMembership[] = workspaces.map((ws) => {
@@ -256,6 +275,17 @@ export class WorkspaceProjection {
         role: c.role,
         isFirstMember: c.isFirstMember,
         fromInvite: false,
+      });
+    }
+
+    // Once per person: the first real membership this refresh created stands
+    // for them (an access grant is not a person joining).
+    const joined = knownBefore ? undefined : result.created.find((c) => !c.accessGrant);
+    if (joined) {
+      await notifyNewPerson(this.opts.onNewPerson, this.log, {
+        accountId: joined.accountId,
+        memberId: joined.memberId,
+        email: id.email,
       });
     }
 

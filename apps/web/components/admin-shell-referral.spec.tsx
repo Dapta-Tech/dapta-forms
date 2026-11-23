@@ -11,12 +11,21 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getMessages, type Locale } from '@quill/shared';
 
+const nav = vi.hoisted(() => ({ pathname: '/admin', events: [] as [string, unknown][], dismissed: 0 }));
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/admin',
+  usePathname: () => nav.pathname,
   useRouter: () => ({ refresh: () => {}, push: () => {} }),
 }));
 vi.mock('@/app/admin/announcement-actions', () => ({ recordAnnouncementAction: async () => ({ ok: true }) }));
-vi.mock('@/lib/product-analytics', () => ({ captureEvent: () => {} }));
+vi.mock('@/app/admin/referral-actions', () => ({
+  dismissReferralBanner: async () => {
+    nav.dismissed += 1;
+    return { ok: true };
+  },
+}));
+vi.mock('@/lib/product-analytics', () => ({
+  captureEvent: (event: string, props?: unknown) => nav.events.push([event, props]),
+}));
 
 import { AdminShell, type ShellReferral } from './admin-shell';
 
@@ -66,6 +75,9 @@ async function mount(node: React.ReactNode) {
 }
 
 beforeEach(() => {
+  nav.pathname = '/admin';
+  nav.events = [];
+  nav.dismissed = 0;
   window.matchMedia = ((q: string) => ({
     matches: q.includes('min-width'),
     media: q,
@@ -123,5 +135,56 @@ describe('AdminShell: the referral entry', () => {
     await act(async () => drawer.querySelector<HTMLElement>('[data-testid="nav-referral"]')!.click());
     expect(drawer.hasAttribute('inert')).toBe(true);
     expect(document.querySelector('[data-testid="referral-modal"]')).not.toBeNull();
+  });
+});
+
+const BANNER: ShellReferral = { ...REFERRAL, count: 3, banner: { badgeLabel: 'Made with dForms' } };
+const bannerOf = () => document.querySelector<HTMLElement>('[data-testid="referral-banner"]');
+
+describe('AdminShell: the referral banner', () => {
+  it('sits at the top of the main area while the API shows it', async () => {
+    await mount(shell({ referral: BANNER }));
+    const main = document.querySelector('main')!;
+    expect(main.firstElementChild).toBe(bannerOf());
+    expect(bannerOf()!.dataset.count).toBe('3');
+  });
+
+  it('is absent when the API hides it, and with the program off', async () => {
+    await mount(shell({ referral: { ...BANNER, banner: null } }));
+    expect(bannerOf()).toBeNull();
+    expect(document.querySelector('[data-testid="nav-referral"]')).not.toBeNull();
+    await act(async () => root!.unmount());
+    await mount(shell({ referral: null }));
+    expect(bannerOf()).toBeNull();
+  });
+
+  it('stays out of the form builder, which owns the full viewport height', async () => {
+    nav.pathname = '/admin/forms/f1/edit';
+    await mount(shell({ referral: BANNER }));
+    expect(bannerOf()).toBeNull();
+  });
+
+  it('Share opens the share modal, whose copy and shares say they came from the banner', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} }, configurable: true });
+    await mount(shell({ referral: BANNER }));
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-share"]')!.click());
+    expect(document.querySelector('[data-testid="referral-modal"]')).not.toBeNull();
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-copy"]')!.click());
+    expect(nav.events).toEqual([['referral_link_copied', { surface: 'banner' }]]);
+  });
+
+  it('opened from the menu, the modal says so', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} }, configurable: true });
+    await mount(shell({ referral: BANNER }));
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="nav-referral"]')!.click());
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-copy"]')!.click());
+    expect(nav.events).toEqual([['referral_link_copied', { surface: 'menu' }]]);
+  });
+
+  it('close hides it at once and tells the API', async () => {
+    await mount(shell({ referral: BANNER }));
+    await act(async () => document.querySelector<HTMLElement>('[data-testid="referral-banner-close"]')!.click());
+    expect(bannerOf()).toBeNull();
+    expect(nav.dismissed).toBe(1);
   });
 });

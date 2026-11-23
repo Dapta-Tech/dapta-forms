@@ -196,12 +196,28 @@ describe('the referral that reaches the goal unlocks the person', () => {
     expect(await referralOf(app, acme, a.member)).toMatchObject({ count: 6, unlocked: true });
   });
 
-  it('/v1/me.referral says unlocked: false with no referrals, and nothing else is added', async () => {
+  it('/v1/me.referral says unlocked: false with no referrals; T08 adds only that field', async () => {
     const app = wire();
     const a = await ana(app);
     expect(Object.keys(await referralOf(app, acme, a.member)).sort()).toEqual(
-      ['campaignActive', 'count', 'enabled', 'goal', 'link', 'unlocked'].sort(),
+      ['bannerVisible', 'campaignActive', 'count', 'enabled', 'goal', 'link', 'unlocked'].sort(),
     );
+    expect(await referralOf(app, acme, a.member)).toMatchObject({ unlocked: false });
+  });
+
+  it('teammate invites count toward the same unlock as links', async () => {
+    const app = wire();
+    const a = await ana(app);
+    await referTimes(app, a.code, 3);
+    for (const name of ['tea1', 'tea2']) {
+      await app.referrals.recordInvite({ accountId: acme, memberId: a.member }, `${name}@example.com`);
+      const account = await addAccount(`ws-${name}`);
+      const member = await addMember(account, `${name}@example.com`, { externalId: `user_${name}`, role: 'owner' });
+      await app.referrals.creditInvite({ accountId: account, memberId: member, email: `${name}@example.com` });
+    }
+    expect(await referralOf(app, acme, a.member)).toMatchObject({ count: 5, unlocked: true });
+    expect((await app.attribution.status(acme)).showing).toBe(false);
+    expect(await unlockEvents()).toHaveLength(1);
   });
 
   it('afterCredit is safe to call before the goal, twice at it, and never throws', async () => {

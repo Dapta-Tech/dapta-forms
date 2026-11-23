@@ -1055,11 +1055,19 @@ export class AdminCrudController {
   async inviteMember(@Req() req: ReqLike, @Body() body: unknown) {
     const input = parse(memberInviteSchema, body);
     if (this.workspacesSvc && (await this.workspacesSvc.hasUpstream(req))) {
-      return this.workspacesSvc.inviteUpstream(req, input);
+      const invited = await this.workspacesSvc.inviteUpstream(req, input);
+      // Who invited whom, for the referral program: the identity service's
+      // invitation has no inviter. After the invitation went out; never throws.
+      if (this.referrals?.enabled) {
+        const inviter = await this.auth.resolveHost(req).catch(() => null);
+        if (inviter) await this.referrals.recordInvite(inviter, invited.email ?? input.email);
+      }
+      return invited;
     }
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     const member = unwrapCrud(await inviteMember(this.db, p.accountId, input));
+    await this.referrals?.recordInvite(p, member.email ?? input.email);
     // Tell them. Until now the row was created and nobody was ever notified.
     // Enqueued (never sent inline) and fire-and-forget: a mail provider being
     // down must not fail an invite that already succeeded.

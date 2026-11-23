@@ -4,16 +4,21 @@ import {
   applyReferralUnlock,
   countReferrals,
   creditReferral,
+  dismissReferralBanner,
   ensureReferrer,
+  getAttributionSwitch,
   getMe,
   getReferrerByCode,
   markReferralUnlocked,
   personNames,
+  recordReferralInvite,
+  referralInviterOf,
   referralPersonKey,
   type Db,
   type ReferralSource,
+  type ReferrerRow,
 } from '@quill/db';
-import { REFERRAL_GOAL, buildReferralLink, referralLinkBase } from '@quill/shared';
+import { REFERRAL_GOAL, buildReferralLink, paidVerdictFresh, referralLinkBase } from '@quill/shared';
 import { AnalyticsEffects } from './analytics-effects';
 import { DB, REFERRAL_OPTIONS } from './tokens';
 
@@ -89,7 +94,17 @@ export type ReferralView =
        * badge is gone from every workspace they own, for life.
        */
       unlocked: boolean;
+      /**
+       * Whether the top banner shows: the campaign is running, the person is
+       * below the goal and holds no referral unlock, this workspace does not
+       * pay for Dapta AI (a fresh paid verdict), and the person has not
+       * dismissed it in the last `REFERRAL_BANNER_SNOOZE_MS`.
+       */
+      bannerVisible: boolean;
     };
+
+/** How long closing the top banner hides it: 7 days. */
+export const REFERRAL_BANNER_SNOOZE_MS = 7 * 86_400_000;
 
 /** A referral code as the landing may send it: the alphabet of `generateReferralCode`, any case. */
 const CODE_SHAPE = /^[a-z0-9]{1,32}$/i;
@@ -144,7 +159,42 @@ export class ReferralService {
       goal: REFERRAL_GOAL,
       campaignActive: this.campaignActive(),
       unlocked: row.unlockedAt != null,
+      bannerVisible: await this.bannerVisible(accountId, row, count),
     };
+  }
+
+  /**
+   * The top banner's rule (see `ReferralView.bannerVisible`). The paid rule is
+   * read for THIS workspace: a person who pays in one workspace and not in
+   * another still sees the banner in the free one, where the badge shows.
+   */
+  private async bannerVisible(accountId: string, row: ReferrerRow, count: number): Promise<boolean> {
+    if (!this.campaignActive()) return false;
+    if (row.unlockedAt != null || count >= REFERRAL_GOAL) return false;
+    const now = this.now();
+    if (row.bannerDismissedUntil != null && now < row.bannerDismissedUntil) return false;
+    const badge = await getAttributionSwitch(this.db, accountId);
+    return !paidVerdictFresh(badge?.paid ?? null, badge?.paidCheckedAt ?? null, now);
+  }
+
+  /**
+   * Close the top banner for the person making the request, in every
+   * workspace, for `REFERRAL_BANNER_SNOOZE_MS`. With the program off nothing
+   * is written and the answer carries no date.
+   */
+  async dismissBanner(accountId: string, memberId: string): Promise<{ dismissedUntil: number | null }> {
+    if (!this.enabled) return { dismissedUntil: null };
+    const person = await referralPersonKey(this.db, accountId, memberId);
+    if (!person) return { dismissedUntil: null };
+    const now = this.now();
+    await ensureReferrer(this.db, person, { now, code: this.options.code });
+    const dismissedUntil = now + REFERRAL_BANNER_SNOOZE_MS;
+    await dismissReferralBanner(this.db, person, dismissedUntil);
+    return { dismissedUntil };
+  }
+
+  private now(): number {
+    return this.options.now?.() ?? Date.now();
   }
 
   /**
@@ -165,8 +215,8 @@ export class ReferralService {
     const now = this.options.now?.() ?? Date.now();
     const credited = await creditReferral(this.db, { referee, referrer: owner.personId, source: 'link', now });
     if (credited) {
-      await this.signupEvent(principal, owner.code, 'link', now);
       await this.afterCredit(owner.personId, now);
+      await this.signupEvent(principal, owner.code, 'link', now);
     }
     return { credited };
   }
@@ -204,6 +254,25 @@ export class ReferralService {
   }
 
   /**
+   * Record that the member making the request invited a teammate by email
+   * (both invite paths: the identity service's and local development's). The
+   * identity service's invitation has no inviter, so this record is the only
+   * place one lives. The first inviter of an address keeps it. Never throws:
+   * the invitation already went out, and a failure here must not undo it.
+   */
+  async recordInvite(principal: { accountId: string; memberId: string }, email: string): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      const inviter = await referralPersonKey(this.db, principal.accountId, principal.memberId);
+      if (!inviter) return;
+      const now = this.options.now?.() ?? Date.now();
+      await recordReferralInvite(this.db, { email, inviter, accountId: principal.accountId, now });
+    } catch (err) {
+      this.log.error(`referral invite record failed: ${String(err)}`);
+    }
+  }
+
+  /**
    * `referral_unlocked`, about the referrer, once. Sent to the email on their
    * most recently seen member row; a person with none is not sent anything.
    */
@@ -227,6 +296,42 @@ export class ReferralService {
       },
       now,
     );
+  }
+
+  /**
+   * A person's first sign-in (`NewPersonObserver`): when a teammate invited
+   * their address, credit that inviter with a referral of source `invite`.
+   * The caller established that the person is new (no bound member row
+   * before this sign-in), so the link's 10-minute window is not asked: the
+   * adopted invite row keeps the invite's age. Self-invites, a person already
+   * credited (by a link or anyone) and first-wins are `creditReferral`'s.
+   * Never throws: it runs on the sign-in path.
+   */
+  async creditInvite(person: { accountId: string; memberId: string; email: string | null }): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      const inviter = await referralInviterOf(this.db, person.email);
+      if (!inviter) return;
+      const referee = await referralPersonKey(this.db, person.accountId, person.memberId);
+      if (!referee) return;
+      const now = this.options.now?.() ?? Date.now();
+      const credited = await creditReferral(this.db, {
+        referee,
+        referrer: inviter,
+        source: 'invite',
+        now,
+        newPerson: true,
+      });
+      if (!credited) return;
+      await this.afterCredit(inviter, now);
+      // The inviter's code rides on the event, as with a link, so the funnel
+      // is cut by referrer the same way. Their link row is made if they never
+      // opened it: it is theirs either way.
+      const row = await ensureReferrer(this.db, inviter, { now, code: this.options.code });
+      await this.signupEvent(person, row.code, 'invite', now);
+    } catch (err) {
+      this.log.error(`referral invite credit failed: ${String(err)}`);
+    }
   }
 
   /**
