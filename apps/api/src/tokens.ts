@@ -11,6 +11,8 @@ export const ENTITLEMENTS = Symbol('ENTITLEMENTS');
 export const PREMIUM_MODE = Symbol('PREMIUM_MODE');
 /** `attributionPremiumMode(env)`: whether hiding the attribution needs the paid verdict. */
 export const ATTRIBUTION_MODE = Symbol('ATTRIBUTION_MODE');
+/** The attribution's referral unlock source (`ReferralUnlocks`). Unbound: always false. */
+export const REFERRAL_UNLOCKS = Symbol('REFERRAL_UNLOCKS');
 export const ONBOARDING_ENABLED = Symbol('ONBOARDING_ENABLED');
 /** `referralOptions(env)`: the referral program's switch and link base, resolved once. */
 export const REFERRAL_OPTIONS = Symbol('REFERRAL_OPTIONS');

@@ -89,6 +89,28 @@ describe('AnalyticsEffects — enqueue', () => {
     expect(payload.timestamp).toBe(1_700_000_000_000);
   });
 
+  it('carries person properties in the durable row, apart from the event properties', async () => {
+    const effects = new AnalyticsEffects(db, envWith(KEY));
+    await effects.capture('referral_claimed', {
+      distinctId: 'new@b.com',
+      accountId: null,
+      properties: { source: 'link' },
+      personProperties: { referred_by: 'ref_abc', referral_count: 2 },
+    });
+
+    const payload = JSON.parse(String((await listOutbox(db, { kind: 'analytics' }))[0]!.payload));
+    expect(payload.properties).toEqual({ source: 'link' });
+    expect(payload.personProperties).toEqual({ referred_by: 'ref_abc', referral_count: 2 });
+  });
+
+  it('writes no person properties key for an event that sets none', async () => {
+    const effects = new AnalyticsEffects(db, envWith(KEY));
+    await effects.capture('form_created', { distinctId: 'a@b.com', accountId: 'acc_1' });
+
+    const payload = JSON.parse(String((await listOutbox(db, { kind: 'analytics' }))[0]!.payload));
+    expect('personProperties' in payload).toBe(false);
+  });
+
   it('prefixes every event name centrally, not at the call site', async () => {
     const effects = new AnalyticsEffects(db, envWith(KEY));
     await effects.capture('activation', { distinctId: 'a@b.com', accountId: 'acc_1' });
@@ -150,6 +172,62 @@ describe('AnalyticsCapture — delivery', () => {
       JSON.stringify({ event: 'forms_form_created', distinctId: 'a@b.com', accountId: 'acc_1', timestamp: 1 }),
     );
     expect((calls[0]!.body.properties as Record<string, unknown>).$set).toEqual({ email: 'a@b.com' });
+  });
+
+  it('sets person properties on the person, next to the email the distinct id gives', async () => {
+    const calls: RecordedCall[] = [];
+    await newCapture(envWith(KEY), calls).deliver(
+      'forms_referral_claimed',
+      JSON.stringify({
+        event: 'forms_referral_claimed',
+        distinctId: 'new@b.com',
+        accountId: null,
+        properties: { source: 'link' },
+        // A stray `email` here must not repoint the person at another address.
+        personProperties: { referred_by: 'ref_abc', referral_count: 2, email: 'other@b.com' },
+        timestamp: 1,
+      }),
+    );
+
+    const props = calls[0]!.body.properties as Record<string, unknown>;
+    expect(props.$set).toEqual({ referred_by: 'ref_abc', referral_count: 2, email: 'new@b.com' });
+    // Person properties stay off the event itself.
+    expect(props.referred_by).toBeUndefined();
+    expect(props.source).toBe('link');
+  });
+
+  it('sets person properties for an account id, with no email', async () => {
+    const calls: RecordedCall[] = [];
+    await newCapture(envWith(KEY), calls).deliver(
+      'forms_referral_claimed',
+      JSON.stringify({
+        event: 'forms_referral_claimed',
+        distinctId: 'account:acc_1',
+        accountId: 'acc_1',
+        personProperties: { referral_code: 'ref_abc' },
+        timestamp: 1,
+      }),
+    );
+    expect((calls[0]!.body.properties as Record<string, unknown>).$set).toEqual({
+      referral_code: 'ref_abc',
+    });
+  });
+
+  it('sets no person properties on a profile-less event', async () => {
+    // A profile-less event must not mint or touch a person.
+    const calls: RecordedCall[] = [];
+    await newCapture(envWith(KEY), calls).deliver(
+      '$mcp_tool_call',
+      JSON.stringify({
+        event: '$mcp_tool_call',
+        distinctId: 'a@b.com',
+        accountId: 'acc_1',
+        properties: { $process_person_profile: false },
+        personProperties: { referral_code: 'ref_abc' },
+        timestamp: 1,
+      }),
+    );
+    expect((calls[0]!.body.properties as Record<string, unknown>).$set).toBeUndefined();
   });
 
   it('sets no email for account ids or profile-less events', async () => {
