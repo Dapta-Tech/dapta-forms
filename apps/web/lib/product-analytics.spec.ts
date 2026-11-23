@@ -130,6 +130,20 @@ describe('identifyMember — the landing-visit alias', () => {
     expect(identify?.[2]).toMatchObject({ email: 'ana@example.com', member_id: 'mem_1' });
   });
 
+  it('sets the referrer code on the person while the referral program is on', () => {
+    // The other half of the referral funnel's join: each invitee carries
+    // `referred_by` (set by the API at the claim), each referrer `referral_code`.
+    const calls = stubWindow();
+    identifyMember(identity({ referralCode: 'k7m2p9qx' }));
+    expect(calls.find(([n]) => n === 'identify')?.[2]).toMatchObject({ referral_code: 'k7m2p9qx' });
+  });
+
+  it('sets no referral code while the program is off', () => {
+    const calls = stubWindow();
+    identifyMember(identity({ referralCode: null }));
+    expect(calls.find(([n]) => n === 'identify')?.[2]).not.toHaveProperty('referral_code');
+  });
+
   it('aliases the landing id onto the email explicitly, so call order does not matter', () => {
     // The vendor replays queued `alias` calls before `identify`. With no
     // original, alias would resolve "the current id" to the landing id itself

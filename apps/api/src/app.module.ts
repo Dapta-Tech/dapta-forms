@@ -65,6 +65,7 @@ import { AttributionController } from './attribution.controller';
 import { ANNOUNCEMENTS_OPTIONS, AnnouncementsController, isDaptaDeployment } from './announcements.controller';
 import { AttributionService } from './attribution.service';
 import { ReferralService, referralOptions } from './referral.service';
+import { ReferralController } from './referral.controller';
 import { LinkPageController } from './link-page.controller';
 import { LinkPageService } from './link-page.service';
 import { AnalyticsController } from './analytics.controller';
@@ -114,6 +115,9 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // GET /v1/me/announcement + POST /v1/me/announcements/:id: in-app news,
     // once per person. Session only (see the controller).
     AnnouncementsController,
+    // POST /v1/me/referral/claim: the sign-in callback credits a new person
+    // to a referral link's owner. Per person, any role, session only.
+    ReferralController,
     // POST /mcp: the dForms MCP server (@quill/mcp). Runs each tool through the
     // form handlers above, so it resolves them from the module once it is built.
     McpController,

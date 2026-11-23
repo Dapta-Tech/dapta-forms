@@ -22,6 +22,9 @@ import { LocalAuthProvider, type ReqLike } from './auth.provider';
 import { AdminCrudController } from './admin-crud.controller';
 import { AdminService } from './admin.service';
 import { ReferralService, referralOptions, type ReferralOptions } from './referral.service';
+import { ReferralController } from './referral.controller';
+import { AnalyticsEffects } from './analytics-effects';
+import type { ServerEnv } from '@quill/config/env';
 
 let db: Db;
 let acme: string;
@@ -46,12 +49,18 @@ async function addAccount(code: string): Promise<string> {
 async function addMember(
   accountId: string,
   email: string,
-  opts: { externalId?: string; role?: 'owner' | 'admin' | 'member' } = {},
+  opts: {
+    externalId?: string;
+    role?: 'owner' | 'admin' | 'member';
+    createdAt?: number;
+    accessGrant?: 'staff';
+  } = {},
 ): Promise<string> {
   const id = randomUUID();
   await db.run(
-    sql`INSERT INTO member (id, account_id, email, role, status, external_id, created_at)
-        VALUES (${id}, ${accountId}, ${email}, ${opts.role ?? 'member'}, ${'active'}, ${opts.externalId ?? null}, ${Date.now()})`,
+    sql`INSERT INTO member (id, account_id, email, role, status, external_id, access_grant, created_at)
+        VALUES (${id}, ${accountId}, ${email}, ${opts.role ?? 'member'}, ${'active'}, ${opts.externalId ?? null},
+          ${opts.accessGrant ?? null}, ${opts.createdAt ?? Date.now()})`,
   );
   return id;
 }
@@ -191,6 +200,218 @@ describe('referralOptions: the switch, resolved once from the environment', () =
     const member = await addMember(acme, 'ana@example.com', { externalId: 'user_ana' });
     const referral = await referralOf(crud({ enabled: true, baseUrl: `${APP}/` }), as(acme, member));
     expect(referral.link).toMatch(/^https:\/\/app\.example\.test\/\?ref=[a-z0-9]{8}$/);
+  });
+});
+
+/**
+ * Signing up through a referral link: the sign-in callback hands the parked
+ * `ref` to `POST /v1/me/referral/claim`, and a new person is credited to the
+ * link's owner, whose count in `/v1/me.referral` goes up.
+ */
+describe('POST /v1/me/referral/claim', () => {
+  const MIN = 60_000;
+
+  /** Ana, an existing person with a referral link, and her code. */
+  async function referrerAna(options: ReferralOptions = ON) {
+    const member = await addMember(acme, 'ana@example.com', { externalId: 'user_ana', createdAt: Date.now() - 30 * 24 * 60 * MIN });
+    const code = codeOf((await referralOf(crud(options), as(acme, member))).link)!;
+    return { member, code, count: async () => (await referralOf(crud(options), as(acme, member))).count };
+  }
+
+  /** A person who signed up just now, in a workspace of their own. */
+  async function newPerson(email: string, externalId: string, role: 'owner' | 'admin' | 'member' = 'owner') {
+    const account = await addAccount(`ws-${randomUUID().slice(0, 8)}`);
+    return { account, member: await addMember(account, email, { externalId, role }) };
+  }
+
+  const claimer = (options: ReferralOptions = ON) => new ReferralController(auth, new ReferralService(db, options));
+  const claim = (who: { account: string; member: string }, body: unknown, options: ReferralOptions = ON) =>
+    claimer(options).claim(as(who.account, who.member), body);
+
+  it('credits a new person to the link owner, whose count goes to 1', async () => {
+    const ana = await referrerAna();
+    const ben = await newPerson('ben@example.com', 'user_ben');
+    expect(await claim(ben, { code: ana.code })).toEqual({ credited: true });
+    expect(await ana.count()).toBe(1);
+  });
+
+  it('ignores a code nobody holds', async () => {
+    const ana = await referrerAna();
+    const ben = await newPerson('ben@example.com', 'user_ben');
+    expect(await claim(ben, { code: 'zzzzzzzz' })).toEqual({ credited: false });
+    expect(await ana.count()).toBe(0);
+  });
+
+  it('ignores a person signing up through their own link, in a new workspace', async () => {
+    const ana = await referrerAna();
+    // Ana again, as the identity service knows her, in a workspace she just made:
+    // her own subject, so the same person. (Her older row also makes her not new;
+    // the self rule is pinned on its own below with a fresh referrer.)
+    const again = await newPerson('ana@example.com', 'user_ana');
+    expect(await claim(again, { code: ana.code })).toEqual({ credited: false });
+    expect(await ana.count()).toBe(0);
+  });
+
+  it('ignores a self-referral by the same person, even while both rows are new', async () => {
+    const fresh = await newPerson('cy@example.com', 'user_cy');
+    const code = codeOf((await referralOf(crud(ON), as(fresh.account, fresh.member))).link)!;
+    const second = await newPerson('cy@example.com', 'user_cy');
+    expect(await claim(second, { code })).toEqual({ credited: false });
+    expect((await referralOf(crud(ON), as(fresh.account, fresh.member))).count).toBe(0);
+  });
+
+  it('ignores a self-referral by email: another subject with the referrer address', async () => {
+    const ana = await referrerAna();
+    const twin = await newPerson('Ana@Example.com', 'user_ana_second_login');
+    expect(await claim(twin, { code: ana.code })).toEqual({ credited: false });
+    expect(await ana.count()).toBe(0);
+  });
+
+  it('ignores a person who already had dForms: a member row older than 10 minutes', async () => {
+    const ana = await referrerAna();
+    const old = await addAccount('old-ws');
+    await addMember(old, 'dan@example.com', { externalId: 'user_dan', createdAt: Date.now() - 11 * MIN });
+    const dan = await newPerson('dan@example.com', 'user_dan');
+    expect(await claim(dan, { code: ana.code })).toEqual({ credited: false });
+    expect(await ana.count()).toBe(0);
+  });
+
+  it('closes the window 10 minutes after the person first appeared', async () => {
+    const ana = await referrerAna();
+    const late = await newPerson('eve@example.com', 'user_eve');
+    const later = { ...ON, now: () => Date.now() + 10 * MIN + 1000 };
+    expect(await claim(late, { code: ana.code }, later)).toEqual({ credited: false });
+    const early = { ...ON, now: () => Date.now() + 9 * MIN };
+    expect(await claim(late, { code: ana.code }, early)).toEqual({ credited: true });
+  });
+
+  it('a staff access grant is not a prior account: staff signing up for real still counts', async () => {
+    const ana = await referrerAna();
+    const estate = await addAccount('customer');
+    await addMember(estate, 'fay@staff.example.com', {
+      externalId: 'user_fay',
+      role: 'admin',
+      accessGrant: 'staff',
+      createdAt: Date.now() - 90 * 24 * 60 * MIN,
+    });
+    const fay = await newPerson('fay@staff.example.com', 'user_fay');
+    expect(await claim(fay, { code: ana.code })).toEqual({ credited: true });
+    expect(await ana.count()).toBe(1);
+  });
+
+  it('first credit wins: a second link does not move or double the referral', async () => {
+    const ana = await referrerAna();
+    const other = await addAccount('globex');
+    const hal = await addMember(other, 'hal@example.com', { externalId: 'user_hal', createdAt: Date.now() - 60 * MIN });
+    const halCode = codeOf((await referralOf(crud(ON), as(other, hal))).link)!;
+    const ben = await newPerson('ben@example.com', 'user_ben');
+    expect(await claim(ben, { code: ana.code })).toEqual({ credited: true });
+    expect(await claim(ben, { code: halCode })).toEqual({ credited: false });
+    expect(await claim(ben, { code: ana.code })).toEqual({ credited: false });
+    expect(await ana.count()).toBe(1);
+    expect((await referralOf(crud(ON), as(other, hal))).count).toBe(0);
+  });
+
+  it('the credit is the person, not the workspace: a second workspace of theirs adds nothing', async () => {
+    const ana = await referrerAna();
+    const ben = await newPerson('ben@example.com', 'user_ben');
+    const benAgain = await newPerson('ben@example.com', 'user_ben');
+    expect(await claim(ben, { code: ana.code })).toEqual({ credited: true });
+    expect(await claim(benAgain, { code: ana.code })).toEqual({ credited: false });
+    expect(await ana.count()).toBe(1);
+  });
+
+  it('any role may claim: a plain member counts like an owner', async () => {
+    const ana = await referrerAna();
+    const ivy = await newPerson('ivy@example.com', 'user_ivy', 'member');
+    expect(await claim(ivy, { code: ana.code })).toEqual({ credited: true });
+    expect(await ana.count()).toBe(1);
+  });
+
+  it('counts each referee once per referrer, across the referrer workspaces', async () => {
+    const ana = await referrerAna();
+    for (const n of ['jo', 'kim', 'lea']) {
+      const p = await newPerson(`${n}@example.com`, `user_${n}`);
+      await claim(p, { code: ana.code });
+    }
+    expect(await ana.count()).toBe(3);
+    const elsewhere = await addAccount('ana-two');
+    const inOther = await addMember(elsewhere, 'ana@example.com', { externalId: 'user_ana', role: 'owner' });
+    expect((await referralOf(crud(ON), as(elsewhere, inOther))).count).toBe(3);
+  });
+
+  describe('never breaks the sign-in that calls it', () => {
+    it.each([
+      ['no body', undefined],
+      ['an empty body', {}],
+      ['a number for a code', { code: 42 }],
+      ['an empty code', { code: '   ' }],
+      ['a huge code', { code: 'a'.repeat(10_000) }],
+      ['junk', 'not json at all'],
+    ])('%s is refused quietly', async (_label, body) => {
+      const ana = await referrerAna();
+      const ben = await newPerson('ben@example.com', 'user_ben');
+      expect(await claim(ben, body)).toEqual({ credited: false });
+      expect(await ana.count()).toBe(0);
+    });
+
+    it('with the program off it records nothing', async () => {
+      const ana = await referrerAna();
+      const ben = await newPerson('ben@example.com', 'user_ben');
+      expect(await claim(ben, { code: ana.code }, { enabled: false, baseUrl: null })).toEqual({ credited: false });
+      expect(await ana.count()).toBe(0);
+    });
+
+    it('a code with stray spaces or capitals still finds its owner', async () => {
+      const ana = await referrerAna();
+      const ben = await newPerson('ben@example.com', 'user_ben');
+      expect(await claim(ben, { code: `  ${ana.code.toUpperCase()} ` })).toEqual({ credited: true });
+    });
+
+    it('a failing database answers credited: false instead of an error', async () => {
+      const ana = await referrerAna();
+      const ben = await newPerson('ben@example.com', 'user_ben');
+      await db.run(sql`DROP TABLE referral`);
+      expect(await claim(ben, { code: ana.code })).toEqual({ credited: false });
+    });
+  });
+
+  describe('the referral_signup event', () => {
+    const analyticsOn = () => new AnalyticsEffects(db, { PRODUCT_ANALYTICS_KEY: 'phc_test' } as ServerEnv);
+    const events = async () =>
+      (await db.all<{ payload: string }>(sql`SELECT payload FROM outbox WHERE kind = 'analytics'`))
+        .map((r) => JSON.parse(r.payload) as {
+          event: string;
+          distinctId: string;
+          accountId: string | null;
+          properties?: Record<string, unknown>;
+          personProperties?: Record<string, unknown>;
+        })
+        .filter((e) => e.event === 'forms_referral_signup');
+
+    it('is sent once for the invitee, tagged with the referrer code as referred_by', async () => {
+      const ana = await referrerAna();
+      const ben = await newPerson('ben@example.com', 'user_ben');
+      const controller = new ReferralController(auth, new ReferralService(db, ON, analyticsOn()));
+      await controller.claim(as(ben.account, ben.member), { code: ana.code });
+      await controller.claim(as(ben.account, ben.member), { code: ana.code });
+      const sent = await events();
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({
+        distinctId: 'ben@example.com',
+        accountId: ben.account,
+        properties: { referral_code: ana.code, referral_source: 'link' },
+        personProperties: { referred_by: ana.code },
+      });
+    });
+
+    it('is not sent for a refused claim', async () => {
+      const ana = await referrerAna();
+      const self = await newPerson('ana@example.com', 'user_ana');
+      const controller = new ReferralController(auth, new ReferralService(db, ON, analyticsOn()));
+      await controller.claim(as(self.account, self.member), { code: ana.code });
+      expect(await events()).toHaveLength(0);
+    });
   });
 });
 
