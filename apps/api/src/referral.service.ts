@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { ServerEnv } from '@quill/config/env';
+import { referralCampaignEndsAt, type ServerEnv } from '@quill/config/env';
 import { ensureReferrer, getReferrerByCode, personNames, referralPersonKey, type Db } from '@quill/db';
 import { REFERRAL_GOAL, buildReferralLink, referralLinkBase } from '@quill/shared';
 import { DB, REFERRAL_OPTIONS } from './tokens';
@@ -10,6 +10,11 @@ export interface ReferralOptions {
   enabled: boolean;
   /** The landing, else the app (`referralLinkBase`). Null only when off. */
   baseUrl: string | null;
+  /**
+   * `REFERRAL_CAMPAIGN_ENDS_AT` in epoch ms: the campaign runs while now is
+   * before it. Absent or null means no end.
+   */
+  campaignEndsAt?: number | null;
   /** Code generator. Injectable so a collision is testable. */
   code?: () => string;
   /** The clock. */
@@ -22,10 +27,16 @@ export interface ReferralOptions {
  * to link to, the program stays off rather than handing out a dead link.
  */
 export function referralOptions(
-  env: Pick<ServerEnv, 'REFERRAL_PROGRAM' | 'PUBLIC_APP_URL'> & Partial<Pick<ServerEnv, 'NEXT_PUBLIC_LANDING_URL'>>,
+  env: Pick<ServerEnv, 'REFERRAL_PROGRAM' | 'PUBLIC_APP_URL'> &
+    Partial<Pick<ServerEnv, 'NEXT_PUBLIC_LANDING_URL' | 'REFERRAL_CAMPAIGN_ENDS_AT'>>,
 ): ReferralOptions {
+  // Parsed even with the program off, so a bad value fails before it is turned on.
+  const campaignEndsAt = referralCampaignEndsAt(env);
   const baseUrl = referralLinkBase({ landingUrl: env.NEXT_PUBLIC_LANDING_URL, appUrl: env.PUBLIC_APP_URL });
-  return env.REFERRAL_PROGRAM && baseUrl ? { enabled: true, baseUrl } : { enabled: false, baseUrl: null };
+  const end = campaignEndsAt == null ? {} : { campaignEndsAt };
+  return env.REFERRAL_PROGRAM && baseUrl
+    ? { enabled: true, baseUrl, ...end }
+    : { enabled: false, baseUrl: null, ...end };
 }
 
 /**
@@ -43,6 +54,12 @@ export type ReferralView =
       count: number;
       /** Referrals the referral unlock needs. */
       goal: number;
+      /**
+       * True while now is before the campaign end, or when none is set. Only
+       * campaign-scoped surfaces (the top banner, the nudge email) key off it;
+       * the link, the count and the menu entry stay after the campaign ends.
+       */
+      campaignActive: boolean;
     };
 
 /** A referral code as the landing may send it: the alphabet of `generateReferralCode`, any case. */
@@ -86,7 +103,13 @@ export class ReferralService {
     const link = buildReferralLink(this.options.baseUrl, row.code);
     if (!link) return { enabled: false };
     // The count arrives with referrals (they are not recorded yet).
-    return { enabled: true, link, count: 0, goal: REFERRAL_GOAL };
+    return { enabled: true, link, count: 0, goal: REFERRAL_GOAL, campaignActive: this.campaignActive() };
+  }
+
+  /** Whether the campaign is running: no end set, or now is still before it. */
+  campaignActive(): boolean {
+    const endsAt = this.options.campaignEndsAt;
+    return endsAt == null || (this.options.now?.() ?? Date.now()) < endsAt;
   }
 
   /**
