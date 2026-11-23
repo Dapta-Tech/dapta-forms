@@ -334,7 +334,7 @@ export async function personNames(db: Db, personId: string): Promise<PersonNameR
   const rows = email
     ? await db.all<Row>(
         sql`SELECT display_name, email, locale, account_id FROM member
-            WHERE external_id IS NULL AND lower(email) = ${email}
+            WHERE (external_id IS NULL OR external_id = '') AND lower(trim(email)) = ${email}
             ORDER BY COALESCE(last_seen_at, created_at) DESC`,
       )
     : await db.all<Row>(

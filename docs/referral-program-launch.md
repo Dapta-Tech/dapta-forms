@@ -133,6 +133,13 @@ To stop the program completely, use the kill switch (section 6) as well.
   switch but no automatic hide.
 - **WorkOS fallback path.** A workspace created through the WorkOS fallback
   sign-in has no future-workspace hook, so it does not start with the badge hidden.
+- **Explicit "show" before 0032.** A workspace that turned the badge off and back
+  on before migration 0032 has no `hide_attribution_chosen_at`, so it reads as
+  "no choice" and a referral unlock of its owner hides the badge anyway. Only
+  saves through the switch from 0032 on are told apart from the default.
+- **Sign-in latency.** The sign-in callback now posts the attribution record and
+  then the referral claim, one after the other, each with a 3 s timeout: in the
+  worst case the redirect to the dashboard waits up to 6 s.
 - **Local auth.** With `AUTH_PROVIDER=local` the `/?ref=` code is not carried
   through sign-in (the claim lives in the workos callback). The QA spec sends the
   claim itself; see `qa/QA-CONTEXT.md`.

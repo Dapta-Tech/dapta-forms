@@ -283,8 +283,12 @@ export class AdminCrudController {
     const attributionBadge = { showing: this.attribution ? await this.attribution.showFor(p.accountId) : true };
     // The referral program, for the left menu: the person's link and progress,
     // keyed by the person rather than this workspace (ADR 0005). Switched off,
-    // `{ enabled: false }` and nothing is written.
-    const referral = this.referrals ? await this.referrals.forMember(p.accountId, p.memberId) : { enabled: false };
+    // `{ enabled: false }` and nothing is written. An agent (API key, MCP) is
+    // not a person sharing a link: it gets the program off and writes nothing.
+    const referral =
+      this.referrals && !isAgentPrincipal(p)
+        ? await this.referrals.forMember(p.accountId, p.memberId)
+        : { enabled: false };
     return { ...view, staff, uploads, captcha, attributionBadge, referral };
   }
 
