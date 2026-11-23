@@ -3570,7 +3570,7 @@ export const en: FormsMessages = {
         },
         banner: {
           region: 'Referral program',
-          message0: 'Invite {goal} people and remove {badge} from your forms, for free',
+          message0: 'Invite {goal} people and remove {badge} from your forms, for free!',
           messageSome: '{left} to go to remove {badge} from your forms',
           messageLast: 'Just 1 to go to remove {badge} for good!',
           short0: 'Remove {badge}',
@@ -6643,7 +6643,7 @@ export const es: FormsMessages = {
         },
         banner: {
           region: 'Programa de referidos',
-          message0: 'Invita a {goal} personas y quita {badge} de tus formularios, gratis',
+          message0: 'Invita a {goal} personas y quita {badge} de tus formularios, ¡gratis!',
           messageSome: 'Te faltan {left} para quitar {badge} de tus formularios',
           messageLast: '¡Te falta 1 para quitar {badge} para siempre!',
           short0: 'Quita {badge}',
