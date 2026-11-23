@@ -12,8 +12,8 @@
  *   3. The mode: unset is locked with the identity service, open without.
  *   4. `attribution_hidden_toggled` fires on a real change only.
  *   5. Unlock sources: a referral unlock lets a locked workspace hide it like
- *      a paid verdict, with no expiry. Nothing feeds it yet, so by default it
- *      is off and every workspace behaves as before.
+ *      a paid verdict, with no expiry. A construction without the source
+ *      reads none (the app binds the real one, see `referral-unlock.spec.ts`).
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -97,8 +97,8 @@ afterEach(async () => {
 describe('GET / PUT /v1/account/attribution-badge', () => {
   it('reads the default: showing, not hidden', async () => {
     const { controller } = wire('locked');
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: false, showing: true, verdictSeen: false });
-    expect(await wire('open').controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true, verdictSeen: false });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: false, showing: true, verdictSeen: false, referralUnlocked: false });
+    expect(await wire('open').controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true, verdictSeen: false, referralUnlocked: false });
   });
 
   it('locked, not paid: turning it off is a 403 with a stable code, and nothing is stored', async () => {
@@ -120,6 +120,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
       canHide: true,
       showing: false,
       verdictSeen: true,
+      referralUnlocked: false,
     });
   });
 
@@ -131,7 +132,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     await cacheDaptaPaid(db, accountId, true);
     await controller.set(asOwner(), { hideAttribution: true });
     service.now = () => Date.now() + ATTRIBUTION_VERDICT_MAX_AGE_MS + 1000;
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true, referralUnlocked: false });
   });
 
   it('a lapse keeps the choice, shows the attribution again, and turning it back on needs nothing', async () => {
@@ -139,12 +140,13 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     await cacheDaptaPaid(db, accountId, true);
     await controller.set(asOwner(), { hideAttribution: true });
     await cacheDaptaPaid(db, accountId, false);
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: true, referralUnlocked: false });
     expect(await controller.set(asOwner(), { hideAttribution: false })).toEqual({
       hideAttribution: false,
       canHide: false,
       showing: true,
       verdictSeen: true,
+      referralUnlocked: false,
     });
   });
 
@@ -155,6 +157,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
       canHide: true,
       showing: false,
       verdictSeen: false,
+      referralUnlocked: false,
     });
   });
 
@@ -164,7 +167,7 @@ describe('GET / PUT /v1/account/attribution-badge', () => {
     await wire('open').controller.set(asOwner(), { hideAttribution: true });
     const { controller } = wire('locked');
     const never = await controller.status(asOwner());
-    expect(never).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: false });
+    expect(never).toEqual({ hideAttribution: true, canHide: false, showing: true, verdictSeen: false, referralUnlocked: false });
     await cacheDaptaPaid(db, accountId, false);
     expect(await controller.status(asOwner())).toMatchObject({ canHide: false, verdictSeen: true });
     // Nothing about billing beyond booleans.
@@ -215,12 +218,13 @@ describe('unlock sources: paid or referral', () => {
 
   it('locked, not paid, referral unlocked: an owner turns it off and the public form hides it', async () => {
     const { controller, service } = wire('locked', unlocked([accountId]));
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true, verdictSeen: false });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: false, canHide: true, showing: true, verdictSeen: false, referralUnlocked: true });
     expect(await controller.set(asOwner(), { hideAttribution: true })).toEqual({
       hideAttribution: true,
       canHide: true,
       showing: false,
       verdictSeen: false,
+      referralUnlocked: true,
     });
     const submissions = new SubmissionService(
       db,
@@ -240,7 +244,7 @@ describe('unlock sources: paid or referral', () => {
     await cacheDaptaPaid(db, accountId, true);
     await controller.set(asOwner(), { hideAttribution: true });
     await cacheDaptaPaid(db, accountId, false);
-    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: true, showing: false, verdictSeen: true });
+    expect(await controller.status(asOwner())).toEqual({ hideAttribution: true, canHide: true, showing: false, verdictSeen: true, referralUnlocked: true });
     await cacheDaptaPaid(db, accountId, true);
     service.now = () => Date.now() + ATTRIBUTION_VERDICT_MAX_AGE_MS + 1000;
     expect(await service.showFor(accountId)).toBe(false);
@@ -251,7 +255,7 @@ describe('unlock sources: paid or referral', () => {
     expect((await failure(controller.set(asOwner(), { hideAttribution: true }))).status).toBe(403);
   });
 
-  it('nothing feeds it yet: by default a locked, unpaid workspace still cannot hide it', async () => {
+  it('without the source wired, a locked, unpaid workspace still cannot hide it', async () => {
     const { controller } = wire('locked');
     expect(await controller.status(asOwner())).toMatchObject({ canHide: false });
     const out = await failure(controller.set(asOwner(), { hideAttribution: true }));

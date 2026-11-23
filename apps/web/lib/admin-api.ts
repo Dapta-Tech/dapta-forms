@@ -240,8 +240,9 @@ export type MeReferral =
        */
       bannerVisible?: boolean;
       /**
-       * The person holds the referral unlock. Not sent yet (the unlock lands
-       * later); `true` hides the banner whatever `bannerVisible` says.
+       * The person reached the goal: the badge is gone from every workspace
+       * they own, for life; `true` hides the banner whatever `bannerVisible`
+       * says. Optional so an older API still parses.
        */
       unlocked?: boolean;
     };
@@ -940,6 +941,11 @@ export interface AttributionStatus {
    * API older than the field reads as seen (the old wording).
    */
   verdictSeen?: boolean;
+  /**
+   * The workspace holds a referral unlock (an owner of it reached the goal):
+   * the switch works, with no expiry. Optional: an older API reads as false.
+   */
+  referralUnlocked?: boolean;
 }
 
 export const adminApi = {

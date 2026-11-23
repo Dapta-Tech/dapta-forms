@@ -637,6 +637,25 @@ export interface FormsMessages {
       saveFailed: string;
       /** The API refused turning it off: no paid verdict (it lapsed since the page loaded). */
       notSubscribed: string;
+      /**
+       * Locked, with the referral program on and the reader an owner: the line
+       * that replaces `subscribersOnly`, and its tooltip. `{product}` as there.
+       * // {goal} {product}
+       */
+      referralLocked: string;
+      /**
+       * Under it: how the referrals unlock it. `{badge}` is where the replica
+       * of the real pill goes (mark + `growth.madeWith`), so the badge is
+       * named as it reads on a form. // {goal} {badge}
+       */
+      referralLockedBody: string;
+      /** The progress bar's caption. // {count} {goal} */
+      referralProgress: string;
+      referralLinkLabel: string;
+      referralCopy: string;
+      referralCopied: string;
+      /** The switch works because an owner of the workspace reached the goal. // {goal} */
+      referralUnlocked: string;
     };
     /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
@@ -3619,6 +3638,14 @@ export const en: FormsMessages = {
       saved: 'Saved.',
       saveFailed: 'Could not save. Try again.',
       notSubscribed: 'Hiding the attribution is only for Dapta AI subscribers.',
+      referralLocked: 'Invite {goal} or pay for {product}',
+      referralLockedBody:
+        'Each person who signs up with your link counts. With {goal}, {badge} is gone from every workspace you own, for good.',
+      referralProgress: '{count} of {goal} joined',
+      referralLinkLabel: 'Your referral link',
+      referralCopy: 'Copy link',
+      referralCopied: 'Copied',
+      referralUnlocked: 'Unlocked for life: an owner of this workspace brought {goal} people to dForms.',
     },
     brandKit: {
       title: 'Brand kit',
@@ -6660,6 +6687,14 @@ export const es: FormsMessages = {
       saved: 'Guardado.',
       saveFailed: 'No se pudo guardar. Inténtalo de nuevo.',
       notSubscribed: 'Ocultar la atribución es solo para suscriptores de Dapta AI.',
+      referralLocked: 'Invita a {goal} o paga {product}',
+      referralLockedBody:
+        'Cuenta cada persona que se registre con tu link. Con {goal}, {badge} se va de todos los workspaces que tienes, para siempre.',
+      referralProgress: '{count} de {goal} se unieron',
+      referralLinkLabel: 'Tu link de referido',
+      referralCopy: 'Copiar link',
+      referralCopied: 'Copiado',
+      referralUnlocked: 'Desbloqueado de por vida: un dueño de este workspace trajo a {goal} personas a dForms.',
     },
     brandKit: {
       title: 'Kit de marca',

@@ -17,6 +17,7 @@ import { runAtomically, sql, type Db } from './client';
 import { revokeKeysOfInactiveMembersSql } from './api-keys';
 import { deriveUniqueHandle, insertAccountWithShortCode } from './short-links';
 import { ACCOUNT_ROLES, type AccessGrant, type AccountRole } from './members';
+import { applyReferralUnlock } from './referrals';
 
 /** One upstream membership, as the API layer hands it to the projection. */
 export interface ProjectedMembership {
@@ -452,6 +453,12 @@ export async function projectMemberships(
           result.created.push({ accountId: account.id, memberId: id, role, isFirstMember: !others, accessGrant: grant });
         }
       }
+      // A membership new to this person (created or adopted) that makes them
+      // an owner: the workspace starts without the attribution when they hold
+      // a referral unlock. A no-op otherwise; a grant is never ownership.
+      if (role === 'owner' && !grant) {
+        await applyReferralUnlock(db, identity.externalId, { accountId: account.id });
+      }
     }
     seenAccountIds.add(account.id);
     result.accountIds.push(account.id);
@@ -590,6 +597,9 @@ export async function createLocalWorkspace(
         VALUES (${memberId}, ${account.id}, ${identity.externalId}, ${identity.email}, ${identity.displayName},
           ${handle}, 'owner', 'active', ${now})`,
   );
+  // The owner's referral unlock reaches the workspaces they create later too.
+  const person = identity.externalId?.trim() || (identity.email ? `email:${identity.email.trim().toLowerCase()}` : null);
+  if (person) await applyReferralUnlock(db, person, { accountId: account.id });
   return { accountId: account.id, memberId };
 }
 

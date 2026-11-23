@@ -27,6 +27,11 @@ export const account = pgTable('account', {
   daptaPaid: integer('dapta_paid'),
   /** Epoch ms that verdict was written (0028). */
   daptaPaidCheckedAt: bigint('dapta_paid_checked_at', { mode: 'number' }),
+  /**
+   * Epoch ms of the workspace's last EXPLICIT choice on the attribution switch
+   * (0032); NULL = it never chose, so a referral unlock may hide it for them.
+   */
+  hideAttributionChosenAt: bigint('hide_attribution_chosen_at', { mode: 'number' }),
   /** First-touch acquisition context (see 0010). Written once by `claimAccountAttribution`. */
   attribution: jsonb('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */

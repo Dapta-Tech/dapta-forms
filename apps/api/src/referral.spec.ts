@@ -122,6 +122,7 @@ describe('/v1/me.referral, program on', () => {
       count: 0,
       goal: 5,
       campaignActive: true,
+      unlocked: false,
       bannerVisible: true,
     });
     expect(referral.link).toMatch(/^https:\/\/landing\.example\.test\/\?ref=[a-z0-9]{8}$/);
@@ -447,6 +448,7 @@ describe('/v1/me.referral, the campaign window', () => {
         count: 0,
         goal: 5,
         campaignActive: false,
+        unlocked: false,
         bannerVisible: false,
       });
     }

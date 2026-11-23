@@ -22,6 +22,7 @@ import {
   NOTIFIER,
   ONBOARDING_ENABLED,
   REFERRAL_OPTIONS,
+  REFERRAL_UNLOCKS,
   PREMIUM_MODE,
   ATTRIBUTION_MODE,
   RATE_LIMITER,
@@ -65,6 +66,7 @@ import { AttributionController } from './attribution.controller';
 import { ANNOUNCEMENTS_OPTIONS, AnnouncementsController, isDaptaDeployment } from './announcements.controller';
 import { AttributionService } from './attribution.service';
 import { ReferralService, referralOptions } from './referral.service';
+import { PersonReferralUnlocks } from './referral-unlocks';
 import { ReferralController } from './referral.controller';
 import { ReferralBannerController } from './referral-banner.controller';
 import { LinkPageController } from './link-page.controller';
@@ -192,6 +194,9 @@ function newPersonObserver(referrals: ReferralService): NewPersonObserver | unde
     // means locked whenever the identity service (the paid verdict's only
     // source) is configured. See `attributionPremiumMode`.
     { provide: ATTRIBUTION_MODE, useFactory: (env: ServerEnv) => attributionPremiumMode(env), inject: [ENV] },
+    // The rule's second unlock source: a workspace any of whose owners earned
+    // a referral unlock (5 referrals) may hide it, with no expiry.
+    { provide: REFERRAL_UNLOCKS, useClass: PersonReferralUnlocks },
     AttributionService,
     // The first-run wizard's switch, resolved ONCE and injected, so the API is
     // the single authority on whether onboarding is required. The web app reads

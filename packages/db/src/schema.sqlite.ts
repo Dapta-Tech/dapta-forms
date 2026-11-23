@@ -32,6 +32,8 @@ export const account = sqliteTable('account', {
   daptaPaid: integer('dapta_paid'),
   /** Epoch ms that verdict was written (0028). */
   daptaPaidCheckedAt: integer('dapta_paid_checked_at'),
+  /** Epoch ms of the last explicit choice on the switch (0032); NULL = never chose. See the Postgres twin. */
+  hideAttributionChosenAt: integer('hide_attribution_chosen_at'),
   /** First-touch acquisition context (TEXT JSON, see 0010). Written once by `claimAccountAttribution`. */
   attribution: text('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */

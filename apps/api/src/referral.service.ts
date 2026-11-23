@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { referralCampaignEndsAt, type ServerEnv } from '@quill/config/env';
 import {
+  applyReferralUnlock,
   countReferrals,
   creditReferral,
   dismissReferralBanner,
@@ -8,6 +9,7 @@ import {
   getAttributionSwitch,
   getMe,
   getReferrerByCode,
+  markReferralUnlocked,
   personNames,
   recordReferralInvite,
   referralInviterOf,
@@ -88,6 +90,11 @@ export type ReferralView =
        */
       campaignActive: boolean;
       /**
+       * The person holds a referral unlock: they reached the goal, and the
+       * badge is gone from every workspace they own, for life.
+       */
+      unlocked: boolean;
+      /**
        * Whether the top banner shows: the campaign is running, the person is
        * below the goal and holds no referral unlock, this workspace does not
        * pay for Dapta AI (a fresh paid verdict), and the person has not
@@ -151,6 +158,7 @@ export class ReferralService {
       count,
       goal: REFERRAL_GOAL,
       campaignActive: this.campaignActive(),
+      unlocked: row.unlockedAt != null,
       bannerVisible: await this.bannerVisible(accountId, row, count),
     };
   }
@@ -207,10 +215,42 @@ export class ReferralService {
     const now = this.options.now?.() ?? Date.now();
     const credited = await creditReferral(this.db, { referee, referrer: owner.personId, source: 'link', now });
     if (credited) {
-      await this.afterCredited(owner.personId, now);
+      await this.afterCredit(owner.personId, now);
       await this.signupEvent(principal, owner.code, 'link', now);
     }
     return { credited };
+  }
+
+  /**
+   * What a credited referral sets off for its referrer, called by every
+   * source right after `creditReferral` returns true (the link here, the
+   * teammate invite too). When the credit brings the person to
+   * `REFERRAL_GOAL`, the referral unlock:
+   *   1. `referrer.unlocked_at` is written once (idempotent: a 6th referral,
+   *      or two credits racing to the 5th, unlock exactly once);
+   *   2. every workspace the person owns that never made an explicit choice
+   *      hides the badge (`applyReferralUnlock`); the ones they create later
+   *      start hidden (the projection and the local create call it too);
+   *   3. `referral_unlocked` is sent about the referrer.
+   *
+   * True only for the call that unlocked the person: the hook for what
+   * follows the unlock once (the "you did it" email, the celebration).
+   * Never throws: a referral is an observer of a signup, never a participant.
+   */
+  async afterCredit(referrerPerson: string, now: number): Promise<boolean> {
+    try {
+      const count = await countReferrals(this.db, referrerPerson);
+      if (count < REFERRAL_GOAL) return false;
+      // The invite source can credit someone who never opened their link.
+      const row = await ensureReferrer(this.db, referrerPerson, { now, code: this.options.code });
+      if (!(await markReferralUnlocked(this.db, referrerPerson, now))) return false;
+      const hidden = await applyReferralUnlock(this.db, referrerPerson);
+      await this.unlockedEvent(referrerPerson, row.code, count, hidden.length, now);
+      return true;
+    } catch (err) {
+      this.log.warn(`referral unlock failed for ${referrerPerson}: ${String(err)}`);
+      return false;
+    }
   }
 
   /**
@@ -230,6 +270,32 @@ export class ReferralService {
     } catch (err) {
       this.log.error(`referral invite record failed: ${String(err)}`);
     }
+  }
+
+  /**
+   * `referral_unlocked`, about the referrer, once. Sent to the email on their
+   * most recently seen member row; a person with none is not sent anything.
+   */
+  private async unlockedEvent(
+    person: string,
+    code: string,
+    count: number,
+    workspacesHidden: number,
+    now: number,
+  ): Promise<void> {
+    if (!this.analytics?.enabled) return;
+    const email = (await personNames(this.db, person)).find((r) => r.email)?.email;
+    if (!email) return;
+    await this.analytics.capture(
+      'referral_unlocked',
+      {
+        distinctId: email,
+        accountId: null,
+        properties: { referral_code: code, referral_count: count, workspaces_hidden: workspacesHidden },
+        personProperties: { referral_code: code, referral_unlocked: true },
+      },
+      now,
+    );
   }
 
   /**
@@ -257,7 +323,7 @@ export class ReferralService {
         newPerson: true,
       });
       if (!credited) return;
-      await this.afterCredited(inviter, now);
+      await this.afterCredit(inviter, now);
       // The inviter's code rides on the event, as with a link, so the funnel
       // is cut by referrer the same way. Their link row is made if they never
       // opened it: it is theirs either way.
@@ -266,15 +332,6 @@ export class ReferralService {
     } catch (err) {
       this.log.error(`referral invite credit failed: ${String(err)}`);
     }
-  }
-
-  /**
-   * What follows every credited referral, whichever its source: the one
-   * place the next steps hang off (the unlock at the goal), so a link and an
-   * invite can never drift apart.
-   */
-  private async afterCredited(_referrer: string, _now: number): Promise<void> {
-    // The unlock at the goal lands here.
   }
 
   /**
