@@ -65,6 +65,7 @@ import { AttributionController } from './attribution.controller';
 import { ANNOUNCEMENTS_OPTIONS, AnnouncementsController, isDaptaDeployment } from './announcements.controller';
 import { AttributionService } from './attribution.service';
 import { ReferralService, referralOptions } from './referral.service';
+import { ReferralBannerController } from './referral-banner.controller';
 import { LinkPageController } from './link-page.controller';
 import { LinkPageService } from './link-page.service';
 import { AnalyticsController } from './analytics.controller';
@@ -123,6 +124,9 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // GET /.well-known/openai-apps-challenge: OpenAI's domain-verification
     // token for the ChatGPT app. 404 unless OPENAI_APPS_CHALLENGE_TOKEN is set.
     OpenAiAppsChallengeController,
+    // POST /v1/me/referral/banner/dismiss: the referral banner's close, for
+    // 7 days, per person. Session only (see the controller).
+    ReferralBannerController,
   ],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },
