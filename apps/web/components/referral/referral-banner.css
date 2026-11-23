@@ -11,7 +11,9 @@
    The strip clips its own overflow, so it can never scroll the page sideways.
    Every animation stops under `prefers-reduced-motion` (end of file). */
 
-.rb {
+/* The fire palette, shared with the celebration at the goal (`.rc`). */
+.rb,
+.rc {
   --rb-bg: #222225;
   --rb-ink: #fefefe;
   --rb-ink-2: #d4d4da;
@@ -21,6 +23,8 @@
   --rb-amber: #f5a524;
   --rb-gold: #ffcb70;
   --rb-coral: #f2686c;
+}
+.rb {
   position: relative;
   container-name: rb;
   container-type: inline-size;

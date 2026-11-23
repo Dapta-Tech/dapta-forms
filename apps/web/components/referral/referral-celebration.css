@@ -1,0 +1,345 @@
+/* ── Referral program: the celebration at the goal ───────────────────────────
+
+   The banner's family (its fire palette, `.rb-pill`, `.rb-flag`), on a dark
+   card in both colour schemes. The sequence, from the moment it opens:
+
+     0.0 to 0.9 s   the fire line runs from 80% (where the banner left it)
+                    across the whole pill;
+     0.9 to 1.8 s   the pill burns away from left to right behind a flame
+                    front, and the sparks burst;
+     from 1.8 s     a check takes its place; the flag waves at the end of a
+                    full, flowing track.
+
+   `data-motion="reduce"` (and `prefers-reduced-motion`) shows the end state
+   still, with the pill kept, fully crossed out and dimmed, so it still says
+   what happened. */
+
+.rc {
+  background: var(--rb-bg);
+  border: 1px solid rgba(245, 165, 36, 0.55);
+  color: var(--rb-ink);
+}
+
+.rc-card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── The stage: the pill, the sparks, the track and the flag ── */
+.rc-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  height: 168px;
+  padding: 0 28px;
+  overflow: hidden;
+  background: #19191b;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.rc-glow {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 260px;
+  height: 160px;
+  margin: -80px 0 0 -130px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(242, 104, 108, 0.32), rgba(245, 165, 36, 0.12) 60%, transparent);
+  opacity: 0;
+  animation: rc-glow 1.8s ease-out forwards;
+}
+
+.rc-burn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+}
+/* The pill, larger than in the strip. */
+.rc .rc-pill {
+  gap: 7px;
+  margin: 0;
+  padding: 6px 15px 6px 12px;
+  font-size: 16px;
+  color: var(--rb-ink-2);
+  animation: rc-eat 0.9s 0.9s cubic-bezier(0.55, 0, 0.6, 1) forwards;
+}
+.rc .rc-pill .rb-pill-mark {
+  height: 15px;
+}
+.rc .rc-pill::after {
+  left: 8px;
+  height: 3px;
+  margin-top: -1.5px;
+  animation:
+    rc-line 0.9s cubic-bezier(0.3, 0, 0.3, 1) forwards,
+    rb-sizzle 0.3s steps(2) infinite;
+}
+/* The flame front that eats the pill. */
+.rc-front {
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  left: 0;
+  width: 18px;
+  margin-left: -9px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #fff4d6, var(--rb-gold) 35%, var(--rb-coral) 70%, transparent);
+  filter: blur(1px);
+  opacity: 0;
+  animation: rc-front 0.9s 0.9s cubic-bezier(0.55, 0, 0.6, 1) forwards;
+}
+/* Where the pill was: a check, once it is gone. */
+.rc-burn::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1c' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E")
+      center / 20px no-repeat,
+    var(--rb-green);
+  box-shadow: 0 0 18px rgba(61, 220, 132, 0.55);
+  opacity: 0;
+  transform: scale(0.4);
+  animation: rc-check 0.45s 1.75s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
+}
+
+.rc-spark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: var(--rb-gold);
+  box-shadow: 0 0 6px var(--rb-amber);
+  opacity: 0;
+  animation: rc-burst 0.9s calc(0.95s + var(--rc-delay, 0s)) ease-out 2 both;
+}
+.rc-spark:nth-child(3n) {
+  background: var(--rb-coral);
+}
+
+.rc-track {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.rc-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 99px;
+  background-image: linear-gradient(90deg, var(--rb-green), var(--rb-amber), var(--rb-coral), var(--rb-gold), var(--rb-green));
+  background-size: 200% 100%;
+  box-shadow: 0 0 10px rgba(242, 104, 108, 0.45);
+  animation: rb-flow 1.4s linear infinite;
+}
+.rc .rb-flag {
+  right: -14px;
+  bottom: -4px;
+  width: 26px;
+  height: 30px;
+  animation-duration: 0.9s;
+  filter: drop-shadow(0 0 6px rgba(245, 165, 36, 0.6));
+}
+
+/* ── The copy and the buttons ── */
+.rc-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 24px 24px;
+}
+.rc-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--rb-ink);
+  text-wrap: balance;
+}
+/* The badge's name, struck through by the fire line. */
+.rc-name {
+  white-space: nowrap;
+  text-decoration: line-through;
+  text-decoration-color: var(--rb-coral);
+  text-decoration-thickness: 2px;
+  color: var(--rb-ink-2);
+}
+.rc-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--rb-ink-3);
+}
+.rc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.rc-btn {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+.rc-btn:active {
+  transform: scale(0.98);
+}
+.rc-btn:focus-visible {
+  outline: 2px solid var(--rb-gold);
+  outline-offset: 2px;
+}
+.rc-btn-primary {
+  background: var(--rb-ink);
+  color: #1a1a1c;
+}
+.rc-btn-primary:hover {
+  background: #e9e9ee;
+}
+.rc-btn-secondary {
+  background: transparent;
+  color: var(--rb-ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+.rc-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+@media (max-width: 420px) {
+  .rc-stage {
+    height: 148px;
+    padding: 0 22px;
+  }
+  .rc-copy {
+    padding: 18px 18px 20px;
+  }
+  .rc-title {
+    font-size: 17px;
+  }
+  .rc-btn {
+    flex-basis: 100%;
+  }
+}
+
+/* ── The still version ── */
+.rc-card[data-motion='reduce'] .rc-pill,
+.rc-card[data-motion='reduce'] .rc-pill::after,
+.rc-card[data-motion='reduce'] .rc-glow,
+.rc-card[data-motion='reduce'] .rc-fill,
+.rc-card[data-motion='reduce'] .rb-flag {
+  animation: none;
+}
+.rc-card[data-motion='reduce'] .rc-pill {
+  opacity: 0.6;
+}
+.rc-card[data-motion='reduce'] .rc-pill::after {
+  width: calc(100% - 16px);
+}
+.rc-card[data-motion='reduce'] .rc-glow {
+  opacity: 1;
+}
+.rc-card[data-motion='reduce'] .rc-burn::after {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc *,
+  .rc *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .rc .rc-pill {
+    opacity: 0.6;
+    clip-path: none;
+  }
+  .rc .rc-pill::after {
+    width: calc(100% - 16px);
+  }
+  .rc .rc-glow {
+    opacity: 1;
+  }
+  .rc .rc-spark,
+  .rc .rc-front,
+  .rc .rc-burn::after {
+    display: none;
+  }
+}
+
+@keyframes rc-line {
+  from {
+    width: 80%;
+  }
+  to {
+    width: calc(100% - 16px);
+  }
+}
+@keyframes rc-eat {
+  0% {
+    clip-path: inset(0 0 0 0);
+    color: var(--rb-coral);
+  }
+  100% {
+    clip-path: inset(0 0 0 100%);
+    color: var(--rb-coral);
+  }
+}
+@keyframes rc-front {
+  0% {
+    left: 0;
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+@keyframes rc-burst {
+  0% {
+    transform: rotate(var(--rc-a)) translateX(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--rc-a)) translateX(var(--rc-d)) scale(0.4);
+    opacity: 0;
+  }
+}
+@keyframes rc-glow {
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.7;
+  }
+}
+@keyframes rc-check {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
