@@ -66,6 +66,12 @@ export interface AnalyticsIdentity {
    * two unrelated people.
    */
   landingDistinctId?: string | null;
+  /**
+   * The person's referral code while the referral program is on (read off
+   * their link in `/v1/me.referral`), set on the person as `referral_code`.
+   * The API sets `referred_by` on each invitee, so the two join per referrer.
+   */
+  referralCode?: string | null;
 }
 
 /**
@@ -189,6 +195,7 @@ export function identifyMember(identity: AnalyticsIdentity): void {
     member_id: identity.memberId,
     account_id: identity.accountId,
     role: identity.role,
+    ...(identity.referralCode ? { referral_code: identity.referralCode } : {}),
   });
   aliasLandingVisit(ph, identity.landingDistinctId, identity.email);
   ph.register({

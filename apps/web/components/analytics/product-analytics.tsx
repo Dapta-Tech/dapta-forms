@@ -29,7 +29,7 @@ export function ProductAnalytics({
   identity: AnalyticsIdentity;
 }) {
   const { key, host } = analytics;
-  const { email, memberId, accountId, accountCode, role, attribution, landingDistinctId } = identity;
+  const { email, memberId, accountId, accountCode, role, attribution, landingDistinctId, referralCode } = identity;
 
   // `attribution` is an OBJECT, re-created by every RSC payload, so depending on
   // it directly would re-run the effect — and re-identify the session — on every
@@ -57,13 +57,15 @@ export function ProductAnalytics({
       // dance above; re-running with the same id is a no-op behind
       // `identifyMember`'s localStorage latch.
       landingDistinctId,
+      // A plain string too, so it sits in the deps directly.
+      referralCode,
     });
     // Re-runs on a workspace switch: `account_id` is a super property and a
     // group, so it has to follow the member into the workspace they are
     // actually looking at, or every event after a switch is filed under the
     // wrong account. The campaign tags are a property of that same WORKSPACE and
     // change with it, which is why `attributionKey` is here too.
-  }, [key, email, memberId, accountId, accountCode, role, attributionKey, landingDistinctId]);
+  }, [key, email, memberId, accountId, accountCode, role, attributionKey, landingDistinctId, referralCode]);
 
   if (!key) return null;
 

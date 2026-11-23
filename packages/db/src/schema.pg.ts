@@ -470,6 +470,37 @@ export const referrer = pgTable(
   }),
 );
 
+/**
+ * One referral: a new person (the referee) credited to a referrer (see 0031
+ * and ADR 0005). Both columns hold a person key, like `referrer.person_id`.
+ * The referee is the primary key, so the first credit wins; `source` is
+ * `link` or `invite`. Never deleted.
+ */
+export const referral = pgTable(
+  'referral',
+  {
+    refereePersonId: text('referee_person_id').primaryKey(),
+    referrerPersonId: text('referrer_person_id').notNull(),
+    source: text('source').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    referralReferrerIdx: index('referral_referrer_idx').on(t.referrerPersonId),
+  }),
+);
+
+/**
+ * Who invited which address as a teammate (see 0033). The address (trimmed,
+ * lowercased) is the primary key, so the first inviter keeps it. The identity
+ * service's invitation has no inviter: this is the only record of one.
+ */
+export const referralInvite = pgTable('referral_invite', {
+  email: text('email').primaryKey(),
+  inviterPersonId: text('inviter_person_id').notNull(),
+  accountId: text('account_id').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+});
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -488,4 +519,6 @@ export const pgSchema = {
   linkPageAlias,
   announcementState,
   referrer,
+  referral,
+  referralInvite,
 };

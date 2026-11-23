@@ -13,6 +13,7 @@ import { parseAttribution, attributionSchema, ATTRIBUTION_QUERY_KEYS } from '@qu
 import {
   attributionHandoffQuery,
   crossOriginReferer,
+  referralCodeOfLink,
   sanitizeLandingDistinctId,
 } from './attribution';
 
@@ -202,5 +203,43 @@ describe('crossOriginReferer', () => {
     // A self-host with no PUBLIC_APP_URL and no proxy headers: better to record the
     // referer than to silently treat every visit as internal.
     expect(crossOriginReferer('https://ads.example.com/x', null)).toBe('https://ads.example.com/x');
+  });
+});
+
+describe('ref: the referral code rides the same hops as the UTMs', () => {
+  /** What the login route does with whatever hop 1 emitted. */
+  const receive = (query: string) => {
+    const sp = new URLSearchParams(query);
+    return parseAttribution(Object.fromEntries([...new Set(sp.keys())].map((k) => [k, sp.getAll(k)])));
+  };
+
+  it('is on the allowlist, stored as referralCode', () => {
+    expect(ATTRIBUTION_QUERY_KEYS).toContain('ref');
+    expect(parseAttribution({ ref: 'k7m2p9qx' })).toEqual({ referralCode: 'k7m2p9qx' });
+    expect(parseAttribution({ ref: 'k7m2p9qx', utm_source: 'whatsapp' })).toEqual({
+      referralCode: 'k7m2p9qx',
+      utmSource: 'whatsapp',
+    });
+  });
+
+  it('a bare referral link is worth a hop on its own, and survives both hops', () => {
+    const query = attributionHandoffQuery({ ref: 'k7m2p9qx' }, null, null);
+    expect(new URLSearchParams(query).get('ref')).toBe('k7m2p9qx');
+    expect(receive(query)).toEqual({ referralCode: 'k7m2p9qx' });
+  });
+
+  it('keeps the first of a repeated ref and caps a hostile one', () => {
+    expect(receive(attributionHandoffQuery({ ref: ['first', 'second'] }, null, null))).toEqual({ referralCode: 'first' });
+    expect(parseAttribution({ ref: 'r'.repeat(500) })!.referralCode).toHaveLength(32);
+  });
+});
+
+describe('referralCodeOfLink', () => {
+  it('reads the code off a referral link, and nothing off anything else', () => {
+    expect(referralCodeOfLink('https://landing.example.test/?ref=k7m2p9qx')).toBe('k7m2p9qx');
+    expect(referralCodeOfLink('https://app.example.test/start?x=1&ref=k7m2p9qx')).toBe('k7m2p9qx');
+    expect(referralCodeOfLink('https://landing.example.test/')).toBeNull();
+    expect(referralCodeOfLink('not a url')).toBeNull();
+    expect(referralCodeOfLink(undefined)).toBeNull();
   });
 });

@@ -438,6 +438,28 @@ export const referrer = sqliteTable(
   }),
 );
 
+/** One referral, keyed by the referee person (see 0031 and the Postgres twin). */
+export const referral = sqliteTable(
+  'referral',
+  {
+    refereePersonId: text('referee_person_id').primaryKey(),
+    referrerPersonId: text('referrer_person_id').notNull(),
+    source: text('source').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    referralReferrerIdx: index('referral_referrer_idx').on(t.referrerPersonId),
+  }),
+);
+
+/** Who invited which address as a teammate (see 0033 and the Postgres twin). */
+export const referralInvite = sqliteTable('referral_invite', {
+  email: text('email').primaryKey(),
+  inviterPersonId: text('inviter_person_id').notNull(),
+  accountId: text('account_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -456,4 +478,6 @@ export const sqliteSchema = {
   linkPageAlias,
   announcementState,
   referrer,
+  referral,
+  referralInvite,
 };

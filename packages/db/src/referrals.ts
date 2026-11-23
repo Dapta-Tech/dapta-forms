@@ -133,6 +133,186 @@ export async function getReferrerByCode(db: Db, code: string): Promise<ReferrerR
   return r ? toRow(r) : null;
 }
 
+/** How a referee came to dForms: the referrer's link, or a teammate invite. */
+export type ReferralSource = 'link' | 'invite';
+
+/** Referrals credited to a person so far. Rows are never deleted, so it never goes down. */
+export async function countReferrals(db: Db, referrerPersonId: string): Promise<number> {
+  const r = await db.get<{ n: number | string }>(
+    sql`SELECT COUNT(*) AS n FROM referral WHERE referrer_person_id = ${referrerPersonId}`,
+  );
+  return Number(r?.n ?? 0);
+}
+
+const EMAIL_KEY = 'email:';
+
+/** Every address a person is known by, lowercased: the emails on their member rows. */
+async function personEmails(db: Db, person: string): Promise<Set<string>> {
+  if (person.startsWith(EMAIL_KEY)) return new Set([person.slice(EMAIL_KEY.length)]);
+  const rows = await db.all<{ email: string | null }>(
+    sql`SELECT email FROM member WHERE external_id = ${person} AND email IS NOT NULL`,
+  );
+  return new Set(rows.map((r) => r.email!.trim().toLowerCase()).filter(Boolean));
+}
+
+/** Same person, or another subject on one of the referrer's addresses. */
+async function isSelfReferral(db: Db, referee: string, referrer: string): Promise<boolean> {
+  if (referee === referrer) return true;
+  const [mine, theirs] = await Promise.all([personEmails(db, referee), personEmails(db, referrer)]);
+  for (const email of mine) if (theirs.has(email)) return true;
+  return false;
+}
+
+/**
+ * How long after a person first appears a referral can still be credited to
+ * them: the same 10 minutes the signup attribution gives a new account
+ * (`claimAccountAttribution`).
+ */
+export const REFERRAL_CLAIM_WINDOW_MS = 10 * 60_000;
+
+/**
+ * When the person first appeared in dForms: the oldest of their member rows,
+ * or null when they have none. A staff access grant is not a membership (the
+ * person never signed up for that workspace), so it does not count.
+ */
+export async function personFirstSeenAt(db: Db, person: string): Promise<number | null> {
+  const r = person.startsWith(EMAIL_KEY)
+    ? await db.get<{ first: number | string | null }>(
+        sql`SELECT MIN(created_at) AS first FROM member
+            WHERE (external_id IS NULL OR external_id = '')
+              AND lower(trim(email)) = ${person.slice(EMAIL_KEY.length)}
+              AND (access_grant IS NULL OR access_grant <> 'staff')`,
+      )
+    : await db.get<{ first: number | string | null }>(
+        sql`SELECT MIN(created_at) AS first FROM member
+            WHERE external_id = ${person}
+              AND (access_grant IS NULL OR access_grant <> 'staff')`,
+      );
+  return num(r?.first ?? null);
+}
+
+/**
+ * A new person: their first member row (staff grants aside) was written less
+ * than `REFERRAL_CLAIM_WINDOW_MS` ago. Derived from the member table, never
+ * stored (ADR 0005). A person with no row at all is not new: there is nobody.
+ */
+export async function isNewPerson(db: Db, person: string, now: number = Date.now()): Promise<boolean> {
+  const first = await personFirstSeenAt(db, person);
+  return first != null && first > now - REFERRAL_CLAIM_WINDOW_MS;
+}
+
+/**
+ * Credit one referee to one referrer; true when this call wrote the referral.
+ *
+ * The rules, every refusal a plain `false`:
+ *   - not a self-referral: the same person, or another subject on one of the
+ *     referrer's addresses;
+ *   - the referee is a new person (`isNewPerson`);
+ *   - first credit wins: `referee_person_id` is the primary key, so a referee
+ *     already credited (to anyone, by any source) inserts nothing. Two
+ *     concurrent claims race on that key and exactly one of them writes.
+ *
+ * Both sources go through here: the referral link (`link`) and a teammate
+ * invite (`invite`), so both obey the same rules.
+ */
+export async function creditReferral(
+  db: Db,
+  input: {
+    referee: string;
+    referrer: string;
+    source: ReferralSource;
+    now?: number;
+    /**
+     * The caller already judged the referee new at this sign-in (the invite
+     * source: no bound member row before it), so the 10-minute window is not
+     * asked. An adopted invite row keeps the invite's `created_at`, so its
+     * age says nothing about the person.
+     */
+    newPerson?: boolean;
+  },
+): Promise<boolean> {
+  const now = input.now ?? Date.now();
+  if (await isSelfReferral(db, input.referee, input.referrer)) return false;
+  if (input.newPerson === false) return false;
+  if (input.newPerson !== true && !(await isNewPerson(db, input.referee, now))) return false;
+  const row = await db.get<{ referee_person_id: string }>(
+    sql`INSERT INTO referral (referee_person_id, referrer_person_id, source, created_at)
+        VALUES (${input.referee}, ${input.referrer}, ${input.source}, ${now})
+        ON CONFLICT DO NOTHING
+        RETURNING referee_person_id`,
+  );
+  return Boolean(row);
+}
+
+/** An invited address as the invite record keys it: trimmed and lowercased, or null when empty. */
+export function inviteEmailKey(email: string | null | undefined): string | null {
+  const key = email?.trim().toLowerCase();
+  return key ? key : null;
+}
+
+/**
+ * Record that a person invited an address as a teammate (0033): true when
+ * this call wrote the record. The first inviter of an address keeps it; a
+ * re-invite, from them or anyone else, writes nothing.
+ */
+export async function recordReferralInvite(
+  db: Db,
+  input: { email: string; inviter: string; accountId: string; now?: number },
+): Promise<boolean> {
+  const email = inviteEmailKey(input.email);
+  if (!email) return false;
+  const row = await db.get<{ email: string }>(
+    sql`INSERT INTO referral_invite (email, inviter_person_id, account_id, created_at)
+        VALUES (${email}, ${input.inviter}, ${input.accountId}, ${input.now ?? Date.now()})
+        ON CONFLICT DO NOTHING
+        RETURNING email`,
+  );
+  return Boolean(row);
+}
+
+/** The person who first invited an address as a teammate, or null when nobody did. */
+export async function referralInviterOf(db: Db, email: string | null | undefined): Promise<string | null> {
+  const key = inviteEmailKey(email);
+  if (!key) return null;
+  const r = await db.get<{ inviter_person_id: string }>(
+    sql`SELECT inviter_person_id FROM referral_invite WHERE email = ${key} LIMIT 1`,
+  );
+  return r?.inviter_person_id ?? null;
+}
+
+/**
+ * Whether the identity service's user already has a member row bound to them
+ * (any workspace, any status), a staff access grant aside. Read BEFORE a
+ * sign-in writes its rows: false there means this sign-in is the person's
+ * first, the invite source's test for a new person.
+ */
+export async function hasBoundMembership(db: Db, externalId: string): Promise<boolean> {
+  const r = await db.get<{ id: string }>(
+    sql`SELECT id FROM member
+        WHERE external_id = ${externalId} AND (access_grant IS NULL OR access_grant <> 'staff')
+        LIMIT 1`,
+  );
+  return Boolean(r);
+}
+
+/**
+ * Local development's twin of `hasBoundMembership`, for a person keyed by
+ * email: whether a member row with that address (and no identity service id)
+ * was ever more than an invitation, a staff grant aside. False while every
+ * row of theirs is still `invited`, so their first sign-in is told apart.
+ */
+export async function hasSignedInByEmail(db: Db, email: string): Promise<boolean> {
+  const key = inviteEmailKey(email);
+  if (!key) return false;
+  const r = await db.get<{ id: string }>(
+    sql`SELECT id FROM member
+        WHERE (external_id IS NULL OR external_id = '') AND lower(trim(email)) = ${key}
+          AND status <> 'invited' AND (access_grant IS NULL OR access_grant <> 'staff')
+        LIMIT 1`,
+  );
+  return Boolean(r);
+}
+
 /** The name and email on one of a person's member rows. */
 export interface PersonNameRow {
   displayName: string | null;

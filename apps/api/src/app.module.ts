@@ -52,7 +52,7 @@ import { createObjectStorage } from './storage';
 import { createCaptchaVerifier } from './captcha';
 import { UploadService } from './upload.service';
 import { resolveEntitlementsProvider } from './entitlements.provider';
-import { createAuthProvider, type SignupObserver } from './auth.provider';
+import { createAuthProvider, type NewPersonObserver, type SignupObserver } from './auth.provider';
 import { WorkspaceProjection } from './workspace-projection';
 import { IamWorkspacesClient } from './iam-workspaces';
 import { WorkspaceService } from './workspace.service';
@@ -65,6 +65,7 @@ import { AttributionController } from './attribution.controller';
 import { ANNOUNCEMENTS_OPTIONS, AnnouncementsController, isDaptaDeployment } from './announcements.controller';
 import { AttributionService } from './attribution.service';
 import { ReferralService, referralOptions } from './referral.service';
+import { ReferralController } from './referral.controller';
 import { ReferralBannerController } from './referral-banner.controller';
 import { LinkPageController } from './link-page.controller';
 import { LinkPageService } from './link-page.service';
@@ -99,6 +100,15 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
   };
 }
 
+/**
+ * A person's first sign-in, for the referral program: credit whoever invited
+ * their address as a teammate. Not wired with the program off, so a sign-in
+ * then costs exactly what it did before.
+ */
+function newPersonObserver(referrals: ReferralService): NewPersonObserver | undefined {
+  return referrals.enabled ? (person) => referrals.creditInvite(person) : undefined;
+}
+
 @Module({
   controllers: [
     HealthController,
@@ -115,6 +125,9 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // GET /v1/me/announcement + POST /v1/me/announcements/:id: in-app news,
     // once per person. Session only (see the controller).
     AnnouncementsController,
+    // POST /v1/me/referral/claim: the sign-in callback credits a new person
+    // to a referral link's owner. Per person, any role, session only.
+    ReferralController,
     // POST /mcp: the dForms MCP server (@quill/mcp). Runs each tool through the
     // form handlers above, so it resolves them from the module once it is built.
     McpController,
@@ -199,15 +212,16 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // fork / plain local dev gets null and every workspace path stays local.
     {
       provide: WORKSPACE_PROJECTION,
-      useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects) =>
+      useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects, referrals: ReferralService) =>
         iamWorkspacesEnabled(env) && env.IAM_BASE_URL
           ? new WorkspaceProjection(db, new IamWorkspacesClient({ baseUrl: env.IAM_BASE_URL }), {
               seedEnv: env,
               onSignup: signupObserver(productAnalytics),
+              onNewPerson: newPersonObserver(referrals),
               staffDomains: env.IAM_STAFF_DOMAINS,
             })
           : null,
-      inject: [ENV, DB, AnalyticsEffects],
+      inject: [ENV, DB, AnalyticsEffects, ReferralService],
     },
     // Host auth backend selected by AUTH_PROVIDER (local stub / WorkOS overlay).
     {
@@ -221,8 +235,16 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
         db: Db,
         productAnalytics: AnalyticsEffects,
         projection: WorkspaceProjection | null,
-      ) => createAuthProvider(env, db, signupObserver(productAnalytics), projection ?? undefined),
-      inject: [ENV, DB, AnalyticsEffects, WORKSPACE_PROJECTION],
+        referrals: ReferralService,
+      ) =>
+        createAuthProvider(
+          env,
+          db,
+          signupObserver(productAnalytics),
+          projection ?? undefined,
+          newPersonObserver(referrals),
+        ),
+      inject: [ENV, DB, AnalyticsEffects, WORKSPACE_PROJECTION, ReferralService],
     },
     // Rate limiter for the public surface (P1-5): token bucket by default, noop
     // when RATE_LIMIT_ENABLED=false; swappable for a distributed limiter.

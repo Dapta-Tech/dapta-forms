@@ -18,6 +18,7 @@ import type { Db, AccountRole } from '@quill/db';
 import {
   deriveUniqueHandle,
   getAccountByCode,
+  hasSignedInByEmail,
   insertAccountWithShortCode,
   seedDemoFormForAccount,
   sql,
@@ -157,6 +158,38 @@ export type SignupObserver = (signup: {
   fromInvite: boolean;
 }) => void;
 
+/**
+ * A PERSON's first sign-in to dForms: before it they had no member row bound
+ * to them (a staff access grant aside). Narrower than a signup, which fires
+ * per member row: a person who already used dForms and joins another
+ * workspace signs up there, but is not new. Today it feeds the referral
+ * program's teammate-invite credit.
+ *
+ * Unlike `SignupObserver` it is awaited, so its writes land before the
+ * request goes on (the sign-in callback's referral claim comes next), but it
+ * runs through `notifyNewPerson`, which swallows any failure: the person is
+ * signed in either way.
+ */
+export type NewPersonObserver = (person: {
+  accountId: string;
+  memberId: string;
+  email: string | null;
+}) => Promise<void>;
+
+/** Invoke a NewPersonObserver without letting it fail or reject the sign-in. */
+export async function notifyNewPerson(
+  observer: NewPersonObserver | undefined,
+  log: Logger,
+  person: Parameters<NewPersonObserver>[0],
+): Promise<void> {
+  if (!observer) return;
+  try {
+    await observer(person);
+  } catch (err) {
+    log.error(`new person observer failed: ${String(err)}`);
+  }
+}
+
 export function header(req: ReqLike, name: string): string | undefined {
   const v = req.headers[name];
   return Array.isArray(v) ? v[0] : v;
@@ -272,6 +305,8 @@ export class LocalAuthProvider implements AuthProvider {
     >,
     /** Optional; omitted means nothing observes signups (the fork default). */
     private readonly onSignup?: SignupObserver,
+    /** Optional; a person's first sign-in (see `NewPersonObserver`). */
+    private readonly onNewPerson?: NewPersonObserver,
   ) {}
 
   async resolveHost(req: ReqLike): Promise<ResolvedHost> {
@@ -303,11 +338,24 @@ export class LocalAuthProvider implements AuthProvider {
 
   /** Resolve (or JIT-create) the member with this email. Dev/test only. */
   private async resolveByEmail(email: string): Promise<ResolvedHost> {
-    const existing = await this.db.get<{ account_id: string; member_id: string }>(
-      sql`SELECT account_id, id AS member_id FROM member
+    const existing = await this.db.get<{ account_id: string; member_id: string; status: string | null }>(
+      sql`SELECT account_id, id AS member_id, status FROM member
           WHERE email = ${email} ORDER BY created_at ASC LIMIT 1`,
     );
-    if (existing) return { accountId: existing.account_id, memberId: existing.member_id };
+    if (existing) {
+      // A teammate invited this address and they are signing in for the first
+      // time: the invite row is theirs (`AuthService` flips it to active next).
+      // New only while every row of theirs is still an invitation; the row's
+      // age is the invite's, not the person's.
+      if (this.onNewPerson && existing.status === 'invited' && !(await hasSignedInByEmail(this.db, email))) {
+        await notifyNewPerson(this.onNewPerson, this.log, {
+          accountId: existing.account_id,
+          memberId: existing.member_id,
+          email,
+        });
+      }
+      return { accountId: existing.account_id, memberId: existing.member_id };
+    }
 
     // JIT: a fresh isolated account+member for this email, idempotent across
     // reseeds/races via external_id (`dev:<email>`). Pre-short-links accounts
@@ -356,6 +404,8 @@ export class LocalAuthProvider implements AuthProvider {
       isFirstMember: role === 'owner',
       fromInvite: false,
     });
+    // No row had this address: a new person.
+    await notifyNewPerson(this.onNewPerson, this.log, { accountId: account.id, memberId, email });
     return { accountId: account.id, memberId };
   }
 }
@@ -402,10 +452,12 @@ export function createAuthProvider(
    * `account_id`. Absent = pre-0015 behavior, one local account per token account.
    */
   projection?: WorkspaceProjection,
+  /** A person's first sign-in on the fallback and local paths (see `NewPersonObserver`). */
+  onNewPerson?: NewPersonObserver,
 ): AuthProvider {
   switch (env.AUTH_PROVIDER) {
     case 'local':
-      return new LocalAuthProvider(db, env, onSignup);
+      return new LocalAuthProvider(db, env, onSignup, onNewPerson);
     case 'workos':
       if (!env.JWT_SECRET) {
         throw new Error(
@@ -414,7 +466,7 @@ export function createAuthProvider(
             'AUTH_PROVIDER=local for development only.',
         );
       }
-      return new WorkOsAuthProvider(db, env, onSignup, projection);
+      return new WorkOsAuthProvider(db, env, onSignup, projection, onNewPerson);
     default:
       throw new Error(`Unknown AUTH_PROVIDER: ${String((env as ServerEnv).AUTH_PROVIDER)}`);
   }

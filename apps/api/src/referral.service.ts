@@ -1,16 +1,23 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { referralCampaignEndsAt, type ServerEnv } from '@quill/config/env';
 import {
+  countReferrals,
+  creditReferral,
   dismissReferralBanner,
   ensureReferrer,
   getAttributionSwitch,
+  getMe,
   getReferrerByCode,
   personNames,
+  recordReferralInvite,
+  referralInviterOf,
   referralPersonKey,
   type Db,
+  type ReferralSource,
   type ReferrerRow,
 } from '@quill/db';
 import { REFERRAL_GOAL, buildReferralLink, paidVerdictFresh, referralLinkBase } from '@quill/shared';
+import { AnalyticsEffects } from './analytics-effects';
 import { DB, REFERRAL_OPTIONS } from './tokens';
 
 /** The referral program's switch and where its links point, resolved once from env. */
@@ -46,6 +53,17 @@ export function referralOptions(
   return env.REFERRAL_PROGRAM && baseUrl
     ? { enabled: true, baseUrl, ...end }
     : { enabled: false, baseUrl: null, ...end };
+}
+
+/**
+ * A referral code as typed, pasted or carried through a URL: trimmed and
+ * lowercased (codes are lowercase letters and digits), or null when it cannot
+ * be one. Bounded before any lookup, since it arrives from the browser.
+ */
+export function normalizeReferralCode(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const code = raw.trim().toLowerCase();
+  return /^[a-z0-9]{1,32}$/.test(code) ? code : null;
 }
 
 /**
@@ -104,9 +122,14 @@ function firstNameOf(displayName: string | null, emailLocals: ReadonlySet<string
  */
 @Injectable()
 export class ReferralService {
+  private readonly log = new Logger('ReferralService');
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(REFERRAL_OPTIONS) private readonly options: ReferralOptions,
+    // Product analytics (`referral_signup`). Optional so a construction
+    // without it (most specs) records referrals with no telemetry.
+    @Optional() @Inject(AnalyticsEffects) private readonly analytics?: AnalyticsEffects,
   ) {}
 
   get enabled(): boolean {
@@ -121,8 +144,7 @@ export class ReferralService {
     const row = await ensureReferrer(this.db, person, { now: this.options.now?.(), code: this.options.code });
     const link = buildReferralLink(this.options.baseUrl, row.code);
     if (!link) return { enabled: false };
-    // The count arrives with referrals (they are not recorded yet).
-    const count = 0;
+    const count = await countReferrals(this.db, person);
     return {
       enabled: true,
       link,
@@ -165,6 +187,122 @@ export class ReferralService {
 
   private now(): number {
     return this.options.now?.() ?? Date.now();
+  }
+
+  /**
+   * Credit the member making the request to the owner of a referral code
+   * (source `link`). `{ credited: false }` for every refusal; see
+   * `creditReferral` for the rules.
+   */
+  async claimByLink(
+    principal: { accountId: string; memberId: string },
+    rawCode: unknown,
+  ): Promise<{ credited: boolean }> {
+    if (!this.enabled) return { credited: false };
+    const code = normalizeReferralCode(rawCode);
+    if (!code) return { credited: false };
+    const referee = await referralPersonKey(this.db, principal.accountId, principal.memberId);
+    const owner = await getReferrerByCode(this.db, code);
+    if (!referee || !owner) return { credited: false };
+    const now = this.options.now?.() ?? Date.now();
+    const credited = await creditReferral(this.db, { referee, referrer: owner.personId, source: 'link', now });
+    if (credited) {
+      await this.afterCredited(owner.personId, now);
+      await this.signupEvent(principal, owner.code, 'link', now);
+    }
+    return { credited };
+  }
+
+  /**
+   * Record that the member making the request invited a teammate by email
+   * (both invite paths: the identity service's and local development's). The
+   * identity service's invitation has no inviter, so this record is the only
+   * place one lives. The first inviter of an address keeps it. Never throws:
+   * the invitation already went out, and a failure here must not undo it.
+   */
+  async recordInvite(principal: { accountId: string; memberId: string }, email: string): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      const inviter = await referralPersonKey(this.db, principal.accountId, principal.memberId);
+      if (!inviter) return;
+      const now = this.options.now?.() ?? Date.now();
+      await recordReferralInvite(this.db, { email, inviter, accountId: principal.accountId, now });
+    } catch (err) {
+      this.log.error(`referral invite record failed: ${String(err)}`);
+    }
+  }
+
+  /**
+   * A person's first sign-in (`NewPersonObserver`): when a teammate invited
+   * their address, credit that inviter with a referral of source `invite`.
+   * The caller established that the person is new (no bound member row
+   * before this sign-in), so the link's 10-minute window is not asked: the
+   * adopted invite row keeps the invite's age. Self-invites, a person already
+   * credited (by a link or anyone) and first-wins are `creditReferral`'s.
+   * Never throws: it runs on the sign-in path.
+   */
+  async creditInvite(person: { accountId: string; memberId: string; email: string | null }): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      const inviter = await referralInviterOf(this.db, person.email);
+      if (!inviter) return;
+      const referee = await referralPersonKey(this.db, person.accountId, person.memberId);
+      if (!referee) return;
+      const now = this.options.now?.() ?? Date.now();
+      const credited = await creditReferral(this.db, {
+        referee,
+        referrer: inviter,
+        source: 'invite',
+        now,
+        newPerson: true,
+      });
+      if (!credited) return;
+      await this.afterCredited(inviter, now);
+      // The inviter's code rides on the event, as with a link, so the funnel
+      // is cut by referrer the same way. Their link row is made if they never
+      // opened it: it is theirs either way.
+      const row = await ensureReferrer(this.db, inviter, { now, code: this.options.code });
+      await this.signupEvent(person, row.code, 'invite', now);
+    } catch (err) {
+      this.log.error(`referral invite credit failed: ${String(err)}`);
+    }
+  }
+
+  /**
+   * What follows every credited referral, whichever its source: the one
+   * place the next steps hang off (the unlock at the goal), so a link and an
+   * invite can never drift apart.
+   */
+  private async afterCredited(_referrer: string, _now: number): Promise<void> {
+    // The unlock at the goal lands here.
+  }
+
+  /**
+   * `referral_signup`, about the invitee, once per credited referral. The
+   * referrer's code rides on the event and on the invitee as `referred_by`,
+   * so the funnel can be cut by referrer. The referrer gets `referral_code`
+   * from the dashboard's identify (`identifyMember`), where their link is.
+   * Never rejects: `capture` swallows its own failures.
+   */
+  private async signupEvent(
+    principal: { accountId: string; memberId: string },
+    code: string,
+    source: ReferralSource,
+    now: number,
+  ): Promise<void> {
+    if (!this.analytics?.enabled) return;
+    const me = await getMe(this.db, principal.accountId, principal.memberId).catch(() => null);
+    if (!me?.email) return;
+    await this.analytics.capture(
+      'referral_signup',
+      {
+        distinctId: me.email,
+        accountId: principal.accountId,
+        properties: { referral_code: code, referral_source: source },
+        personProperties: { referred_by: code },
+      },
+      now,
+    );
   }
 
   /** Whether the campaign is running: no end set, or now is still before it. */
