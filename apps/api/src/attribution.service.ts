@@ -5,15 +5,27 @@ import {
   type AttributionSwitchRow,
   type Db,
 } from '@quill/db';
-import { canHideAttribution, showAttribution, type PremiumMode } from '@quill/shared';
+import { canHideAttribution, showAttribution, type AttributionInput, type PremiumMode } from '@quill/shared';
 import { AnalyticsEffects } from './analytics-effects';
-import { ATTRIBUTION_MODE, DB } from './tokens';
+import { ATTRIBUTION_MODE, DB, REFERRAL_UNLOCKS } from './tokens';
+
+/**
+ * Where the attribution reads the referral unlock source from: does this
+ * workspace hold a referral unlock? Nothing feeds it yet, so the default
+ * answers false for every workspace and the rule behaves as paid-only.
+ */
+export interface ReferralUnlocks {
+  referralUnlocked(accountId: string): Promise<boolean>;
+}
+
+/** The default source: no workspace is referral unlocked. */
+export const NO_REFERRAL_UNLOCKS: ReferralUnlocks = { referralUnlocked: async () => false };
 
 /** What the Brand kit row reads (`GET /v1/account/attribution-badge`). */
 export interface AttributionStatus {
   /** The stored choice, kept even while it is not honoured (a lapsed subscription). */
   hideAttribution: boolean;
-  /** The workspace may turn the attribution off now: paid, or an open deployment. */
+  /** The workspace may turn the attribution off now: an unlock source holds, or an open deployment. */
   canHide: boolean;
   /** What the public surfaces carry right now (before the deployment's own rule). */
   showing: boolean;
@@ -43,8 +55,9 @@ export const DAPTA_SUBSCRIPTION_REQUIRED = 'DAPTA_SUBSCRIPTION_REQUIRED';
  * counts as not paid (`showAttribution`).
  *
  * The mode is `attributionPremiumMode(env)`: `open` lets any workspace hide
- * it, `locked` needs the paid verdict. Only turning the attribution OFF needs
- * it; turning it back ON never does.
+ * it, `locked` needs an unlock source: the paid verdict, or a referral unlock
+ * read from `ReferralUnlocks` (no expiry). Only turning the attribution OFF
+ * needs one; turning it back ON never does.
  */
 @Injectable()
 export class AttributionService {
@@ -58,22 +71,28 @@ export class AttributionService {
     // deployment: the switch works and nothing is gated.
     @Optional() @Inject(ATTRIBUTION_MODE) private readonly mode: PremiumMode = 'open',
     @Optional() @Inject(AnalyticsEffects) private readonly analytics?: AnalyticsEffects,
+    @Optional() @Inject(REFERRAL_UNLOCKS) private readonly referralUnlocks: ReferralUnlocks = NO_REFERRAL_UNLOCKS,
   ) {}
 
   get premiumMode(): PremiumMode {
     return this.mode;
   }
 
-  /** Does this row's workspace carry the attribution? No row shows it. */
-  showForRow(row: AttributionSwitchRow | null): boolean {
-    if (!row) return true;
-    return showAttribution({
-      hideAttribution: row.hideAttribution,
-      paid: row.paid,
-      checkedAt: row.paidCheckedAt,
+  /**
+   * The rule's input for one workspace, minus its choice. A null row is an
+   * unknown workspace: no verdict, and no referral unlock is read for it.
+   */
+  private async unlockInput(
+    accountId: string,
+    row: AttributionSwitchRow | null,
+  ): Promise<Omit<AttributionInput, 'hideAttribution'>> {
+    return {
+      paid: row?.paid ?? null,
+      checkedAt: row?.paidCheckedAt ?? null,
+      referralUnlocked: row ? await this.referralUnlocks.referralUnlocked(accountId) : false,
       premiumMode: this.mode,
       now: this.now(),
-    });
+    };
   }
 
   /**
@@ -84,36 +103,32 @@ export class AttributionService {
   async showFor(accountId: string | null | undefined): Promise<boolean> {
     if (!accountId) return true;
     try {
-      return this.showForRow(await getAttributionSwitch(this.db, accountId));
+      const row = await getAttributionSwitch(this.db, accountId);
+      // No choice to honour: shown without reading any unlock source.
+      if (!row?.hideAttribution) return true;
+      return showAttribution({ ...(await this.unlockInput(accountId, row)), hideAttribution: true });
     } catch (err) {
       this.log.warn(`attribution read failed, showing it account=${accountId}: ${String(err)}`);
       return true;
     }
   }
 
-  private canHide(row: AttributionSwitchRow | null): boolean {
-    return canHideAttribution({
-      paid: row?.paid ?? null,
-      checkedAt: row?.paidCheckedAt ?? null,
-      premiumMode: this.mode,
-      now: this.now(),
-    });
-  }
-
   /** The Brand kit row's view of the switch. Every member reads it. */
   async status(accountId: string): Promise<AttributionStatus> {
     const row = await getAttributionSwitch(this.db, accountId);
+    const input = await this.unlockInput(accountId, row);
+    const hideAttribution = row?.hideAttribution ?? false;
     return {
-      hideAttribution: row?.hideAttribution ?? false,
-      canHide: this.canHide(row),
-      showing: this.showForRow(row),
+      hideAttribution,
+      canHide: canHideAttribution(input),
+      showing: showAttribution({ ...input, hideAttribution }),
       verdictSeen: row?.paid != null,
     };
   }
 
   /**
-   * Store the workspace's choice. Turning the attribution OFF needs a paid
-   * verdict in locked mode and is refused otherwise, storing nothing; turning
+   * Store the workspace's choice. Turning the attribution OFF needs an unlock
+   * source in locked mode and is refused otherwise, storing nothing; turning
    * it back ON never needs one. The caller enforces the admin role.
    */
   async set(
@@ -121,7 +136,9 @@ export class AttributionService {
     hideAttribution: boolean,
   ): Promise<{ ok: true; status: AttributionStatus } | { ok: false; reason: typeof DAPTA_SUBSCRIPTION_REQUIRED }> {
     const before = await getAttributionSwitch(this.db, p.accountId);
-    if (hideAttribution && !this.canHide(before)) return { ok: false, reason: DAPTA_SUBSCRIPTION_REQUIRED };
+    if (hideAttribution && !canHideAttribution(await this.unlockInput(p.accountId, before))) {
+      return { ok: false, reason: DAPTA_SUBSCRIPTION_REQUIRED };
+    }
     await setHideAttribution(this.db, p.accountId, hideAttribution);
     // A save that changes nothing is not a toggle.
     if (before && before.hideAttribution !== hideAttribution) {
