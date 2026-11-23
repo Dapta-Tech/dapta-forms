@@ -6,6 +6,7 @@ import { BrandMark } from '@/components/brand/brand';
 import { fillLock, type ReferralLock } from '@/lib/referral-lock';
 import { useOpenReferralDialog } from './referral-dialog-context';
 import { ReferralLinkField } from './referral-link-field';
+import './referral-banner.css';
 
 type AttributionMessages = FormsMessages['admin']['attributionSetting'];
 
@@ -13,13 +14,14 @@ type AttributionMessages = FormsMessages['admin']['attributionSetting'];
  * A replica of the real "Made with dForms" pill (the public form's
  * `.pf__attribution-link`): the product mark and the localized label, so a
  * person who never looked at the foot of their form sees what "the badge" is.
- * Not a link: it only shows the badge.
+ * Not a link: it only shows the badge. It wears the banner's green chip
+ * (`rb-chip`, in referral-banner.css), so it stands out from the setting.
  */
 export function BadgePill({ label }: { label: string }) {
   return (
     <span
       data-testid="badge-pill"
-      className="mx-0.5 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-card px-2 py-0.5 align-middle text-xs font-medium leading-tight text-foreground shadow-sm"
+      className="rb-chip mx-0.5 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 align-middle text-xs font-medium leading-tight shadow-sm"
     >
       <BrandMark className="h-3 w-auto shrink-0" />
       <span>{label}</span>

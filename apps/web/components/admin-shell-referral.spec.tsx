@@ -41,7 +41,12 @@ const REFERRAL: ShellReferral = {
 };
 
 function shell(
-  opts: { collapsed?: boolean; locale?: Locale; referral?: ShellReferral | null; page?: React.ReactNode } = {},
+  opts: {
+    collapsed?: boolean;
+    locale?: Locale;
+    referral?: ShellReferral | null;
+    page?: React.ReactNode;
+  } = {},
 ) {
   const m = getMessages(opts.locale ?? 'en').admin;
   return (
@@ -108,21 +113,33 @@ describe('AdminShell: the referral entry', () => {
     for (const entry of [desktop!, drawer!]) {
       expect(entry.tagName).toBe('BUTTON');
       expect(entry.querySelector('[data-testid="nav-referral-progress"]')!.textContent).toBe('0/5');
-      expect(accessibleName(entry)).toBe('Invite friends, 0 of 5 joined');
+      expect(accessibleName(entry)).toBe('Remove badge, 0 of 5 referrals');
+    }
+  });
+
+  it('wears the banner\'s race flag, not the gift', () => {
+    const [desktop, drawer] = entries(renderToStaticMarkup(shell()));
+    for (const entry of [desktop!, drawer!]) {
+      expect(entry.querySelector('svg.rb-flag-icon')).not.toBeNull();
+      // Still, unlike the waving flag at the end of the track.
+      expect(entry.querySelector('svg.rb-flag')).toBeNull();
+      expect(entry.querySelector('.pi-gift')).toBeNull();
+      expect(entry.textContent).not.toContain('Invite friends');
     }
   });
 
   it('shows the count it is given, in Spanish too', () => {
     const [desktop] = entries(renderToStaticMarkup(shell({ locale: 'es', referral: { ...REFERRAL, count: 3 } })));
     expect(desktop!.querySelector('[data-testid="nav-referral-progress"]')!.textContent).toBe('3/5');
-    expect(accessibleName(desktop!)).toBe('Invita amigos, 3 de 5 se unieron');
+    expect(accessibleName(desktop!)).toBe('Quitar sello, 3 de 5 referidos');
   });
 
   it('collapsed to the 64px rail: the icon alone, the name and progress still read', () => {
     const [desktop] = entries(renderToStaticMarkup(shell({ collapsed: true })));
     expect(desktop!.querySelector('[data-testid="nav-referral-progress"]')).toBeNull();
-    expect(desktop!.getAttribute('title')).toBe('Invite friends, 0 of 5 joined');
-    expect(accessibleName(desktop!)).toBe('Invite friends, 0 of 5 joined');
+    expect(desktop!.getAttribute('title')).toBe('Remove badge, 0 of 5 referrals');
+    expect(accessibleName(desktop!)).toBe('Remove badge, 0 of 5 referrals');
+    expect(desktop!.querySelector('svg.rb-flag-icon')).not.toBeNull();
   });
 
   it('is absent while the program is off', () => {
@@ -272,3 +289,4 @@ describe('AdminShell: the dialog, from a page', () => {
     expect(document.querySelector<HTMLElement>('[data-testid="probe"]')!.dataset.has).toBe('no');
   });
 });
+

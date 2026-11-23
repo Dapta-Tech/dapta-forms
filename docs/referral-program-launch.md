@@ -35,7 +35,7 @@ Check after the deploy:
 
 - [ ] `GET /v1/me` for a signed-in person returns `referral.enabled: true` and a
       `referral.link` that starts with `https://dforms.ai/?ref=`.
-- [ ] The left menu shows "Invite friends 0/5" and the top banner shows.
+- [ ] The left menu shows "Remove badge 0/5" and the top banner shows.
 
 ## 3. Landing (`dapta-forms-landing`, T09)
 

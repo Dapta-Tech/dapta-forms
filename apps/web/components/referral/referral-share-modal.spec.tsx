@@ -8,6 +8,8 @@
  * records `referral_link_copied`; each share link carries the link and the
  * text, encoded, and records `referral_link_shared` with its channel.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -224,6 +226,94 @@ describe('ReferralShareModal', () => {
     ]);
   });
 
+  it('at 0 of 5 the bar is cold: the glowing green dot, no fire yet', async () => {
+    const q = await mount({ count: 0 });
+    const track = q('referral-track')!;
+    expect(track.dataset.heat).toBe('cold');
+    expect(track.querySelector('.rb-dot')).not.toBeNull();
+    expect(q('referral-track-fill')!.style.width).toBe('2%');
+  });
+});
+
+describe('ReferralShareModal: the colour', () => {
+  const css = readFileSync(join(__dirname, 'referral-banner.css'), 'utf8');
+  const body = (selector: string) => {
+    const at = css.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is missing`).toBeGreaterThanOrEqual(0);
+    return css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+  };
+
+  it('is framed by the banner\'s beam, shared, on a panel that clips it and a box that scrolls', async () => {
+    await mount();
+    const panel = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(panel.className).toContain('rb-dialog');
+    expect(panel.className).toContain('rb-theme');
+    const beam = document.querySelector<HTMLElement>('[data-testid="referral-modal-beam"]')!;
+    expect(beam.parentElement).toBe(panel);
+    expect(beam.className).toBe('rb-beam rb-beam-box');
+    expect(beam.getAttribute('aria-hidden')).toBe('true');
+    expect(beam.nextElementSibling!.className).toBe('rb-dialog-scroll');
+    expect(body('.rb-dialog')).toMatch(/overflow: hidden;/);
+    expect(body('.rb-dialog-scroll')).toMatch(/overflow-y: auto;/);
+  });
+
+  it('a green glow behind the header', async () => {
+    const q = await mount();
+    expect(q('referral-modal')!.className).toContain('rb-dialog-body');
+    expect(body('.rb-dialog-body')).toMatch(/radial-gradient\([\s\S]*var\(--signal\)/);
+  });
+
+  it('the step numbers are green circles with ink numbers', async () => {
+    const q = await mount();
+    const marks = [...q('referral-steps')!.querySelectorAll('li > span[aria-hidden]')];
+    expect(marks).toHaveLength(3);
+    for (const mark of marks) expect(mark.className).toContain('rb-step');
+    const step = body('.rb-step');
+    expect(step).toMatch(/background: var\(--signal\);/);
+    expect(step).toMatch(/color: var\(--signal-foreground\);/);
+  });
+
+  it('"Copy link" is the green primary, ink on dForms green', async () => {
+    const q = await mount();
+    expect(q('referral-copy')!.className).toContain('rb-copy');
+    const copy = body('.rb-copy');
+    expect(copy).toMatch(/background: var\(--signal\);/);
+    expect(copy).toMatch(/color: var\(--signal-foreground\);/);
+    expect(copy).toMatch(/border: 1px solid var\(--signal-edge\);/);
+  });
+
+  it('the shares carry their brand tints and keep 44 px targets', async () => {
+    const q = await mount();
+    for (const channel of ['whatsapp', 'email', 'x'] as const) {
+      const a = q(`referral-share-${channel}`)!;
+      expect(a.dataset.channel).toBe(channel);
+      expect(a.className).toContain('rb-share');
+      expect(a.className).toContain('h-11');
+      expect(a.querySelector('.rb-share-icon')).not.toBeNull();
+      expect(css).toContain(`.rb-share[data-channel='${channel}'] {`);
+    }
+    expect(body(".rb-share[data-channel='whatsapp']")).toMatch(/--rb-share-ink: color-mix\(in srgb, #25d366 \d+%, var\(--foreground\)\);/);
+    expect(body(".rb-share[data-channel='email']")).toMatch(/--rb-share-ink: var\(--primary-ink\);/);
+    expect(body(".rb-share[data-channel='x']")).toMatch(/--rb-share-ink: var\(--foreground\);/);
+  });
+
+  it('the link field keeps its 44 px on a phone, where the row stacks', async () => {
+    const q = await mount();
+    const cls = q('referral-link')!.className.split(/\s+/);
+    // A bare flex-1 in the stacked column squashed it to its text's height.
+    expect(cls).toContain('h-11');
+    expect(cls).not.toContain('flex-1');
+    expect(cls).toContain('sm:flex-1');
+  });
+
+  it('the mini form\'s pill is ringed by pulsing fire', async () => {
+    await mount();
+    expect(body('.rb-mock .rb-mock-pill')).toMatch(/animation: rb-ring [\d.]+s ease-in-out infinite;/);
+    expect(body('.rb-mock .rb-mock-pill')).toMatch(/var\(--rb-amber\)/);
+  });
+});
+
+describe('ReferralShareModal: copy', () => {
   it('names the badge as the pill reads, in Spanish too', async () => {
     const q = await mount({ locale: 'es', count: 1 });
     const text = document.querySelector('[role="dialog"]')!.textContent;

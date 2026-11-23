@@ -3522,9 +3522,9 @@ export const en: FormsMessages = {
         sr: ', new',
       },
       referral: {
-        nav: 'Invite friends',
+        nav: 'Remove badge',
         progress: '{count}/{goal}',
-        progressSr: ', {count} of {goal} joined',
+        progressSr: ', {count} of {goal} referrals',
         title: 'Invite 5 people, remove the badge for life',
         badgeTitle: 'This is the badge.',
         badgeBody: 'It shows at the foot of every form, page and email you send with dForms.',
@@ -6590,9 +6590,9 @@ export const es: FormsMessages = {
         sr: ', nuevo',
       },
       referral: {
-        nav: 'Invita amigos',
+        nav: 'Quitar sello',
         progress: '{count}/{goal}',
-        progressSr: ', {count} de {goal} se unieron',
+        progressSr: ', {count} de {goal} referidos',
         title: 'Invita a 5 personas y quita el sello de por vida',
         badgeTitle: 'Este es el sello.',
         badgeBody: 'Sale al final de cada formulario, página y correo que mandas con dForms.',

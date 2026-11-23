@@ -48,7 +48,9 @@ const CHANNELS: { channel: ReferralShareChannel; icon: ReactNode }[] = [
 /**
  * The referral dialog, the one place the program is explained and shared
  * from. The menu entry, the banner (its call to action and its "?") and the
- * locked badge switch all open it. In order: the badge (a mini form with the
+ * locked badge switch all open it. Framed by the banner's double green beam,
+ * with a green glow behind its header, green step numbers and a green "Copy
+ * link". In order: the badge (a mini form with the
  * pill highlighted at its foot, and what it is), how it works in three steps,
  * the person's progress on the same flowing bar as the banner, their link
  * with a copy button, and WhatsApp, email and X with the message already
@@ -107,117 +109,123 @@ export function ReferralShareModal({
       labelId={labelId}
       portal
       bare
-      panelClassName="max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto rounded-xl border border-border bg-popover shadow-lg"
+      panelClassName="rb-theme rb-dialog max-w-md rounded-xl bg-popover"
     >
-      <div data-testid="referral-modal" className="rb-theme relative flex flex-col gap-5 p-6">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={m.close}
-          title={m.close}
-          data-testid="referral-close"
-          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
-        >
-          <i aria-hidden className="pi pi-times" style={{ fontSize: 14 }} />
-        </button>
-        <div className="pr-10">
-          <h2 id={labelId} className="text-lg font-semibold leading-snug text-foreground">
-            {m.title}
-          </h2>
-        </div>
-
-        <div data-testid="referral-badge" className="grid grid-cols-[132px_1fr] items-center gap-4">
-          <div className="rb-mock" aria-hidden="true">
-            <div className="rb-mock-line" style={{ width: '55%' }} />
-            <div className="rb-mock-line rb-mock-line-sub" style={{ width: '80%' }} />
-            <div className="rb-mock-input" />
-            <div className="rb-mock-cta" />
-            <BadgePill label={badgeLabel} className="rb-mock-pill" testId="referral-mock-pill" />
+      {/* The banner's double dForms green beam, round the panel's edge. The
+          panel clips it to its corners and stays put; the box inside scrolls. */}
+      <span className="rb-beam rb-beam-box" aria-hidden="true" data-testid="referral-modal-beam" />
+      <div className="rb-dialog-scroll">
+        <div data-testid="referral-modal" className="rb-dialog-body relative flex flex-col gap-5 p-6">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={m.close}
+            title={m.close}
+            data-testid="referral-close"
+            className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
+          >
+            <i aria-hidden className="pi pi-times" style={{ fontSize: 14 }} />
+          </button>
+          <div className="pr-10">
+            <h2 id={labelId} className="text-lg font-semibold leading-snug text-foreground">
+              {m.title}
+            </h2>
           </div>
-          <p className="text-sm text-muted-foreground">
-            <strong className="font-semibold text-foreground">{m.badgeTitle}</strong> {m.badgeBody}
-          </p>
-        </div>
 
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-foreground">{m.stepsTitle}</h3>
-          <ol data-testid="referral-steps" className="flex flex-col gap-2">
-            {steps.map((step, i) => (
-              <li key={i} className="flex items-start gap-3 text-sm text-foreground">
-                <span
-                  aria-hidden
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums text-foreground"
-                >
-                  {i + 1}
-                </span>
-                <span className="pt-0.5">{step}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+          <div data-testid="referral-badge" className="grid grid-cols-[132px_1fr] items-center gap-4">
+            <div className="rb-mock" aria-hidden="true">
+              <div className="rb-mock-line" style={{ width: '55%' }} />
+              <div className="rb-mock-line rb-mock-line-sub" style={{ width: '80%' }} />
+              <div className="rb-mock-input" />
+              <div className="rb-mock-cta" />
+              <BadgePill label={badgeLabel} className="rb-mock-pill" testId="referral-mock-pill" />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              <strong className="font-semibold text-foreground">{m.badgeTitle}</strong> {m.badgeBody}
+            </p>
+          </div>
 
-        <div className="flex items-center gap-4">
-          <ReferralTrack
-            count={count}
-            goal={goal}
-            label={fillReferral(m.progressLabel, values)}
-            testId="referral-track"
-          />
-          <p data-testid="referral-progress" className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-            {fillReferral(m.progressCount, values)}
-          </p>
-        </div>
+          <div className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium text-foreground">{m.stepsTitle}</h3>
+            <ol data-testid="referral-steps" className="flex flex-col gap-2">
+              {steps.map((step, i) => (
+                <li key={i} className="flex items-start gap-3 text-sm text-foreground">
+                  <span
+                    aria-hidden
+                    className="rb-step flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums"
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="pt-0.5">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
 
-        <div className="flex flex-col gap-2">
-          <label htmlFor="referral-link-input" className="text-sm font-medium text-foreground">
-            {m.linkLabel}
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              ref={inputRef}
-              id="referral-link-input"
-              data-testid="referral-link"
-              readOnly
-              value={link}
-              onFocus={(e) => e.currentTarget.select()}
-              className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+          <div className="flex items-center gap-4">
+            <ReferralTrack
+              count={count}
+              goal={goal}
+              label={fillReferral(m.progressLabel, values)}
+              testId="referral-track"
             />
-            <button
-              type="button"
-              onClick={copy}
-              data-testid="referral-copy"
-              aria-live="polite"
-              className={`${buttonVariants({ variant: 'default' })} h-11 shrink-0`}
-            >
-              {copied ? m.copied : m.copy}
-            </button>
+            <p data-testid="referral-progress" className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+              {fillReferral(m.progressCount, values)}
+            </p>
           </div>
-        </div>
 
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-foreground">{m.shareOn}</p>
-          <ul className="grid grid-cols-3 gap-2">
-            {CHANNELS.map(({ channel, icon }) => (
-              <li key={channel}>
-                <a
-                  href={shares[channel]}
-                  // A mailto: hands off to the mail app; a new tab would stay blank.
-                  {...(channel === 'email' ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
-                  data-testid={`referral-share-${channel}`}
-                  onClick={() =>
-                    captureEvent('referral_link_shared', {
-                      channel,
-                      ...surfaceProps(surface),
-                    })
-                  }
-                  className={`${buttonVariants({ variant: 'outline' })} h-11 w-full`}
-                >
-                  {icon}
-                  {m[channel]}
-                </a>
-              </li>
-            ))}
-          </ul>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="referral-link-input" className="text-sm font-medium text-foreground">
+              {m.linkLabel}
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                ref={inputRef}
+                id="referral-link-input"
+                data-testid="referral-link"
+                readOnly
+                value={link}
+                onFocus={(e) => e.currentTarget.select()}
+                className="h-11 min-w-0 shrink-0 rounded-md sm:flex-1 border border-border bg-background px-3 text-sm text-foreground"
+              />
+              <button
+                type="button"
+                onClick={copy}
+                data-testid="referral-copy"
+                aria-live="polite"
+                className={`${buttonVariants({ variant: 'default' })} rb-copy h-11 shrink-0 px-5`}
+              >
+                {copied ? m.copied : m.copy}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium text-foreground">{m.shareOn}</p>
+            <ul className="grid grid-cols-3 gap-2">
+              {CHANNELS.map(({ channel, icon }) => (
+                <li key={channel}>
+                  <a
+                    href={shares[channel]}
+                    // A mailto: hands off to the mail app; a new tab would stay blank.
+                    {...(channel === 'email' ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
+                    data-testid={`referral-share-${channel}`}
+                    data-channel={channel}
+                    onClick={() =>
+                      captureEvent('referral_link_shared', {
+                        channel,
+                        ...surfaceProps(surface),
+                      })
+                    }
+                    className={`${buttonVariants({ variant: 'outline' })} rb-share h-11 w-full`}
+                  >
+                    <span className="rb-share-icon">{icon}</span>
+                    {m[channel]}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </Modal>

@@ -190,19 +190,66 @@ describe('ReferralBanner: motion', () => {
     return source.slice(open + 1, source.indexOf('}', open));
   };
 
+  /** The rules inside the reduced-motion block: each selector list and its body. */
+  const reducedRules = [...reduced.slice(reduced.indexOf('{') + 1).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+    selectors: m[1]!.split(',').map((s) => s.replace(/\/\*[\s\S]*?\*\//g, '').trim()),
+    body: m[2]!,
+  }));
+  /**
+   * Whether the reduced-motion block stops `compound` (the last part of an
+   * animated selector, its attribute filters dropped, like `.rb-track::before`):
+   * a rule ending in it sets `animation: none` or hides it, or one hides its host.
+   */
+  const stopped = (compound: string) => {
+    const host = compound.replace(/::?[a-z-]+$/, '');
+    return reducedRules.some(
+      ({ selectors, body }) =>
+        (selectors.some((s) => s.endsWith(compound)) && /animation: none|display: none/.test(body)) ||
+        (selectors.some((s) => s.endsWith(host)) && /display: none/.test(body)),
+    );
+  };
+
   it('animates with CSS only, and every animated rule stops under reduced motion', () => {
     const animated = [...css.matchAll(/([^{}]+)\{[^{}]*\banimation:\s*(?!none)[^;}]+/g)]
-      .map((m) => m[1]!.trim())
+      .map((m) => m[1]!.replace(/\/\*[\s\S]*?\*\//g, '').trim())
       .filter((sel) => !sel.startsWith('@') && !/^(from|to|\d+(\.\d+)?%)/.test(sel));
-    expect(animated.length).toBeGreaterThan(5);
+    expect(animated.length).toBeGreaterThan(8);
+    // The new motion is in the list: the beam, the cold dot's halo, the shimmer.
     expect(animated).toContain('.rb-beam::before');
+    expect(animated).toContain("[data-heat='cold'] .rb-dot");
+    expect(animated).toContain(".rb-track[data-heat='cold']::before");
     expect(reduced).toMatch(/animation:\s*none/);
     for (const rule of animated) {
       for (const sel of rule.split(',').map((s) => s.trim())) {
-        const cls = sel.match(/\.rb-[a-z-]+/g)!.at(-1)!;
-        expect(reduced, `${sel} keeps moving`).toContain(cls);
+        const compound = sel.split(/\s+/).at(-1)!.replace(/\[[^\]]*\]/g, '');
+        expect(compound, sel).toMatch(/^\.rb-[a-z-]+(::?[a-z-]+)?$/);
+        expect(stopped(compound), `${sel} keeps moving`).toBe(true);
       }
     }
+  });
+
+  it('at 0 the dot glows green with a pulsing halo, and a shimmer runs to the flag', () => {
+    const dot = rule(before, "[data-heat='cold'] .rb-dot");
+    expect(dot).toMatch(/background: var\(--rb-green\);/);
+    expect(dot).toMatch(/var\(--rb-halo\)/);
+    expect(dot).toMatch(/animation: rb-halo [\d.]+s ease-out infinite;/);
+    const shimmer = rule(before, ".rb-track[data-heat='cold']::before");
+    expect(shimmer).toMatch(/linear-gradient\(90deg, transparent, var\(--rb-shimmer\), transparent\)/);
+    expect(shimmer).toMatch(/animation: rb-shimmer [\d.]+s ease-in-out infinite;/);
+    expect(css).toMatch(/@keyframes rb-shimmer \{[^@]*to \{\s*background-position: 1\d\d% 0;/);
+    // The track is a faint green road, never the flat grey wash.
+    expect(rule(before, '.rb-track')).toMatch(/background: var\(--rb-track\);/);
+    // The fire hues still own 1 to 4.
+    expect(rule(before, "[data-heat='warm'] .rb-dot")).toMatch(/background: var\(--rb-gold\);/);
+    expect(rule(before, "[data-heat='hot'] .rb-dot")).toMatch(/background: var\(--rb-coral\);/);
+  });
+
+  it('reduced motion keeps the cold dot green and its halo still, and drops the shimmer', () => {
+    expect(stopped('.rb-dot')).toBe(true);
+    expect(stopped('.rb-track::before')).toBe(true);
+    expect(reducedRules.some(({ selectors, body }) => selectors.includes('.rb-track::before') && /display: none/.test(body))).toBe(
+      true,
+    );
   });
 
   it('the beam: a registered angle turned by keyframes, a conic gradient masked to a ring', () => {
@@ -214,16 +261,62 @@ describe('ReferralBanner: motion', () => {
     expect(beam).toMatch(/\bmask:\s*linear-gradient\(#000 0 0\) content-box exclude,\s*linear-gradient\(#000 0 0\);/);
     const ray = rule(before, '.rb-beam::before');
     expect(ray).toMatch(/conic-gradient\(\s*from var\(--rb-beam-angle\)/);
-    expect(ray).toMatch(/animation: rb-beam [\d.]+s linear infinite;/);
+    expect(ray).toMatch(/animation: rb-beam-spin [\d.]+s linear infinite;/);
+    expect(css).toMatch(/@keyframes rb-beam-spin \{[^@]*to \{\s*--rb-beam-angle: 360deg;/);
+    // The strip's shape: the squashed square and the even-pace keyframes.
+    const strip = rule(before, '.rb-beam-strip::before');
+    expect(strip).toMatch(/scaleY\(tan\(atan2\(48px, 100cqw\)\)\)/);
+    expect(strip).toMatch(/animation-name: rb-beam;/);
     expect(css).toMatch(/@keyframes rb-beam \{[^@]*100% \{\s*--rb-beam-angle: 360deg;/);
+    // The dialog's shape: a centred square that covers the box.
+    expect(rule(before, '.rb-beam-box::before')).toMatch(/transform: translate\(-50%, -50%\);/);
     // Faster at one to go.
     expect(rule(before, ".rb[data-heat='hot'] .rb-beam::before")).toMatch(/animation-duration: [\d.]+s;/);
   });
 
+  it('the beam is double: two identical heads exactly half a lap apart', () => {
+    const gradient = rule(before, '.rb-beam::before').match(/conic-gradient\(([\s\S]*?)\);/)![1]!;
+    // The stops, split on the top-level commas (color-mix nests its own).
+    const parts: string[] = [];
+    let depth = 0;
+    let part = '';
+    for (const ch of gradient) {
+      if (ch === ',' && depth === 0) {
+        parts.push(part.trim());
+        part = '';
+        continue;
+      }
+      if (ch === '(') depth += 1;
+      if (ch === ')') depth -= 1;
+      part += ch;
+    }
+    parts.push(part.trim());
+    const stops = parts
+      .map((p) => p.match(/^(.*\S) ([\d.]+)deg$/))
+      .filter((m): m is RegExpMatchArray => m !== null && !m[1]!.startsWith('transparent'))
+      .map((m) => [m[1]!, Number(m[2])] as const);
+    const lit = stops.filter(([, at]) => at < 180);
+    const second = stops.filter(([, at]) => at >= 180);
+    expect(lit.length).toBe(4);
+    expect(second.map(([c, at]) => [c, at - 180])).toEqual(lit);
+    // Each head's bright core is there, once per head.
+    expect(gradient.match(/var\(--rb-beam-core\)/g)).toHaveLength(2);
+  });
+
+  it('the banner wears the strip beam', async () => {
+    const q = await mount({ count: 3 });
+    const beam = q('referral-banner-beam')!;
+    expect(beam.className).toBe('rb-beam rb-beam-strip');
+    expect(beam.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('reduced motion drops the moving beam and keeps the faint static ring', () => {
-    expect(rule(reduced.slice(reduced.indexOf('{') + 1), '.rb .rb-beam')).toMatch(/display: none;/);
+    expect(rule(reduced.slice(reduced.indexOf('{') + 1), '.rb-beam')).toMatch(/display: none;/);
     expect(rule(before, '.rb-strip')).toMatch(/box-shadow: inset 0 0 0 1px var\(--rb-ring\);/);
     expect(reduced).not.toContain('.rb-strip');
+    // The dialog's green border, its static ring, is outside the block too.
+    expect(rule(before, '.rb-dialog')).toMatch(/border: 1px solid color-mix\(in srgb, var\(--signal\)/);
+    expect(reduced).not.toContain('.rb-dialog');
   });
 
   it('lays out by container query: short copy below 1024 px, one-word call to action below 600 px', () => {
@@ -266,12 +359,17 @@ describe('ReferralBanner: the theme', () => {
     }
   });
 
-  it('the pill is the real one: the public pill\'s own tokens', () => {
+  it('the pill keeps the real one\'s shape, on a soft green chip of its own', () => {
     const pill = css.slice(css.indexOf('.rb-pill {'), css.indexOf('}', css.indexOf('.rb-pill {')));
-    expect(pill).toMatch(/color: var\(--foreground\);/);
-    expect(pill).toMatch(/background: var\(--card\);/);
-    expect(pill).toMatch(/border: 1px solid var\(--border\);/);
     expect(pill).toMatch(/border-radius: 999px;/);
+    const chip = css.slice(css.indexOf('.rb-pill,\n.rb-chip {'), css.indexOf('}', css.indexOf('.rb-pill,\n.rb-chip {')));
+    expect(chip).toMatch(/--rb-chip-mix: 1[4-8]%;/);
+    // Ink letters: 15:1 on the light chip, 12:1 on the dark one.
+    expect(chip).toMatch(/color: var\(--foreground\);/);
+    expect(chip).toMatch(/background: color-mix\(in srgb, var\(--signal\) var\(--rb-chip-mix\), var\(--card\)\);/);
+    expect(chip).toMatch(/border: 1px solid color-mix\(in srgb, var\(--signal\) 3\d%, transparent\);/);
+    // A touch more green on ink.
+    expect(css).toMatch(/\[data-theme='dark'\] \.rb-pill,\n\[data-theme='dark'\] \.rb-chip \{\s*--rb-chip-mix: 2\d%;/);
   });
 
   it('the fire hues come from the tokens, so they darken on paper', () => {

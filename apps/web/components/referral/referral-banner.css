@@ -44,6 +44,12 @@
   --rb-beam: color-mix(in srgb, var(--signal) 50%, var(--signal-edge));
   --rb-beam-core: color-mix(in srgb, var(--signal) 50%, var(--foreground));
   --rb-ring: color-mix(in srgb, var(--signal) 26%, transparent);
+  /* The track: a faint green road to the flag, never a flat grey. */
+  --rb-track: color-mix(in srgb, var(--rb-beam) 16%, transparent);
+  /* The cold dot's halo and glow, and the shimmer that runs to the flag. */
+  --rb-halo: color-mix(in srgb, var(--rb-beam) 55%, transparent);
+  --rb-glow: color-mix(in srgb, var(--signal) 50%, transparent);
+  --rb-shimmer: color-mix(in srgb, var(--rb-beam) 60%, transparent);
 }
 
 .rb {
@@ -71,21 +77,20 @@
   line-height: 1.2;
 }
 
-/* ── The beam: a dForms green laser running around the strip's edge ──
-   The adminpanel sidebar's technique (a conic gradient whose start angle is a
-   registered, animated property, masked down to a thin ring), scaled to a
-   strip some 20 times wider than tall. A conic gradient turns about the
-   centre, so on a strip that shape alone crawls across the middle of the long
-   edges and whips round the ends. The gradient is therefore drawn on a square
-   (`::before`) squashed to the strip's height, and the keyframes spend time on
-   each edge in proportion to its length: the head runs round at an even pace.
-   The ring mask sits on `.rb-beam` itself, so the squash never thins it.
+/* ── The beam: a dForms green laser running around an edge ──
+   Shared by the banner's strip and the referral dialog: a span with
+   `rb-beam` and its shape, `rb-beam-strip` or `rb-beam-box`, as the first
+   child of the framed element (which must be positioned and round its own
+   corners: the beam inherits the radius).
+   The adminpanel sidebar's technique: a conic gradient whose start angle is a
+   registered, animated property (`::before`), masked down to a thin ring on
+   `.rb-beam` itself, so no transform of the gradient ever thins the ring.
    Absolutely placed, pointer-events off: it never touches the layout. */
 .rb-beam {
   position: absolute;
   inset: 0;
   z-index: 1;
-  padding: 1.5px;
+  padding: var(--rb-beam-width, 1.5px);
   overflow: hidden;
   border-radius: inherit;
   pointer-events: none;
@@ -100,24 +105,50 @@
 .rb-beam::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 50%;
-  width: 100%;
   aspect-ratio: 1;
-  /* 48 px / the strip's width, as a number: the square lands on the strip. */
-  transform: translateY(-50%) scaleY(tan(atan2(48px, 100cqw)));
+  /* Two heads, half a lap apart, the same segment repeated 180 deg on: one
+     chases the other round the edge. Any affine squash keeps opposite rays
+     opposite, and the even-pace keyframes repeat every 180 deg, so on the strip
+     too both heads keep the same steady pace and stay exactly opposite. */
   background: conic-gradient(
     from var(--rb-beam-angle),
-    transparent 0 328deg,
+    transparent 0 148deg,
+    color-mix(in srgb, var(--rb-beam) 20%, transparent) 160deg,
+    var(--rb-beam) 173deg,
+    var(--rb-beam-core) 176deg,
+    var(--rb-beam) 177.5deg,
+    transparent 179deg 328deg,
     color-mix(in srgb, var(--rb-beam) 20%, transparent) 340deg,
     var(--rb-beam) 353deg,
     var(--rb-beam-core) 356deg,
     var(--rb-beam) 357.5deg,
     transparent 359deg
   );
-  animation: rb-beam 3.6s linear infinite;
+  animation: rb-beam-spin 5s linear infinite;
 }
-/* One to go: the beam runs a little faster. */
+/* A box no more than ~3 times taller than wide (the dialog): the gradient's
+   square is centred and large enough to cover it, and turns at an even rate. */
+.rb-beam-box::before {
+  left: 50%;
+  top: 50%;
+  width: 300%;
+  transform: translate(-50%, -50%);
+}
+/* A strip some 20 times wider than tall (the banner). A conic gradient turns
+   about the centre, so on a strip that shape alone crawls across the middle of
+   the long edges and whips round the ends. The square is therefore squashed to
+   the strip's height, and the `rb-beam` keyframes spend time on each edge in
+   proportion to its length: the head runs round at an even pace. */
+.rb-beam-strip::before {
+  left: 0;
+  top: 50%;
+  width: 100%;
+  /* 48 px / the strip's width, as a number: the square lands on the strip. */
+  transform: translateY(-50%) scaleY(tan(atan2(48px, 100cqw)));
+  animation-name: rb-beam;
+  animation-duration: 3.6s;
+}
+/* One to go: both heads run a little faster. */
 .rb[data-heat='hot'] .rb-beam::before {
   animation-duration: 2.6s;
 }
@@ -151,7 +182,8 @@
   display: flex;
 }
 
-/* The replica of `.pf__attribution-link`, at the strip's size. */
+/* The replica of `.pf__attribution-link` (the mark, the label, the round
+   shape), at the strip's size. */
 .rb-pill {
   position: relative;
   display: inline-flex;
@@ -166,11 +198,25 @@
   font-size: 12.5px;
   font-weight: 500;
   line-height: 1.1;
-  color: var(--foreground);
-  background: var(--card);
-  border: 1px solid var(--border);
   border-radius: 999px;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.14);
+}
+/* The badge as a chip of its own: a soft dForms green ground and rim, so it
+   stands out from the strip, the dialog and the setting around it. Every
+   `BadgePill` wears it (the banner, the dialog's mini form, the celebration)
+   and so does the badge switch's replica (`rb-chip`). Ink letters on it:
+   15:1 on paper and 12:1 on ink. A touch more green on ink, where the same mix
+   would read grey. */
+.rb-pill,
+.rb-chip {
+  --rb-chip-mix: 16%;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--signal) var(--rb-chip-mix), var(--card));
+  border: 1px solid color-mix(in srgb, var(--signal) 38%, transparent);
+}
+[data-theme='dark'] .rb-pill,
+[data-theme='dark'] .rb-chip {
+  --rb-chip-mix: 22%;
 }
 .rb-pill-mark {
   flex: none;
@@ -237,7 +283,19 @@
   height: 6px;
   margin-right: 12px;
   border-radius: 99px;
-  background: var(--rb-wash);
+  background: var(--rb-track);
+}
+/* At 0: a faint green shimmer runs down the empty track toward the flag, the
+   way to go. Under the fill and the tip (it paints first). */
+.rb-track[data-heat='cold']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--rb-shimmer), transparent) no-repeat;
+  background-size: 35% 100%;
+  background-position: -54% 0;
+  animation: rb-shimmer 2.8s ease-in-out infinite;
 }
 .rb-fill {
   position: absolute;
@@ -275,9 +333,20 @@
   top: -6px;
   width: 12px;
   height: 12px;
+  box-sizing: border-box;
   border-radius: 50%;
   background: var(--rb-ink);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+/* At 0 the dot glows dForms green, with a soft halo that pulses out: the first
+   step is right here. A deeper rim on paper, where the green alone is 1.8:1. */
+[data-heat='cold'] .rb-dot {
+  background: var(--rb-green);
+  border: 1.5px solid var(--rb-beam);
+  box-shadow:
+    0 0 0 3px var(--rb-halo),
+    0 0 10px var(--rb-glow);
+  animation: rb-halo 1.8s ease-out infinite;
 }
 [data-heat='warm'] .rb-dot {
   background: var(--rb-gold);
@@ -322,8 +391,14 @@
   animation: rb-wave 1.8s ease-in-out infinite;
 }
 .rb-track[data-heat='cold'] .rb-flag {
-  opacity: 0.55;
+  opacity: 0.8;
   animation-duration: 3s;
+}
+/* The flag as a 20 px icon (the rail's "Remove badge" row): still, in place. */
+.rb-flag-icon {
+  flex: none;
+  width: 18px;
+  height: 21px;
 }
 .rb-track[data-heat='hot'] .rb-flag {
   animation-duration: 0.7s;
@@ -420,17 +495,95 @@
   border-radius: 5px;
   background: var(--primary);
 }
-/* Highlighted: an amber ring that stays still with reduced motion. */
+/* Highlighted: a fire ring pulsing round the green chip ("this one"). With
+   reduced motion it stays, still. */
 .rb-mock .rb-mock-pill {
   align-self: center;
   margin-top: 4px;
   padding: 2px 8px 2px 6px;
   font-size: 10.5px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rb-amber) 40%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--rb-amber) 70%, transparent),
+    0 0 10px color-mix(in srgb, var(--rb-coral) 40%, transparent);
   animation: rb-ring 1.6s ease-in-out infinite;
 }
 .rb-mock .rb-pill-mark {
   height: 10px;
+}
+
+/* ── The referral dialog: framed by the banner's beam, a green glow behind
+   its header ── */
+.rb-dialog {
+  --rb-beam-width: 2px;
+  overflow: hidden;
+  /* The static ring: all that stays of the beam with reduced motion. */
+  border: 1px solid color-mix(in srgb, var(--signal) 45%, var(--border));
+  box-shadow:
+    0 0 0 1px var(--rb-ring),
+    0 24px 60px -18px color-mix(in srgb, var(--signal) 35%, transparent),
+    0 10px 30px -10px rgba(0, 0, 0, 0.25);
+}
+/* The panel clips the beam to its corners; this inner box scrolls. */
+.rb-dialog-scroll {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+.rb-dialog-body {
+  background: radial-gradient(
+      120% 190px at 50% 0%,
+      color-mix(in srgb, var(--signal) 22%, transparent),
+      color-mix(in srgb, var(--signal) 6%, transparent) 60%,
+      transparent
+    )
+    no-repeat;
+}
+/* The three steps, numbered on dForms green: ink on it, 10:1. */
+.rb-step {
+  background: var(--signal);
+  color: var(--signal-foreground);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 22%, transparent);
+}
+/* "Copy link": the dialog's one primary action, in dForms green with ink
+   letters (10:1). The rim carries the 3:1 edge on paper. */
+.rb-copy {
+  border: 1px solid var(--signal-edge);
+  background: var(--signal);
+  color: var(--signal-foreground);
+  transition: background-color 0.15s;
+}
+.rb-copy:hover {
+  background: color-mix(in srgb, var(--signal) 88%, var(--foreground));
+}
+/* The shares: outlined, each with its brand's tint on the rim, the icon and the
+   hover wash. Every hue is mixed with a token, so it deepens on paper and
+   brightens on ink; the label stays ink. */
+.rb-share {
+  border-color: var(--rb-share-edge);
+}
+.rb-share:hover {
+  background: var(--rb-share-wash);
+}
+.rb-share-icon {
+  display: inline-flex;
+  color: var(--rb-share-ink);
+}
+.rb-share[data-channel='whatsapp'] {
+  /* WhatsApp green (#25d366): 4.1:1 on paper, 8:1 on ink. */
+  --rb-share-ink: color-mix(in srgb, #25d366 58%, var(--foreground));
+  --rb-share-edge: color-mix(in srgb, #25d366 55%, var(--border));
+  --rb-share-wash: color-mix(in srgb, #25d366 12%, transparent);
+}
+.rb-share[data-channel='email'] {
+  /* The app's own accent: the primary, ink on paper and snow on ink. */
+  --rb-share-ink: var(--primary-ink);
+  --rb-share-edge: color-mix(in srgb, var(--primary-edge) 40%, var(--border));
+  --rb-share-wash: color-mix(in srgb, var(--primary) 7%, transparent);
+}
+.rb-share[data-channel='x'] {
+  /* Neutral, as X's own mark is. */
+  --rb-share-ink: var(--foreground);
+  --rb-share-edge: var(--border);
+  --rb-share-wash: var(--rb-wash-2);
 }
 
 /* ── Below 1024 px of its own width the long copy (up to ~490 px, next to
@@ -646,29 +799,74 @@
 @keyframes rb-ring {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--rb-amber) 0%, transparent);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--rb-amber) 70%, transparent),
+      0 0 8px color-mix(in srgb, var(--rb-coral) 25%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--rb-amber) 45%, transparent);
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--rb-amber) 35%, transparent),
+      0 0 16px color-mix(in srgb, var(--rb-coral) 55%, transparent);
+  }
+}
+/* The dialog's beam: an even turn, its two heads half a lap apart. */
+@keyframes rb-beam-spin {
+  from {
+    --rb-beam-angle: 0deg;
+  }
+  to {
+    --rb-beam-angle: 360deg;
+  }
+}
+/* The empty track's shimmer: from off its left end to past the flag. */
+@keyframes rb-shimmer {
+  from {
+    background-position: -54% 0;
+  }
+  to {
+    background-position: 154% 0;
+  }
+}
+/* The cold dot's halo: a soft green ring that swells and fades. */
+@keyframes rb-halo {
+  0% {
+    box-shadow:
+      0 0 0 0 var(--rb-halo),
+      0 0 8px var(--rb-glow);
+  }
+  70% {
+    box-shadow:
+      0 0 0 9px transparent,
+      0 0 14px var(--rb-glow);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 8px var(--rb-glow);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* No moving beam: the strip's faint static ring stays. */
-  .rb .rb-beam {
+  /* No moving beam, in the strip or the dialog: the faint static ring of each
+     stays (the strip's inset ring, the dialog's green border). */
+  .rb-beam {
     display: none;
   }
   .rb-track .rb-fill,
   .rb-track .rb-spark,
   .rb-track .rb-flag,
+  .rb-track .rb-dot,
+  .rb-track::before,
   .rb .rb-pill::after,
   .rb-mock .rb-mock-pill {
     animation: none !important;
   }
-  .rb-track .rb-spark {
+  .rb-track .rb-spark,
+  .rb-track::before {
     display: none;
   }
-  .rb .rb-face {
+  .rb .rb-face,
+  .rb-copy {
     transition: none;
   }
 }

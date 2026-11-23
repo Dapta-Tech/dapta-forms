@@ -39,7 +39,7 @@ import {
 } from '@/components/announcement/announcement-client';
 import { AnnouncementModal } from '@/components/announcement/announcement-modal';
 import { ReferralShareModal, fillReferral } from '@/components/referral/referral-share-modal';
-import { ReferralBanner } from '@/components/referral/referral-banner';
+import { RaceFlag, ReferralBanner } from '@/components/referral/referral-banner';
 import { ReferralDialogContext } from '@/components/referral/referral-dialog-context';
 import { ReferralMoments } from '@/components/referral/referral-moments';
 import type { ReferralSurface } from '@/components/referral/use-referral-copy';
@@ -64,8 +64,7 @@ type IconName =
   | 'mcp'
   | 'tools'
   | 'docs'
-  | 'agents'
-  | 'referral';
+  | 'agents';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -164,7 +163,6 @@ const PI_BY_NAME: Record<Exclude<IconName, AnimatedIcon>, string> = {
   tools: 'pi-sparkles',
   docs: 'pi-book',
   agents: 'pi-bot',
-  referral: 'pi-gift',
 };
 
 function Icon({ name, className, paused }: { name: IconName; className?: string; paused?: boolean }) {
@@ -458,10 +456,12 @@ function NavLinks({
 
 /**
  * The referral program's rail row: a button (it opens the share modal, it is
- * not a page) with the person's progress as a pill after the label. The pill
- * is hidden from the accessibility tree and its words are read instead, so the
- * row's name is "Invite friends, 0 of 5 joined". Collapsed to 64px, the icon
- * alone, with the same words as its tooltip.
+ * not a page) with the person's progress as a pill after the label. Its icon
+ * is the banner's checkered race flag, so the menu, the banner and the dialog
+ * share one symbol. The pill is hidden from the accessibility tree and its
+ * words are read instead, so the row's name is "Remove badge, 0 of 5
+ * referrals". Collapsed to 64px, the flag alone, with the same words as its
+ * tooltip.
  */
 function ReferralNavEntry({
   referral,
@@ -485,7 +485,9 @@ function ReferralNavEntry({
       data-testid="nav-referral"
       className={navRowClass(collapsed, 'idle')}
     >
-      <Icon name="referral" />
+      <span aria-hidden className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+        <RaceFlag className="rb-flag-icon" />
+      </span>
       <span className={collapsed ? 'sr-only' : ''}>{m.nav}</span>
       {!collapsed ? (
         <span

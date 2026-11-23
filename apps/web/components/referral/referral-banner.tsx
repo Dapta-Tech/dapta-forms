@@ -89,12 +89,16 @@ export function BadgePill({
   );
 }
 
-/** The checkered race flag at the end of the track. Fixed artwork, decorative. */
-export function RaceFlag() {
+/**
+ * The checkered race flag: at the end of the track (`rb-flag`, waving) and as
+ * the rail's "Remove badge" icon (`rb-flag-icon`, still), so the menu, the
+ * banner and the dialog share one symbol. Fixed artwork, decorative.
+ */
+export function RaceFlag({ className = 'rb-flag' }: { className?: string } = {}) {
   const id = useId().replace(/:/g, '');
   const check = `rb-chk-${id}`;
   return (
-    <svg className="rb-flag" viewBox="0 0 24 28" aria-hidden="true" focusable="false">
+    <svg className={className} viewBox="0 0 24 28" aria-hidden="true" focusable="false">
       <defs>
         <pattern id={check} width="3" height="3" patternUnits="userSpaceOnUse">
           <rect width="3" height="3" fill="#fefefe" />
@@ -186,7 +190,7 @@ export type ReferralBannerOpener = 'banner' | 'banner_help';
 /**
  * The referral program's top banner, during the campaign (`bannerVisible`):
  * one 48 px strip at the top of the dashboard's main area, in the app's own
- * theme, with a dForms green beam running around its edge. Its message shows
+ * theme, with a double dForms green beam running around its edge. Its message shows
  * the badge itself, crossed out by a fire line as the count grows; the bar
  * flows to a race flag; ONE call to action, "Remove the badge", opens the
  * referral dialog (what the badge is, how it works, the link and the shares);
@@ -235,7 +239,7 @@ export function ReferralBanner({
     <div className="rb" data-heat={heat} data-count={count} data-testid="referral-banner">
       <section className="rb-strip" aria-label={b.region}>
         {/* The beam: decorative, painted over the strip's edge, never in the layout. */}
-        <span className="rb-beam" aria-hidden="true" data-testid="referral-banner-beam" />
+        <span className="rb-beam rb-beam-strip" aria-hidden="true" data-testid="referral-banner-beam" />
         <p className="rb-msg">
           <span className="rb-long" data-testid="referral-banner-long">
             {compose(long, values, <BadgePill label={badgeLabel} strike={strike} testId="referral-banner-pill" />)}
