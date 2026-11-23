@@ -911,7 +911,11 @@ export function FormEditor({
   );
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
+    // Fills what the admin shell leaves it (`flex-1 min-h-0` in a one-screen
+    // column <main>), never the viewport: the referral banner and, below
+    // 768px, the mobile top bar sit above it, and a `100dvh` builder would
+    // push its bottom edge that far off screen.
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       {/* Topbar: one row from `lg` up, two below it.
           Four pieces: the form (back, name, publish state), the sections, the
           sharing tools, and Publish. From `lg` they sit in one row with the

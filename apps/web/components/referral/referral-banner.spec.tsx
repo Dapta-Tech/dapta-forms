@@ -77,8 +77,14 @@ describe('ReferralBanner: the level', () => {
     expect(strip.dataset.heat).toBe('cold');
     expect(strip.dataset.count).toBe('0');
     expect(q('referral-banner-pill')!.dataset.strike).toBe('0');
-    expect(q('referral-banner-long')!.textContent).toBe('Invite 5 people and remove Made with dForms from your forms, for free');
+    expect(q('referral-banner-long')!.textContent).toBe('Invite 5 people and remove Made with dForms from your forms, for free!');
     expect(q('referral-banner-track')!.getAttribute('aria-label')).toBe('0 of 5 referrals');
+  });
+
+  it('at 0 of 5 in Spanish, "gratis" is exclaimed the Spanish way: ¡gratis!', async () => {
+    const q = await mount({ locale: 'es', count: 0 });
+    const badge = getMessages('es').growth.madeWith;
+    expect(q('referral-banner-long')!.textContent).toBe(`Invita a 5 personas y quita ${badge} de tus formularios, ¡gratis!`);
   });
 
   it('at 3 of 5: warm, the pill 58% crossed out, the bar at 60%', async () => {

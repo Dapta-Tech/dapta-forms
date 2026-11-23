@@ -189,7 +189,8 @@ export type ReferralBannerOpener = 'banner' | 'banner_help';
 
 /**
  * The referral program's top banner, during the campaign (`bannerVisible`):
- * one 48 px strip at the top of the dashboard's main area, in the app's own
+ * one 48 px strip at the top of the dashboard's main area (the form builder
+ * too, which fills what is left: it never shrinks), in the app's own
  * theme, with a double dForms green beam running around its edge. Its message shows
  * the badge itself, crossed out by a fire line as the count grows; the bar
  * flows to a race flag; ONE call to action, "Remove the badge", opens the
@@ -236,7 +237,7 @@ export function ReferralBanner({
   };
 
   return (
-    <div className="rb" data-heat={heat} data-count={count} data-testid="referral-banner">
+    <div className="rb shrink-0" data-heat={heat} data-count={count} data-testid="referral-banner">
       <section className="rb-strip" aria-label={b.region}>
         {/* The beam: decorative, painted over the strip's edge, never in the layout. */}
         <span className="rb-beam rb-beam-strip" aria-hidden="true" data-testid="referral-banner-beam" />

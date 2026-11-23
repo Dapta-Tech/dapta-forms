@@ -997,7 +997,13 @@ export function AdminShell({
   );
 
   return (
-    <div className="flex min-h-dvh flex-col md:flex-row">
+    // In the builder the shell is exactly one screen tall and never scrolls as
+    // a page: <main> becomes a column, the referral banner (when shown) takes
+    // its 48px from the top and the builder (`flex-1 min-h-0`) the rest, so
+    // its bottom edge is on screen whatever sits above it (the banner, the
+    // mobile top bar). Closing the banner unmounts it and the builder grows
+    // into the room at once. Every other page is as tall as its content.
+    <div className={studio ? 'flex h-dvh flex-col overflow-hidden md:flex-row' : 'flex min-h-dvh flex-col md:flex-row'}>
       {/* Mobile top bar (<768px). Inert while the drawer is open so focus can't
           escape the modal (WCAG 2.4.3 / APG modal-dialog). */}
       <header
@@ -1026,13 +1032,13 @@ export function AdminShell({
           with the page. As a plain flex item it grew to the FULL document
           height — 2834px on Settings — which dragged the `mt-auto` footer, and
           with it the account name and sign-out, ~2000px below the fold. The
-          editor never showed the bug only because that route is its own
-          `h-[100dvh] overflow-hidden` shell. `overflow-y-auto` keeps the rail
+          editor never showed the bug only because that route is a one-screen
+          `h-dvh overflow-hidden` shell. `overflow-y-auto` keeps the rail
           usable if the nav ever outgrows a short viewport. */}
       {/* In the editor the rail leaves the flow and this spacer holds its
           column, so `<main>`'s box is identical at every peek state: the rail
           widens OVER the canvas rather than pushing it. Reflowing a
-          `h-[100dvh] overflow-hidden` three-column builder every time the
+          one-screen, `overflow-hidden` three-column builder every time the
           pointer passes the left edge is not something anyone could work in. */}
       {studio ? <div aria-hidden className="hidden w-[64px] shrink-0 md:block" /> : null}
       <aside
@@ -1155,11 +1161,14 @@ export function AdminShell({
         {renderFooter(false, () => setDrawerOpen(false))}
       </aside>
 
-      <main inert={drawerOpen || undefined} className="min-w-0 flex-1 bg-background">
-        {/* The referral banner, at the top of the main area. Not in the form
-            builder: it owns the full viewport height (`h-[100dvh]`), and a
-            strip above it would push its bottom edge off screen. */}
-        {referral?.banner && !studio ? (
+      <main
+        inert={drawerOpen || undefined}
+        className={studio ? 'flex min-h-0 min-w-0 flex-1 flex-col bg-background' : 'min-w-0 flex-1 bg-background'}
+      >
+        {/* The referral banner, at the top of the main area, the form builder
+            included: there <main> is a column and the builder fills what the
+            strip leaves it (see the shell's root above). */}
+        {referral?.banner ? (
           <ReferralBanner
             count={referral.count}
             goal={referral.goal}
