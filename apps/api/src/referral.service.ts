@@ -20,6 +20,8 @@ import {
 } from '@quill/db';
 import { REFERRAL_GOAL, buildReferralLink, paidVerdictFresh, referralLinkBase } from '@quill/shared';
 import { AnalyticsEffects } from './analytics-effects';
+import { EmailEffects } from './email-effects';
+import { referralCampaignActive } from './referral-campaign';
 import { DB, REFERRAL_OPTIONS } from './tokens';
 
 /** The referral program's switch and where its links point, resolved once from env. */
@@ -137,6 +139,9 @@ export class ReferralService {
     // Product analytics (`referral_signup`). Optional so a construction
     // without it (most specs) records referrals with no telemetry.
     @Optional() @Inject(AnalyticsEffects) private readonly analytics?: AnalyticsEffects,
+    // The emails to the referrer (countdown, unlock). Optional, like analytics:
+    // without it a referral is credited and nobody is written to.
+    @Optional() @Inject(EmailEffects) private readonly emails?: EmailEffects,
   ) {}
 
   get enabled(): boolean {
@@ -215,7 +220,7 @@ export class ReferralService {
     const now = this.options.now?.() ?? Date.now();
     const credited = await creditReferral(this.db, { referee, referrer: owner.personId, source: 'link', now });
     if (credited) {
-      await this.afterCredit(owner.personId, now);
+      await this.afterCredit(owner.personId, now, referee);
       await this.signupEvent(principal, owner.code, 'link', now);
     }
     return { credited };
@@ -224,32 +229,107 @@ export class ReferralService {
   /**
    * What a credited referral sets off for its referrer, called by every
    * source right after `creditReferral` returns true (the link here, the
-   * teammate invite too). When the credit brings the person to
-   * `REFERRAL_GOAL`, the referral unlock:
+   * teammate invite too), with the person just credited as `referee`.
+   *
+   * Below `REFERRAL_GOAL` (1 to 4) the referrer gets the countdown email
+   * ("{invitee} joined. {left} to go"); without a `referee` there is nobody
+   * to name and none is sent. When the credit brings the person to the goal,
+   * the referral unlock:
    *   1. `referrer.unlocked_at` is written once (idempotent: a 6th referral,
    *      or two credits racing to the 5th, unlock exactly once);
    *   2. every workspace the person owns that never made an explicit choice
    *      hides the badge (`applyReferralUnlock`); the ones they create later
    *      start hidden (the projection and the local create call it too);
-   *   3. `referral_unlocked` is sent about the referrer.
+   *   3. `referral_unlocked` is sent about the referrer;
+   *   4. the "you did it" email is queued, in place of the countdown.
+   * A 6th referral and later send nothing.
    *
    * True only for the call that unlocked the person: the hook for what
-   * follows the unlock once (the "you did it" email, the celebration).
-   * Never throws: a referral is an observer of a signup, never a participant.
+   * follows the unlock once (the celebration). Never throws, and no email
+   * failure changes the answer: a referral is an observer of a signup, never
+   * a participant.
    */
-  async afterCredit(referrerPerson: string, now: number): Promise<boolean> {
+  async afterCredit(referrerPerson: string, now: number, referee?: string): Promise<boolean> {
     try {
       const count = await countReferrals(this.db, referrerPerson);
-      if (count < REFERRAL_GOAL) return false;
+      if (count < REFERRAL_GOAL) {
+        if (count >= 1 && referee) await this.countdownEmail(referrerPerson, referee, count, now);
+        if (count >= 1) await this.scheduleNudge(referrerPerson, count, now);
+        return false;
+      }
+      await this.cancelNudge(referrerPerson);
       // The invite source can credit someone who never opened their link.
       const row = await ensureReferrer(this.db, referrerPerson, { now, code: this.options.code });
       if (!(await markReferralUnlocked(this.db, referrerPerson, now))) return false;
       const hidden = await applyReferralUnlock(this.db, referrerPerson);
       await this.unlockedEvent(referrerPerson, row.code, count, hidden.length, now);
+      await this.unlockedEmail(referrerPerson);
       return true;
     } catch (err) {
       this.log.warn(`referral unlock failed for ${referrerPerson}: ${String(err)}`);
       return false;
+    }
+  }
+
+  /** The countdown email for one referral. Never throws. */
+  private async countdownEmail(referrer: string, referee: string, count: number, now: number): Promise<void> {
+    if (!this.emails) return;
+    try {
+      const row = await ensureReferrer(this.db, referrer, { now, code: this.options.code });
+      const link = buildReferralLink(this.options.baseUrl, row.code);
+      if (!link) return;
+      await this.emails.enqueueReferralJoined({
+        referrer,
+        referee,
+        invitee: await this.safeFirstName(referee),
+        count,
+        goal: REFERRAL_GOAL,
+        link,
+      });
+    } catch (err) {
+      this.log.error(`referral countdown email failed for ${referrer}: ${String(err)}`);
+    }
+  }
+
+  /**
+   * The 7-day nudge, (re)scheduled on each credit that leaves the referrer
+   * between 1 and 4 while the campaign runs: a newer referral replaces the
+   * pending one, so it only comes due after 7 days without one. Delivery
+   * checks again that it still applies. Never throws.
+   */
+  private async scheduleNudge(referrer: string, count: number, now: number): Promise<void> {
+    if (!this.emails) return;
+    try {
+      if (!referralCampaignActive(this.options, now)) {
+        await this.emails.cancelReferralNudge(referrer);
+        return;
+      }
+      const row = await ensureReferrer(this.db, referrer, { now, code: this.options.code });
+      const link = buildReferralLink(this.options.baseUrl, row.code);
+      if (!link) return;
+      await this.emails.enqueueReferralNudge({ referrer, count, goal: REFERRAL_GOAL, link, now });
+    } catch (err) {
+      this.log.error(`referral nudge scheduling failed for ${referrer}: ${String(err)}`);
+    }
+  }
+
+  /** Drop a pending nudge: the referrer reached the goal. Never throws. */
+  private async cancelNudge(referrer: string): Promise<void> {
+    if (!this.emails) return;
+    try {
+      await this.emails.cancelReferralNudge(referrer);
+    } catch (err) {
+      this.log.error(`referral nudge cancel failed for ${referrer}: ${String(err)}`);
+    }
+  }
+
+  /** The "you did it" email, once, at the unlock. Never throws. */
+  private async unlockedEmail(referrer: string): Promise<void> {
+    if (!this.emails) return;
+    try {
+      await this.emails.enqueueReferralUnlocked({ referrer });
+    } catch (err) {
+      this.log.error(`referral unlock email failed for ${referrer}: ${String(err)}`);
     }
   }
 
@@ -323,7 +403,7 @@ export class ReferralService {
         newPerson: true,
       });
       if (!credited) return;
-      await this.afterCredit(inviter, now);
+      await this.afterCredit(inviter, now, referee);
       // The inviter's code rides on the event, as with a link, so the funnel
       // is cut by referrer the same way. Their link row is made if they never
       // opened it: it is theirs either way.
@@ -364,8 +444,7 @@ export class ReferralService {
 
   /** Whether the campaign is running: no end set, or now is still before it. */
   campaignActive(): boolean {
-    const endsAt = this.options.campaignEndsAt;
-    return endsAt == null || (this.options.now?.() ?? Date.now()) < endsAt;
+    return referralCampaignActive(this.options, this.now());
   }
 
   /**
@@ -377,7 +456,16 @@ export class ReferralService {
     if (!this.enabled || !CODE_SHAPE.test(code)) return null;
     const referrer = await getReferrerByCode(this.db, code);
     if (!referrer) return null;
-    const rows = await personNames(this.db, referrer.personId);
+    return this.safeFirstName(referrer.personId);
+  }
+
+  /**
+   * A person's first name, when one is safe to show: from their most
+   * recently seen member row that has one, never a name that could be made
+   * from any of their emails. Null otherwise.
+   */
+  private async safeFirstName(person: string): Promise<string | null> {
+    const rows = await personNames(this.db, person);
     // Any of the person's emails: a name made from one must not show up on another row either.
     const locals = new Set(rows.map((r) => r.email?.split('@')[0]?.trim().toLowerCase()).filter((l): l is string => !!l));
     for (const row of rows) {

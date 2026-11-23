@@ -390,3 +390,93 @@ describe('idempotency key by addressee', () => {
     expect(keys[0]).toBe('submission:sub-retry:received:ceo@acme.io');
   });
 });
+
+describe('SubmissionNotifier referral emails', () => {
+  const share = {
+    link: 'https://dforms.ai/?ref=abc23456',
+    whatsapp: 'https://wa.me/?text=hi%20https%3A%2F%2Fdforms.ai%2F%3Fref%3Dabc23456',
+    email: 'mailto:?subject=Try&body=https%3A%2F%2Fdforms.ai%2F%3Fref%3Dabc23456',
+    x: 'https://x.com/intent/post?text=hi&url=https%3A%2F%2Fdforms.ai%2F%3Fref%3Dabc23456',
+  };
+  const joined = {
+    accountId: 'acc-1',
+    referrerId: 'user_ana',
+    refereeId: 'user_bea',
+    to: 'ana@example.com',
+    invitee: '<img src=x onerror=alert(1)>',
+    count: 2,
+    goal: 5,
+    badgeLabel: 'Made with dForms',
+    share,
+    locale: 'en',
+  };
+
+  it('escapes the invitee name in the HTML and keeps the subject on one line', async () => {
+    const provider = new CaptureProvider();
+    await new SubmissionNotifier(provider).sendReferralJoined({ ...joined, invitee: '<b>Bea</b>\r\nBcc: x@y' });
+    const m = provider.sent[0]!;
+    expect(m.html).toContain('&lt;b&gt;Bea&lt;/b&gt;');
+    expect(m.html).not.toContain('<b>Bea</b>');
+    expect(m.subject).not.toMatch(/[\r\n]/);
+  });
+
+  it('draws the share button to the link and the three share channels, one email per referral', async () => {
+    const provider = new CaptureProvider();
+    await new SubmissionNotifier(provider).sendReferralJoined(joined);
+    const m = provider.sent[0]!;
+    expect(m.to).toEqual(['ana@example.com']);
+    expect(m.accountId).toBe('acc-1');
+    expect(m.idempotencyKey).toBe('referral:user_bea:joined');
+    expect(m.html).toContain('href="https://dforms.ai/?ref=abc23456"');
+    expect(m.html).toContain('>Share my link<');
+    expect(m.html).toContain('href="mailto:?subject=Try&amp;body=');
+    expect(m.html).toContain('>WhatsApp<');
+    expect(m.html).toContain('>X<');
+    expect(m.html).not.toContain('<img src=x');
+    expect(m.text).toContain('Share my link: https://dforms.ai/?ref=abc23456');
+    expect(m.text).toContain(`Email: ${share.email}`);
+  });
+
+  it('never draws a share link that is not http(s) or mailto', async () => {
+    const provider = new CaptureProvider();
+    await new SubmissionNotifier(provider).sendReferralJoined({ ...joined, share: { ...share, x: 'javascript:alert(1)' } });
+    expect(provider.sent[0]!.html).not.toContain('javascript:');
+  });
+
+  it('sends the nudge once per referrer, with the share button, every value escaped', async () => {
+    const provider = new CaptureProvider();
+    await new SubmissionNotifier(provider).sendReferralNudge({
+      accountId: 'acc-1',
+      referrerId: 'user_ana',
+      to: 'ana@example.com',
+      count: 3,
+      goal: 5,
+      badgeLabel: '<i>Made</i> with dForms',
+      share,
+      locale: 'en',
+    });
+    const m = provider.sent[0]!;
+    expect(m.subject).toBe('2 to go. Your badge is still there');
+    expect(m.idempotencyKey).toBe('referral:user_ana:nudge');
+    expect(m.html).toContain('&lt;i&gt;Made&lt;/i&gt; with dForms');
+    expect(m.html).not.toContain('<i>Made</i>');
+    expect(m.html).toContain('href="https://dforms.ai/?ref=abc23456"');
+    expect(m.html).toContain('>Share my link<');
+    expect(m.text).toContain('Share my link: https://dforms.ai/?ref=abc23456');
+  });
+
+  it('sends the unlock email once per referrer, in Spanish when asked', async () => {
+    const provider = new CaptureProvider();
+    await new SubmissionNotifier(provider).sendReferralUnlocked({
+      accountId: 'acc-1',
+      referrerId: 'user_ana',
+      to: 'ana@example.com',
+      badgeLabel: 'Hecho con dForms',
+      locale: 'es-CO',
+    });
+    const m = provider.sent[0]!;
+    expect(m.subject).toBe('Lo lograste: tus formularios ya no llevan «Hecho con dForms»');
+    expect(m.idempotencyKey).toBe('referral:user_ana:unlocked');
+    expect(m.html).toContain('lang="es"');
+  });
+});

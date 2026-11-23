@@ -26,6 +26,7 @@
   --rb-bg: var(--card);
   --rb-ink: var(--foreground);
   --rb-ink-2: var(--muted-foreground);
+  --rb-ink-3: var(--faint);
   /* Low-alpha washes of the ink: the track, hovers, the mock's lines. */
   --rb-wash: color-mix(in srgb, var(--foreground) 10%, transparent);
   --rb-wash-2: color-mix(in srgb, var(--foreground) 7%, transparent);

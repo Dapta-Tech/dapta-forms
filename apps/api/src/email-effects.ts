@@ -1,21 +1,37 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
+  claimReferralNudge,
+  deletePendingOutbox,
   enqueueOutbox,
   getNotificationSettings,
+  personContact,
+  referralNudgeSent,
+  releaseReferralNudge,
   recordSettledDelivery,
   sql,
   type Db,
   type DeliveryTranscript,
 } from '@quill/db';
 import {
+  normalizeLocale,
   SubmissionNotifier,
   type EmailProvider,
   type MemberInvitedNotification,
+  type ReferralJoinedNotification,
+  type ReferralNudgeNotification,
+  type ReferralUnlockedNotification,
   type SubmissionNotification,
 } from '@quill/notifications';
+import { getMessages, referralShareLinks } from '@quill/shared';
 import type { ServerEnv } from '@quill/config/env';
 import { AttributionService } from './attribution.service';
-import { DB, EMAIL, ENV, NOTIFIER } from './tokens';
+import { referralCampaignActive } from './referral-campaign';
+// Type only: `ReferralService` depends on this class, never the other way at run time.
+import type { ReferralOptions } from './referral.service';
+import { DB, EMAIL, ENV, NOTIFIER, REFERRAL_OPTIONS } from './tokens';
+
+/** How long after a referral its nudge comes due, when no newer one follows. */
+export const REFERRAL_NUDGE_DELAY_MS = 7 * 86_400_000;
 
 /**
  * Thrown by `deliver` when a row must be deliberately NOT sent (e.g. tenant
@@ -101,6 +117,9 @@ export class EmailEffects {
     // queued row follows the setting as it stands when it is delivered).
     // Optional and LAST: absent, the emails keep the deployment's rule alone.
     @Optional() @Inject(AttributionService) private readonly attribution?: AttributionService,
+    // The referral program's switch, campaign end and clock, read when a
+    // nudge comes due. Absent, no nudge is ever sent.
+    @Optional() @Inject(REFERRAL_OPTIONS) private readonly referral?: ReferralOptions,
   ) {}
 
   /**
@@ -336,6 +355,161 @@ export class EmailEffects {
   }
 
   /**
+   * The countdown email to a referrer ("{invitee} joined. {left} to go"),
+   * queued on each credited referral that leaves them between 1 and 4.
+   *
+   * Addressed to the email on the referrer's most recently seen member row,
+   * in the language of their most recently seen row that has one; a person
+   * with no address on any row is sent nothing. The share links and the
+   * badge's label are resolved now, in that language, from the shared
+   * catalog (the same messages the share modal prefills).
+   *
+   * Never rejects: a referral is credited whether or not its email is queued.
+   */
+  async enqueueReferralJoined(input: {
+    referrer: string;
+    referee: string;
+    invitee: string | null;
+    count: number;
+    goal: number;
+    link: string;
+  }): Promise<void> {
+    try {
+      const contact = await personContact(this.db, input.referrer);
+      if (!contact) return;
+      const locale = normalizeLocale(contact.locale);
+      const m = getMessages(locale);
+      const share = referralShareLinks(input.link, m.admin.chrome.referral.share);
+      const payload: ReferralJoinedNotification = {
+        accountId: contact.accountId,
+        referrerId: input.referrer,
+        refereeId: input.referee,
+        to: contact.email,
+        invitee: input.invitee,
+        count: input.count,
+        goal: input.goal,
+        badgeLabel: m.growth.madeWith,
+        share: { link: input.link, ...share },
+        locale,
+      };
+      await enqueueOutbox(this.db, {
+        kind: 'email',
+        action: 'referral_joined',
+        accountId: contact.accountId,
+        subjectUid: input.referrer,
+        payload: JSON.stringify(payload),
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue referral_joined: ${String(err)}`);
+    }
+  }
+
+  /**
+   * The "you did it" email, queued once, by the call that unlocked the
+   * referrer (in place of the countdown). Addressed like the countdown.
+   * Never rejects.
+   */
+  async enqueueReferralUnlocked(input: { referrer: string }): Promise<void> {
+    try {
+      const contact = await personContact(this.db, input.referrer);
+      if (!contact) return;
+      const locale = normalizeLocale(contact.locale);
+      const payload: ReferralUnlockedNotification = {
+        accountId: contact.accountId,
+        referrerId: input.referrer,
+        to: contact.email,
+        badgeLabel: getMessages(locale).growth.madeWith,
+        locale,
+      };
+      await enqueueOutbox(this.db, {
+        kind: 'email',
+        action: 'referral_unlocked',
+        accountId: contact.accountId,
+        subjectUid: input.referrer,
+        payload: JSON.stringify(payload),
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue referral_unlocked: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Schedule the 7-day nudge for a referrer the credit just left between 1
+   * and 4: any pending nudge of theirs is dropped first (a newer referral
+   * restarts the wait), then one is queued due `REFERRAL_NUDGE_DELAY_MS`
+   * after `now`. Nothing is queued once the person's one nudge went out, or
+   * for a person with no address. Whether it still applies is decided again
+   * at delivery. Never rejects: a referral is credited whether or not its
+   * nudge is queued.
+   */
+  async enqueueReferralNudge(input: {
+    referrer: string;
+    count: number;
+    goal: number;
+    link: string;
+    now: number;
+  }): Promise<void> {
+    try {
+      await this.cancelReferralNudge(input.referrer);
+      if (await referralNudgeSent(this.db, input.referrer)) return;
+      const contact = await personContact(this.db, input.referrer);
+      if (!contact) return;
+      const locale = normalizeLocale(contact.locale);
+      const m = getMessages(locale);
+      const payload: ReferralNudgeNotification = {
+        accountId: contact.accountId,
+        referrerId: input.referrer,
+        to: contact.email,
+        count: input.count,
+        goal: input.goal,
+        badgeLabel: m.growth.madeWith,
+        share: { link: input.link, ...referralShareLinks(input.link, m.admin.chrome.referral.share) },
+        locale,
+      };
+      await enqueueOutbox(this.db, {
+        kind: 'email',
+        action: 'referral_nudge',
+        accountId: contact.accountId,
+        subjectUid: input.referrer,
+        payload: JSON.stringify(payload),
+        now: input.now,
+        nextAttemptAt: input.now + REFERRAL_NUDGE_DELAY_MS,
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue referral_nudge: ${String(err)}`);
+    }
+  }
+
+  /** Drop the referrer's pending nudge, if any (the 5th referral, or a newer one). */
+  async cancelReferralNudge(referrer: string): Promise<void> {
+    await deletePendingOutbox(this.db, { subjectUid: referrer, kind: 'email', action: 'referral_nudge' });
+  }
+
+  /**
+   * Send a due nudge only if it still applies: the program is on, the
+   * campaign is running, and `claimReferralNudge` takes the person's one
+   * nudge (no newer referral, not unlocked, still 1 to 4, none sent before).
+   * The stamp is written BEFORE the send in one guarded UPDATE, so a second
+   * attempt or a second replica finds it taken and sends nothing. A send
+   * that throws gives the stamp back for the outbox retry. A nudge that no
+   * longer applies finishes the row quietly: it is not an error.
+   */
+  private async deliverReferralNudge(r: ReferralNudgeNotification): Promise<void> {
+    if (!r.to) throw new OutboxSkipError('no recipient');
+    const options = this.referral;
+    const now = options?.now?.() ?? Date.now();
+    if (!options?.enabled || !referralCampaignActive(options, now)) return;
+    const claimed = await claimReferralNudge(this.db, { person: r.referrerId, count: r.count, goal: r.goal, now });
+    if (!claimed) return;
+    try {
+      await this.notifier.sendReferralNudge(r);
+    } catch (err) {
+      await releaseReferralNudge(this.db, r.referrerId, now).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /**
    * A row with nobody to address is a DECISION (skip once), not a transport
    * failure to retry: rows enqueued before the producer guarded against an
    * empty recipient list would otherwise fail five times each. Mirrors how
@@ -382,6 +556,21 @@ export class EmailEffects {
           JSON.parse(payloadJson) as MemberInvitedNotification,
         );
         return;
+      case 'referral_joined': {
+        const r = JSON.parse(payloadJson) as ReferralJoinedNotification;
+        if (!r.to) throw new OutboxSkipError('no recipient');
+        await this.notifier.sendReferralJoined(r);
+        return;
+      }
+      case 'referral_nudge':
+        await this.deliverReferralNudge(JSON.parse(payloadJson) as ReferralNudgeNotification);
+        return;
+      case 'referral_unlocked': {
+        const r = JSON.parse(payloadJson) as ReferralUnlockedNotification;
+        if (!r.to) throw new OutboxSkipError('no recipient');
+        await this.notifier.sendReferralUnlocked(r);
+        return;
+      }
       case 'submission_received':
         this.assertRecipient(action, n);
         await this.notifier.sendSubmissionReceived(n, await this.sendOptions(n.accountId));
