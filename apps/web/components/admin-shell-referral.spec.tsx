@@ -323,9 +323,31 @@ describe('AdminShell: the Product Hunt review row', () => {
     expect(accessibleName(row!)).toBe('¿Te gusta dForms? Reseña en Product Hunt (se abre en una pestaña nueva)');
   });
 
+  it('five filled orange stars under the label, hidden from assistive tech; the label in semibold', () => {
+    for (const locale of ['en', 'es'] as const) {
+      for (const row of reviews(renderToStaticMarkup(shell({ productHunt: true, locale })))) {
+        const stars = row.querySelector<HTMLElement>('[data-testid="nav-product-hunt-stars"]')!;
+        expect(stars).not.toBeNull();
+        expect(stars.getAttribute('aria-hidden')).toBe('true');
+        const paths = [...stars.querySelectorAll('svg path')];
+        expect(paths).toHaveLength(5);
+        for (const p of paths) expect(p.getAttribute('fill')).toBe('#DA552F');
+        // Under the label, inside the text column.
+        expect(stars.previousElementSibling!.className).toContain('font-semibold');
+        // Taller than its neighbours.
+        expect(row.className).toContain('py-3');
+        expect(row.className).not.toContain('py-2.5');
+      }
+    }
+    // The name stays the words.
+    const [row] = reviews(renderToStaticMarkup(shell({ productHunt: true })));
+    expect(accessibleName(row!)).toBe('Like dForms? Review on Product Hunt (opens in a new tab)');
+  });
+
   it('collapsed to the 64px rail: the mark alone, the full sentence as tooltip and name', () => {
     const [desktop] = reviews(renderToStaticMarkup(shell({ productHunt: true, collapsed: true })));
     expect(desktop!.querySelector('.pi-external-link')).toBeNull();
+    expect(desktop!.querySelector('[data-testid="nav-product-hunt-stars"]')).toBeNull();
     expect(desktop!.querySelector('svg')).not.toBeNull();
     expect(desktop!.getAttribute('title')).toBe('Like dForms? Review us on Product Hunt');
     expect(accessibleName(desktop!)).toBe('Like dForms? Review us on Product Hunt (opens in a new tab)');

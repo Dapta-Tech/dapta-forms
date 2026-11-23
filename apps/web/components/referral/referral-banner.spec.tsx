@@ -359,17 +359,64 @@ describe('ReferralBanner: the theme', () => {
     }
   });
 
-  it('the pill keeps the real one\'s shape, on a soft green chip of its own', () => {
+  it('the pill is the real one: its shape, on the neutral card ground with the normal border', () => {
     const pill = css.slice(css.indexOf('.rb-pill {'), css.indexOf('}', css.indexOf('.rb-pill {')));
     expect(pill).toMatch(/border-radius: 999px;/);
-    const chip = css.slice(css.indexOf('.rb-pill,\n.rb-chip {'), css.indexOf('}', css.indexOf('.rb-pill,\n.rb-chip {')));
-    expect(chip).toMatch(/--rb-chip-mix: 1[4-8]%;/);
-    // Ink letters: 15:1 on the light chip, 12:1 on the dark one.
-    expect(chip).toMatch(/color: var\(--foreground\);/);
-    expect(chip).toMatch(/background: color-mix\(in srgb, var\(--signal\) var\(--rb-chip-mix\), var\(--card\)\);/);
-    expect(chip).toMatch(/border: 1px solid color-mix\(in srgb, var\(--signal\) 3\d%, transparent\);/);
-    // A touch more green on ink.
-    expect(css).toMatch(/\[data-theme='dark'\] \.rb-pill,\n\[data-theme='dark'\] \.rb-chip \{\s*--rb-chip-mix: 2\d%;/);
+    expect(pill).toMatch(/color: var\(--foreground\);/);
+    expect(pill).toMatch(/background: var\(--card\);/);
+    expect(pill).toMatch(/border: 1px solid var\(--border\);/);
+    // No green fill anywhere it renders (banner, dialog mock, celebration, switch).
+    expect(css).not.toContain('rb-chip');
+    for (const m of css.matchAll(/(^|\n)([^{}\n]*\.rb-pill[^{}]*)\{([^{}]*)\}/g)) {
+      expect(m[3], m[2]).not.toMatch(/background[^;]*--signal/);
+    }
+  });
+
+  it('the strip is a soft green bar: dForms green mixed into the card, a touch more on ink', () => {
+    const rb = css.slice(css.indexOf('\n.rb {'), css.indexOf('}', css.indexOf('\n.rb {')));
+    expect(rb).toMatch(/--rb-tint: (8|9|1[0-2])%;/);
+    expect(rb).toMatch(/--rb-bg: color-mix\(in srgb, var\(--signal\) var\(--rb-tint\), var\(--card\)\);/);
+    const dark = css.match(/\[data-theme='dark'\] \.rb \{\s*--rb-tint: (\d+)%;/);
+    expect(dark).not.toBeNull();
+    expect(Number(dark![1])).toBeGreaterThan(Number(rb.match(/--rb-tint: (\d+)%/)![1]));
+    expect(Number(dark![1])).toBeLessThanOrEqual(16);
+    // The dialog and the celebration keep the plain card.
+    expect(vars).toMatch(/--rb-bg: var\(--card\);/);
+  });
+
+  it('the green bar keeps every letter at 4.5:1 or more, in both themes', () => {
+    const tokens = readFileSync(join(__dirname, '../../../../packages/shared/src/tokens.css'), 'utf8');
+    const block = (theme: string) => tokens.slice(tokens.indexOf(`[data-theme='${theme}'] {`), tokens.indexOf('}', tokens.indexOf(`[data-theme='${theme}'] {`)));
+    const token = (b: string, name: string) => {
+      const hex = b.match(new RegExp(`--${name}: (#[0-9a-f]{6});`, 'i'));
+      expect(hex, name).not.toBeNull();
+      return [1, 3, 5].map((i) => parseInt(hex![1]!.slice(i, i + 2), 16));
+    };
+    const lum = (c: number[]) => {
+      const [r, g, b] = c.map((v) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const ratio = (a: number[], b: number[]) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi! + 0.05) / (lo! + 0.05);
+    };
+    const light = Number(css.match(/\n\.rb \{[^}]*--rb-tint: (\d+)%;/)![1]) / 100;
+    const dark = Number(css.match(/\[data-theme='dark'\] \.rb \{\s*--rb-tint: (\d+)%;/)![1]) / 100;
+    for (const [theme, tint] of [
+      ['light', light],
+      ['dark', dark],
+    ] as const) {
+      const b = block(theme);
+      const signal = token(b, 'signal');
+      const card = token(b, 'card');
+      const ground = signal.map((s, i) => s * tint + card[i]! * (1 - tint));
+      for (const ink of ['foreground', 'muted-foreground']) {
+        expect(ratio(token(b, ink), ground), `${theme} ${ink}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
   });
 
   it('the fire hues come from the tokens, so they darken on paper', () => {
