@@ -5,6 +5,7 @@ import { serverApiUrl } from '@/lib/api-url';
 import { setSession, workosSessionIdFromJwt } from '@/lib/auth-session';
 import { asLocale, LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/locale';
 import { analyticsSessionHeaders } from '@/lib/analytics-session';
+import { browserIdHeaders, ensureBrowserId } from '@/lib/browser-id';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { requestOrigin } from '@/lib/request-origin';
 
@@ -51,6 +52,10 @@ async function recordAttribution(
     authorization: `Bearer ${accessToken}`,
     // A new member's signup is recorded on their first API call, which can be this one.
     ...analyticsSessionHeaders(jar, resolveProductAnalytics()),
+    // This browser's id: the claim refuses a referral from a browser the
+    // referrer was seen in, and a teammate invite credited on this first
+    // request is held to the same rule.
+    ...browserIdHeaders(jar),
   };
   const code = parkedReferralCode(parked);
   // One after the other, never together: for a brand-new person the first
@@ -132,6 +137,7 @@ async function seedLocale(
       headers: {
         authorization: `Bearer ${accessToken}`,
         ...analyticsSessionHeaders(jar, resolveProductAnalytics()),
+        ...browserIdHeaders(jar),
       },
       cache: 'no-store',
       signal: AbortSignal.timeout(3000),
@@ -219,6 +225,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     refreshToken: tokens.refresh_token,
     sessionId: workosSessionIdFromJwt(tokens.access_token) ?? tokens.session_id,
   });
+  // The login route minted the browser id; a callback reached without it
+  // (cleared site data mid-login) mints one now, before the API calls below.
+  ensureBrowserId(jar);
   await recordAttribution(jar, tokens.access_token);
   await seedLocale(jar, tokens.access_token);
   return NextResponse.redirect(new URL('/admin', origin));

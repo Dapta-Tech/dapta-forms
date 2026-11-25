@@ -7,8 +7,8 @@ step is configuration; the code is already merged. Background:
 
 ## 1. Before you start
 
-- [ ] The API image includes migrations `0030` to `0033` (`referrer`, `referral`,
-      `account.hide_attribution_chosen_at`, `referral_invite`). They are additive;
+- [ ] The API image includes migrations `0030` to `0034` (`referrer`, `referral`,
+      `account.hide_attribution_chosen_at`, `referral_invite`, `referrer_browser`). They are additive;
       the API's normal migrate step applies them.
 - [ ] Local smoke test passes:
       `REFERRAL_PROGRAM=true bash qa/dev-sqlite.sh`, then in another shell
@@ -26,7 +26,7 @@ API (runtime env, read once at boot, so a change needs a restart):
 | `PUBLIC_APP_URL` | the app's public URL (already set) | Fallback link base. With neither URL set the program stays off. |
 | `OUTBOX_WORKER_ENABLED` | `true` on at least one replica (default) | Sends the referral emails. |
 | `EMAIL_PROVIDER` | the real provider (already set) | `log-only` only prints the emails. |
-| `PRODUCT_ANALYTICS_KEY` | the PostHog project key (already set) | Server events (`forms_referral_signup`, `forms_referral_unlocked`). Unset, nothing is sent. |
+| `PRODUCT_ANALYTICS_KEY` | the PostHog project key (already set) | Server events (`forms_referral_signup`, `forms_referral_unlocked`, `forms_referral_refused`). Unset, nothing is sent. |
 | `CORS_ORIGINS` | no change | The landing reads the first name through its own proxy (section 3), so `https://dforms.ai` and `www` do not need to be listed. Add them only if a page ever calls `GET /v1/public/referrals/{code}` from the browser. |
 
 Web: nothing new. It reads the program from `/v1/me.referral`.
@@ -119,6 +119,17 @@ that moment:
 To stop the program completely, use the kill switch (section 6) as well.
 
 ## 8. Known gaps
+
+- **Same browser only.** A referral does not count when the new person signs up
+  in a browser the referrer was seen in (the `dforms_bid` cookie, stored hashed
+  in `referrer_browser`; refusals are counted as `forms_referral_refused` with
+  `reason: same_browser`). A private window, cleared site data or a second
+  browser gets a new id and still counts: accepted, the rule is a speed bump
+  for the obvious case, not an identity check. A network address is never used,
+  so coworkers on one office network count. A family member or teammate who
+  signs up on the referrer's own computer is refused too.
+- **Browsers seen before the deploy.** A referrer's browser is recorded on their
+  first dashboard load after this ships; a sign-up in it before that counts.
 
 - **Invitee bound before first sign-in.** `projectRoster` can bind an invited
   teammate's member row when an admin opens the members list, before that person

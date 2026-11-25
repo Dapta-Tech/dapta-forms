@@ -1,5 +1,22 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { canonicalHop } from '@/lib/request-origin';
+import { BROWSER_ID_COOKIE, browserIdCookieOptions, browserIdFromCookie, newBrowserId } from '@/lib/browser-id';
+
+/**
+ * Let the request through, minting the first-party browser id when the
+ * browser has none (`lib/browser-id.ts`). Here because a dashboard page cannot
+ * write a cookie (a Server Component render), and every dashboard and wizard
+ * load passes through. The fresh id is put on the REQUEST too, so the page
+ * rendered by this very request already forwards it to `/v1/me`.
+ */
+function pass(req: NextRequest): NextResponse {
+  if (browserIdFromCookie(req.cookies.get(BROWSER_ID_COOKIE)?.value)) return NextResponse.next();
+  const id = newBrowserId();
+  req.cookies.set(BROWSER_ID_COOKIE, id);
+  const res = NextResponse.next({ request: { headers: req.headers } });
+  res.cookies.set(BROWSER_ID_COOKIE, id, browserIdCookieOptions());
+  return res;
+}
 
 /**
  * Keeps the session pages and the session refresh on the `PUBLIC_APP_URL` host.
@@ -37,16 +54,17 @@ import { canonicalHop } from '@/lib/request-origin';
 export function proxy(req: NextRequest): NextResponse {
   const fetchMode = req.headers.get('sec-fetch-mode');
   const navigation = fetchMode === null || fetchMode === 'navigate';
-  if (!navigation && req.nextUrl.pathname !== '/api/auth/refresh') return NextResponse.next();
+  if (!navigation && req.nextUrl.pathname !== '/api/auth/refresh') return pass(req);
 
   const hop = canonicalHop(req);
-  if (!hop) return NextResponse.next();
+  if (!hop) return pass(req);
   // Next rewrites a proxy redirect aimed at the server's OWN listen address
   // into a relative Location, which the browser resolves against the host it
   // is already on: a loop. Only a local setup gets here (PUBLIC_APP_URL set to
   // the dev server's own address and the app opened under another name for it,
   // such as 127.0.0.1), and today's behavior is the right answer there.
-  if (new URL(hop.headers.get('location')!).host === req.nextUrl.host) return NextResponse.next();
+  if (new URL(hop.headers.get('location')!).host === req.nextUrl.host) return pass(req);
+  // No browser id on a hop: it would be the old host's, and the canonical host mints its own.
   return hop;
 }
 

@@ -3,7 +3,7 @@ import { referralCampaignEndsAt, referralProgramEnabled, type ServerEnv } from '
 import {
   applyReferralUnlock,
   countReferrals,
-  creditReferral,
+  creditReferralVerdict,
   dismissReferralBanner,
   ensureReferrer,
   getAttributionSwitch,
@@ -11,6 +11,7 @@ import {
   getReferrerByCode,
   markReferralUnlocked,
   personNames,
+  recordPersonBrowser,
   recordReferralInvite,
   referralInviterOf,
   referralPersonKey,
@@ -20,6 +21,7 @@ import {
 } from '@quill/db';
 import { REFERRAL_GOAL, buildReferralLink, paidVerdictFresh, referralLinkBase } from '@quill/shared';
 import { AnalyticsEffects } from './analytics-effects';
+import { currentBrowserHash } from './browser-id';
 import { EmailEffects } from './email-effects';
 import { referralCampaignActive } from './referral-campaign';
 import { DB, REFERRAL_OPTIONS } from './tokens';
@@ -208,9 +210,32 @@ export class ReferralService {
   }
 
   /**
+   * Record that the member making the request was seen in the browser the
+   * request came from (`currentBrowserHash`, 0034), so a later referral in
+   * that browser is not credited to them. Called on every dashboard load
+   * (`/v1/me`); most loads write nothing (`recordPersonBrowser` refreshes at
+   * most hourly). With the program off, or no browser id, nothing is written.
+   * Never throws: a page must not fail over it.
+   */
+  async seenInBrowser(principal: { accountId: string; memberId: string }): Promise<void> {
+    if (!this.enabled) return;
+    const browserHash = currentBrowserHash();
+    if (!browserHash) return;
+    try {
+      const person = await referralPersonKey(this.db, principal.accountId, principal.memberId);
+      if (!person) return;
+      await recordPersonBrowser(this.db, { person, browserHash, now: this.now() });
+    } catch (err) {
+      this.log.warn(`referral browser record failed for member ${principal.memberId}: ${String(err)}`);
+    }
+  }
+
+  /**
    * Credit the member making the request to the owner of a referral code
    * (source `link`). `{ credited: false }` for every refusal; see
-   * `creditReferral` for the rules.
+   * `creditReferralVerdict` for the rules. The request's browser rides along
+   * (`currentBrowserHash`), so a sign-up in a browser the referrer was seen in
+   * is refused (`referral_refused`), and is then recorded as the referee's.
    */
   async claimByLink(
     principal: { accountId: string; memberId: string },
@@ -223,12 +248,23 @@ export class ReferralService {
     const owner = await getReferrerByCode(this.db, code);
     if (!referee || !owner) return { credited: false };
     const now = this.options.now?.() ?? Date.now();
-    const credited = await creditReferral(this.db, { referee, referrer: owner.personId, source: 'link', now });
-    if (credited) {
+    const browserHash = currentBrowserHash();
+    const verdict = await creditReferralVerdict(this.db, {
+      referee,
+      referrer: owner.personId,
+      source: 'link',
+      now,
+      browserHash,
+    });
+    if (verdict.credited) {
       await this.afterCredit(owner.personId, now, referee);
       await this.signupEvent(principal, owner.code, 'link', now);
+    } else if (verdict.reason === 'same_browser') {
+      await this.refusedEvent(principal, owner.code, 'link', now);
     }
-    return { credited };
+    // The referee's browser is theirs from now on: a referral they bring in it later is refused too.
+    await this.seenInBrowser(principal);
+    return { credited: verdict.credited };
   }
 
   /**
@@ -400,23 +436,61 @@ export class ReferralService {
       const referee = await referralPersonKey(this.db, person.accountId, person.memberId);
       if (!referee) return;
       const now = this.options.now?.() ?? Date.now();
-      const credited = await creditReferral(this.db, {
+      // The sign-in runs inside the request that carried the browser id (the
+      // web forwards it on every server-side call), so the same-browser rule
+      // holds here as for a link: an invite accepted in the inviter's own
+      // browser does not count. A sign-in without one (no cookie) skips it.
+      const verdict = await creditReferralVerdict(this.db, {
         referee,
         referrer: inviter,
         source: 'invite',
         now,
         newPerson: true,
+        browserHash: currentBrowserHash(),
       });
-      if (!credited) return;
-      await this.afterCredit(inviter, now, referee);
+      if (!verdict.credited && verdict.reason !== 'same_browser') return;
       // The inviter's code rides on the event, as with a link, so the funnel
       // is cut by referrer the same way. Their link row is made if they never
       // opened it: it is theirs either way.
+      if (!verdict.credited) {
+        const row = await ensureReferrer(this.db, inviter, { now, code: this.options.code });
+        await this.refusedEvent(person, row.code, 'invite', now);
+        return;
+      }
+      await this.afterCredit(inviter, now, referee);
       const row = await ensureReferrer(this.db, inviter, { now, code: this.options.code });
       await this.signupEvent(person, row.code, 'invite', now);
     } catch (err) {
       this.log.error(`referral invite credit failed: ${String(err)}`);
     }
+  }
+
+  /**
+   * `referral_refused`, about the invitee, when the same-browser rule refused
+   * a referral every other rule would have credited: the request came from a
+   * browser the referrer was seen in. Silent to the invitee (the claim still
+   * answers `{ credited: false }`); this event and the log line are the only
+   * record, so the refusals can be counted. Never rejects.
+   */
+  private async refusedEvent(
+    principal: { accountId: string; memberId: string },
+    code: string,
+    source: ReferralSource,
+    now: number,
+  ): Promise<void> {
+    this.log.log(`referral refused (same_browser): source ${source}, code ${code}, member ${principal.memberId}`);
+    if (!this.analytics?.enabled) return;
+    const me = await getMe(this.db, principal.accountId, principal.memberId).catch(() => null);
+    if (!me?.email) return;
+    await this.analytics.capture(
+      'referral_refused',
+      {
+        distinctId: me.email,
+        accountId: principal.accountId,
+        properties: { reason: 'same_browser', referral_code: code, referral_source: source },
+      },
+      now,
+    );
   }
 
   /**
