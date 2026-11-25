@@ -4,6 +4,7 @@ import { after, NextResponse, type NextRequest } from 'next/server';
 import { parseAttribution } from '@quill/types';
 import { PH_ID_COOKIE, PH_ID_QUERY_KEY, sanitizeLandingDistinctId } from '@/lib/attribution';
 import { authProvider } from '@/lib/auth-session';
+import { ensureBrowserId } from '@/lib/browser-id';
 import { recordLoginStarted, type LoginStart } from '@/lib/login-started';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { SCREEN_PARAM, wantsSignUp } from '@/lib/login-screen';
@@ -81,6 +82,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     secure: process.env.NODE_ENV === 'production',
     maxAge: 600, // 10 min — just long enough to finish the round-trip
   });
+  // This browser's first-party id (lib/browser-id.ts), minted if it has none,
+  // so the callback can hand it to the referral claim. Never cleared.
+  ensureBrowserId(jar);
 
   // Park the acquisition tags the root page forwarded. Same lifetime as the CSRF
   // state: they are only meaningful for THIS login attempt, and a stale cookie

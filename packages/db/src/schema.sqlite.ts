@@ -462,6 +462,20 @@ export const referralInvite = sqliteTable('referral_invite', {
   createdAt: integer('created_at').notNull(),
 });
 
+/** The browsers a person was seen in (see 0034 and the Postgres twin). */
+export const referrerBrowser = sqliteTable(
+  'referrer_browser',
+  {
+    personId: text('person_id').notNull(),
+    browserHash: text('browser_hash').notNull(),
+    firstSeenAt: integer('first_seen_at').notNull(),
+    lastSeenAt: integer('last_seen_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.personId, t.browserHash] }),
+  }),
+);
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -482,4 +496,5 @@ export const sqliteSchema = {
   referrer,
   referral,
   referralInvite,
+  referrerBrowser,
 };

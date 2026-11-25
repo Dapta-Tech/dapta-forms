@@ -371,3 +371,92 @@ describe('an old-host admin link while signed in on PUBLIC_APP_URL', () => {
     expect(revokes).toHaveLength(1);
   });
 });
+
+/**
+ * The first-party browser id (lib/browser-id.ts): the proxy mints it on a
+ * dashboard or wizard load when the browser has none, on the response AND on
+ * the request (so the page rendered by this request forwards it), and never
+ * on a hop to another host. Signing out leaves it alone.
+ */
+describe('proxy and the browser id', () => {
+  const BID = 'Q2hyb21lQ2hyb21lQ2hyb21lQ2hyb21lQ2hyb21lQ2g';
+
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('PUBLIC_APP_URL', CANONICAL);
+  });
+
+  const setCookie = (res: Response) => res.headers.get('set-cookie') ?? '';
+
+  it('mints dforms_bid on a dashboard load without one: httpOnly, Lax, two years', () => {
+    const res = proxy(at('/admin', { host: 'app.example.com', 'sec-fetch-mode': 'navigate' }));
+    expectPass(res);
+    const cookie = setCookie(res);
+    expect(cookie).toMatch(/^dforms_bid=[A-Za-z0-9_-]{43};/);
+    expect(cookie).toMatch(/HttpOnly/i);
+    expect(cookie).toMatch(/SameSite=lax/i);
+    expect(cookie).toMatch(/Max-Age=63072000/);
+    // The same id rides on to the page's own request.
+    const id = /^dforms_bid=([^;]+)/.exec(cookie)![1];
+    expect(res.headers.get('x-middleware-request-cookie') ?? '').toContain(`dforms_bid=${id}`);
+  });
+
+  it('mints it on the wizard and on a page fetch() too', () => {
+    expect(setCookie(proxy(at('/onboarding', { host: 'app.example.com', 'sec-fetch-mode': 'navigate' })))).toContain('dforms_bid=');
+    expect(setCookie(proxy(at('/admin/forms', { host: 'app.example.com', 'sec-fetch-mode': 'cors' })))).toContain('dforms_bid=');
+  });
+
+  it('leaves an existing one alone', () => {
+    const res = proxy(at('/admin', { host: 'app.example.com', cookie: `dforms_bid=${BID}` }));
+    expectPass(res);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('replaces a malformed one', () => {
+    const res = proxy(at('/admin', { host: 'app.example.com', cookie: 'dforms_bid=short' }));
+    expect(setCookie(res)).toMatch(/^dforms_bid=[A-Za-z0-9_-]{43};/);
+  });
+
+  it('sets nothing on a hop to PUBLIC_APP_URL: that host mints its own', () => {
+    expectHop(proxy(at('/admin', { host: OLD, 'sec-fetch-mode': 'navigate' })), '/admin');
+  });
+
+  it('the dashboard forwards it to the API on every server-side call (admin-api)', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'local');
+    vi.stubEnv('WEB_SESSION_SECRET', 'test-secret-test-secret-test-secret');
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ email: 'ana@example.com' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    state.current = {
+      jar: new Map([
+        [SESSION_COOKIE, encodeSession({ provider: 'local', email: 'ana@example.com' })],
+        ['dforms_bid', BID],
+      ]),
+      headers: new Headers({ host: 'app.example.com' }),
+      writes: [],
+    };
+    await adminApi.me();
+    const headers = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers as Record<string, string>;
+    expect(headers['x-quill-browser']).toBe(BID);
+    // Without the cookie, no header (and nothing invented).
+    state.current.jar.delete('dforms_bid');
+    await adminApi.me();
+    const bare = (fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].headers as Record<string, string>;
+    expect(bare['x-quill-browser']).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it('survives signing out: the logout route clears the session and nothing else', async () => {
+    vi.stubEnv('AUTH_PROVIDER', 'local');
+    vi.stubEnv('WEB_SESSION_SECRET', 'test-secret-test-secret-test-secret');
+    const jar = new Map<string, string>([
+      [SESSION_COOKIE, encodeSession({ provider: 'local', email: 'ana@example.com' })],
+      ['dforms_bid', BID],
+    ]);
+    state.current = { jar, headers: new Headers({ host: 'app.example.com' }), writes: [] };
+    const res = await logoutRoute(at('/api/auth/logout', { host: 'app.example.com' }));
+    expect(jar.has(SESSION_COOKIE)).toBe(false);
+    expect(jar.get('dforms_bid')).toBe(BID);
+    expect(state.current.writes).not.toContain('dforms_bid');
+    expect(res.headers.get('set-cookie') ?? '').not.toContain('dforms_bid');
+  });
+});

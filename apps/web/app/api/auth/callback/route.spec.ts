@@ -109,3 +109,46 @@ describe('GET /api/auth/callback with a referral code parked', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/admin');
   });
 });
+
+/**
+ * The callback forwards the first-party browser id (lib/browser-id.ts) on its
+ * API calls, so the claim can refuse a referral from a browser the referrer
+ * was seen in. It never deletes it.
+ */
+describe('GET /api/auth/callback, the browser id', () => {
+  const BID = 'Q2hyb21lQ2hyb21lQ2hyb21lQ2hyb21lQ2hyb21lQ2g';
+
+  it('sends the browser id with the referral claim and the attribution record', async () => {
+    store.set('dforms_bid', BID);
+    park({ referralCode: 'k7m2p9qx' });
+    await callback();
+
+    const [claim] = callsTo('/v1/me/referral/claim');
+    expect((claim![1] as { headers: Record<string, string> }).headers['x-quill-browser']).toBe(BID);
+    const [record] = callsTo('/v1/account/attribution');
+    expect((record![1] as { headers: Record<string, string> }).headers['x-quill-browser']).toBe(BID);
+    expect(store.get('dforms_bid')).toBe(BID);
+    expect(cookieJar.delete).not.toHaveBeenCalledWith('dforms_bid');
+  });
+
+  it('a browser that lost it mid-login gets one, and the claim carries it', async () => {
+    park({ referralCode: 'k7m2p9qx' });
+    await callback();
+
+    const minted = store.get('dforms_bid');
+    expect(minted).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const [claim] = callsTo('/v1/me/referral/claim');
+    expect((claim![1] as { headers: Record<string, string> }).headers['x-quill-browser']).toBe(minted);
+  });
+
+  it('a malformed cookie is replaced, never forwarded', async () => {
+    store.set('dforms_bid', 'bad; value');
+    park({ referralCode: 'k7m2p9qx' });
+    await callback();
+
+    const [claim] = callsTo('/v1/me/referral/claim');
+    const sent = (claim![1] as { headers: Record<string, string> }).headers['x-quill-browser'];
+    expect(sent).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(sent).toBe(store.get('dforms_bid'));
+  });
+});

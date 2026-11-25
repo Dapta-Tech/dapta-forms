@@ -8,6 +8,7 @@
 import { randomBytes } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Db } from './client';
+import { personBrowserSeen } from './referral-browsers';
 
 /** The person's referrer row. Mirrors the `referrer` table (0030). */
 export interface ReferrerRow {
@@ -201,47 +202,81 @@ export async function isNewPerson(db: Db, person: string, now: number = Date.now
   return first != null && first > now - REFERRAL_CLAIM_WINDOW_MS;
 }
 
+/** Why a referral was not credited (see `creditReferralVerdict`). */
+export type ReferralRefusal = 'self_referral' | 'not_new' | 'already_credited' | 'same_browser';
+
+/** What `creditReferralVerdict` decided: credited, or the first rule that refused it. */
+export type ReferralVerdict = { credited: true } | { credited: false; reason: ReferralRefusal };
+
+/** What a referral credit is asked with. */
+export interface CreditReferralInput {
+  referee: string;
+  referrer: string;
+  source: ReferralSource;
+  now?: number;
+  /**
+   * The caller already judged the referee new at this sign-in (the invite
+   * source: no bound member row before it), so the 10-minute window is not
+   * asked. An adopted invite row keeps the invite's `created_at`, so its
+   * age says nothing about the person.
+   */
+  newPerson?: boolean;
+  /**
+   * The SHA-256 of the browser id the request came from (0034), or absent
+   * when the browser sent none (an old browser, no cookie yet): then the
+   * same-browser rule is not asked.
+   */
+  browserHash?: string | null;
+}
+
 /**
- * Credit one referee to one referrer; true when this call wrote the referral.
+ * Credit one referee to one referrer, and say why not when it refuses.
  *
- * The rules, every refusal a plain `false`:
- *   - not a self-referral: the same person, or another subject on one of the
+ * The rules, in this order, the first that fails being the reason:
+ *   - `self_referral`: the same person, or another subject on one of the
  *     referrer's addresses;
- *   - the referee is a new person (`isNewPerson`);
- *   - first credit wins: `referee_person_id` is the primary key, so a referee
- *     already credited (to anyone, by any source) inserts nothing. Two
- *     concurrent claims race on that key and exactly one of them writes.
+ *   - `not_new`: the referee is not a new person (`isNewPerson`);
+ *   - `already_credited`: first credit wins. `referee_person_id` is the
+ *     primary key, so a referee already credited (to anyone, by any source)
+ *     inserts nothing, and two concurrent claims race on that key with
+ *     exactly one of them writing;
+ *   - `same_browser`: the request came from a browser the referrer was seen
+ *     in (`personBrowserSeen`). Asked last, so a same-browser count holds
+ *     only attempts every other rule would have let through.
  *
  * Both sources go through here: the referral link (`link`) and a teammate
  * invite (`invite`), so both obey the same rules.
  */
-export async function creditReferral(
-  db: Db,
-  input: {
-    referee: string;
-    referrer: string;
-    source: ReferralSource;
-    now?: number;
-    /**
-     * The caller already judged the referee new at this sign-in (the invite
-     * source: no bound member row before it), so the 10-minute window is not
-     * asked. An adopted invite row keeps the invite's `created_at`, so its
-     * age says nothing about the person.
-     */
-    newPerson?: boolean;
-  },
-): Promise<boolean> {
+export async function creditReferralVerdict(db: Db, input: CreditReferralInput): Promise<ReferralVerdict> {
   const now = input.now ?? Date.now();
-  if (await isSelfReferral(db, input.referee, input.referrer)) return false;
-  if (input.newPerson === false) return false;
-  if (input.newPerson !== true && !(await isNewPerson(db, input.referee, now))) return false;
+  if (await isSelfReferral(db, input.referee, input.referrer)) return { credited: false, reason: 'self_referral' };
+  if (input.newPerson === false) return { credited: false, reason: 'not_new' };
+  if (input.newPerson !== true && !(await isNewPerson(db, input.referee, now))) {
+    return { credited: false, reason: 'not_new' };
+  }
+  const taken = await db.get<{ one: number }>(
+    sql`SELECT 1 AS one FROM referral WHERE referee_person_id = ${input.referee} LIMIT 1`,
+  );
+  if (taken) return { credited: false, reason: 'already_credited' };
+  if (input.browserHash && (await personBrowserSeen(db, input.referrer, input.browserHash))) {
+    return { credited: false, reason: 'same_browser' };
+  }
   const row = await db.get<{ referee_person_id: string }>(
     sql`INSERT INTO referral (referee_person_id, referrer_person_id, source, created_at)
         VALUES (${input.referee}, ${input.referrer}, ${input.source}, ${now})
         ON CONFLICT DO NOTHING
         RETURNING referee_person_id`,
   );
-  return Boolean(row);
+  return row ? { credited: true } : { credited: false, reason: 'already_credited' };
+}
+
+/**
+ * Credit one referee to one referrer; true when this call wrote the referral.
+ * Every refusal a plain `false`; `creditReferralVerdict` has the rules and
+ * says which one refused.
+ */
+export async function creditReferral(db: Db, input: CreditReferralInput): Promise<boolean> {
+  return (await creditReferralVerdict(db, input)).credited;
 }
 
 /** An invited address as the invite record keys it: trimmed and lowercased, or null when empty. */
