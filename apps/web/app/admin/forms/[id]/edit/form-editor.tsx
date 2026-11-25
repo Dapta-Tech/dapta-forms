@@ -25,7 +25,7 @@ import { callAction, isTransportError } from '@/lib/call-action';
 import { useAutosave } from '@/lib/use-autosave';
 import { clearDraftBackup, readDraftBackup, writeDraftBackup } from '@/lib/draft-backup';
 import { cn } from '@/lib/cn';
-import type { AttributionStatus } from '@/lib/admin-api';
+import type { AttributionStatus, GeneratedFormDraft } from '@/lib/admin-api';
 import type { ReferralLock } from '@/lib/referral-lock';
 import { anchorRevealsLast } from './_components/logic-util';
 import {
@@ -703,6 +703,16 @@ export function FormEditor({
     autosave.markDirty();
   }
 
+  function applyAiDraft(draft: GeneratedFormDraft) {
+    mutate((current) => ({
+      ...current,
+      steps: draft.steps,
+      ...(draft.scoring !== undefined ? { scoring: draft.scoring } : {}),
+      ...(draft.outcomes !== undefined ? { outcomes: draft.outcomes } : {}),
+    }));
+    setSelected(0);
+  }
+
   // Public title (V7): what the tab/OG/cover show. Empty clears back to `name`.
   const setTitle = (title: string) => mutate((c) => ({ ...c, title: title.trim() ? title : null }));
   // Form language (null = Auto) and the form-level button copy.
@@ -1358,6 +1368,7 @@ export function FormEditor({
               <EmptyState
                 onPickTemplate={applyTemplate}
                 onScratch={() => setGalleryOpen(true)}
+                onApplyDraft={applyAiDraft}
                 m={bm}
               />
             </div>

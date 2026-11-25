@@ -33,6 +33,9 @@ export const serverEnvSchema = z.object({
 
   // API
   API_PORT: z.coerce.number().int().positive().default(4000),
+  LITELLM_BASE_URL: blankAsUnset(z.string().trim().optional()),
+  LITELLM_API_KEY: blankAsUnset(z.string().trim().optional()),
+  LITELLM_MODEL: blankAsUnset(z.string().trim().default('best-model')),
   // Public base URL of the deployment (e.g. https://forms.example.com). This is
   // the TRUSTED origin: the web builds OAuth `returnTo`/redirects from it (never
   // from attacker-controllable Host / X-Forwarded-Host headers — see

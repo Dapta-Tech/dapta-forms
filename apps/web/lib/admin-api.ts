@@ -127,6 +127,7 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
 
 export type AccountRole = 'owner' | 'admin' | 'member';
 export type MemberStatus = 'active' | 'invited' | 'disabled';
+export type GeneratedFormDraft = Pick<FormConfig, 'steps' | 'scoring' | 'outcomes'>;
 
 /** One account the signed-in person can act in. */
 export interface Workspace {
@@ -1030,6 +1031,9 @@ export const adminApi = {
   // Forms
   listForms: () => req<FormSummary[]>('GET', '/v1/forms'),
   getForm: (id: string) => req<FormDetail>('GET', `/v1/forms/${id}`),
+  formAiStatus: () => req<{ available: boolean }>('GET', '/v1/form-ai/status'),
+  generateFormDraft: (description: string, locale: 'en' | 'es') =>
+    req<{ draft: GeneratedFormDraft }>('POST', '/v1/form-ai/generate', { description, locale }),
   /**
    * One uploaded file: how to download it, and whether it can be shown in
    * place. Both URLs are short-lived, minted per click and never stored.

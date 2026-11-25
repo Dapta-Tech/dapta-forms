@@ -644,6 +644,18 @@ export interface BuilderMessages {
     scratchTitle: string;
     /** One-line description under the blank-canvas option. */
     scratchDesc: string;
+    ai: {
+      title: string;
+      description: string;
+      prompt: string;
+      placeholder: string;
+      generate: string;
+      generating: string;
+      preview: string;
+      apply: string;
+      unavailable: string;
+      error: string;
+    };
     /** Section-divider label above the template cards. */
     templatesLabel: string;
     templates: Record<TemplateId, { name: string; desc: string; meta: string }>;
@@ -1146,6 +1158,18 @@ const en: BuilderMessages = {
     scratch: 'or start from scratch. Add your first question',
     scratchTitle: 'Start from scratch',
     scratchDesc: 'Begin with a blank canvas and add your own questions.',
+    ai: {
+      title: 'Create with AI',
+      description: 'Describe your form and review the proposed questions.',
+      prompt: 'Describe your form',
+      placeholder: 'For example, a quote request that asks for name, work email, and budget.',
+      generate: 'Generate draft',
+      generating: 'Generating draft…',
+      preview: 'Proposed questions',
+      apply: 'Use this draft',
+      unavailable: 'LiteLLM or the configured model is unavailable. Try again in a moment.',
+      error: 'Could not generate a valid draft. Try again or adjust your description.',
+    },
     templatesLabel: 'Or choose a template',
     templates: {
       lead: {
@@ -1656,6 +1680,18 @@ const es: BuilderMessages = {
     scratch: 'o empieza desde cero: añade tu primera pregunta',
     scratchTitle: 'Empezar desde cero',
     scratchDesc: 'Comienza con un lienzo en blanco y añade tus propias preguntas.',
+    ai: {
+      title: 'Crear con IA',
+      description: 'Describe tu formulario y revisa las preguntas propuestas.',
+      prompt: 'Describe tu formulario',
+      placeholder: 'Por ejemplo, una solicitud de cotización que pida nombre, correo laboral y presupuesto.',
+      generate: 'Generar borrador',
+      generating: 'Generando borrador…',
+      preview: 'Preguntas propuestas',
+      apply: 'Usar este borrador',
+      unavailable: 'LiteLLM o el modelo configurado no está disponible. Vuelve a intentarlo en un momento.',
+      error: 'No se pudo generar un borrador válido. Vuelve a intentarlo o ajusta la descripción.',
+    },
     templatesLabel: 'O elige una plantilla',
     templates: {
       lead: {

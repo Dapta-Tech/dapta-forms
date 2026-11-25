@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { lockedOptionValues } from '@quill/engine';
-import { adminApi, ApiError } from '@/lib/admin-api';
+import { adminApi, ApiError, type GeneratedFormDraft } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { publicFormPath } from '@/lib/public-form-path';
 
@@ -28,6 +28,27 @@ export async function createFormAction(formData: FormData): Promise<void> {
   revalidatePath('/admin');
   revalidatePath('/admin/forms');
   redirect(`/admin/forms/${created.id}/edit`);
+}
+
+export async function formAiStatusAction(): Promise<{ available: boolean }> {
+  try {
+    return await adminApi.formAiStatus();
+  } catch (error) {
+    unstable_rethrow(error);
+    return { available: false };
+  }
+}
+
+export async function generateFormDraftAction(description: string): Promise<
+  { ok: true; draft: GeneratedFormDraft } | { ok: false; unavailable: boolean }
+> {
+  try {
+    const { draft } = await adminApi.generateFormDraft(description, await getLocale());
+    return { ok: true, draft };
+  } catch (error) {
+    unstable_rethrow(error);
+    return { ok: false, unavailable: error instanceof ApiError && error.code === 'FORM_AI_UNAVAILABLE' };
+  }
 }
 
 export async function duplicateFormAction(id: string): Promise<void> {

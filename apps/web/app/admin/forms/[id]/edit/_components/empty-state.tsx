@@ -3,6 +3,8 @@
 import type { BuilderMessages } from './builder-messages';
 import { TEMPLATE_ORDER, TEMPLATE_ICON } from './templates';
 import type { TemplateId } from './builder-messages';
+import type { GeneratedFormDraft } from '@/lib/admin-api';
+import { AiFormStarter } from './ai-form-starter';
 
 /**
  * The guided empty state (new form / zero questions). The flow reads
@@ -19,10 +21,12 @@ import type { TemplateId } from './builder-messages';
 export function EmptyState({
   onPickTemplate,
   onScratch,
+  onApplyDraft,
   m,
 }: {
   onPickTemplate: (id: TemplateId) => void;
   onScratch: () => void;
+  onApplyDraft: (draft: GeneratedFormDraft) => void;
   m: BuilderMessages;
 }) {
   return (
@@ -50,6 +54,8 @@ export function EmptyState({
           style={{ fontSize: 13 }}
         />
       </button>
+
+      <AiFormStarter onApply={onApplyDraft} m={m.empty.ai} />
 
       {/* Or choose a template. */}
       <div className="mt-10 flex w-full items-center gap-3">

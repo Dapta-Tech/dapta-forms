@@ -19,6 +19,7 @@
     "PUBLIC_APP_URL",
     "NEXT_PUBLIC_API_URL"
   ],
+  "globalPassThroughEnv": ["LITELLM_BASE_URL", "LITELLM_API_KEY", "LITELLM_MODEL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
