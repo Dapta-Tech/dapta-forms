@@ -289,6 +289,10 @@ export class AdminCrudController {
       this.referrals && !isAgentPrincipal(p)
         ? await this.referrals.forMember(p.accountId, p.memberId)
         : { enabled: false };
+    // The browser this dashboard load came from is the person's from now on
+    // (0034): a referral signed up in it later is not credited to them.
+    // Best-effort, never fails the page; nothing for an agent.
+    if (this.referrals && !isAgentPrincipal(p)) await this.referrals.seenInBrowser(p);
     return { ...view, staff, uploads, captcha, attributionBadge, referral };
   }
 

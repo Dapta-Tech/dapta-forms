@@ -506,6 +506,25 @@ export const referralInvite = pgTable('referral_invite', {
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 
+/**
+ * The browsers a person was seen in (see 0034): the SHA-256 of the web app's
+ * first-party browser id, never the raw value. One row per person and browser,
+ * capped to the 20 most recently seen. A referral whose browser is among the
+ * referrer's is refused.
+ */
+export const referrerBrowser = pgTable(
+  'referrer_browser',
+  {
+    personId: text('person_id').notNull(),
+    browserHash: text('browser_hash').notNull(),
+    firstSeenAt: bigint('first_seen_at', { mode: 'number' }).notNull(),
+    lastSeenAt: bigint('last_seen_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.personId, t.browserHash] }),
+  }),
+);
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -526,4 +545,5 @@ export const pgSchema = {
   referrer,
   referral,
   referralInvite,
+  referrerBrowser,
 };

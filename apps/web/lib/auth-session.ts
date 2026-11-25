@@ -7,6 +7,7 @@ import { signValue, unsignValue } from './signed-value';
 import { serverApiUrl } from './api-url';
 import { canonicalOriginElsewhere } from './request-origin';
 import { analyticsSessionHeaders } from './analytics-session';
+import { browserIdHeaders } from './browser-id';
 import { resolveProductAnalytics } from './product-analytics';
 
 const API_URL = serverApiUrl;
@@ -248,7 +249,10 @@ export async function hostHeaders(): Promise<Record<string, string>> {
   const workspace = await getWorkspace();
   if (workspace) h['x-quill-workspace'] = workspace;
   // Lets the events this call emits link to the session recording it came from.
-  Object.assign(h, analyticsSessionHeaders(await cookies(), resolveProductAnalytics()));
+  const jar = await cookies();
+  Object.assign(h, analyticsSessionHeaders(jar, resolveProductAnalytics()));
+  // This browser's first-party id, as admin-api sends it (lib/browser-id.ts).
+  Object.assign(h, browserIdHeaders(jar));
   return h;
 }
 

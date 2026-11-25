@@ -108,7 +108,7 @@ describe('GET /api/auth/login on a host other than PUBLIC_APP_URL', () => {
 
     expectNoHop(res);
     const names = cookieJar.set.mock.calls.map(([name]) => name);
-    expect(names).toEqual(['quill_oauth_state', 'quill_attribution', 'quill_ph_id']);
+    expect(names).toEqual(['quill_oauth_state', 'dforms_bid', 'quill_attribution', 'quill_ph_id']);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
       `returnTo=${encodeURIComponent(`${CANONICAL}/api/auth/callback`)}`,
     );
@@ -288,11 +288,11 @@ describe('GET /api/auth/login sign-up screen', () => {
     const tags = 'utm_source=dforms&utm_campaign=nov&ph_id=0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b';
 
     await GET(req(`/api/auth/login?${tags}`));
-    const without = cookieJar.set.mock.calls.filter(([name]) => name !== 'quill_oauth_state');
+    const without = cookieJar.set.mock.calls.filter(([name]) => name !== 'quill_oauth_state' && name !== 'dforms_bid');
     cookieJar.set.mockClear();
     fetchMock.mockClear();
     await GET(req(`/api/auth/login?${tags}&screen=sign-up`));
-    const withIt = cookieJar.set.mock.calls.filter(([name]) => name !== 'quill_oauth_state');
+    const withIt = cookieJar.set.mock.calls.filter(([name]) => name !== 'quill_oauth_state' && name !== 'dforms_bid');
 
     expect(withIt).toEqual(without);
     expect(withIt.map(([name]) => name)).toEqual(['quill_attribution', 'quill_ph_id']);
@@ -303,7 +303,7 @@ describe('GET /api/auth/login sign-up screen', () => {
   it('is not a campaign tag: the flag alone parks no attribution', async () => {
     await GET(req('/api/auth/login?screen=sign-up'));
 
-    expect(cookieJar.set.mock.calls.map(([name]) => name)).toEqual(['quill_oauth_state']);
+    expect(cookieJar.set.mock.calls.map(([name]) => name)).toEqual(['quill_oauth_state', 'dforms_bid']);
   });
 
   it.each([
@@ -486,5 +486,43 @@ describe('GET /api/auth/login parks ref in the attribution cookie', () => {
     );
     await GET(req('/api/auth/login?ref=second22'));
     expect(parked()).toBeNull();
+  });
+});
+
+/**
+ * The first-party browser id (lib/browser-id.ts): minted on a login hit when
+ * the browser has none, so the callback can hand it to the referral claim, and
+ * never replaced when it has one.
+ */
+describe('GET /api/auth/login, the browser id', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    provider.name = 'workos';
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('PUBLIC_APP_URL', '');
+    vi.stubEnv('IAM_BASE_URL', 'https://iam.example.com/iam');
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ loginUrl: AUTHORIZE }) });
+    cookieJar.get.mockReturnValue(undefined);
+  });
+
+  it('mints a long-lived httpOnly dforms_bid when the browser has none', async () => {
+    await GET(req('/api/auth/login'));
+
+    const set = cookieJar.set.mock.calls.find(([name]) => name === 'dforms_bid');
+    expect(set).toBeDefined();
+    expect(set![1]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(set![2]).toMatchObject({ path: '/', httpOnly: true, sameSite: 'lax', maxAge: 2 * 365 * 24 * 60 * 60 });
+  });
+
+  it('keeps the one the browser already has', async () => {
+    const existing = 'A'.repeat(43);
+    cookieJar.get.mockImplementation((name: string) => (name === 'dforms_bid' ? { value: existing } : undefined));
+
+    await GET(req('/api/auth/login'));
+
+    expect(cookieJar.set.mock.calls.map(([name]) => name)).not.toContain('dforms_bid');
   });
 });

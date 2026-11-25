@@ -28,6 +28,7 @@ export * from './outbox';
 export * from './notification-settings';
 export * from './announcements';
 export * from './referrals';
+export * from './referral-browsers';
 export * from './referral-banner';
 export * from './referral-nudge';
 export { migrate } from './migrate';
