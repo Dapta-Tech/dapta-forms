@@ -73,7 +73,10 @@ export function AiFormStarter({
                 setError(null);
               }}
             />
-            {m.leadQualification}
+            <span>
+              {m.leadQualification.prefix}{' '}
+              <strong>{m.leadQualification.emphasis}</strong>
+            </span>
           </label>
           <label htmlFor={promptId} className="block text-sm font-semibold">
             {useLeadQualification ? m.productSummary : m.prompt}

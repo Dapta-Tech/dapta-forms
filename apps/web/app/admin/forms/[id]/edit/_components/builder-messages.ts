@@ -649,7 +649,7 @@ export interface BuilderMessages {
       description: string;
       prompt: string;
       placeholder: string;
-      leadQualification: string;
+      leadQualification: { prefix: string; emphasis: string };
       productSummary: string;
       productSummaryPlaceholder: string;
       generate: string;
@@ -1167,7 +1167,7 @@ const en: BuilderMessages = {
       description: 'Describe your form and review the proposed questions.',
       prompt: 'Describe your form',
       placeholder: 'For example, a quote request that asks for name, work email, and budget.',
-      leadQualification: 'Use the lead qualification skill',
+      leadQualification: { prefix: 'Is a', emphasis: 'lead qualification?' },
       productSummary: 'Summarize your product',
       productSummaryPlaceholder: 'Who is it for, what does it do, and what outcome should it improve?',
       generate: 'Generate draft',
@@ -1693,7 +1693,7 @@ const es: BuilderMessages = {
       description: 'Describe tu formulario y revisa las preguntas propuestas.',
       prompt: 'Describe tu formulario',
       placeholder: 'Por ejemplo, una solicitud de cotización que pida nombre, correo laboral y presupuesto.',
-      leadQualification: 'Usar la skill de calificación de leads',
+      leadQualification: { prefix: '¿Es para', emphasis: 'calificar leads?' },
       productSummary: 'Resume tu producto',
       productSummaryPlaceholder: '¿Para quién es, qué hace y qué resultado debería mejorar?',
       generate: 'Generar borrador',
