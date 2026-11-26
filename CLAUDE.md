@@ -430,29 +430,59 @@ retryable failures) → `src/factory.ts` (add the switch case + graceful fallbac
 person (`pickAnnouncement`) and stores what they did in `announcement_state`.
 
 **Publish a playbook** (the in-app gallery at `/admin/playbooks` and the
-landing's resource hub): add a markdown file to
-`packages/shared/content/playbooks/` named after its `slug` (never reuse one:
-per-person state is keyed by it), with the front matter `slug`, `category`
-(`ventas`, `marketing`, `ads` or `agentes`), `title`, `summary`, `publishedAt`
-(a date in Bogota time, or an ISO date-time with its offset), `template`, and
-optionally `promisedBy` (`[ig_handle, ...]`), `thumbnailVideo`,
-`thumbnailPoster` and `thumbnailMotif`; split the body with one line holding
-only `<!-- muro -->` (above it, the public preview). To place an animation or
-a still inside the text, give it a line of its own:
-`<!-- anim: <slug>/<name> | <alt> -->` or `<!-- img: <slug>/<name> | <alt> -->`
-(`slug` is the playbook's, `name` is `[a-z0-9-]+`, the alt is required), with
-the files in `apps/web/public/playbooks/inline/<slug>/`: `<name>.webm`,
-`<name>.mp4` and `<name>-poster.webp` for an animation, `<name>.webp` for an
-image. Then run `pnpm --filter @quill/shared playbooks`, which regenerates
-`src/playbooks.generated.ts` and refuses anything malformed, and, if you added
+landing's resource hub): every playbook ships in Spanish AND English. Add one
+markdown file per language, `packages/shared/content/playbooks/es/<slug>.md`
+and `packages/shared/content/playbooks/en/<slug>.md`, named after its `slug`
+(never reuse one: per-person state is keyed by it, the same in both
+languages), with the front matter `slug`, `category` (`ventas`, `marketing`,
+`ads` or `agentes`), `title`, `summary`, `publishedAt` (a date in Bogota time,
+or an ISO date-time with its offset), `template`, and optionally `promisedBy`
+(`[ig_handle, ...]`), `thumbnailVideo`, `thumbnailPoster` and
+`thumbnailMotif`; split the body with one line holding only `<!-- muro -->`
+(above it, the public preview). `category`, `publishedAt` and `promisedBy`
+must be identical in both files; title, summary, template, body and alts are
+translated. A thumbnail lives in its language's folder,
+`apps/web/public/playbooks/<locale>/<slug>.webm` (with the `.mp4` beside it)
+and `<slug>-poster.webp`, and the front matter points at it
+(`/playbooks/<locale>/<slug>.webm`); if one language has a thumbnail, the
+other must too. To place an animation or a still inside the text, give it a
+line of its own: `<!-- anim: <slug>/<name> | <alt> -->` or
+`<!-- img: <slug>/<name> | <alt> -->` (`slug` is the playbook's, `name` is
+`[a-z0-9-]+`, the alt is required). Both languages carry the same markers in
+the same order (only the alt is translated), and each language has its own
+files, with the same names, in `apps/web/public/playbooks/inline/<locale>/<slug>/`:
+`<name>.webm`, `<name>.mp4` and `<name>-poster.webp` for an animation,
+`<name>.webp` for an image. The English closing section is
+`## Do it with dForms` (the Spanish one, `## Hazlo con dForms`); the reader
+moves either into its template panel. Then run
+`pnpm --filter @quill/shared playbooks`, which regenerates
+`src/playbooks.generated.ts` and refuses anything malformed, including a
+playbook missing in one language (there is no flag to ship one half
+translated), a translation whose shared fields or markers differ from the
+Spanish file, or a thumbnail outside its language's folder; and, if you added
 inline assets, `pnpm --filter @quill/web playbook-media`, which records their
-sizes (a web spec fails when a marker names a missing file, the sizes are
-stale, or a video weighs over 300 KB or an image over 200 KB). A playbook with
-`promisedBy` exposes its whole body on `GET /v1/public/playbooks`.
+sizes (its `--check` and a web spec fail when a marker or a thumbnail names a
+missing file in either language, an asset sits outside a language folder,
+the sizes are stale, or a video weighs over 300 KB or an image over 200 KB).
+A playbook with `promisedBy` exposes its whole body on
+`GET /v1/public/playbooks`.
 Set `publishedAt` to a moment AFTER the release reaches production: "New" is
 a playbook published after the person's last gallery visit, so one that
 reaches production with a past date is not new to anyone who opened the
 gallery since that date, and its "New" mark never shows for them.
+
+The language is read with `?locale=es|en` on `GET /v1/me/playbooks`,
+`GET /v1/me/playbooks/:slug`, `POST /v1/me/playbooks/:slug/seen` (into its
+event only) and `GET /v1/public/playbooks`; the default is the member's
+platform language on `/v1/me`, Spanish on the public route. Should the API
+ever be handed a playbook with no version in the language asked for (a
+catalog injected in a test; the build never ships one), it answers the
+Spanish one with `locale: "es"` and `fallback: true`, and the gallery and the
+reader say so. The app's ES / EN toggle changes the playbooks' language only,
+never the platform's: it is kept per member in `localStorage` and in the
+address (`?lang=en`), and the address wins, so a shared link opens in the
+language its sender read. The example translation the generator's tests use
+lives in `packages/shared/test/fixtures/playbooks/`, never in `content/`.
 
 **Add a language:** `packages/shared/src/i18n/index.ts` — extend the `Locale` union,
 add a full `FormsMessages` const (the interface forces complete key coverage), wire

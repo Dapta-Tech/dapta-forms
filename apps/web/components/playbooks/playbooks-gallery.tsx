@@ -7,18 +7,36 @@ import { recordPlaybooksGalleryVisitAction } from '@/app/admin/playbook-actions'
 import type { PlaybookCard } from '@/lib/admin-api';
 import { callAction } from '@/lib/call-action';
 import {
+  PLAYBOOK_LANG_PARAM,
   PLAYBOOK_TAB_PARAM,
   cardsForTab,
   categoryLabel,
   newSinceLabel,
   playbookStatus,
+  readStoredPlaybookLocale,
+  storePlaybookLocale,
   tabCounts,
+  withPlaybookLang,
+  type PlaybookContentLocale,
   type PlaybookStatus,
   type PlaybookTab,
 } from '@/lib/playbooks';
 import { captureEvent } from '@/lib/product-analytics';
 import { useWorkspaceTimeZone } from '@/components/workspace-timezone';
+import { PlaybookLocaleToggle } from './playbook-locale-toggle';
 import { PlaybookThumb } from './playbook-thumb';
+
+/** Set (or remove) one query parameter in the address without a navigation. Best effort. */
+function replaceParam(name: string, value: string | null) {
+  try {
+    const url = new URL(window.location.href);
+    if (value === null) url.searchParams.delete(name);
+    else url.searchParams.set(name, value);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    /* what is on screen still changes */
+  }
+}
 
 type Messages = FormsMessages['admin']['playbooks'];
 
@@ -72,13 +90,23 @@ export function CardStatus({
 }
 
 /**
- * The playbooks gallery: the category tabs and the cards of the selected one.
- * Rendered by the page with the list the API returned before this visit was
- * recorded, so the "New" marks it clears still show this once; the visit is
- * recorded from here, once the gallery is on screen.
+ * The playbooks gallery: the language toggle, the category tabs and the cards
+ * of the selected one. Rendered by the page with the list the API returned,
+ * in every playbook language, before this visit was recorded, so the "New"
+ * marks it clears still show this once, and switching the language is
+ * instant and keeps them (the state is the slug's, the same in each language).
+ * The visit is recorded from here, once the gallery is on screen.
+ *
+ * The language opens as the address says (`?lang=`), else as this person last
+ * chose in this browser (`storageKey`), else as the page rendered it (the
+ * platform's). A change is kept in the address and in the browser; it never
+ * touches the platform's language.
  */
 export function PlaybooksGallery({
-  cards,
+  cardsByLocale,
+  initialLocale,
+  langInUrl,
+  storageKey,
   tabs,
   initialTab,
   newCount,
@@ -86,46 +114,75 @@ export function PlaybooksGallery({
   locale,
   m,
 }: {
-  cards: PlaybookCard[];
+  /** The same cards in each playbook language (a card not translated yet is its Spanish one, `fallback`). */
+  cardsByLocale: Record<PlaybookContentLocale, PlaybookCard[]>;
+  /** The language the server rendered: the address's, else the platform's. */
+  initialLocale: PlaybookContentLocale;
+  /** The address named the language: a stored choice does not override a shared link. */
+  langInUrl: boolean;
+  /** Where this person's choice is kept (`playbookLangStorageKey`). */
+  storageKey: string;
   /** The tabs to show, "All" first (`visibleTabs`). */
   tabs: PlaybookTab[];
   initialTab: PlaybookTab;
   newCount: number;
   /** The server's clock at render, so "read 2 days ago" is the same on both sides. */
   now: number;
+  /** The platform's language: the copy around the cards and their dates. */
   locale: string;
   m: Messages;
 }) {
   const [tab, setTab] = useState<PlaybookTab>(initialTab);
+  const [contentLocale, setContentLocale] = useState<PlaybookContentLocale>(initialLocale);
   const timeZone = useWorkspaceTimeZone();
+  const cards = cardsByLocale[contentLocale];
+  const anyFallback = cards.some((c) => c.fallback);
   const counts = tabCounts(cards);
   const shown = cardsForTab(cards, tab);
   const newSince = newSinceLabel(newCount, m);
   const tabRefs = useRef<Map<PlaybookTab, HTMLButtonElement>>(new Map());
 
   // Once per mount (a strict-mode double effect must not record two visits).
+  // The stored language is read here, after hydration: the server cannot see it.
   const recorded = useRef(false);
   useEffect(() => {
     if (recorded.current) return;
     recorded.current = true;
+    let shown = initialLocale;
+    if (!langInUrl) {
+      const stored = readStoredPlaybookLocale(storageKey);
+      if (stored && stored !== initialLocale) {
+        shown = stored;
+        setContentLocale(stored);
+        replaceParam(PLAYBOOK_LANG_PARAM, stored);
+      }
+    }
     void callAction(() => recordPlaybooksGalleryVisitAction());
-    captureEvent('playbooks_gallery_viewed', { new_count: newCount, count: cards.length, category: initialTab });
-  }, [newCount, cards.length, initialTab]);
+    captureEvent('playbooks_gallery_viewed', {
+      new_count: newCount,
+      count: cardsByLocale[shown].length,
+      category: initialTab,
+      locale: shown,
+    });
+  }, [newCount, cardsByLocale, initialTab, initialLocale, langInUrl, storageKey]);
 
   const select = (next: PlaybookTab) => {
     if (next === tab) return;
     setTab(next);
     // Kept in the address so a reload or a shared link opens on the same tab,
     // without a navigation (the cards are already here).
-    try {
-      const url = new URL(window.location.href);
-      if (next === 'all') url.searchParams.delete(PLAYBOOK_TAB_PARAM);
-      else url.searchParams.set(PLAYBOOK_TAB_PARAM, next);
-      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-    } catch {
-      /* the tab still changes */
-    }
-    captureEvent('playbooks_category_selected', { category: next });
+    replaceParam(PLAYBOOK_TAB_PARAM, next === 'all' ? null : next);
+    captureEvent('playbooks_category_selected', { category: next, locale: contentLocale });
+  };
+
+  // The language of the playbooks only: the cards of each are already here.
+  const changeLocale = (next: PlaybookContentLocale) => {
+    if (next === contentLocale) return;
+    const from = contentLocale;
+    setContentLocale(next);
+    storePlaybookLocale(storageKey, next);
+    replaceParam(PLAYBOOK_LANG_PARAM, next);
+    captureEvent('playbooks_locale_changed', { from, to: next, surface: 'gallery' });
   };
 
   // Arrow keys move along the tabs, as a tablist does.
@@ -147,16 +204,30 @@ export function PlaybooksGallery({
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{m.title}</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{m.intro}</p>
         </div>
-        {newSince ? (
-          <p
-            data-testid="playbooks-new-since"
-            className="flex shrink-0 items-center gap-2 self-start rounded-full bg-signal/15 py-1.5 pl-2.5 pr-3 text-sm font-semibold text-signal-ink sm:self-auto"
-          >
-            <span aria-hidden className="h-2 w-2 rounded-full bg-signal" />
-            {newSince}
-          </p>
-        ) : null}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:self-auto">
+          {newSince ? (
+            <p
+              data-testid="playbooks-new-since"
+              className="flex items-center gap-2 rounded-full bg-signal/15 py-1.5 pl-2.5 pr-3 text-sm font-semibold text-signal-ink"
+            >
+              <span aria-hidden className="h-2 w-2 rounded-full bg-signal" />
+              {newSince}
+            </p>
+          ) : null}
+          <PlaybookLocaleToggle value={contentLocale} onChange={changeLocale} m={m.contentLanguage} />
+        </div>
       </header>
+
+      {anyFallback ? (
+        <p
+          data-testid="playbooks-fallback"
+          role="status"
+          className="-mt-2 mb-5 flex items-center gap-2 text-xs text-muted-foreground"
+        >
+          <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 14 }} />
+          {m.fallback.gallery}
+        </p>
+      ) : null}
 
       {tabs.length > 1 ? (
         <div className="-mx-4 mb-6 overflow-x-auto px-4 no-scrollbar sm:mx-0 sm:px-0">
@@ -209,9 +280,10 @@ export function PlaybooksGallery({
             {shown.map((card) => (
               <li key={card.slug} className="flex">
                 <Link
-                  href={`/admin/playbooks/${card.slug}`}
+                  href={withPlaybookLang(`/admin/playbooks/${card.slug}`, contentLocale)}
                   data-testid="playbook-card"
                   data-slug={card.slug}
+                  data-locale={card.locale}
                   className="group flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-foreground/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 >
                   <PlaybookThumb
@@ -225,10 +297,19 @@ export function PlaybooksGallery({
                       {/* On a phone the card is a row of the list: the category
                           leads and the summary steps aside, as in the design. */}
                       <span className="text-xs text-muted-foreground sm:hidden">{categoryLabel(card.category, m)}</span>
-                      <span className="text-base font-semibold leading-5 tracking-tight text-foreground">{card.title}</span>
-                      <span className="hidden flex-1 text-sm leading-5 text-muted-foreground sm:block">{card.summary}</span>
-                      <span className="pt-1">
+                      <span lang={card.locale} className="text-base font-semibold leading-5 tracking-tight text-foreground">
+                        {card.title}
+                      </span>
+                      <span lang={card.locale} className="hidden flex-1 text-sm leading-5 text-muted-foreground sm:block">
+                        {card.summary}
+                      </span>
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
                         <StatusLine status={playbookStatus(card, now, m.status, locale, timeZone)} />
+                        {card.fallback ? (
+                          <span data-testid="playbook-card-fallback" className="text-xs text-faint">
+                            {m.fallback.card}
+                          </span>
+                        ) : null}
                       </span>
                     </span>
                     {/* The row's chevron, on a phone only. The wrapper hides it:

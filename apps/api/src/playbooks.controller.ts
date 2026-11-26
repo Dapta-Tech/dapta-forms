@@ -15,16 +15,20 @@ import {
 import {
   PLAYBOOK_GALLERY_SLUG,
   announcementUserKey,
+  getMemberLocale,
   listPlaybookStates,
   recordPlaybookSeen,
   type Db,
   type PlaybookStateRow,
 } from '@quill/db';
 import {
-  PLAYBOOKS,
+  PLAYBOOK_BASE_LOCALE,
+  PLAYBOOK_CATALOG,
   PLAYBOOK_CATEGORIES,
+  PLAYBOOK_LOCALES,
   findPlaybook,
   isPlaybookCategory,
+  isPlaybookLocale,
   isPlaybookNew,
   isPlaybookPromised,
   isPlaybookPublished,
@@ -32,9 +36,12 @@ import {
   playbookOutline,
   playbookPublishedDate,
   playbookReadingMinutes,
+  localizedPlaybook,
   publishedPlaybooks,
   type Playbook,
+  type PlaybookCatalog,
   type PlaybookCategory,
+  type PlaybookLocale,
 } from '@quill/shared/playbooks';
 import { AnalyticsEffects } from './analytics-effects';
 import { keyNotAllowed } from './api-key-routes';
@@ -49,12 +56,22 @@ export const PLAYBOOKS_OPTIONS = Symbol('PLAYBOOKS_OPTIONS');
 export interface PlaybooksOptions {
   /** The clock. Injectable so the publication dates are testable. */
   now?: () => number;
-  /** The playbooks to serve. Defaults to `PLAYBOOKS`. */
-  list?: readonly Playbook[];
+  /** The playbooks to serve, by language. Defaults to `PLAYBOOK_CATALOG`. */
+  catalog?: PlaybookCatalog;
+}
+
+/**
+ * Which language a playbook was served in. `locale` is the language of the
+ * text; `fallback` is true when the language asked for has no version of this
+ * playbook yet, so the Spanish one came instead.
+ */
+export interface PlaybookLanguageView {
+  locale: PlaybookLocale;
+  fallback: boolean;
 }
 
 /** What a gallery card shows: the catalog fields, never the body, and the person's state. */
-export interface PlaybookCardView {
+export interface PlaybookCardView extends PlaybookLanguageView {
   slug: string;
   category: PlaybookCategory;
   title: string;
@@ -74,6 +91,8 @@ export interface PlaybookCardView {
 }
 
 export interface PlaybookListView {
+  /** The language asked for (or the member's, or Spanish). Each card says what it was served in. */
+  locale: PlaybookLocale;
   playbooks: PlaybookCardView[];
   /** The tabs that have at least one published playbook, in tab order. Never filtered by `?category=`. */
   categories: PlaybookCategory[];
@@ -88,7 +107,7 @@ export interface PlaybookListView {
  * catalog fixture (`deploy/recursos/fixture.py` in dapta-forms-landing): an
  * optional field is left out rather than sent as null.
  */
-export interface PublicPlaybookView {
+export interface PublicPlaybookView extends PlaybookLanguageView {
   slug: string;
   category: PlaybookCategory;
   title: string;
@@ -116,8 +135,26 @@ function clockOf(options: PlaybooksOptions): number {
   return options.now?.() ?? Date.now();
 }
 
+function catalogOf(options: PlaybooksOptions): PlaybookCatalog {
+  return options.catalog ?? PLAYBOOK_CATALOG;
+}
+
+/** The base list: every playbook there is, whatever the language asked for. */
 function listOf(options: PlaybooksOptions): readonly Playbook[] {
-  return options.list ?? PLAYBOOKS;
+  return catalogOf(options)[PLAYBOOK_BASE_LOCALE];
+}
+
+/**
+ * `?locale=`: a playbook language, or undefined when absent or empty (the
+ * caller's default). Anything else is a 400, so a typo never reads as Spanish.
+ */
+export function readPlaybookLocale(value: unknown): PlaybookLocale | undefined {
+  if (value === undefined || value === '') return undefined;
+  if (isPlaybookLocale(value)) return value;
+  throw new BadRequestException({
+    error: 'BAD_REQUEST',
+    message: `locale must be one of ${PLAYBOOK_LOCALES.join(', ')}.`,
+  });
 }
 
 /**
@@ -154,16 +191,39 @@ export class PlaybooksController {
     return playbook;
   }
 
+  /**
+   * The language to serve: `?locale=` when given, else the language the
+   * member chose for the platform, else Spanish (the one every playbook has).
+   */
+  private async locale(p: HostPrincipal, query: unknown): Promise<PlaybookLocale> {
+    const asked = readPlaybookLocale(query);
+    if (asked) return asked;
+    const own = await getMemberLocale(this.db, p.accountId, p.memberId);
+    return isPlaybookLocale(own) ? own : PLAYBOOK_BASE_LOCALE;
+  }
+
   private async states(userId: string): Promise<{ bySlug: Map<string, PlaybookStateRow>; gallery: number | null }> {
     const rows = await listPlaybookStates(this.db, userId);
     const bySlug = new Map(rows.map((r) => [r.playbookSlug, r]));
     return { bySlug, gallery: bySlug.get(PLAYBOOK_GALLERY_SLUG)?.lastSeenAt ?? null };
   }
 
-  private card(p: Playbook, state: PlaybookStateRow | undefined, gallery: number | null): PlaybookCardView {
+  /**
+   * One card in `locale`. The state comes from the base playbook's slug, which
+   * every language shares: what a person read is read in every language.
+   */
+  private card(
+    base: Playbook,
+    locale: PlaybookLocale,
+    state: PlaybookStateRow | undefined,
+    gallery: number | null,
+  ): PlaybookCardView {
+    const { playbook: p, fallback } = localizedPlaybook(base, locale, catalogOf(this.options));
     const lastSeenAt = state?.lastSeenAt ?? null;
     return {
       slug: p.slug,
+      locale: p.locale,
+      fallback,
       category: p.category,
       title: p.title,
       summary: p.summary,
@@ -175,30 +235,39 @@ export class PlaybooksController {
       seen: lastSeenAt !== null,
       firstSeenAt: state?.firstSeenAt ?? null,
       lastSeenAt,
-      isNew: isPlaybookNew(p, { lastSeenAt, galleryLastSeenAt: gallery }),
+      isNew: isPlaybookNew(base, { lastSeenAt, galleryLastSeenAt: gallery }),
     };
   }
 
   /**
    * Every published playbook with the person's state, newest first.
    * `?category=` narrows the cards to one tab; `categories` and `newCount`
-   * always describe the whole gallery. Reading it records nothing: the rail
-   * can ask for `newCount` on every page without clearing it.
+   * always describe the whole gallery. `?locale=es|en` picks the language
+   * (default: the member's platform language, else Spanish); a playbook not
+   * translated yet comes in Spanish with `fallback: true`, and its state and
+   * "New" are the same in every language. Reading it records nothing: the
+   * rail can ask for `newCount` on every page without clearing it.
    */
   @Get()
-  async list(@Req() req: ReqLike, @Query('category') category?: string): Promise<PlaybookListView> {
-    const { userId } = await this.person(req);
+  async list(
+    @Req() req: ReqLike,
+    @Query('category') category?: string,
+    @Query('locale') localeParam?: string,
+  ): Promise<PlaybookListView> {
+    const { p, userId } = await this.person(req);
     if (category !== undefined && category !== '' && !isPlaybookCategory(category)) {
       throw new BadRequestException({
         error: 'BAD_REQUEST',
         message: `category must be one of ${PLAYBOOK_CATEGORIES.join(', ')}.`,
       });
     }
+    const locale = await this.locale(p, localeParam);
     const all = publishedPlaybooks(clockOf(this.options), listOf(this.options));
     const { bySlug, gallery } = await this.states(userId);
-    const cards = all.map((p) => this.card(p, bySlug.get(p.slug), gallery));
-    const present = new Set(all.map((p) => p.category));
+    const cards = all.map((b) => this.card(b, locale, bySlug.get(b.slug), gallery));
+    const present = new Set(all.map((b) => b.category));
     return {
+      locale,
       playbooks: category ? cards.filter((c) => c.category === category) : cards,
       categories: PLAYBOOK_CATEGORIES.filter((c) => present.has(c)),
       galleryLastSeenAt: gallery,
@@ -219,38 +288,57 @@ export class PlaybooksController {
     return { ok: true, galleryLastSeenAt: row.lastSeenAt };
   }
 
-  /** One published playbook, whole: the card and the full markdown body. Records nothing. */
+  /**
+   * One published playbook, whole: the card and the full markdown body, in
+   * `?locale=` (as the list picks it), or in Spanish with `fallback: true`
+   * while it has no version in that language. Records nothing.
+   */
   @Get(':slug')
   async detail(
     @Req() req: ReqLike,
     @Param('slug') slug: string,
+    @Query('locale') localeParam?: string,
   ): Promise<{ playbook: PlaybookCardView & { body: string } }> {
-    const { userId } = await this.person(req);
-    const playbook = this.published(slug, clockOf(this.options));
+    const { p, userId } = await this.person(req);
+    const locale = await this.locale(p, localeParam);
+    const base = this.published(slug, clockOf(this.options));
     const { bySlug, gallery } = await this.states(userId);
-    return { playbook: { ...this.card(playbook, bySlug.get(playbook.slug), gallery), body: playbookBody(playbook) } };
+    const { playbook } = localizedPlaybook(base, locale, catalogOf(this.options));
+    return { playbook: { ...this.card(base, locale, bySlug.get(base.slug), gallery), body: playbookBody(playbook) } };
   }
 
   /**
    * Record that the person opened this playbook: `firstSeenAt` the first
-   * time, `lastSeenAt` every time. Idempotent. Each call is one
-   * `forms_playbook_viewed` product event (slug, category, and whether it was
-   * the first open).
+   * time, `lastSeenAt` every time. Idempotent. The state is the slug's, in
+   * every language: `?locale=` (the language the reader showed, defaulted as
+   * the list does) only goes into the event. Each call is one
+   * `forms_playbook_viewed` product event (slug, category, whether it was the
+   * first open, the language shown and whether it was the Spanish fallback).
    */
   @Post(':slug/seen')
   @HttpCode(200)
   async seen(
     @Req() req: ReqLike,
     @Param('slug') slug: string,
+    @Query('locale') localeParam?: string,
   ): Promise<{ ok: true; firstSeenAt: number; lastSeenAt: number }> {
     const { p, userId } = await this.person(req);
+    const locale = await this.locale(p, localeParam);
     const now = clockOf(this.options);
     const playbook = this.published(slug, now);
+    const shown = localizedPlaybook(playbook, locale, catalogOf(this.options));
     const row = await recordPlaybookSeen(this.db, userId, playbook.slug, now);
     await this.analytics.captureForMember(
       'playbook_viewed',
       p,
-      { slug: playbook.slug, category: playbook.category, first: row.first },
+      {
+        slug: playbook.slug,
+        category: playbook.category,
+        first: row.first,
+        locale: shown.playbook.locale,
+        requested_locale: locale,
+        fallback: shown.fallback,
+      },
       now,
     );
     return { ok: true, firstSeenAt: row.firstSeenAt, lastSeenAt: row.lastSeenAt };
@@ -259,11 +347,14 @@ export class PlaybooksController {
 
 /**
  * The landing's view of one playbook: the teaser, the outline and the reading
- * time always, the rest only when a guide promises it.
+ * time always, the rest only when a guide promises it. `fallback` says the
+ * language asked for had no version, so this is the Spanish one.
  */
-export function publicPlaybookView(p: Playbook): PublicPlaybookView {
+export function publicPlaybookView(p: Playbook, fallback = false): PublicPlaybookView {
   const view: PublicPlaybookView = {
     slug: p.slug,
+    locale: p.locale,
+    fallback,
     category: p.category,
     title: p.title,
     summary: p.summary,
@@ -289,6 +380,10 @@ export function publicPlaybookView(p: Playbook): PublicPlaybookView {
  * for the ones a guide promises (`promisedBy`), which open in full on the
  * landing for whoever comes from that guide. Never the rest of any other
  * playbook, and never the template step or the thumbnail brief.
+ *
+ * `?locale=es|en` picks the language, Spanish by default (there is no member
+ * here); a playbook not translated yet comes in Spanish with `fallback: true`.
+ * Publication and `promisedBy` are the same in every language.
  */
 @UseGuards(RateLimitGuard)
 @Controller('v1/public/playbooks')
@@ -297,7 +392,15 @@ export class PublicPlaybooksController {
 
   @Get()
   @Header('Cache-Control', 'public, max-age=300')
-  list(): { playbooks: PublicPlaybookView[] } {
-    return { playbooks: publishedPlaybooks(clockOf(this.options), listOf(this.options)).map(publicPlaybookView) };
+  list(@Query('locale') localeParam?: string): { locale: PlaybookLocale; playbooks: PublicPlaybookView[] } {
+    const locale = readPlaybookLocale(localeParam) ?? PLAYBOOK_BASE_LOCALE;
+    const catalog = catalogOf(this.options);
+    return {
+      locale,
+      playbooks: publishedPlaybooks(clockOf(this.options), listOf(this.options)).map((base) => {
+        const { playbook, fallback } = localizedPlaybook(base, locale, catalog);
+        return publicPlaybookView(playbook, fallback);
+      }),
+    };
   }
 }

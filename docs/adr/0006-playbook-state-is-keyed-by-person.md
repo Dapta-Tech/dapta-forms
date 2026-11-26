@@ -16,6 +16,7 @@ The playbooks gallery shows each person which playbooks they have opened, when t
 - Every route under `/v1/me/playbooks` still resolves the principal, but passes the person key, not `accountId`, to the repository. This is the third exception to invariant 3, recorded next to the other two.
 - Local development keys a person by member row, as announcements do, so one email in two local workspaces counts as two people there. Production keys by the identity provider subject and has no such split.
 - Playbook rows hold a person key and a slug and say nothing about any account. Deleting a workspace does not remove them.
+- Playbook state is keyed by slug, not by slug and language. A playbook read in English is read in Spanish too, and "New" ends in both: the languages are versions of one playbook, which is why they share the slug, the category and the publication date. The language a person read only travels in the `forms_playbook_viewed` event.
 - An API key or an MCP connection is refused on every playbook route: it is no person, and its reads would mark playbooks opened for someone who never opened them.
 
 ## Considered options

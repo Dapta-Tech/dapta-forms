@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/playbook-media.generated', () => ({
-  PLAYBOOK_MEDIA_SIZES: { 'formularios-que-venden-con-ia/demo-poster.webp': { width: 464, height: 288 } },
+  PLAYBOOK_MEDIA_SIZES: { 'es/formularios-que-venden-con-ia/demo-poster.webp': { width: 464, height: 288 } },
 }));
 
 import { parseMarkdown } from '@/lib/markdown';
@@ -83,7 +83,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const body = (markdown: string) => <MarkdownView blocks={parseMarkdown(markdown)} />;
+const body = (markdown: string, locale = 'es') => <MarkdownView blocks={parseMarkdown(markdown)} locale={locale} />;
 
 describe('an inline animation', () => {
   it('is a muted lazy loop over its poster, sized and named', async () => {
@@ -95,13 +95,13 @@ describe('an inline animation', () => {
     expect(video.loop).toBe(true);
     expect(video.hasAttribute('playsinline')).toBe(true);
     expect(video.getAttribute('preload')).toBe('none');
-    expect(video.getAttribute('poster')).toBe(`/playbooks/inline/${SLUG}/demo-poster.webp`);
+    expect(video.getAttribute('poster')).toBe(`/playbooks/inline/es/${SLUG}/demo-poster.webp`);
     expect(video.getAttribute('aria-label')).toBe('Claude | ChatGPT crean el form');
     expect(video.getAttribute('width')).toBe('464');
     expect(video.getAttribute('height')).toBe('288');
     expect([...video.querySelectorAll('source')].map((s) => [s.getAttribute('src'), s.getAttribute('type')])).toEqual([
-      [`/playbooks/inline/${SLUG}/demo.webm`, 'video/webm'],
-      [`/playbooks/inline/${SLUG}/demo.mp4`, 'video/mp4'],
+      [`/playbooks/inline/es/${SLUG}/demo.webm`, 'video/webm'],
+      [`/playbooks/inline/es/${SLUG}/demo.mp4`, 'video/mp4'],
     ]);
     // The text on both sides stays.
     expect([...host!.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['Antes', 'Después']);
@@ -112,7 +112,7 @@ describe('an inline animation', () => {
     await mount(body(ANIM));
     expect(host!.querySelector('video')).toBeNull();
     const img = host!.querySelector('figure img')!;
-    expect(img.getAttribute('src')).toBe(`/playbooks/inline/${SLUG}/demo-poster.webp`);
+    expect(img.getAttribute('src')).toBe(`/playbooks/inline/es/${SLUG}/demo-poster.webp`);
     expect(img.getAttribute('alt')).toBe('Claude | ChatGPT crean el form');
     expect(img.getAttribute('width')).toBe('464');
   });
@@ -140,13 +140,28 @@ describe('an inline animation', () => {
   });
 });
 
+describe('the language of the playbook', () => {
+  it('picks the folder of its media, and its size', async () => {
+    await mount(body(`${ANIM}\n\n${IMG}`, 'en'));
+    const video = host!.querySelector('video')!;
+    expect(video.getAttribute('poster')).toBe(`/playbooks/inline/en/${SLUG}/demo-poster.webp`);
+    expect([...video.querySelectorAll('source')].map((s) => s.getAttribute('src'))).toEqual([
+      `/playbooks/inline/en/${SLUG}/demo.webm`,
+      `/playbooks/inline/en/${SLUG}/demo.mp4`,
+    ]);
+    expect(host!.querySelector('figure img')!.getAttribute('src')).toBe(`/playbooks/inline/en/${SLUG}/panel.webp`);
+    // The manifest only knows the Spanish poster: the English one has no size of its own.
+    expect(video.hasAttribute('width')).toBe(false);
+  });
+});
+
 describe('an inline image', () => {
   it('is a lazy still with its alt, without a size the manifest does not know', async () => {
     await mount(body(IMG));
     const figure = host!.querySelector('figure[data-testid="playbook-media"]')!;
     expect(figure.getAttribute('data-kind')).toBe('img');
     const img = figure.querySelector('img')!;
-    expect(img.getAttribute('src')).toBe(`/playbooks/inline/${SLUG}/panel.webp`);
+    expect(img.getAttribute('src')).toBe(`/playbooks/inline/es/${SLUG}/panel.webp`);
     expect(img.getAttribute('alt')).toBe('El panel de respuestas');
     expect(img.getAttribute('loading')).toBe('lazy');
     expect(img.getAttribute('decoding')).toBe('async');

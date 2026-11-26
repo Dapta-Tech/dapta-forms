@@ -69,7 +69,18 @@ export function headingIds(blocks: Block[]): Map<Block, string> {
   return ids;
 }
 
-function BlockView({ block, ids, tight }: { block: Block; ids?: Map<Block, string>; tight?: boolean }): ReactNode {
+function BlockView({
+  block,
+  ids,
+  tight,
+  locale,
+}: {
+  block: Block;
+  ids?: Map<Block, string>;
+  tight?: boolean;
+  /** The playbook's language, which picks the folder of its inline media. */
+  locale: string;
+}): ReactNode {
   switch (block.kind) {
     case 'heading': {
       if (block.level <= 2) {
@@ -109,7 +120,7 @@ function BlockView({ block, ids, tight }: { block: Block; ids?: Map<Block, strin
           {block.items.map((item, i) => (
             <li key={i} className="pl-1">
               {item.map((b, j) => (
-                <BlockView key={j} block={b} tight={item.length === 1 || (j === 0 && b.kind === 'paragraph')} />
+                <BlockView key={j} block={b} locale={locale} tight={item.length === 1 || (j === 0 && b.kind === 'paragraph')} />
               ))}
             </li>
           ))}
@@ -120,7 +131,7 @@ function BlockView({ block, ids, tight }: { block: Block; ids?: Map<Block, strin
       return (
         <blockquote className="mt-6 border-l-2 border-signal-edge pl-4 text-lg font-semibold leading-7 text-foreground first:mt-0">
           {block.blocks.map((b, i) => (
-            <BlockView key={i} block={b} />
+            <BlockView key={i} block={b} locale={locale} />
           ))}
         </blockquote>
       );
@@ -160,16 +171,30 @@ function BlockView({ block, ids, tight }: { block: Block; ids?: Map<Block, strin
     case 'rule':
       return <hr className="my-8 border-border" />;
     case 'media':
-      return <PlaybookMediaView media={block.media} />;
+      return <PlaybookMediaView media={block.media} locale={locale} />;
   }
 }
 
-/** A run of blocks in the reader's body type. */
-export function MarkdownView({ blocks, ids, className = '' }: { blocks: Block[]; ids?: Map<Block, string>; className?: string }) {
+/**
+ * A run of blocks in the reader's body type. `locale` is the language of the
+ * playbook's text (not the platform's): its inline media come from that
+ * language's folder.
+ */
+export function MarkdownView({
+  blocks,
+  ids,
+  locale,
+  className = '',
+}: {
+  blocks: Block[];
+  ids?: Map<Block, string>;
+  locale: string;
+  className?: string;
+}) {
   return (
     <div className={`text-base leading-7 text-foreground/90 ${className}`}>
       {blocks.map((b, i) => (
-        <BlockView key={i} block={b} ids={ids} />
+        <BlockView key={i} block={b} ids={ids} locale={locale} />
       ))}
     </div>
   );

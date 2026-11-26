@@ -1,44 +1,73 @@
 /**
- * The inline media of the playbooks, on the web side: every marker of the
- * shipped catalog has its files under `public/playbooks/inline/`, the size
- * manifest is never stale, and the URLs and sizes the reader uses.
+ * The playbooks' media, on the web side: every marker and every thumbnail of
+ * the shipped catalog, in every language, has its files in that language's
+ * folder (`public/playbooks/inline/<locale>/`, `public/playbooks/<locale>/`),
+ * nothing sits outside one, the size manifest is never stale, and the URLs
+ * and sizes the reader uses.
  *
  * The example assets live in `tests/fixtures/playbooks/inline/`, never in
- * `public/`, so nothing a test needs is served.
+ * `public/`, so nothing a test needs is served. Its English folder lacks the
+ * image on purpose.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { playbookMediaFiles, playbookMediaIn, type PlaybookMedia } from '@quill/shared';
-import { PLAYBOOKS, playbookMedia } from '@quill/shared/playbooks';
+import { PLAYBOOK_CATALOG, PLAYBOOK_LOCALES, playbookMedia } from '@quill/shared/playbooks';
 import {
+  LOCALES,
   MAX_BYTES,
   MEDIA_DIR,
   OUT_FILE,
+  PLAYBOOKS_DIR,
   missingMediaFiles,
   oversizedMediaFiles,
   readMediaSizes,
   renderModule,
+  strayMediaPaths,
   webpSize,
 } from '../scripts/playbook-media.mjs';
+import { mp4Sibling } from '@/components/playbooks/playbook-thumb';
 import { playbookMediaSize, playbookMediaUrls } from './playbook-media';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/playbook-media.mjs', import.meta.url));
 const FIXTURES = fileURLToPath(new URL('../tests/fixtures/playbooks/inline', import.meta.url));
 const SLUG = 'formularios-que-venden-con-ia';
 
-/** Every file a list of markers needs that is not in `dir`. */
-const missing = (media: PlaybookMedia[], dir: string): string[] =>
-  missingMediaFiles(media.flatMap((m) => playbookMediaFiles(m)), dir);
+/** Every file a list of markers needs, in one language, that is not in `dir`. */
+const missing = (media: PlaybookMedia[], dir: string, locale = 'es'): string[] =>
+  missingMediaFiles(media.flatMap((m) => playbookMediaFiles(m, locale)), dir);
+
+const ALL = PLAYBOOK_LOCALES.flatMap((locale) => PLAYBOOK_CATALOG[locale]);
 
 describe('the shipped catalog', () => {
-  it('has every file its markers name', () => {
-    for (const p of PLAYBOOKS) {
-      expect(missing(playbookMedia(p), MEDIA_DIR), p.slug).toEqual([]);
+  it('knows the languages the catalog has', () => {
+    expect(LOCALES).toEqual([...PLAYBOOK_LOCALES]);
+  });
+
+  it('has every file its markers name, in the folder of each language', () => {
+    for (const p of ALL) {
+      expect(missing(playbookMedia(p), MEDIA_DIR, p.locale), `${p.locale}/${p.slug}`).toEqual([]);
     }
+  });
+
+  it('has every thumbnail it names, with the mp4 beside each webm loop', () => {
+    for (const p of ALL) {
+      const files = [p.thumbnailVideo, p.thumbnailVideo && mp4Sibling(p.thumbnailVideo), p.thumbnailPoster].filter(
+        (f): f is string => !!f && f.startsWith('/playbooks/'),
+      );
+      for (const f of files) {
+        expect(f.startsWith(`/playbooks/${p.locale}/`), `${p.locale}/${p.slug}: ${f}`).toBe(true);
+        expect(existsSync(join(PLAYBOOKS_DIR, f.slice('/playbooks/'.length))), `${p.locale}/${p.slug}: ${f}`).toBe(true);
+      }
+    }
+  });
+
+  it('keeps every asset in a language folder', () => {
+    expect(strayMediaPaths()).toEqual([]);
   });
 
   it('has a size manifest that is exactly what the assets give', () => {
@@ -57,24 +86,54 @@ describe('the asset check, on the example assets', () => {
     expect(missing(playbookMediaIn(text), FIXTURES)).toEqual([]);
   });
 
+  it('looks in the folder of the language: a file Spanish has is still missing in English', () => {
+    expect(missing(playbookMediaIn(text), FIXTURES, 'en')).toEqual([`en/${SLUG}/panel.webp`]);
+  });
+
   it('names each missing file: the three of a loop, the webp of an image', () => {
     const media = playbookMediaIn(
       `${text}\n<!-- anim: ${SLUG}/otra | Falta -->\n<!-- img: ${SLUG}/foto | Falta -->\n<!-- img: ${SLUG}/demo | Solo el poster existe -->`,
     );
     expect(missing(media, FIXTURES)).toEqual([
-      `${SLUG}/otra.webm`,
-      `${SLUG}/otra.mp4`,
-      `${SLUG}/otra-poster.webp`,
-      `${SLUG}/foto.webp`,
-      `${SLUG}/demo.webp`,
+      `es/${SLUG}/otra.webm`,
+      `es/${SLUG}/otra.mp4`,
+      `es/${SLUG}/otra-poster.webp`,
+      `es/${SLUG}/foto.webp`,
+      `es/${SLUG}/demo.webp`,
     ]);
   });
 
   it('reads the size of each still', () => {
     expect(readMediaSizes(FIXTURES)).toEqual({
-      [`${SLUG}/demo-poster.webp`]: { width: 464, height: 288 },
-      [`${SLUG}/panel.webp`]: { width: 464, height: 288 },
+      [`en/${SLUG}/demo-poster.webp`]: { width: 464, height: 288 },
+      [`es/${SLUG}/demo-poster.webp`]: { width: 464, height: 288 },
+      [`es/${SLUG}/panel.webp`]: { width: 464, height: 288 },
     });
+  });
+});
+
+describe('the language folders', () => {
+  it('name every asset outside one: a file left at the top, or a folder that is not a language', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'playbook-folders-'));
+    try {
+      const put = (path: string) => {
+        mkdirSync(join(dir, path, '..'), { recursive: true });
+        writeFileSync(join(dir, path), '');
+      };
+      put('es/hook.webm');
+      put('en/hook.webm');
+      put('inline/es/hook/demo.webp');
+      put('inline/en/hook/demo.webp');
+      expect(strayMediaPaths(dir)).toEqual([]);
+      put('hook.webm');
+      put('pt/hook.webm');
+      put('inline/hook/demo.webp');
+      put('inline/notas.txt');
+      put('.DS_Store');
+      expect(strayMediaPaths(dir)).toEqual(['hook.webm', 'pt/', 'inline/hook/', 'inline/notas.txt']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -87,8 +146,8 @@ describe('the weight limit', () => {
   it('names a video over 300 KB and an image over 200 KB, and nothing at the limit', () => {
     const dir = mkdtempSync(join(tmpdir(), 'playbook-media-'));
     try {
-      mkdirSync(join(dir, SLUG));
-      const put = (name: string, bytes: number) => writeFileSync(join(dir, SLUG, name), Buffer.alloc(bytes));
+      mkdirSync(join(dir, 'es', SLUG), { recursive: true });
+      const put = (name: string, bytes: number) => writeFileSync(join(dir, 'es', SLUG, name), Buffer.alloc(bytes));
       put('a.webm', MAX_BYTES.video + 1);
       put('a.mp4', MAX_BYTES.video);
       put('a-poster.webp', MAX_BYTES.image + 1);
@@ -96,8 +155,8 @@ describe('the weight limit', () => {
       put('notas.txt', MAX_BYTES.video * 2);
       expect(MAX_BYTES).toEqual({ video: 300 * 1024, image: 200 * 1024 });
       expect(oversizedMediaFiles(dir)).toEqual([
-        { file: `${SLUG}/a-poster.webp`, bytes: MAX_BYTES.image + 1, max: MAX_BYTES.image },
-        { file: `${SLUG}/a.webm`, bytes: MAX_BYTES.video + 1, max: MAX_BYTES.video },
+        { file: `es/${SLUG}/a-poster.webp`, bytes: MAX_BYTES.image + 1, max: MAX_BYTES.image },
+        { file: `es/${SLUG}/a.webm`, bytes: MAX_BYTES.video + 1, max: MAX_BYTES.video },
       ]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -135,23 +194,25 @@ describe('webpSize', () => {
 });
 
 describe('playbookMediaUrls and playbookMediaSize', () => {
-  it('point at /playbooks/inline/<slug>/', () => {
-    expect(playbookMediaUrls({ kind: 'anim', slug: SLUG, name: 'demo' })).toEqual({
-      still: `/playbooks/inline/${SLUG}/demo-poster.webp`,
-      webm: `/playbooks/inline/${SLUG}/demo.webm`,
-      mp4: `/playbooks/inline/${SLUG}/demo.mp4`,
+  it('point at /playbooks/inline/<locale>/<slug>/', () => {
+    expect(playbookMediaUrls({ kind: 'anim', slug: SLUG, name: 'demo' }, 'es')).toEqual({
+      still: `/playbooks/inline/es/${SLUG}/demo-poster.webp`,
+      webm: `/playbooks/inline/es/${SLUG}/demo.webm`,
+      mp4: `/playbooks/inline/es/${SLUG}/demo.mp4`,
     });
-    expect(playbookMediaUrls({ kind: 'img', slug: SLUG, name: 'panel' })).toEqual({
-      still: `/playbooks/inline/${SLUG}/panel.webp`,
+    expect(playbookMediaUrls({ kind: 'img', slug: SLUG, name: 'panel' }, 'en')).toEqual({
+      still: `/playbooks/inline/en/${SLUG}/panel.webp`,
       webm: null,
       mp4: null,
     });
   });
 
-  it('size a loop by its poster and an image by itself, or not at all', () => {
+  it('size a loop by its poster and an image by itself, in its language, or not at all', () => {
     const sizes = readMediaSizes(FIXTURES);
-    expect(playbookMediaSize({ kind: 'anim', slug: SLUG, name: 'demo' }, sizes)).toEqual({ width: 464, height: 288 });
-    expect(playbookMediaSize({ kind: 'img', slug: SLUG, name: 'panel' }, sizes)).toEqual({ width: 464, height: 288 });
-    expect(playbookMediaSize({ kind: 'img', slug: SLUG, name: 'demo' }, sizes)).toBeNull();
+    expect(playbookMediaSize({ kind: 'anim', slug: SLUG, name: 'demo' }, 'es', sizes)).toEqual({ width: 464, height: 288 });
+    expect(playbookMediaSize({ kind: 'anim', slug: SLUG, name: 'demo' }, 'en', sizes)).toEqual({ width: 464, height: 288 });
+    expect(playbookMediaSize({ kind: 'img', slug: SLUG, name: 'panel' }, 'es', sizes)).toEqual({ width: 464, height: 288 });
+    expect(playbookMediaSize({ kind: 'img', slug: SLUG, name: 'panel' }, 'en', sizes)).toBeNull();
+    expect(playbookMediaSize({ kind: 'img', slug: SLUG, name: 'demo' }, 'es', sizes)).toBeNull();
   });
 });

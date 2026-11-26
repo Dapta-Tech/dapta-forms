@@ -80,11 +80,11 @@ describe('parsePlaybookMediaMarker and the build agree', () => {
 });
 
 describe('the files of a marker', () => {
-  it('are a webm, an mp4 and a poster for a loop, a webp for a still', () => {
-    expect(playbookMediaFiles({ kind: 'anim', slug: 'a', name: 'b' })).toEqual(['a/b.webm', 'a/b.mp4', 'a/b-poster.webp']);
-    expect(playbookMediaFiles({ kind: 'img', slug: 'a', name: 'b' })).toEqual(['a/b.webp']);
-    expect(playbookMediaStill({ kind: 'anim', slug: 'a', name: 'b' })).toBe('a/b-poster.webp');
-    expect(playbookMediaStill({ kind: 'img', slug: 'a', name: 'b' })).toBe('a/b.webp');
+  it('are a webm, an mp4 and a poster for a loop, a webp for a still, in the folder of their language', () => {
+    expect(playbookMediaFiles({ kind: 'anim', slug: 'a', name: 'b' }, 'es')).toEqual(['es/a/b.webm', 'es/a/b.mp4', 'es/a/b-poster.webp']);
+    expect(playbookMediaFiles({ kind: 'img', slug: 'a', name: 'b' }, 'en')).toEqual(['en/a/b.webp']);
+    expect(playbookMediaStill({ kind: 'anim', slug: 'a', name: 'b' }, 'en')).toBe('en/a/b-poster.webp');
+    expect(playbookMediaStill({ kind: 'img', slug: 'a', name: 'b' }, 'es')).toBe('es/a/b.webp');
   });
 });
 
@@ -103,7 +103,7 @@ describe('playbookMediaIn', () => {
 });
 
 const FRONT = ['slug: formularios-que-venden-con-ia', 'category: ventas', 'title: T', 'summary: S', 'publishedAt: 2026-12-01', 'template: T'].join('\n');
-const parse = (body: string) => parsePlaybook(`content/playbooks/${SLUG}.md`, `---\n${FRONT}\n---\n${body}\n`);
+const parse = (body: string) => parsePlaybook(`content/playbooks/es/${SLUG}.md`, `---\n${FRONT}\n---\n${body}\n`);
 
 describe('the catalog build', () => {
   it('keeps the markers in the preview and the rest, as written', () => {
@@ -154,6 +154,7 @@ describe('the catalog build', () => {
 
 const playbook = (preview: string, rest: string): Playbook => ({
   slug: SLUG,
+  locale: 'es',
   category: 'ventas',
   title: 'T',
   summary: 'S',

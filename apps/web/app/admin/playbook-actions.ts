@@ -2,7 +2,7 @@
 
 import { unstable_rethrow } from 'next/navigation';
 import { adminApi } from '@/lib/admin-api';
-import { isPlaybookSlug } from '@/lib/playbooks';
+import { asPlaybookLocale, isPlaybookSlug } from '@/lib/playbooks';
 
 /**
  * Record a visit to the playbooks gallery. The gallery calls it once it is on
@@ -22,11 +22,15 @@ export async function recordPlaybooksGalleryVisitAction(): Promise<{ ok: boolean
   }
 }
 
-/** Record that the person opened one playbook (the reader calls it on open). */
-export async function recordPlaybookSeenAction(slug: string): Promise<{ ok: boolean }> {
+/**
+ * Record that the person opened one playbook (the reader calls it on open),
+ * in the language it showed. The open is the slug's, in every language; the
+ * language only goes into the server's event.
+ */
+export async function recordPlaybookSeenAction(slug: string, locale?: string): Promise<{ ok: boolean }> {
   if (!isPlaybookSlug(slug)) return { ok: false };
   try {
-    await adminApi.recordPlaybookSeen(slug);
+    await adminApi.recordPlaybookSeen(slug, asPlaybookLocale(locale) ?? undefined);
     return { ok: true };
   } catch (e) {
     unstable_rethrow(e);
