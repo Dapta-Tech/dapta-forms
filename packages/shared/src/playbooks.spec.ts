@@ -55,10 +55,10 @@ describe('the shipped catalog', () => {
     }
   });
 
-  it('carries no em dash or horizontal bar in what a reader sees', () => {
+  it('carries no em dash, en dash or horizontal bar in what a reader sees', () => {
     for (const p of PLAYBOOKS) {
       const text = [p.title, p.summary, p.template, p.preview, p.rest].join('\n');
-      const banned = [0x2014, 0x2015].map((c) => String.fromCharCode(c));
+      const banned = [0x2014, 0x2013, 0x2015].map((c) => String.fromCharCode(c));
       expect(banned.some((d) => text.includes(d)), p.slug).toBe(false);
     }
   });
@@ -107,6 +107,10 @@ describe('parsePlaybook', () => {
     ['an unknown category', FRONT.replace('category: ventas', 'category: growth'), /category growth/],
     ['a slug that is not the file name', FRONT.replace('slug: demo', 'slug: other'), /must match the file name/],
     ['a bad date', FRONT.replace('2026-12-01', '01/12/2026'), /publishedAt/],
+    ['a day the month does not have', FRONT.replace('2026-12-01', '2026-02-30'), /real YYYY-MM-DD/],
+    ['an impossible time', FRONT.replace('2026-12-01', '2026-12-01T25:00:00-05:00'), /publishedAt/],
+    ['a slug that is only the end of the file name', FRONT.replace('slug: demo', 'slug: mo'), /must match the file name/],
+    ['a comma inside a quoted list item', FRONT.replace(/promisedBy: .*/, 'promisedBy: ["ig_a, ig_b"]'), /cannot hold a comma/],
     ['a list that is not a list', FRONT.replace(/promisedBy: .*/, 'promisedBy: ig_a'), /expected a list/],
     ['a repeated account', FRONT.replace(/promisedBy: .*/, 'promisedBy: [ig_a, ig_a]'), /repeats/],
     ['a video that is not a video', FRONT + '\nthumbnailVideo: /a.png', /thumbnailVideo must be/],

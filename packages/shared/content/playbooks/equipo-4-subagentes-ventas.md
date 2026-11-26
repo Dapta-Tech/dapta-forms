@@ -3,7 +3,7 @@ slug: equipo-4-subagentes-ventas
 category: agentes
 title: Arma un equipo de ventas de 4 subagentes en Claude Code
 summary: Investigador, calificador, redactor y seguimiento: 4 subagentes con su configuración lista para copiar y la rutina diaria.
-publishedAt: 2026-12-01
+publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder): formulario de entrada con puntaje; el orquestador lee las respuestas calificadas por el conector de dForms"
 thumbnailMotif: "Una terminal lanza 4 tarjetas (Investigador, Calificador, Redactor, Seguimiento) que trabajan en paralelo y juntan una lista del día con borradores listos."

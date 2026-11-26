@@ -3,7 +3,7 @@ slug: manual-del-vendedor
 category: ventas
 title: El Manual del Vendedor
 summary: 8 métodos para cobrar lo que vales, conseguir clientes y cerrar ventas, con plantillas para llenar hoy.
-publishedAt: 2026-12-01
+publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder), adaptado: «Antes de tu llamada» con presupuesto, urgencia y qué le preocupa; 3 rangos y agenda solo para calientes"
 thumbnailMotif: "Una etiqueta de precio sube de $15 a $490 mientras 4 palancas (resultado, certeza, tiempo, esfuerzo) se mueven; al final un apretón de manos con un check verde."

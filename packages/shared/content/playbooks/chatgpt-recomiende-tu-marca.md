@@ -3,7 +3,7 @@ slug: chatgpt-recomiende-tu-marca
 category: marketing
 title: Haz que ChatGPT recomiende tu marca
 summary: Cómo decide la IA a quién nombrar, un test de 15 minutos con 5 prompts y el plan de 30 días para aparecer en sus respuestas.
-publishedAt: 2026-12-01
+publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads + Encuesta de opinión (plantillas `lead` y `feedback` del builder): «¿Cómo nos encontraste?» en tu form de leads y encuesta posventa de 0 a 10 que manda a los contentos a dejar reseña"
 thumbnailMotif: "Una ventana de chat escribe «Estas son 3 opciones…» y en el puesto 2 aparece «Tu marca» resaltada en verde mientras caen íconos de reseñas y un hilo de foro."

@@ -3,7 +3,7 @@ slug: calificador-claude
 category: agentes
 title: Cómo Claude califica tus leads solo
 summary: 4 prompts para que Claude diseñe tu cliente ideal, 7 preguntas que califican, el puntaje y los finales AGENDA, NUTRE y DESCARTA.
-publishedAt: 2026-12-01
+publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder): calificador de hasta 7 preguntas con 3 resultados (AGENDA con Agendador, NUTRE, DESCARTA), armado con la salida de los 4 prompts"
 thumbnailMotif: "Claude escribe 4 prompts uno tras otro; los leads entran al formulario y salen ordenados en tres carriles: AGENDA, NUTRE y DESCARTA."

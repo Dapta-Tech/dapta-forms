@@ -441,6 +441,10 @@ only `<!-- muro -->` (above it, the public preview). Then run
 `pnpm --filter @quill/shared playbooks`, which regenerates
 `src/playbooks.generated.ts` and refuses anything malformed. A playbook with
 `promisedBy` exposes its whole body on `GET /v1/public/playbooks`.
+Set `publishedAt` to a moment AFTER the release reaches production: "New" is
+a playbook published after the person's last gallery visit, so one that
+reaches production with a past date is not new to anyone who opened the
+gallery since that date, and its "New" mark never shows for them.
 
 **Add a language:** `packages/shared/src/i18n/index.ts` — extend the `Locale` union,
 add a full `FormsMessages` const (the interface forces complete key coverage), wire

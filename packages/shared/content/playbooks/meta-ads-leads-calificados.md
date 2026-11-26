@@ -3,7 +3,7 @@ slug: meta-ads-leads-calificados
 category: ads
 title: "Meta Ads: más leads calificados con el mismo presupuesto"
 summary: Learning phase, estructura, testing de creativos, audiencias y el píxel limpio que solo aprende de tus leads buenos.
-publishedAt: 2026-12-01
+publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder), adaptado: pregunta calificadora + 2 resultados que redirigen a 2 páginas de gracias (Lead solo en la de calificados)"
 thumbnailMotif: "Una pregunta calificadora reparte leads en dos puertas: los verdes pasan a «Página A · Lead» y los grises a «Página B»; la línea del costo por lead calificado baja."

@@ -3,7 +3,7 @@ slug: vender-en-autopiloto-con-ia
 category: agentes
 title: El secreto para vender en autopiloto con IA
 summary: 5 herramientas de IA que consiguen, califican y le dan seguimiento a tus clientes mientras tú te dedicas a cerrar.
-publishedAt: 2026-12-01
+publishedAt: 2026-11-26
 promisedBy: [ig_homerovende, ig_burrovende, ig_mcpatovende, ig_shrekmarketing]
 template: "Calificador de leads (plantilla `lead` del builder) o por el conector: formulario que pregunta presupuesto y fecha, con puntos por respuesta"
 thumbnailMotif: "Una tubería con 5 fugas goteando monedas; una a una se tapan con un ícono (formulario, WhatsApp, teléfono, nota, flechas) y el chorro llega completo a una alcancía."

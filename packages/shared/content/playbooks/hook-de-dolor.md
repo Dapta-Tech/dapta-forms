@@ -3,7 +3,7 @@ slug: hook-de-dolor
 category: ads
 title: El hook de dolor cuantificado
 summary: Cómo escribir el primer segundo de tu anuncio con un número que duele: la fórmula de 4 partes, 8 plantillas y un test de 3 hooks.
-publishedAt: 2026-12-01
+publishedAt: 2026-11-26
 promisedBy: []
 template: "Desde cero: «3 preguntas a tus clientes» con deslizadores (tiempo, leads perdidos, costo) para sacar el número del hook"
 thumbnailMotif: "Un feed baja rápido y se frena en seco cuando aparece un número grande en rojo; el contador de scroll se detiene y el CTR sube."

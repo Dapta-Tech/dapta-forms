@@ -14,16 +14,16 @@
  *   pnpm --filter @quill/shared playbooks
  *
  * `--check` writes nothing and fails when the committed module is out of date;
- * `playbooks-content.spec.ts` runs it, so CI catches a markdown edit that was
+ * `src/playbooks.spec.ts` runs it, so CI catches a markdown edit that was
  * never regenerated.
  *
  * Front matter is a small, strict subset of YAML: one `key: value` per line,
  * a value plain, "double quoted" (JSON escapes), 'single quoted', or a list
- * `[a, b]`. An unknown key, a missing field or a malformed value fails the
+ * `[a, b]` whose items hold no comma (quoted or not). An unknown key, a missing field or a malformed value fails the
  * build with the file and the line, so a typo never ships as a silent default.
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -85,7 +85,15 @@ function readList(raw, file, line) {
   if (!v.startsWith('[') || !v.endsWith(']')) fail(file, line, `expected a list like [a, b], got ${v}`);
   const inner = v.slice(1, -1).trim();
   if (inner === '') return [];
+  // Items are split on commas BEFORE quotes are read, so a comma inside an
+  // item would silently make two. List items are account handles, which never
+  // hold one: refuse a quoted item that would have been cut.
   return inner.split(',').map((item) => {
+    const trimmed = item.trim();
+    const quote = trimmed[0];
+    if ((quote === '"' || quote === "'") && (trimmed.length < 2 || !trimmed.endsWith(quote))) {
+      fail(file, line, `list items cannot hold a comma: ${v}`);
+    }
     const value = unquote(item, file, line);
     if (value === '') fail(file, line, 'empty list item');
     return value;
@@ -94,8 +102,19 @@ function readList(raw, file, line) {
 
 /** Bogota time (UTC-5, no daylight saving), like the announcements' dates. */
 function readDate(value, file, line) {
-  const ms = DATE.test(value) ? Date.parse(`${value}T00:00:00-05:00`) : DATETIME.test(value) ? Date.parse(value) : NaN;
-  if (!Number.isFinite(ms)) fail(file, line, `publishedAt must be YYYY-MM-DD or an ISO date-time with an offset, got ${value}`);
+  const bad = () => fail(file, line, `publishedAt must be a real YYYY-MM-DD date or an ISO date-time with an offset, got ${value}`);
+  if (!DATE.test(value) && !DATETIME.test(value)) bad();
+  // Date.parse rolls an impossible day over (2026-02-30 is March 2), so the
+  // calendar date is read back and compared with what was written.
+  const [y, m, d] = value.slice(0, 10).split('-').map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d));
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== m - 1 || day.getUTCDate() !== d) bad();
+  if (DATETIME.test(value)) {
+    const [hh, mm, ss = 0] = value.slice(11, 19).split(':').map((n) => Number.parseInt(n, 10));
+    if (hh > 23 || mm > 59 || ss > 59) bad();
+  }
+  const ms = DATE.test(value) ? Date.parse(`${value}T00:00:00-05:00`) : Date.parse(value);
+  if (!Number.isFinite(ms)) bad();
   return ms;
 }
 
@@ -129,7 +148,7 @@ export function parsePlaybook(file, text) {
 
   if (!SLUG.test(meta.slug)) fail(file, 0, `slug ${meta.slug} must be lowercase words joined by hyphens`);
   const expectedFile = `${meta.slug}.md`;
-  if (!file.endsWith(expectedFile)) fail(file, 0, `slug ${meta.slug} must match the file name (${expectedFile})`);
+  if (basename(file) !== expectedFile) fail(file, 0, `slug ${meta.slug} must match the file name (${expectedFile})`);
   if (!CATEGORIES.includes(meta.category)) {
     fail(file, 0, `category ${meta.category} is not one of ${CATEGORIES.join(', ')}`);
   }

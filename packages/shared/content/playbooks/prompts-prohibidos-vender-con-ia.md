@@ -3,7 +3,7 @@ slug: prompts-prohibidos-vender-con-ia
 category: ventas
 title: Los prompts prohibidos para vender con IA
 summary: 12 prompts en 3 niveles para los 4 momentos que deciden una venta: primer contacto, seguimiento, no-show y precio.
-publishedAt: 2026-12-01
+publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder), adaptado: «Filtro antes de agendar» con presupuesto, quién decide y urgencia; agenda solo si califica"
 thumbnailMotif: "Un chat recibe un prompt pegado, la respuesta se escribe sola y una etiqueta sube de $2K a $6K a $10K con un candado que se abre."

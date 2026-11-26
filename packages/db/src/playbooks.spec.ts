@@ -67,6 +67,14 @@ describe('recordPlaybookSeen', () => {
     expect(await listPlaybookStates(db, user)).toHaveLength(1);
   });
 
+  it('reports the first open exactly once when two opens race', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => recordPlaybookSeen(db, user, 'race', T0 + i)),
+    );
+    expect(results.filter((r) => r.first)).toHaveLength(1);
+    expect(await stateOf('race')).toMatchObject({ lastSeenAt: T0 + 7 });
+  });
+
   it('keeps people and playbooks apart, and the gallery visit in its own row', async () => {
     await recordPlaybookSeen(db, user, 'a', T0);
     await recordPlaybookSeen(db, user, PLAYBOOK_GALLERY_SLUG, T0 + 1);

@@ -52,7 +52,11 @@ export async function listPlaybookStates(db: Db, userId: string): Promise<Playbo
  * Record that this person opened this playbook (or the gallery) at `now`.
  * Idempotent: `first_seen_at` is set once and never moves; `last_seen_at`
  * becomes the later of what it was and `now`. Returns the stored state and
- * whether this was the first time.
+ * whether this call was the first open.
+ *
+ * `first` is decided by the insert itself (`ON CONFLICT DO NOTHING
+ * RETURNING`, the same in both dialects): of two opens at once, exactly one
+ * inserts the row, so exactly one reports `first: true`.
  */
 export async function recordPlaybookSeen(
   db: Db,
@@ -60,23 +64,24 @@ export async function recordPlaybookSeen(
   playbookSlug: string,
   now: number,
 ): Promise<PlaybookStateRow & { first: boolean }> {
-  const before = await db.get<StateDbRow>(
-    sql`SELECT playbook_slug, first_seen_at, last_seen_at FROM playbook_state
-        WHERE user_id = ${userId} AND playbook_slug = ${playbookSlug}`,
+  const inserted = await db.get<StateDbRow>(
+    sql`INSERT INTO playbook_state (user_id, playbook_slug, first_seen_at, last_seen_at)
+        VALUES (${userId}, ${playbookSlug}, ${now}, ${now})
+        ON CONFLICT (user_id, playbook_slug) DO NOTHING
+        RETURNING playbook_slug, first_seen_at, last_seen_at`,
   );
+  if (inserted) return { ...toRow(inserted), first: true };
   // A CASE rather than GREATEST / MAX(a, b): the two dialects spell the
   // two-argument maximum differently, and this reads the same in both.
   await db.run(
-    sql`INSERT INTO playbook_state (user_id, playbook_slug, first_seen_at, last_seen_at)
-        VALUES (${userId}, ${playbookSlug}, ${now}, ${now})
-        ON CONFLICT (user_id, playbook_slug) DO UPDATE SET
-          last_seen_at = CASE WHEN playbook_state.last_seen_at > ${now}
-                              THEN playbook_state.last_seen_at ELSE ${now} END`,
+    sql`UPDATE playbook_state
+        SET last_seen_at = CASE WHEN last_seen_at > ${now} THEN last_seen_at ELSE ${now} END
+        WHERE user_id = ${userId} AND playbook_slug = ${playbookSlug}`,
   );
   const after = await db.get<StateDbRow>(
     sql`SELECT playbook_slug, first_seen_at, last_seen_at FROM playbook_state
         WHERE user_id = ${userId} AND playbook_slug = ${playbookSlug}`,
   );
-  if (!after) throw new Error('playbook_state upsert left no row');
-  return { ...toRow(after), first: !before };
+  if (!after) throw new Error('playbook_state row vanished after its insert');
+  return { ...toRow(after), first: false };
 }
