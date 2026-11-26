@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useRef } from 'react';
+import { useLoopSlot, useReducedMotion } from './loop-video';
 
 /**
  * A playbook card's picture: a short muted loop (webm, with an mp4 beside it
@@ -8,72 +9,11 @@ import { useEffect, useRef, useSyncExternalStore } from 'react';
  * poster, or the poster alone, or a quiet tile in the
  * category's tint while the catalog has neither.
  *
- * The loop never loads before it is needed (`preload="none"`), plays only
- * while the card is on screen, and at most `MAX_PLAYING` play at once, the
- * first ones in page order: a gallery of nine looping videos would spend the
- * battery of the phone it is read on. With reduced motion the video is not
- * rendered at all, only the poster.
+ * The loop never loads before it is needed (`preload="none"`) and plays by
+ * the rules of `loop-video.ts`: only on screen, at most `MAX_PLAYING` at once
+ * on the page (the animations inside a playbook count too), and with reduced
+ * motion not at all, only the poster.
  */
-
-/** How many loops may play at the same time. */
-export const MAX_PLAYING = 3;
-
-const visible = new Set<HTMLVideoElement>();
-let observer: IntersectionObserver | null = null;
-
-function sync() {
-  const order = [...visible].sort((a, b) =>
-    a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-  );
-  const playing = new Set(order.slice(0, MAX_PLAYING));
-  for (const v of order) {
-    if (playing.has(v)) {
-      if (v.paused) void v.play().catch(() => {});
-    } else if (!v.paused) v.pause();
-  }
-}
-
-function observe(video: HTMLVideoElement): () => void {
-  if (typeof IntersectionObserver === 'undefined') return () => {};
-  observer ??= new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        const v = e.target as HTMLVideoElement;
-        if (e.isIntersecting) visible.add(v);
-        else {
-          visible.delete(v);
-          v.pause();
-        }
-      }
-      sync();
-    },
-    { threshold: 0.5 },
-  );
-  observer.observe(video);
-  return () => {
-    observer?.unobserve(video);
-    visible.delete(video);
-    sync();
-  };
-}
-
-function subscribeReducedMotion(cb: () => void): () => void {
-  try {
-    const q = window.matchMedia('(prefers-reduced-motion: reduce)');
-    q.addEventListener?.('change', cb);
-    return () => q.removeEventListener?.('change', cb);
-  } catch {
-    return () => {};
-  }
-}
-
-function prefersReducedMotion(): boolean {
-  try {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  } catch {
-    return false;
-  }
-}
 
 /** The mp4 beside a webm loop (`/playbooks/x.webm` → `/playbooks/x.mp4`), or null. */
 export function mp4Sibling(src: string): string | null {
@@ -108,14 +48,9 @@ export function PlaybookThumb({
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   // The server renders the poster: the loop is a client-only enhancement.
-  const reduced = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => true);
+  const reduced = useReducedMotion();
   const showVideo = !!video && !reduced;
-
-  useEffect(() => {
-    const v = ref.current;
-    if (!showVideo || !v) return;
-    return observe(v);
-  }, [showVideo]);
+  useLoopSlot(ref, showVideo);
 
   const frame = `relative overflow-hidden ${className}`;
   if (showVideo) {

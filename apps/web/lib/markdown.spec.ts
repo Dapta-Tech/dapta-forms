@@ -52,6 +52,67 @@ describe('parseMarkdown', () => {
     ]);
   });
 
+  describe('inline media markers and other comments', () => {
+    const SLUG = 'formularios-que-venden-con-ia';
+    const anim = `<!-- anim: ${SLUG}/demo | Claude | ChatGPT crean el form -->`;
+    const img = `<!-- img: ${SLUG}/panel | El panel de respuestas -->`;
+
+    it('turns a marker line into a media block, between the text around it', () => {
+      expect(parseMarkdown(`Antes\n\n${anim}\n\n${img}\nDespués`)).toEqual([
+        { kind: 'paragraph', text: 'Antes' },
+        { kind: 'media', media: { kind: 'anim', slug: SLUG, name: 'demo', alt: 'Claude | ChatGPT crean el form' } },
+        { kind: 'media', media: { kind: 'img', slug: SLUG, name: 'panel', alt: 'El panel de respuestas' } },
+        { kind: 'paragraph', text: 'Después' },
+      ]);
+    });
+
+    it('ends a paragraph at a marker line', () => {
+      expect(parseMarkdown(`Una línea\n${img}\notra`).map((b) => b.kind)).toEqual(['paragraph', 'media', 'paragraph']);
+    });
+
+    it('drops a marker that does not parse, like any comment', () => {
+      for (const bad of [
+        `<!-- anim: ${SLUG}/demo -->`,
+        `<!-- anim: ${SLUG}/Demo | Alt -->`,
+        `<!-- video: ${SLUG}/demo | Alt -->`,
+      ]) {
+        const blocks = parseMarkdown(`A\n\n${bad}\n\nB`);
+        expect(blocks.map((b) => b.kind), bad).toEqual(['paragraph', 'paragraph']);
+        expect(JSON.stringify(blocks), bad).not.toContain('<!--');
+      }
+      // A comment ends at its first -->, as in a browser (the catalog build refuses this line).
+      expect(parseMarkdown(`<!-- img: ${SLUG}/demo | a --> b -->`)).toEqual([{ kind: 'paragraph', text: 'b -->' }]);
+    });
+
+    it('drops a comment across lines, keeps the text after its close, and hides an unclosed one to the end', () => {
+      expect(parseMarkdown('A\n\n<!-- nota\nde dos\nlíneas -->\n\nB')).toEqual([
+        { kind: 'paragraph', text: 'A' },
+        { kind: 'paragraph', text: 'B' },
+      ]);
+      expect(parseMarkdown('<!-- nota --> Sigue el texto')).toEqual([{ kind: 'paragraph', text: 'Sigue el texto' }]);
+      expect(parseMarkdown('A\n\n<!-- sin cerrar\nB')).toEqual([{ kind: 'paragraph', text: 'A' }]);
+    });
+
+    it('drops a comment inside a line of text, but not inside code', () => {
+      expect(inlineText('Uno <!-- nota -->dos')).toBe('Uno dos');
+      expect(parseInline('Usa `<!-- muro -->` aquí')).toEqual([
+        { kind: 'text', text: 'Usa ' },
+        { kind: 'code', text: '<!-- muro -->' },
+        { kind: 'text', text: ' aquí' },
+      ]);
+      expect(parseMarkdown(`\`\`\`\n${anim}\n\`\`\``)).toEqual([{ kind: 'code', text: anim }]);
+    });
+
+    it('never makes a block of raw HTML out of anything else', () => {
+      const blocks = parseMarkdown(`${anim}\n\n<img src=x onerror=alert(1)>\n\n<video src="/x.webm"></video>`);
+      expect(blocks).toEqual([
+        { kind: 'media', media: { kind: 'anim', slug: SLUG, name: 'demo', alt: 'Claude | ChatGPT crean el form' } },
+        { kind: 'paragraph', text: '<img src=x onerror=alert(1)>' },
+        { kind: 'paragraph', text: '<video src="/x.webm"></video>' },
+      ]);
+    });
+  });
+
   it('reads every playbook of the catalog without losing a word', () => {
     for (const p of PLAYBOOKS) {
       const blocks = parseMarkdown(playbookBody(p));

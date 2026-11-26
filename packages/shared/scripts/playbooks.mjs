@@ -21,6 +21,15 @@
  * a value plain, "double quoted" (JSON escapes), 'single quoted', or a list
  * `[a, b]` whose items hold no comma (quoted or not). An unknown key, a missing field or a malformed value fails the
  * build with the file and the line, so a typo never ships as a silent default.
+ *
+ * The body may place inline media with a line of its own:
+ * `<!-- anim: <slug>/<name> | <alt> -->` (a loop) or
+ * `<!-- img: <slug>/<name> | <alt> -->` (a still). The grammar is the one of
+ * `src/playbook-media.ts`; here a line that means to be a marker and is not a
+ * valid one, or names another playbook, fails the build, and so does an HTML
+ * comment that is never closed (the reader would hide the rest of the text).
+ * Whether the files exist is checked in the web app, which serves them
+ * (`apps/web/lib/playbook-media.spec.ts`): a package never reads an app.
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -33,6 +42,11 @@ export const OUT_FILE = join(ROOT, 'src', 'playbooks.generated.ts');
 /** Keep in step with `PLAYBOOK_CATEGORIES` in src/playbooks.ts. */
 export const CATEGORIES = ['ventas', 'marketing', 'ads', 'agentes'];
 export const MARKER = '<!-- muro -->';
+/** Keep in step with `src/playbook-media.ts`. */
+export const MEDIA_KINDS = ['anim', 'img'];
+const MEDIA_HINT = /<!--\s*(?:anim|img)\b/;
+const MEDIA_LOOSE = /^<!--\s*(anim|img):\s*([^/|\s]*)\/([^|\s]*)\s*(?:\|(.*?))?\s*-->$/;
+const MEDIA_TOKEN = /^[a-z0-9-]+$/;
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** A social account handle as the landing reads it from `utm_source`, e.g. `ig_homerovende`. */
@@ -57,6 +71,61 @@ const FIELDS = {
 };
 
 class PlaybookError extends Error {}
+
+/**
+ * One inline media marker line, read: `{ kind, slug, name, alt }`. Throws
+ * with the file and line when the line is not a valid marker of the playbook
+ * `slug`. Indentation is refused too: a marker is a block of its own.
+ */
+export function readMediaMarker(file, lineNo, line, slug) {
+  const stripped = line.replace(/\s+$/, '');
+  if (stripped !== stripped.trimStart() || !stripped.startsWith('<!--')) {
+    fail(file, lineNo, 'an anim or img marker must be a line of its own, unindented');
+  }
+  const m = MEDIA_LOOSE.exec(stripped);
+  if (!m) fail(file, lineNo, `malformed marker, expected <!-- anim: ${slug}/<name> | <alt> --> or <!-- img: ... -->: ${stripped}`);
+  const [, kind, markerSlug, name, rawAlt] = m;
+  if (!MEDIA_TOKEN.test(markerSlug) || markerSlug !== slug) {
+    fail(file, lineNo, `${kind} marker names the playbook ${markerSlug || '(none)'}, it must be ${slug}`);
+  }
+  if (!MEDIA_TOKEN.test(name)) fail(file, lineNo, `${kind} marker name ${name || '(none)'} must be lowercase letters, digits and hyphens`);
+  const alt = (rawAlt ?? '').trim();
+  if (alt === '') fail(file, lineNo, `${kind} marker ${slug}/${name} needs an alt text after |`);
+  if (alt.includes('-->') || alt.includes('<!--')) fail(file, lineNo, `${kind} marker ${slug}/${name}: the alt cannot hold <!-- or -->`);
+  return { kind, slug: markerSlug, name, alt };
+}
+
+/**
+ * The inline media markers of a body, checked; also refuses an HTML comment
+ * that never closes. Fenced code is skipped: a marker shown as code is code.
+ * `firstLine` is the file line of `body[0]`.
+ */
+export function readMediaMarkers(file, body, firstLine, slug) {
+  const out = [];
+  let inCode = false;
+  let openedAt = 0;
+  body.forEach((line, k) => {
+    const lineNo = firstLine + k;
+    if (openedAt) {
+      if (line.includes('-->')) openedAt = 0;
+      return;
+    }
+    if (/^\s*```/.test(line)) {
+      inCode = !inCode;
+      return;
+    }
+    if (inCode) return;
+    if (MEDIA_HINT.test(line)) {
+      out.push(readMediaMarker(file, lineNo, line, slug));
+      return;
+    }
+    // Any other comment is free, but it must close, or the reader would drop everything after it.
+    const without = line.replace(/<!--[\s\S]*?-->/g, '');
+    if (without.includes('<!--')) openedAt = lineNo;
+  });
+  if (openedAt) fail(file, openedAt, 'an HTML comment is opened here and never closed');
+  return out;
+}
 
 function fail(file, line, message) {
   throw new PlaybookError(`${file}${line ? `:${line}` : ''}: ${message}`);
@@ -177,6 +246,7 @@ export function parsePlaybook(file, text) {
   const rest = body.slice(at + 1).join('\n').trim();
   if (preview === '') fail(file, 0, `nothing above ${MARKER}: the preview is empty`);
   if (rest === '') fail(file, 0, `nothing below ${MARKER}: the rest is empty`);
+  readMediaMarkers(file, body, end + 2, meta.slug);
 
   return {
     slug: meta.slug,

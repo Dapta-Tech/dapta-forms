@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
 import { headingId } from '@/lib/playbooks';
 import { inlineText, parseInline, type Block, type Inline } from '@/lib/markdown';
+import { PlaybookMediaView } from './playbook-media';
 
 /**
  * Draws parsed markdown (`lib/markdown.ts`) as React elements in the reader's
  * type: Hanken Grotesk throughout, the code blocks included (the design system
  * has no monospaced face; they keep their line breaks instead). Nothing here
- * sets HTML from a string.
+ * sets HTML from a string. An inline media marker becomes a figure
+ * (`playbook-media.tsx`).
  */
 
 function InlineRun({ nodes }: { nodes: Inline[] }): ReactNode {
@@ -157,6 +159,8 @@ function BlockView({ block, ids, tight }: { block: Block; ids?: Map<Block, strin
       );
     case 'rule':
       return <hr className="my-8 border-border" />;
+    case 'media':
+      return <PlaybookMediaView media={block.media} />;
   }
 }
 

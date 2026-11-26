@@ -373,6 +373,25 @@ describe('GET /v1/public/playbooks', () => {
     expect(minutes(`${words(150)} árbol`, `${words(49)} **más**`)).toBe(2);
   });
 
+  it('keeps the inline media markers in the teaser and the rest, and never reads them as words or headings', () => {
+    const words = (n: number) => Array.from({ length: n }, (_, i) => `palabra${i}`).join(' ');
+    const alt = words(60);
+    const anim = `<!-- anim: manual/demo | ${alt} -->`;
+    const img = `<!-- img: manual/panel | ## Not a heading | ${alt} -->`;
+    const preview = `${words(100)}\n\n${anim}`;
+    const rest = `## Paso uno\n\n${img}\n\n${words(100)}`;
+    const [view] = publicList([playbook({ preview, rest, promisedBy: ['ig_homerovende'] })]).playbooks;
+    // The landing draws them, so they travel exactly as written.
+    expect(view?.teaser).toBe(preview);
+    expect(view?.rest).toBe(rest);
+    expect(view?.outline).toEqual(['Paso uno']);
+    // 200 words with or without the markers: the 120 words of their alts would make it two minutes.
+    const [bare] = publicList([playbook({ preview: words(100), rest: `## Paso uno\n\n${words(98)}` })]).playbooks;
+    expect(bare?.readingMinutes).toBe(1);
+    const [marked] = publicList([playbook({ preview: `${words(100)}\n\n${anim}`, rest: `## Paso uno\n\n${img}\n\n${words(98)}` })]).playbooks;
+    expect(marked?.readingMinutes).toBe(1);
+  });
+
   it('dates a playbook by its day in Bogota', () => {
     const late = Date.parse('2026-12-01T23:30:00-05:00');
     clock = late;
