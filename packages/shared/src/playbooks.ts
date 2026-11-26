@@ -94,6 +94,46 @@ export function playbookBody(p: Playbook): string {
   return `${p.preview}\n\n${p.rest}`;
 }
 
+const BOGOTA_OFFSET_MS = 5 * 60 * 60 * 1000;
+
+/**
+ * The calendar day of `publishedAt` in Bogota (UTC-5, no daylight saving),
+ * as `YYYY-MM-DD`: the time zone the dates are written in.
+ */
+export function playbookPublishedDate(p: Playbook): string {
+  return new Date(p.publishedAt - BOGOTA_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** The reading speed behind `playbookReadingMinutes`. */
+export const PLAYBOOK_WORDS_PER_MINUTE = 200;
+
+/**
+ * The `## ` headings of the rest, in order, skipping any inside a fenced code
+ * block: what a locked page lists as still to read, without the text itself.
+ */
+export function playbookOutline(p: Playbook): string[] {
+  const out: string[] = [];
+  let inCode = false;
+  for (const line of p.rest.split('\n')) {
+    if (line.startsWith('```')) inCode = !inCode;
+    else if (!inCode && line.startsWith('## ')) {
+      const title = line.slice(3).trim();
+      if (title !== '') out.push(title);
+    }
+  }
+  return out;
+}
+
+/**
+ * Minutes to read the whole body, preview and rest, at
+ * `PLAYBOOK_WORDS_PER_MINUTE`, rounded up and never under 1. A word is a run
+ * of letters, digits or underscores, so markdown punctuation does not count.
+ */
+export function playbookReadingMinutes(p: Playbook): number {
+  const words = playbookBody(p).match(/[\p{L}\p{N}_]+/gu)?.length ?? 0;
+  return Math.max(1, Math.ceil(words / PLAYBOOK_WORDS_PER_MINUTE));
+}
+
 /** Whether a guide promises this playbook, which makes its whole body public. */
 export function isPlaybookPromised(p: Playbook): boolean {
   return p.promisedBy.length > 0;

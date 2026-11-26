@@ -298,7 +298,7 @@ describe('GET /v1/public/playbooks', () => {
   const publicList = (list: readonly Playbook[] = LIST) =>
     new PublicPlaybooksController({ now: () => clock, list }).list();
 
-  it('gives previews, and the rest only for a playbook a guide promises', () => {
+  it('gives the fixture shape: teasers, outline and minutes always, the rest only when a guide promises it', () => {
     expect(publicList()).toEqual({
       playbooks: [
         {
@@ -306,11 +306,11 @@ describe('GET /v1/public/playbooks', () => {
           category: 'ventas',
           title: 'Manual',
           summary: 'Summary',
-          publishedAt: T0,
+          publishedAt: '2026-12-01',
           promisedBy: ['ig_homerovende'],
-          thumbnailVideo: null,
-          thumbnailPoster: null,
-          preview: 'PREVIEW of the playbook',
+          readingMinutes: 1,
+          teaser: 'PREVIEW of the playbook',
+          outline: [],
           rest: 'REST that only signed-in people read',
         },
         {
@@ -318,15 +318,65 @@ describe('GET /v1/public/playbooks', () => {
           category: 'ads',
           title: 'Manual',
           summary: 'Summary',
-          publishedAt: T0,
+          publishedAt: '2026-12-01',
           promisedBy: [],
+          readingMinutes: 1,
+          teaser: 'PREVIEW of the playbook',
+          outline: [],
           thumbnailVideo: '/playbooks/hook.webm',
           thumbnailPoster: '/playbooks/hook.png',
-          preview: 'PREVIEW of the playbook',
-          rest: null,
         },
       ],
     });
+  });
+
+  it('leaves the optional fields out instead of sending null', () => {
+    const [manual, hook] = publicList().playbooks;
+    expect(manual).not.toHaveProperty('thumbnailVideo');
+    expect(manual).not.toHaveProperty('thumbnailPoster');
+    expect(hook).not.toHaveProperty('rest');
+    expect(JSON.stringify(publicList())).not.toContain('null');
+  });
+
+  it('lists the ## headings of the rest, in order, skipping code blocks and deeper levels', () => {
+    const rest = [
+      '## Step one: the hook',
+      'Text.',
+      '### A subsection',
+      '```md',
+      '## Not a heading, inside a code block',
+      '```',
+      '##No space, not a heading',
+      '## Hazlo con dForms  ',
+      '## ',
+    ].join('\n');
+    const [view] = publicList([playbook({ rest })]).playbooks;
+    expect(view?.outline).toEqual(['Step one: the hook', 'Hazlo con dForms']);
+  });
+
+  it('gives the outline of an unpromised playbook without any of its text', () => {
+    const rest = '## Secret section title\n\nBODY TEXT NOBODY SEES';
+    const out = publicList([playbook({ rest, promisedBy: [] })]);
+    expect(out.playbooks[0]?.outline).toEqual(['Secret section title']);
+    expect(JSON.stringify(out)).not.toContain('BODY TEXT NOBODY SEES');
+  });
+
+  it('counts the reading time on the whole body at 200 words a minute, rounded up', () => {
+    const words = (n: number) => Array.from({ length: n }, (_, i) => `palabra${i}`).join(' ');
+    const minutes = (preview: string, rest: string) =>
+      publicList([playbook({ preview, rest, promisedBy: [] })]).playbooks[0]?.readingMinutes;
+    expect(minutes(words(100), words(100))).toBe(1);
+    expect(minutes(words(100), words(101))).toBe(2);
+    expect(minutes(words(10), words(990))).toBe(5);
+    // Accented words count once, and markdown punctuation is not a word.
+    expect(minutes('**Cómo**: _vender_', '## Diseño\n\n- ñandú')).toBe(1);
+    expect(minutes(`${words(150)} árbol`, `${words(49)} **más**`)).toBe(2);
+  });
+
+  it('dates a playbook by its day in Bogota', () => {
+    const late = Date.parse('2026-12-01T23:30:00-05:00');
+    clock = late;
+    expect(publicList([playbook({ publishedAt: late })]).playbooks[0]?.publishedAt).toBe('2026-12-01');
   });
 
   it('never carries the rest of an unpromised playbook, the template step or the brief', () => {
@@ -349,10 +399,12 @@ describe('GET /v1/public/playbooks', () => {
     const text = JSON.stringify(out);
     for (const p of PLAYBOOKS) {
       const view = out.playbooks.find((v) => v.slug === p.slug);
+      expect(view?.outline.length, p.slug).toBeGreaterThan(0);
+      expect(view?.readingMinutes, p.slug).toBeGreaterThan(1);
       if (p.promisedBy.length > 0) {
         expect(view?.rest, p.slug).toBe(p.rest);
       } else {
-        expect(view?.rest, p.slug).toBeNull();
+        expect(view, p.slug).not.toHaveProperty('rest');
         expect(text.includes(JSON.stringify(p.rest).slice(1, -1)), p.slug).toBe(false);
       }
     }
