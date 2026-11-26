@@ -23,8 +23,13 @@ import type { FormsMessages } from './i18n';
 /** Which announcement's copy, by key into `admin.announcements.items`. */
 export type AnnouncementCopyKey = keyof FormsMessages['admin']['announcements']['items'];
 
-/** A rail item an announcement can mark with "New". Named by its nav key. */
-export type AnnouncementRailItem = 'integrations';
+/**
+ * A rail item that can carry "New". Named by its nav key. An announcement
+ * marks one of them (`railBadge`); the playbooks gallery marks its own item
+ * while the person has playbooks they have not seen (`newCount` of
+ * `GET /v1/me/playbooks`), with the same badge.
+ */
+export type AnnouncementRailItem = 'integrations' | 'playbooks';
 
 /**
  * The marks a Home banner rotates through, by the names the web app's
