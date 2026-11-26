@@ -16,13 +16,14 @@ import { useLoopSlot, useReducedMotion } from './loop-video';
  * lazy still. Both take the width and height of their still when the
  * manifest knows them, so the text does not move when they load, and the
  * marker's alt as their accessible name. Every URL is built from the marker's
- * `[a-z0-9-]+` tokens, never from free text.
+ * `[a-z0-9-]+` tokens and the playbook's language (`es` or `en`, from the
+ * API), never from free text: `/playbooks/inline/<locale>/<slug>/<name>...`.
  */
-export function PlaybookMediaView({ media }: { media: PlaybookMedia }) {
+export function PlaybookMediaView({ media, locale }: { media: PlaybookMedia; locale: string }) {
   const ref = useRef<HTMLVideoElement>(null);
   const reduced = useReducedMotion();
-  const urls = playbookMediaUrls(media);
-  const size = playbookMediaSize(media);
+  const urls = playbookMediaUrls(media, locale);
+  const size = playbookMediaSize(media, locale);
   const showVideo = media.kind === 'anim' && !reduced;
   useLoopSlot(ref, showVideo);
 

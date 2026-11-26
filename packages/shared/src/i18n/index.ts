@@ -677,8 +677,8 @@ export interface FormsMessages {
     /**
      * The playbooks gallery (`/admin/playbooks`) and its reader
      * (`/admin/playbooks/<slug>`). The playbooks' own titles and texts come
-     * from the catalog (`@quill/shared/playbooks`), which is written in
-     * Spanish only.
+     * from the catalog (`@quill/shared/playbooks`), in Spanish and, where a
+     * translation exists, in English; this copy is the platform's language.
      */
     playbooks: {
       title: string;
@@ -733,6 +733,22 @@ export interface FormsMessages {
         useTemplate: string;
         /** The pill beside the disabled button. */
         soon: string;
+      };
+      /** The ES / EN toggle of the gallery and the reader: the language of the playbooks, never the platform's. */
+      contentLanguage: {
+        /** The toggle's accessible name. */
+        label: string;
+        /** Each language's name, in each button's accessible name beside its code. */
+        names: { es: string; en: string };
+      };
+      /** When a playbook has no English version yet and comes in Spanish. */
+      fallback: {
+        /** Above the cards, while some of them are in Spanish. */
+        gallery: string;
+        /** On such a card. */
+        card: string;
+        /** Above the text of such a playbook in the reader. */
+        reader: string;
       };
     };
     /**
@@ -3810,6 +3826,15 @@ export const en: FormsMessages = {
         doIt: 'Do it with dForms',
         useTemplate: 'Use this template',
         soon: 'Coming soon',
+      },
+      contentLanguage: {
+        label: 'Language of the playbooks',
+        names: { es: 'Spanish', en: 'English' },
+      },
+      fallback: {
+        gallery: 'Some playbooks are not in English yet, so they show in Spanish.',
+        card: 'In Spanish',
+        reader: 'This playbook is not in English yet, so it shows in Spanish.',
       },
     },
     attributionSetting: {
@@ -6921,6 +6946,15 @@ export const es: FormsMessages = {
         doIt: 'Hazlo con dForms',
         useTemplate: 'Usa esta plantilla',
         soon: 'Próximamente',
+      },
+      contentLanguage: {
+        label: 'Idioma de los playbooks',
+        names: { es: 'Español', en: 'Inglés' },
+      },
+      fallback: {
+        gallery: 'Algunos playbooks aún no están en inglés: los ves en español.',
+        card: 'En español',
+        reader: 'Este playbook aún no está en inglés: lo ves en español.',
       },
     },
     attributionSetting: {

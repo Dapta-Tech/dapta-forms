@@ -4,9 +4,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { getMessages } from '@quill/shared';
-import { PLAYBOOK_CATEGORIES } from '@quill/shared/playbooks';
+import { PLAYBOOK_CATEGORIES, PLAYBOOK_LOCALES } from '@quill/shared/playbooks';
 import {
+  PLAYBOOK_CONTENT_LOCALES,
   PLAYBOOK_TABS,
+  asPlaybookLocale,
+  playbookLangStorageKey,
+  playbookLocaleFor,
+  withPlaybookLang,
   PLAYBOOK_TAB_CATEGORIES,
   cardsForTab,
   categoryLabel,
@@ -157,5 +162,35 @@ describe('reader helpers', () => {
   it('accepts only slugs the catalog could hold', () => {
     expect(isPlaybookSlug('manual-del-vendedor')).toBe(true);
     for (const bad of ['', 'Manual', '../x', 'a--b', 'a b', '-a', 'a/b', 42]) expect(isPlaybookSlug(bad)).toBe(false);
+  });
+});
+
+describe('the language of the playbooks', () => {
+  it('lists the same languages as the catalog, in the same order', () => {
+    expect([...PLAYBOOK_CONTENT_LOCALES]).toEqual([...PLAYBOOK_LOCALES]);
+  });
+
+  it('reads a language from the address or storage, and nothing else', () => {
+    expect(asPlaybookLocale('en')).toBe('en');
+    expect(asPlaybookLocale(['es', 'en'])).toBe('es');
+    for (const bad of ['EN', 'pt', '', null, undefined, []]) expect(asPlaybookLocale(bad as string | null)).toBeNull();
+  });
+
+  it('opens in the address language, else the platform one', () => {
+    expect(playbookLocaleFor('en', 'es')).toBe('en');
+    expect(playbookLocaleFor(undefined, 'en')).toBe('en');
+    expect(playbookLocaleFor('xx', 'es')).toBe('es');
+    expect(playbookLocaleFor(undefined, 'pt')).toBe('es');
+  });
+
+  it('keeps one stored choice per member', () => {
+    expect(playbookLangStorageKey('m-1')).toBe('dforms.playbooks.lang.m-1');
+    expect(playbookLangStorageKey('m-1')).not.toBe(playbookLangStorageKey('m-2'));
+  });
+
+  it('sets ?lang= on a link, keeping its other parameters and its hash', () => {
+    expect(withPlaybookLang('/admin/playbooks', 'en')).toBe('/admin/playbooks?lang=en');
+    expect(withPlaybookLang('/admin/playbooks?category=ads', 'es')).toBe('/admin/playbooks?category=ads&lang=es');
+    expect(withPlaybookLang('/admin/playbooks/a?lang=es#paso', 'en')).toBe('/admin/playbooks/a?lang=en#paso');
   });
 });

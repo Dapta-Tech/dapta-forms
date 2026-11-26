@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { ForbiddenException } from '@nestjs/common';
 import type { ServerEnv } from '@quill/config/env';
-import { createDb, listOutbox, migrate, seed, sql, type Db } from '@quill/db';
-import { PLAYBOOKS, type Playbook } from '@quill/shared/playbooks';
+import { createDb, listOutbox, migrate, seed, setMemberLocale, sql, type Db } from '@quill/db';
+import { PLAYBOOKS, PLAYBOOK_CATALOG, type Playbook, type PlaybookCatalog } from '@quill/shared/playbooks';
 import { AnalyticsEffects } from './analytics-effects';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
@@ -24,6 +24,7 @@ const T0 = Date.parse('2026-12-01T00:00:00-05:00');
 
 const playbook = (over: Partial<Playbook>): Playbook => ({
   slug: 'manual',
+  locale: 'es',
   category: 'ventas',
   title: 'Manual',
   summary: 'Summary',
@@ -48,6 +49,19 @@ const HOOK = playbook({
 });
 const LATER = playbook({ slug: 'later', category: 'agentes', publishedAt: T0 + 2 * DAY });
 const LIST = [MANUAL, HOOK, LATER];
+/** The English version of HOOK only: MANUAL and LATER are not translated yet. */
+const HOOK_EN = playbook({
+  ...HOOK,
+  locale: 'en',
+  title: 'The pain hook',
+  summary: 'In English',
+  template: 'Lead qualifier',
+  preview: 'ENGLISH PREVIEW',
+  rest: 'ENGLISH HOOK REST, never public',
+  thumbnailVideo: '/playbooks/en/hook.webm',
+  thumbnailPoster: '/playbooks/en/hook.png',
+});
+const CATALOG: PlaybookCatalog = { es: LIST, en: [HOOK_EN] };
 
 let db: Db;
 let auth: AuthService;
@@ -63,7 +77,7 @@ const asMember = (account: string, member: string): ReqLike => ({
 });
 
 function controller(opts: Partial<PlaybooksOptions> = {}): PlaybooksController {
-  return new PlaybooksController(db, auth, analytics, { now: () => clock, list: LIST, ...opts });
+  return new PlaybooksController(db, auth, analytics, { now: () => clock, catalog: CATALOG, ...opts });
 }
 
 async function addMember(account: string, email: string, externalId: string | null = null): Promise<string> {
@@ -119,6 +133,8 @@ describe('GET /v1/me/playbooks', () => {
     expect(res.playbooks.map((p) => p.slug)).toEqual(['manual', 'hook']);
     expect(res.playbooks[1]).toEqual({
       slug: 'hook',
+      locale: 'es',
+      fallback: false,
       category: 'ads',
       title: 'Manual',
       summary: 'Summary',
@@ -132,7 +148,7 @@ describe('GET /v1/me/playbooks', () => {
       lastSeenAt: null,
       isNew: true,
     });
-    expect(res).toMatchObject({ categories: ['ventas', 'ads'], galleryLastSeenAt: null, newCount: 2 });
+    expect(res).toMatchObject({ locale: 'es', categories: ['ventas', 'ads'], galleryLastSeenAt: null, newCount: 2 });
     expect(JSON.stringify(res)).not.toContain('REST');
   });
 
@@ -203,8 +219,8 @@ describe('POST /v1/me/playbooks/:slug/seen', () => {
     await c.seen(asOwner(), 'hook');
     const viewed = (await events()).filter((e) => e.event === 'forms_playbook_viewed');
     expect(viewed.map((e) => e.properties)).toEqual([
-      { slug: 'hook', category: 'ads', first: true },
-      { slug: 'hook', category: 'ads', first: false },
+      { slug: 'hook', category: 'ads', first: true, locale: 'es', requested_locale: 'es', fallback: false },
+      { slug: 'hook', category: 'ads', first: false, locale: 'es', requested_locale: 'es', fallback: false },
     ]);
   });
 
@@ -283,7 +299,7 @@ describe('session only', () => {
       const agentAuth = {
         resolveHost: async (req: ReqLike) => ({ ...(await auth.resolveHost(req)), via }),
       } as unknown as AuthService;
-      const c = new PlaybooksController(db, agentAuth, analytics, { now: () => clock, list: LIST });
+      const c = new PlaybooksController(db, agentAuth, analytics, { now: () => clock, catalog: CATALOG });
       await expect(c.list(asOwner())).rejects.toBeInstanceOf(ForbiddenException);
       await expect(c.detail(asOwner(), 'hook')).rejects.toBeInstanceOf(ForbiddenException);
       await expect(c.seen(asOwner(), 'hook')).rejects.toBeInstanceOf(ForbiddenException);
@@ -295,14 +311,17 @@ describe('session only', () => {
 });
 
 describe('GET /v1/public/playbooks', () => {
-  const publicList = (list: readonly Playbook[] = LIST) =>
-    new PublicPlaybooksController({ now: () => clock, list }).list();
+  const publicList = (list: readonly Playbook[] = LIST, locale?: string) =>
+    new PublicPlaybooksController({ now: () => clock, catalog: { es: list, en: list === LIST ? [HOOK_EN] : [] } }).list(locale);
 
   it('gives the fixture shape: teasers, outline and minutes always, the rest only when a guide promises it', () => {
     expect(publicList()).toEqual({
+      locale: 'es',
       playbooks: [
         {
           slug: 'manual',
+          locale: 'es',
+          fallback: false,
           category: 'ventas',
           title: 'Manual',
           summary: 'Summary',
@@ -315,6 +334,8 @@ describe('GET /v1/public/playbooks', () => {
         },
         {
           slug: 'hook',
+          locale: 'es',
+          fallback: false,
           category: 'ads',
           title: 'Manual',
           summary: 'Summary',
@@ -413,7 +434,7 @@ describe('GET /v1/public/playbooks', () => {
 
   it('on the shipped catalog, exposes no rest of a playbook without promisedBy', () => {
     clock = Math.max(...PLAYBOOKS.map((p) => p.publishedAt));
-    const out = publicList(PLAYBOOKS);
+    const out = new PublicPlaybooksController({ now: () => clock }).list();
     expect(out.playbooks).toHaveLength(PLAYBOOKS.length);
     const text = JSON.stringify(out);
     for (const p of PLAYBOOKS) {
@@ -426,6 +447,141 @@ describe('GET /v1/public/playbooks', () => {
         expect(view, p.slug).not.toHaveProperty('rest');
         expect(text.includes(JSON.stringify(p.rest).slice(1, -1)), p.slug).toBe(false);
       }
+    }
+  });
+});
+
+describe('?locale= on the reads', () => {
+  const publicList = (locale?: string) => new PublicPlaybooksController({ now: () => clock, catalog: CATALOG }).list(locale);
+  const ownerMember = async () => (await auth.resolveHost(asOwner())).memberId;
+
+  it('lists each playbook in the language asked for, or in Spanish with fallback while it is not translated', async () => {
+    const res = await controller().list(asOwner(), undefined, 'en');
+    expect(res.locale).toBe('en');
+    expect(res.playbooks.map((p) => [p.slug, p.locale, p.fallback, p.title])).toEqual([
+      ['manual', 'es', true, 'Manual'],
+      ['hook', 'en', false, 'The pain hook'],
+    ]);
+    expect(res.playbooks[1]).toMatchObject({
+      summary: 'In English',
+      template: 'Lead qualifier',
+      thumbnailVideo: '/playbooks/en/hook.webm',
+      thumbnailPoster: '/playbooks/en/hook.png',
+      publishedAt: HOOK.publishedAt,
+      category: 'ads',
+    });
+    // Same cards, same tabs, same "New": only the words change.
+    const es = await controller().list(asOwner(), undefined, 'es');
+    expect(es.playbooks.map((p) => [p.slug, p.locale, p.fallback])).toEqual([
+      ['manual', 'es', false],
+      ['hook', 'es', false],
+    ]);
+    expect(res.categories).toEqual(es.categories);
+    expect(res.newCount).toBe(es.newCount);
+  });
+
+  it('defaults to the member platform language, else Spanish', async () => {
+    expect((await controller().list(asOwner())).locale).toBe('es');
+    await setMemberLocale(db, accountId, await ownerMember(), 'en');
+    const res = await controller().list(asOwner());
+    expect(res.locale).toBe('en');
+    expect(res.playbooks.find((p) => p.slug === 'hook')?.title).toBe('The pain hook');
+    const { playbook: p } = await controller().detail(asOwner(), 'hook');
+    expect(p).toMatchObject({ locale: 'en', fallback: false });
+    // An explicit ?locale= wins over the member's language.
+    expect((await controller().list(asOwner(), undefined, 'es')).locale).toBe('es');
+    // An empty one is the default.
+    expect((await controller().list(asOwner(), undefined, '')).locale).toBe('en');
+  });
+
+  it('refuses a language it does not know, on every read', async () => {
+    await expect(controller().list(asOwner(), undefined, 'pt')).rejects.toMatchObject({ status: 400 });
+    await expect(controller().detail(asOwner(), 'hook', 'EN')).rejects.toMatchObject({ status: 400 });
+    await expect(controller().seen(asOwner(), 'hook', 'fr')).rejects.toMatchObject({ status: 400 });
+    expect(() => new PublicPlaybooksController({ now: () => clock, catalog: CATALOG }).list('pt')).toThrow(
+      /locale must be one of es, en/,
+    );
+    expect(await db.all(sql`SELECT * FROM playbook_state`)).toHaveLength(0);
+  });
+
+  it('gives the whole body in English, or the Spanish one with fallback', async () => {
+    const { playbook: hook } = await controller().detail(asOwner(), 'hook', 'en');
+    expect(hook).toMatchObject({ slug: 'hook', locale: 'en', fallback: false, title: 'The pain hook' });
+    expect(hook.body).toBe('ENGLISH PREVIEW\n\nENGLISH HOOK REST, never public');
+    const { playbook: manual } = await controller().detail(asOwner(), 'manual', 'en');
+    expect(manual).toMatchObject({ slug: 'manual', locale: 'es', fallback: true, title: 'Manual' });
+    expect(manual.body).toBe('PREVIEW of the playbook\n\nREST that only signed-in people read');
+  });
+
+  it('serves nothing that only exists in a translation: Spanish decides what exists', async () => {
+    const ghost = playbook({ slug: 'ghost', locale: 'en' });
+    const c = controller({ catalog: { es: LIST, en: [HOOK_EN, ghost] } });
+    expect((await c.list(asOwner(), undefined, 'en')).playbooks.map((p) => p.slug)).not.toContain('ghost');
+    await expect(c.detail(asOwner(), 'ghost', 'en')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('keeps one state per slug: read in English, it is read in Spanish, and "New" ends in both', async () => {
+    const c = controller();
+    await c.seen(asOwner(), 'hook', 'en');
+    expect(await db.all(sql`SELECT playbook_slug FROM playbook_state`)).toEqual([{ playbook_slug: 'hook' }]);
+    for (const locale of ['es', 'en']) {
+      const card = (await c.list(asOwner(), undefined, locale)).playbooks.find((p) => p.slug === 'hook');
+      expect(card, locale).toMatchObject({ seen: true, firstSeenAt: clock, lastSeenAt: clock, isNew: false });
+    }
+    clock += 1000;
+    await c.seen(asOwner(), 'hook', 'es');
+    expect((await c.detail(asOwner(), 'hook', 'en')).playbook).toMatchObject({ lastSeenAt: clock, firstSeenAt: clock - 1000 });
+
+    await c.galleryVisit(asOwner());
+    for (const locale of ['es', 'en']) {
+      const res = await c.list(asOwner(), undefined, locale);
+      expect(res, locale).toMatchObject({ galleryLastSeenAt: clock, newCount: 0 });
+    }
+    expect(await db.all(sql`SELECT * FROM playbook_state`)).toHaveLength(2);
+  });
+
+  it('puts the language shown, the one asked for and the fallback in forms_playbook_viewed', async () => {
+    const c = controller();
+    await c.seen(asOwner(), 'hook', 'en');
+    await c.seen(asOwner(), 'manual', 'en');
+    const viewed = (await events()).filter((e) => e.event === 'forms_playbook_viewed');
+    expect(viewed.map((e) => e.properties)).toEqual([
+      { slug: 'hook', category: 'ads', first: true, locale: 'en', requested_locale: 'en', fallback: false },
+      { slug: 'manual', category: 'ventas', first: true, locale: 'es', requested_locale: 'en', fallback: true },
+    ]);
+  });
+
+  it('on the public list: Spanish by default, English when asked, Spanish with fallback where missing', () => {
+    expect(publicList().playbooks.map((p) => [p.slug, p.locale, p.fallback])).toEqual([
+      ['manual', 'es', false],
+      ['hook', 'es', false],
+    ]);
+    const en = publicList('en');
+    expect(en.locale).toBe('en');
+    const [manual, hook] = en.playbooks;
+    expect(manual).toMatchObject({ slug: 'manual', locale: 'es', fallback: true, rest: 'REST that only signed-in people read' });
+    expect(hook).toMatchObject({
+      slug: 'hook',
+      locale: 'en',
+      fallback: false,
+      title: 'The pain hook',
+      teaser: 'ENGLISH PREVIEW',
+      publishedAt: '2026-12-01',
+      thumbnailVideo: '/playbooks/en/hook.webm',
+    });
+    // The rest of an unpromised playbook stays private in every language.
+    expect(JSON.stringify(en)).not.toContain('ENGLISH HOOK REST');
+  });
+
+  it('on the shipped catalog, answers every playbook in English, with no fallback and the same publication', () => {
+    clock = Math.max(...PLAYBOOKS.map((p) => p.publishedAt));
+    const es = new PublicPlaybooksController({ now: () => clock }).list('es');
+    const out = new PublicPlaybooksController({ now: () => clock }).list('en');
+    expect(out.playbooks).toHaveLength(PLAYBOOK_CATALOG.en.length);
+    expect(out.playbooks.map((v) => v.slug)).toEqual(es.playbooks.map((v) => v.slug));
+    for (const [i, view] of out.playbooks.entries()) {
+      expect(view, view.slug).toMatchObject({ locale: 'en', fallback: false, publishedAt: es.playbooks[i]!.publishedAt });
+      expect(view.thumbnailVideo, view.slug).toBe(`/playbooks/en/${view.slug}.webm`);
     }
   });
 });

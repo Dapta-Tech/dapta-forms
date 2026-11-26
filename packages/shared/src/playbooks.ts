@@ -5,11 +5,14 @@
  * it) and the rest (signed-in people only).
  *
  * The catalog lives in code, like the announcements: publishing a playbook is
- * a pull request. Each playbook is a markdown file in `content/playbooks/`
- * (front matter with the fields below, then the body with a `<!-- muro -->`
- * line between the preview and the rest), turned into
- * `playbooks.generated.ts` by `scripts/playbooks.mjs`. What each person has
- * opened lives in the database (`playbook_state`, migration 0035).
+ * a pull request. Each playbook is a markdown file per language in
+ * `content/playbooks/<locale>/` (front matter with the fields below, then the
+ * body with a `<!-- muro -->` line between the preview and the rest), turned
+ * into `playbooks.generated.ts` by `scripts/playbooks.mjs`. Spanish is the
+ * base: every playbook has it, and a language a playbook lacks reads the
+ * Spanish one (`localizedPlaybook`). What each person has opened lives in the
+ * database (`playbook_state`, migration 0035), by slug: one state for every
+ * language of a playbook.
  *
  * Imported from `@quill/shared/playbooks`, never from the package root: the
  * bodies are long, and the root is imported by every client bundle of the web
@@ -21,14 +24,25 @@
 import { playbookMediaIn, stripHtmlComments, type PlaybookMedia } from './playbook-media';
 import { PLAYBOOK_SOURCES } from './playbooks.generated';
 
+/** The languages a playbook is written in. The first is the base, the one every other falls back to. Keep in step with `LOCALES` in scripts/playbooks.mjs. */
+export const PLAYBOOK_LOCALES = ['es', 'en'] as const;
+export type PlaybookLocale = (typeof PLAYBOOK_LOCALES)[number];
+export const PLAYBOOK_BASE_LOCALE: PlaybookLocale = 'es';
+
+export function isPlaybookLocale(value: unknown): value is PlaybookLocale {
+  return typeof value === 'string' && (PLAYBOOK_LOCALES as readonly string[]).includes(value);
+}
+
 /** The gallery's tabs, in the order they show. Keep in step with `CATEGORIES` in scripts/playbooks.mjs. */
 export const PLAYBOOK_CATEGORIES = ['ventas', 'marketing', 'ads', 'agentes'] as const;
 export type PlaybookCategory = (typeof PLAYBOOK_CATEGORIES)[number];
 
 /** One playbook as the markdown file states it. */
 export interface PlaybookSource {
-  /** Stable and never reused: it is the URL and the key of per-person state. */
+  /** Stable and never reused: it is the URL and the key of per-person state, the same in every language. */
   slug: string;
+  /** The language this text is written in. */
+  locale: PlaybookLocale;
   category: PlaybookCategory;
   title: string;
   summary: string;
@@ -69,8 +83,33 @@ export function sortPlaybooks(list: readonly Playbook[]): Playbook[] {
   );
 }
 
-/** Every playbook, published or not, in gallery order. */
-export const PLAYBOOKS: readonly Playbook[] = sortPlaybooks(PLAYBOOK_SOURCES);
+/** Every language's playbooks, published or not, each in gallery order. */
+export type PlaybookCatalog = Readonly<Record<PlaybookLocale, readonly Playbook[]>>;
+
+export const PLAYBOOK_CATALOG: PlaybookCatalog = {
+  es: sortPlaybooks(PLAYBOOK_SOURCES.es),
+  en: sortPlaybooks(PLAYBOOK_SOURCES.en),
+};
+
+/**
+ * Every playbook, published or not, in gallery order, in the base language:
+ * the one every slug has. The other languages are in `PLAYBOOK_CATALOG`.
+ */
+export const PLAYBOOKS: readonly Playbook[] = PLAYBOOK_CATALOG[PLAYBOOK_BASE_LOCALE];
+
+/**
+ * A playbook in the language asked for: that version when it exists, else the
+ * base one (Spanish), with `fallback` saying so. `locale` is the language of
+ * the text served, so `fallback` is `locale !== asked`.
+ */
+export function localizedPlaybook(
+  base: Playbook,
+  locale: PlaybookLocale,
+  catalog: PlaybookCatalog = PLAYBOOK_CATALOG,
+): { playbook: Playbook; fallback: boolean } {
+  const own = locale === base.locale ? base : catalog[locale]?.find((p) => p.slug === base.slug);
+  return own ? { playbook: own, fallback: false } : { playbook: base, fallback: locale !== base.locale };
+}
 
 export function isPlaybookCategory(value: unknown): value is PlaybookCategory {
   return typeof value === 'string' && CATEGORY_ORDER.has(value);

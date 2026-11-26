@@ -11,7 +11,7 @@
  */
 import type { FormsMessages } from '@quill/shared';
 import { stripHtmlComments, t } from '@quill/shared';
-import type { PlaybookCategory } from '@quill/shared/playbooks';
+import type { PlaybookCategory, PlaybookLocale } from '@quill/shared/playbooks';
 
 type PlaybooksMessages = FormsMessages['admin']['playbooks'];
 
@@ -24,6 +24,71 @@ export type PlaybookTab = (typeof PLAYBOOK_TABS)[number];
 
 /** The query parameter that keeps the selected tab across a reload. */
 export const PLAYBOOK_TAB_PARAM = 'category';
+
+/**
+ * The languages a playbook can be read in (`PLAYBOOK_LOCALES`), in the order
+ * the toggle shows them. Listed here for the same reason as the categories.
+ */
+export const PLAYBOOK_CONTENT_LOCALES = ['es', 'en'] as const satisfies readonly PlaybookLocale[];
+export type PlaybookContentLocale = (typeof PLAYBOOK_CONTENT_LOCALES)[number];
+
+/**
+ * The query parameter with the language of the playbooks (`?lang=en`), so a
+ * shared link opens in the language its sender read. It is the resources'
+ * language only: the platform keeps its own.
+ */
+export const PLAYBOOK_LANG_PARAM = 'lang';
+
+/** A playbook language from a query value or a stored one, or null for anything else. */
+export function asPlaybookLocale(value: string | string[] | null | undefined): PlaybookContentLocale | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return (PLAYBOOK_CONTENT_LOCALES as readonly string[]).includes(raw ?? '') ? (raw as PlaybookContentLocale) : null;
+}
+
+/**
+ * The language the playbooks open in: the one in the address when it names
+ * one, else the platform's (both platform languages are playbook languages).
+ * The choice stored in the browser is read on the client (`readStoredPlaybookLocale`):
+ * the server cannot see it.
+ */
+export function playbookLocaleFor(param: string | string[] | null | undefined, platform: string): PlaybookContentLocale {
+  return asPlaybookLocale(param) ?? asPlaybookLocale(platform) ?? 'es';
+}
+
+/**
+ * Where a person's choice of playbook language is kept in the browser: one
+ * key per member, so two people who share a browser keep their own.
+ */
+export function playbookLangStorageKey(memberId: string): string {
+  return `dforms.playbooks.lang.${memberId}`;
+}
+
+/** The stored choice, or null when there is none or storage is unavailable (private mode, blocked). */
+export function readStoredPlaybookLocale(key: string): PlaybookContentLocale | null {
+  try {
+    return asPlaybookLocale(window.localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
+/** Keep the choice; best effort, a blocked storage only loses it for next time. */
+export function storePlaybookLocale(key: string, locale: PlaybookContentLocale): void {
+  try {
+    window.localStorage.setItem(key, locale);
+  } catch {
+    /* the language still changes on this page */
+  }
+}
+
+/** `href` with `?lang=` set to `locale`, keeping its other parameters and its hash. */
+export function withPlaybookLang(href: string, locale: PlaybookContentLocale): string {
+  const [beforeHash, hash] = href.split('#', 2) as [string, string | undefined];
+  const [path, query = ''] = beforeHash.split('?', 2) as [string, string | undefined];
+  const params = new URLSearchParams(query);
+  params.set(PLAYBOOK_LANG_PARAM, locale);
+  return `${path}?${params.toString()}${hash !== undefined ? `#${hash}` : ''}`;
+}
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

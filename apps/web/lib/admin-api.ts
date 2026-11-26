@@ -232,6 +232,10 @@ export interface AnnouncementView {
  */
 export interface PlaybookCard {
   slug: string;
+  /** The language of the text served (`es` or `en`). */
+  locale: string;
+  /** No version in the language asked for yet: this is the Spanish one. */
+  fallback: boolean;
   category: string;
   title: string;
   summary: string;
@@ -252,6 +256,8 @@ export interface PlaybookCard {
 
 /** `GET /v1/me/playbooks`. */
 export interface PlaybookList {
+  /** The language asked for; each card says what it was served in. */
+  locale: string;
   playbooks: PlaybookCard[];
   /** The tabs with at least one published playbook, in tab order. */
   categories: string[];
@@ -260,11 +266,14 @@ export interface PlaybookList {
   newCount: number;
 }
 
+/** `?locale=` for a playbook read, or nothing for the API's default (the member's language). */
+const playbookLocaleQuery = (locale?: string) => (locale ? `?locale=${encodeURIComponent(locale)}` : '');
+
 /**
- * `GET /v1/me/playbooks`, deduplicated per server request with React's
- * `cache` (see `adminApi.playbooks`).
+ * `GET /v1/me/playbooks`, deduplicated per server request and language with
+ * React's `cache` (see `adminApi.playbooks`).
  */
-const readPlaybooks = cache(() => req<PlaybookList>('GET', '/v1/me/playbooks'));
+const readPlaybooks = cache((locale?: string) => req<PlaybookList>('GET', `/v1/me/playbooks${playbookLocaleQuery(locale)}`));
 
 /** `/v1/me.referral`. Later steps of the program add fields; unknown ones are ignored. */
 export type MeReferral =
@@ -1188,15 +1197,21 @@ export const adminApi = {
    * Reading it records nothing. Read once per request: the layout (for the
    * rail's "New") and the gallery or the reader all ask for it.
    */
-  playbooks: () => readPlaybooks(),
-  /** One playbook with its whole markdown body. Records nothing; a 404 for an unknown or unpublished slug. */
-  playbook: (slug: string) =>
-    req<{ playbook: PlaybookCard & { body: string } }>('GET', `/v1/me/playbooks/${encodeURIComponent(slug)}`).then(
+  playbooks: (locale?: string) => readPlaybooks(locale),
+  /**
+   * One playbook with its whole markdown body, in `locale` (or Spanish, with
+   * `fallback`). Records nothing; a 404 for an unknown or unpublished slug.
+   */
+  playbook: (slug: string, locale?: string) =>
+    req<{ playbook: PlaybookCard & { body: string } }>(
+      'GET',
+      `/v1/me/playbooks/${encodeURIComponent(slug)}${playbookLocaleQuery(locale)}`,
+    ).then(
       (r) => r.playbook,
     ),
-  /** Record that the caller opened a playbook (first and last open). */
-  recordPlaybookSeen: (slug: string) =>
-    req<{ ok: boolean }>('POST', `/v1/me/playbooks/${encodeURIComponent(slug)}/seen`),
+  /** Record that the caller opened a playbook (first and last open), read in `locale`. */
+  recordPlaybookSeen: (slug: string, locale?: string) =>
+    req<{ ok: boolean }>('POST', `/v1/me/playbooks/${encodeURIComponent(slug)}/seen${playbookLocaleQuery(locale)}`),
   /** Record a visit to the gallery: only playbooks published after it are "New" from then on. */
   recordPlaybooksGalleryVisit: () => req<{ ok: boolean }>('POST', '/v1/me/playbooks/seen'),
   /** Every workspace the caller can enter, for the switcher. */

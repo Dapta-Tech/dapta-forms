@@ -9,9 +9,12 @@
  * `slug` is the playbook's own slug and `name` names the asset; both are
  * `[a-z0-9-]+`. Everything after the first `|` is the alt text, so the alt
  * may hold a `|` of its own. It is required, and may not hold `<!--` or
- * `-->`. The files live in the web app under `/playbooks/inline/<slug>/`:
- * `<name>.webm`, `<name>.mp4` and `<name>-poster.webp` for an animation,
- * `<name>.webp` for an image.
+ * `-->`. The files live in the web app under
+ * `/playbooks/inline/<locale>/<slug>/`, one folder per language (an
+ * animation with words on it is translated too): `<name>.webm`, `<name>.mp4`
+ * and `<name>-poster.webp` for an animation, `<name>.webp` for an image. The
+ * marker names no language: the playbook's own language picks the folder,
+ * and every language of a playbook names the same assets in the same order.
  *
  * Exported from the package root and kept free of the catalog, so the web
  * app's renderer can read a marker without pulling the bodies into a bundle.
@@ -56,17 +59,20 @@ export function playbookMediaMarker(media: PlaybookMedia): string {
 }
 
 /**
- * The files one marker needs, relative to `PLAYBOOK_MEDIA_BASE`: the webm,
- * the mp4 and the poster of an animation, the webp of an image.
+ * The files one marker needs in one language, relative to
+ * `PLAYBOOK_MEDIA_BASE` (`<locale>/<slug>/<name>...`): the webm, the mp4 and
+ * the poster of an animation, the webp of an image. `locale` is a playbook
+ * language (`PLAYBOOK_LOCALES`); it is a plain string here so this file stays
+ * free of the catalog.
  */
-export function playbookMediaFiles(media: Pick<PlaybookMedia, 'kind' | 'slug' | 'name'>): string[] {
-  const stem = `${media.slug}/${media.name}`;
+export function playbookMediaFiles(media: Pick<PlaybookMedia, 'kind' | 'slug' | 'name'>, locale: string): string[] {
+  const stem = `${locale}/${media.slug}/${media.name}`;
   return media.kind === 'anim' ? [`${stem}.webm`, `${stem}.mp4`, `${stem}-poster.webp`] : [`${stem}.webp`];
 }
 
-/** The still that sizes a marker's frame: the poster of an animation, the image itself. */
-export function playbookMediaStill(media: Pick<PlaybookMedia, 'kind' | 'slug' | 'name'>): string {
-  const stem = `${media.slug}/${media.name}`;
+/** The still that sizes a marker's frame in one language: the poster of an animation, the image itself. */
+export function playbookMediaStill(media: Pick<PlaybookMedia, 'kind' | 'slug' | 'name'>, locale: string): string {
+  const stem = `${locale}/${media.slug}/${media.name}`;
   return media.kind === 'anim' ? `${stem}-poster.webp` : `${stem}.webp`;
 }
 
