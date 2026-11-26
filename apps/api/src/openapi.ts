@@ -424,9 +424,9 @@ export const openapiSpec = {
     },
     '/v1/public/playbooks': {
       get: {
-        summary: 'Playbook previews for a resource hub (public)',
+        summary: 'Playbook teasers for a resource hub (public)',
         description:
-          'Body { playbooks: [{ slug, category, title, summary, publishedAt, promisedBy, thumbnailVideo, thumbnailPoster, preview, rest }] }, newest first. `category` is one of ventas, marketing, ads, agentes; `publishedAt` is epoch ms, and a playbook is absent before it. `preview` is markdown (the intro and the first section). `rest` is the markdown below the preview only for a playbook with a non-empty `promisedBy` (the guides that promise it); it is null for every other playbook, whose full text needs a signed-in session. `thumbnailVideo` and `thumbnailPoster` are a root-relative path, an https URL or null. Cached for five minutes (`Cache-Control: public, max-age=300`). Rate limited per client like the rest of the public surface.',
+          'Body { playbooks: [{ slug, category, title, summary, publishedAt, promisedBy, readingMinutes, teaser, outline, rest?, thumbnailVideo?, thumbnailPoster? }] }, newest first. `category` is one of ventas, marketing, ads, agentes; `publishedAt` is the publication day in Bogota (`YYYY-MM-DD`), and a playbook is absent before it. `teaser` is markdown (the intro and the first section). `outline` lists the `## ` headings of the rest of the body, in order, and `readingMinutes` is the reading time of the whole body (200 words a minute, rounded up), both present for every playbook so a locked page can say what is left. `rest` is the markdown below the teaser, present only for a playbook with a non-empty `promisedBy` (the guides that promise it); every other playbook leaves it out, and its full text needs a signed-in session. `thumbnailVideo` and `thumbnailPoster` are a root-relative path or an https URL, left out when the playbook has none. Never the template step. Cached for five minutes (`Cache-Control: public, max-age=300`). Rate limited per client like the rest of the public surface.',
         responses: {
           '200': { description: 'The published playbooks' },
           '429': { description: 'RATE_LIMITED' },

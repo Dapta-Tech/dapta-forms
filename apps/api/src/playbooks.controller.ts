@@ -29,6 +29,9 @@ import {
   isPlaybookPromised,
   isPlaybookPublished,
   playbookBody,
+  playbookOutline,
+  playbookPublishedDate,
+  playbookReadingMinutes,
   publishedPlaybooks,
   type Playbook,
   type PlaybookCategory,
@@ -80,20 +83,29 @@ export interface PlaybookListView {
   newCount: number;
 }
 
-/** What the landing's build gets for one playbook. */
+/**
+ * What the landing's build gets for one playbook. The shape is the landing's
+ * catalog fixture (`deploy/recursos/fixture.py` in dapta-forms-landing): an
+ * optional field is left out rather than sent as null.
+ */
 export interface PublicPlaybookView {
   slug: string;
   category: PlaybookCategory;
   title: string;
   summary: string;
-  publishedAt: number;
+  /** The publication day in Bogota, `YYYY-MM-DD`. */
+  publishedAt: string;
   promisedBy: readonly string[];
-  thumbnailVideo: string | null;
-  thumbnailPoster: string | null;
+  /** Minutes to read the whole body, preview and rest, even when the rest is not sent. */
+  readingMinutes: number;
   /** Markdown: the intro and the first section. */
-  preview: string;
-  /** Markdown below the preview, only for a playbook a guide promises; null for the rest. */
-  rest: string | null;
+  teaser: string;
+  /** The `## ` headings of the rest, in order, so a locked page can list what is left. */
+  outline: string[];
+  /** Markdown below the teaser, only for a playbook a guide promises; absent for the rest. */
+  rest?: string;
+  thumbnailVideo?: string;
+  thumbnailPoster?: string;
 }
 
 function notFound(): never {
@@ -245,20 +257,26 @@ export class PlaybooksController {
   }
 }
 
-/** The landing's view of one playbook: the preview always, the rest only when a guide promises it. */
+/**
+ * The landing's view of one playbook: the teaser, the outline and the reading
+ * time always, the rest only when a guide promises it.
+ */
 export function publicPlaybookView(p: Playbook): PublicPlaybookView {
-  return {
+  const view: PublicPlaybookView = {
     slug: p.slug,
     category: p.category,
     title: p.title,
     summary: p.summary,
-    publishedAt: p.publishedAt,
+    publishedAt: playbookPublishedDate(p),
     promisedBy: p.promisedBy,
-    thumbnailVideo: p.thumbnailVideo,
-    thumbnailPoster: p.thumbnailPoster,
-    preview: p.preview,
-    rest: isPlaybookPromised(p) ? p.rest : null,
+    readingMinutes: playbookReadingMinutes(p),
+    teaser: p.preview,
+    outline: playbookOutline(p),
   };
+  if (isPlaybookPromised(p)) view.rest = p.rest;
+  if (p.thumbnailVideo) view.thumbnailVideo = p.thumbnailVideo;
+  if (p.thumbnailPoster) view.thumbnailPoster = p.thumbnailPoster;
+  return view;
 }
 
 /**
@@ -266,11 +284,11 @@ export function publicPlaybookView(p: Playbook): PublicPlaybookView {
  * which its build downloads to generate `/recursos`. No auth, rate limited
  * like the rest of the public surface.
  *
- * Only what the hub may show to anyone: the preview of every published
- * playbook, and the rest of the body only for the ones a guide promises
- * (`promisedBy`), which open in full on the landing for whoever comes from
- * that guide. Never the rest of any other playbook, and never the template
- * step or the thumbnail brief.
+ * Only what the hub may show to anyone: the teaser of every published
+ * playbook with its outline and reading time, and the rest of the body only
+ * for the ones a guide promises (`promisedBy`), which open in full on the
+ * landing for whoever comes from that guide. Never the rest of any other
+ * playbook, and never the template step or the thumbnail brief.
  */
 @UseGuards(RateLimitGuard)
 @Controller('v1/public/playbooks')
