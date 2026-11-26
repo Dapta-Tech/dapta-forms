@@ -649,11 +649,15 @@ export interface BuilderMessages {
       description: string;
       prompt: string;
       placeholder: string;
+      leadQualification: string;
+      productSummary: string;
+      productSummaryPlaceholder: string;
       generate: string;
       generating: string;
       preview: string;
       apply: string;
       unavailable: string;
+      skillUnavailable: string;
       error: string;
     };
     /** Section-divider label above the template cards. */
@@ -1163,11 +1167,15 @@ const en: BuilderMessages = {
       description: 'Describe your form and review the proposed questions.',
       prompt: 'Describe your form',
       placeholder: 'For example, a quote request that asks for name, work email, and budget.',
+      leadQualification: 'Use the lead qualification skill',
+      productSummary: 'Summarize your product',
+      productSummaryPlaceholder: 'Who is it for, what does it do, and what outcome should it improve?',
       generate: 'Generate draft',
       generating: 'Generating draft…',
       preview: 'Proposed questions',
       apply: 'Use this draft',
       unavailable: 'LiteLLM or the configured model is unavailable. Try again in a moment.',
+      skillUnavailable: 'Could not load the lead qualification skill from LiteLLM. Try again in a moment.',
       error: 'Could not generate a valid draft. Try again or adjust your description.',
     },
     templatesLabel: 'Or choose a template',
@@ -1685,11 +1693,15 @@ const es: BuilderMessages = {
       description: 'Describe tu formulario y revisa las preguntas propuestas.',
       prompt: 'Describe tu formulario',
       placeholder: 'Por ejemplo, una solicitud de cotización que pida nombre, correo laboral y presupuesto.',
+      leadQualification: 'Usar la skill de calificación de leads',
+      productSummary: 'Resume tu producto',
+      productSummaryPlaceholder: '¿Para quién es, qué hace y qué resultado debería mejorar?',
       generate: 'Generar borrador',
       generating: 'Generando borrador…',
       preview: 'Preguntas propuestas',
       apply: 'Usar este borrador',
       unavailable: 'LiteLLM o el modelo configurado no está disponible. Vuelve a intentarlo en un momento.',
+      skillUnavailable: 'No se pudo cargar la skill de calificación de leads desde LiteLLM. Vuelve a intentarlo en un momento.',
       error: 'No se pudo generar un borrador válido. Vuelve a intentarlo o ajusta la descripción.',
     },
     templatesLabel: 'O elige una plantilla',

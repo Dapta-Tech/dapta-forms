@@ -3,6 +3,7 @@
 import { useEffect, useId, useState, useTransition, type FormEvent } from 'react';
 import { formAiStatusAction, generateFormDraftAction } from '@/app/admin/actions';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import type { GeneratedFormDraft } from '@/lib/admin-api';
 import { callAction } from '@/lib/call-action';
 import type { BuilderMessages } from './builder-messages';
@@ -16,6 +17,7 @@ export function AiFormStarter({
 }) {
   const promptId = useId();
   const [available, setAvailable] = useState(false);
+  const [useLeadQualification, setUseLeadQualification] = useState(false);
   const [description, setDescription] = useState('');
   const [draft, setDraft] = useState<GeneratedFormDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +39,10 @@ export function AiFormStarter({
     setError(null);
     setDraft(null);
     startGeneration(async () => {
-      const result = await callAction(() => generateFormDraftAction(description), { timeoutMs: 48_000 });
+      const skill = useLeadQualification ? 'qualify-leads' : undefined;
+      const result = await callAction(() => generateFormDraftAction(description, skill), { timeoutMs: 48_000 });
       if (result.ok) setDraft(result.draft);
+      else if ('skillUnavailable' in result && result.skillUnavailable) setError(m.skillUnavailable);
       else setError('unavailable' in result && result.unavailable ? m.unavailable : m.error);
     });
   }
@@ -59,7 +63,21 @@ export function AiFormStarter({
       </summary>
       <div className="border-t border-border p-5">
         <form onSubmit={generate} aria-busy={generating} className="space-y-3">
-          <label htmlFor={promptId} className="block text-sm font-semibold">{m.prompt}</label>
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium">
+            <Checkbox
+              checked={useLeadQualification}
+              disabled={generating}
+              onChange={(event) => {
+                setUseLeadQualification(event.target.checked);
+                setDraft(null);
+                setError(null);
+              }}
+            />
+            {m.leadQualification}
+          </label>
+          <label htmlFor={promptId} className="block text-sm font-semibold">
+            {useLeadQualification ? m.productSummary : m.prompt}
+          </label>
           <textarea
             id={promptId}
             value={description}
@@ -68,7 +86,7 @@ export function AiFormStarter({
               setDraft(null);
               setError(null);
             }}
-            placeholder={m.placeholder}
+            placeholder={useLeadQualification ? m.productSummaryPlaceholder : m.placeholder}
             rows={4}
             maxLength={4000}
             required

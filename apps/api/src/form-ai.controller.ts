@@ -9,6 +9,7 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  Logger,
   Post,
   Req,
   ServiceUnavailableException,
@@ -20,6 +21,7 @@ import { formConfigSchema, formStepSchema, localeSchema } from '@quill/types';
 import { z } from 'zod';
 import type { ReqLike } from './auth.provider';
 import { AuthService } from './auth.service';
+import { LEAD_QUALIFICATION_SKILL, loadLeadQualificationSkill } from './form-ai-skills';
 import type { RateLimiter } from './rate-limit';
 import { strictConfigIssues } from './strict-config';
 import { ENV, RATE_LIMITER } from './tokens';
@@ -27,6 +29,7 @@ import { ENV, RATE_LIMITER } from './tokens';
 const inputSchema = z.object({
   description: z.string().trim().min(1).max(4000),
   locale: localeSchema,
+  skill: z.literal(LEAD_QUALIFICATION_SKILL).optional(),
 });
 const draftSchema = formConfigSchema
   .pick({ version: true, scoring: true, outcomes: true })
@@ -34,6 +37,7 @@ const draftSchema = formConfigSchema
   .strict();
 const modelsSchema = z.object({ data: z.array(z.object({ id: z.string() })) });
 const completionSchema = z.object({
+  id: z.string().optional().catch(undefined),
   choices: z.array(z.object({ message: z.object({ content: z.string() }) })).nonempty(),
 });
 
@@ -87,6 +91,7 @@ function invalidDraft(): BadGatewayException {
 
 @Controller('v1/form-ai')
 export class FormAiController {
+  private readonly log = new Logger(FormAiController.name);
   private readonly baseUrl: string | null;
   private readonly headers: Record<string, string>;
 
@@ -140,9 +145,26 @@ export class FormAiController {
     }
     if (!(await this.isAvailable())) throw unavailable();
 
+    const skill = input.data.skill ? await loadLeadQualificationSkill(this.baseUrl, this.headers) : null;
+    if (input.data.skill && !skill) {
+      throw new ServiceUnavailableException({
+        error: 'FORM_AI_SKILL_UNAVAILABLE',
+        message: 'Could not load the lead qualification skill from LiteLLM.',
+      });
+    }
+
     const uploads = isStorageEnabled(this.env);
-    const prompt = systemPrompt(input.data.locale, uploads);
+    const basePrompt = systemPrompt(input.data.locale, uploads);
+    const prompt = skill
+      ? [
+          basePrompt,
+          'The user message supplies the product summary. Use the following skill to write respondent-facing discovery questions in the required dForms JSON format.',
+          skill.instructions,
+        ].join('\n\n')
+      : basePrompt;
+    const skillTag = skill ? `skill:${LEAD_QUALIFICATION_SKILL}@${skill.version}` : undefined;
     let upstream: unknown;
+    let callId: string | null = null;
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -156,9 +178,13 @@ export class FormAiController {
             { role: 'user', content: input.data.description },
           ],
           response_format: { type: 'json_object' },
+          ...(skillTag ? { metadata: { tags: [skillTag] } } : {}),
         }),
       });
-      if (response.ok) upstream = await response.json();
+      if (response.ok) {
+        callId = response.headers.get('x-litellm-call-id');
+        upstream = await response.json();
+      }
     } catch {
       throw unavailable();
     }
@@ -180,6 +206,9 @@ export class FormAiController {
       (!uploads && draft.data.steps.some((step) => step.type === 'file'))
     ) {
       throw invalidDraft();
+    }
+    if (skillTag) {
+      this.log.log({ event: 'form_ai_skill_generated', skillTag, callId, completionId: completion.data.id });
     }
     return { draft: draft.data };
   }
