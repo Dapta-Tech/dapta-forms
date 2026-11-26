@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * The rail's Playbooks item: always there, after Tools and before Docs, and
+ * The rail's Playbooks item: always there, right after the Help group, and
  * marked "New" (the announcements' badge, popping once) while the person has
  * playbooks they have not seen, until the gallery is opened.
  */
@@ -83,7 +83,7 @@ afterEach(async () => {
 });
 
 describe('AdminShell: the Playbooks item', () => {
-  it('links to the gallery, after Tools and before Docs, in both rails', () => {
+  it('links to the gallery, right after the Help group (Tools and Docs), in both rails', () => {
     const doc = parse(renderToStaticMarkup(shell()));
     const { desktop, drawer } = playbooksLinks(doc);
     for (const link of [desktop, drawer]) {
@@ -91,11 +91,16 @@ describe('AdminShell: the Playbooks item', () => {
       expect(accessibleName(link)).toBe('Playbooks');
       expect(link.querySelector('.pi-book-check')).not.toBeNull();
     }
-    const order = [...doc.querySelector('[data-testid="sidebar-nav"]')!.querySelectorAll('li > [data-testid^="nav-"]')].map(
-      (a) => a.getAttribute('data-testid'),
+    const nav = doc.querySelector('[data-testid="sidebar-nav"]')!;
+    // The rail's own rows, top level only: the group's children live in its list.
+    const order = [...nav.querySelectorAll(':scope > ul > li > [data-testid^="nav-"]')]
+      .map((a) => a.getAttribute('data-testid'))
+      .filter((id) => !id?.endsWith('-list'));
+    expect(order.indexOf('nav-playbooks')).toBe(order.indexOf('nav-help') + 1);
+    const children = [...nav.querySelectorAll('[data-testid="nav-help-list"] > li > [data-testid]')].map((a) =>
+      a.getAttribute('data-testid'),
     );
-    expect(order.indexOf('nav-playbooks')).toBe(order.indexOf('nav-tools') + 1);
-    expect(order.indexOf('nav-docs')).toBe(order.indexOf('nav-playbooks') + 1);
+    expect(children).toEqual(['nav-tools', 'nav-docs']);
   });
 
   it('is the page you are on in the gallery and in the reader', () => {
