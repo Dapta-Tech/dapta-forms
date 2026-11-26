@@ -109,6 +109,7 @@ const MAP = {
   phone: 'phone',
   plus: 'plus',
   qrcode: 'qr-code',
+  'question-circle': 'circle-question-mark',
   refresh: 'refresh-cw',
   pause: 'pause',
   play: 'play',

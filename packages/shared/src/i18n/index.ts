@@ -538,15 +538,20 @@ export interface FormsMessages {
          * handed out links there.
          */
         developers: string;
-        /** The Tools page (/admin/developers/tools): what an agent can do with dForms. */
+        /**
+         * "Help": the rail group that opens onto Tools and Docs. It has no page
+         * of its own; it is marked while one of its children is.
+         */
+        help: string;
+        /** The Tools page (/admin/developers/tools): what an agent can do with dForms. Under Help. */
         tools: string;
         /**
-         * The playbooks gallery (/admin/playbooks), after Tools and before
-         * Docs. Carries the "New" badge while the person has playbooks they
+         * The playbooks gallery (/admin/playbooks), right after the Help
+         * group. Carries the "New" badge while the person has playbooks they
          * have not seen (see `newBadge`).
          */
         playbooks: string;
-        /** The product documentation, an EXTERNAL link (see `docsHref`). */
+        /** The product documentation, an EXTERNAL link (see `docsHref`). Under Help. */
         docs: string;
         /**
          * The door to the wider platform (agents), an EXTERNAL link. Rendered
@@ -3671,6 +3676,7 @@ export const en: FormsMessages = {
         analytics: 'Analytics',
         integrations: 'Integrations',
         developers: 'Connect your agent',
+        help: 'Help',
         tools: 'Tools',
         playbooks: 'Playbooks',
         docs: 'Docs',
@@ -6781,6 +6787,7 @@ export const es: FormsMessages = {
         analytics: 'Analíticas',
         integrations: 'Integraciones',
         developers: 'Conecta tu agente',
+        help: 'Ayuda',
         tools: 'Herramientas',
         playbooks: 'Playbooks',
         docs: 'Documentación',
