@@ -140,6 +140,9 @@ layer, run this before you push.
    but the caller.
    The referral state (`referrer`, `referral`, `referral_invite`) is the second such
    exception, keyed by the person too ([ADR 0005](docs/adr/0005-referral-state-is-keyed-by-person.md)).
+   The playbook state (`playbook_state`, `apps/api/src/playbooks.controller.ts`)
+   is the third, keyed by the person with the announcements' key
+   ([ADR 0006](docs/adr/0006-playbook-state-is-keyed-by-person.md)).
 4. **Config is a versioned zod schema — extend, never break v1.** The form config
    contract is `formConfigSchema` in `packages/types/src/index.ts` with
    `version: z.literal(1)`. Add optional fields; do not remove or repurpose
@@ -425,6 +428,19 @@ retryable failures) → `src/factory.ts` (add the switch case + graceful fallbac
 `apps/web/public/announcements/` as `{src}-{light,dark}.{webm,mp4}` and
 `{src}-{light,dark}-poster.png`. Nothing else changes: the API picks one per
 person (`pickAnnouncement`) and stores what they did in `announcement_state`.
+
+**Publish a playbook** (the in-app gallery at `/admin/playbooks` and the
+landing's resource hub): add a markdown file to
+`packages/shared/content/playbooks/` named after its `slug` (never reuse one:
+per-person state is keyed by it), with the front matter `slug`, `category`
+(`ventas`, `marketing`, `ads` or `agentes`), `title`, `summary`, `publishedAt`
+(a date in Bogota time, or an ISO date-time with its offset), `template`, and
+optionally `promisedBy` (`[ig_handle, ...]`), `thumbnailVideo`,
+`thumbnailPoster` and `thumbnailMotif`; split the body with one line holding
+only `<!-- muro -->` (above it, the public preview). Then run
+`pnpm --filter @quill/shared playbooks`, which regenerates
+`src/playbooks.generated.ts` and refuses anything malformed. A playbook with
+`promisedBy` exposes its whole body on `GET /v1/public/playbooks`.
 
 **Add a language:** `packages/shared/src/i18n/index.ts` — extend the `Locale` union,
 add a full `FormsMessages` const (the interface forces complete key coverage), wire

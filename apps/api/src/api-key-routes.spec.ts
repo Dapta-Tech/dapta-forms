@@ -82,6 +82,12 @@ const DENIED = new Set([
   // dashboard, and its reads would count as sessions the person never had.
   'GET /v1/me/announcement',
   'POST /v1/me/announcements/:id',
+  // The playbooks gallery: the full playbooks stay behind a person's sign-in,
+  // and a key's reads would mark playbooks opened for a person who never did.
+  'GET /v1/me/playbooks',
+  'GET /v1/me/playbooks/:slug',
+  'POST /v1/me/playbooks/seen',
+  'POST /v1/me/playbooks/:slug/seen',
   // The referral claim: a person signing up, called by the sign-in callback.
   // A key is no person and never signs up.
   'POST /v1/me/referral/claim',
