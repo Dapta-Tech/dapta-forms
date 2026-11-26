@@ -52,7 +52,10 @@ const CARDS = [
 
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;
-async function mount(initialTab: 'all' | 'ventas' | 'agentes' = 'all') {
+async function mount(
+  initialTab: 'all' | 'ventas' | 'agentes' = 'all',
+  tabs: ('all' | 'ventas' | 'agentes')[] = ['all', 'ventas', 'agentes'],
+) {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -60,7 +63,7 @@ async function mount(initialTab: 'all' | 'ventas' | 'agentes' = 'all') {
     root!.render(
       <PlaybooksGallery
         cards={CARDS}
-        tabs={['all', 'ventas', 'agentes']}
+        tabs={tabs}
         initialTab={initialTab}
         newCount={1}
         now={NOW}
@@ -114,6 +117,15 @@ describe('PlaybooksGallery', () => {
     await act(async () => host!.querySelector<HTMLElement>('[data-testid="playbooks-tab-all"]')!.click());
     expect(slugs()).toEqual(['a', 'b', 'c']);
     expect(window.location.search).toBe('');
+  });
+
+  it('draws no tabs and no tab panel with "All" alone', async () => {
+    await mount('all', ['all']);
+    expect(host!.querySelector('[role="tablist"]')).toBeNull();
+    const grid = host!.querySelector('#playbooks-grid')!;
+    expect(grid.hasAttribute('role')).toBe(false);
+    expect(grid.hasAttribute('aria-labelledby')).toBe(false);
+    expect(slugs()).toEqual(['a', 'b', 'c']);
   });
 
   it('draws the category placeholder while a playbook has no thumbnail', async () => {

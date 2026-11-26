@@ -4,6 +4,7 @@
  * for the local dev provider. A `401` throws an ApiError the /admin gate turns
  * into a redirect to /login.
  */
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type {
@@ -258,6 +259,12 @@ export interface PlaybookList {
   /** How many published playbooks are new to the person: the rail's "New". */
   newCount: number;
 }
+
+/**
+ * `GET /v1/me/playbooks`, deduplicated per server request with React's
+ * `cache` (see `adminApi.playbooks`).
+ */
+const readPlaybooks = cache(() => req<PlaybookList>('GET', '/v1/me/playbooks'));
 
 /** `/v1/me.referral`. Later steps of the program add fields; unknown ones are ignored. */
 export type MeReferral =
@@ -1176,8 +1183,12 @@ export const adminApi = {
   /** Report what the caller did with an announcement: on screen, card closed, or route reached. */
   recordAnnouncement: (id: string, event: AnnouncementEvent) =>
     req<{ ok: boolean }>('POST', `/v1/me/announcements/${encodeURIComponent(id)}`, { event }),
-  /** The playbooks gallery for the caller (the person, not the workspace). Reading it records nothing. */
-  playbooks: () => req<PlaybookList>('GET', '/v1/me/playbooks'),
+  /**
+   * The playbooks gallery for the caller (the person, not the workspace).
+   * Reading it records nothing. Read once per request: the layout (for the
+   * rail's "New") and the gallery or the reader all ask for it.
+   */
+  playbooks: () => readPlaybooks(),
   /** One playbook with its whole markdown body. Records nothing; a 404 for an unknown or unpublished slug. */
   playbook: (slug: string) =>
     req<{ playbook: PlaybookCard & { body: string } }>('GET', `/v1/me/playbooks/${encodeURIComponent(slug)}`).then(

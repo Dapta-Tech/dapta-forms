@@ -173,13 +173,20 @@ export function parseMarkdown(markdown: string): Block[] {
   return parseLines(markdown.replace(/\r\n?/g, '\n').split('\n'));
 }
 
-/** A link target this app will follow: the web, or a path of its own. Anything else stays text. */
+/**
+ * A link target this app will follow: the web, or a path of its own. Anything
+ * else stays text. A path must not start with `//` or `/\`: browsers read both
+ * as another host.
+ */
 export function safeHref(href: string): string | null {
   if (/^https?:\/\//i.test(href)) return href;
-  if (href.startsWith('/') && !href.startsWith('//')) return href;
+  if (/^\/(?![/\\])/.test(href)) return href;
   if (href.startsWith('#')) return href;
   return null;
 }
+
+/** `[text](target)`, the target allowed one level of balanced parentheses. */
+const LINK = /^\[([^\]]+)\]\(([^()\s]*(?:\([^()\s]*\)[^()\s]*)*)\)/;
 
 function closing(text: string, from: number, marker: string): number {
   let j = text.indexOf(marker, from);
@@ -232,8 +239,18 @@ export function parseInline(text: string): Inline[] {
         continue;
       }
     }
+    // An image is not drawn: its alt text stands in for it.
+    if (c === '!' && text[i + 1] === '[') {
+      const m = LINK.exec(text.slice(i + 1));
+      if (m) {
+        flush();
+        out.push(...parseInline(m[1]!));
+        i += 1 + m[0].length;
+        continue;
+      }
+    }
     if (c === '[') {
-      const m = /^\[([^\]]+)\]\(([^)\s]+)\)/.exec(text.slice(i));
+      const m = LINK.exec(text.slice(i));
       if (m) {
         flush();
         const href = safeHref(m[2]!);

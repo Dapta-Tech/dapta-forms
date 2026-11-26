@@ -10,13 +10,12 @@ import {
   headingId,
   isPlaybookSlug,
   nextPlaybook,
-  playbookStatus,
   readingMinutes,
 } from '@/lib/playbooks';
 import { buttonVariants } from '@/components/ui/button';
 import { MarkdownView, headingIds } from '@/components/playbooks/markdown-view';
 import { PlaybookOpened } from '@/components/playbooks/playbook-opened';
-import { StatusLine } from '@/components/playbooks/playbooks-gallery';
+import { CardStatus } from '@/components/playbooks/playbooks-gallery';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +35,11 @@ function splitDoIt(blocks: Block[]): { body: Block[]; doIt: Block[] } {
   const end = blocks.findIndex((b, j) => j > i && b.kind === 'heading' && b.level <= 2);
   const stop = end < 0 ? blocks.length : end;
   return { body: [...blocks.slice(0, i), ...blocks.slice(stop)], doIt: blocks.slice(i + 1, stop) };
+}
+
+/** Only what a state line reads: the card goes to a client component, and the body must not ride along. */
+function statusOf(c: PlaybookCard) {
+  return { isNew: c.isNew, lastSeenAt: c.lastSeenAt, publishedAt: c.publishedAt };
 }
 
 /**
@@ -79,7 +83,7 @@ export default async function PlaybookPage({ params }: { params: Promise<{ slug:
     >
       <span className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>{t(m.reader.next, { category: categoryLabel(next.category, m) })}</span>
-        <StatusLine status={playbookStatus(next, now, m.status, locale)} />
+        <CardStatus card={statusOf(next)} now={now} locale={locale} m={m.status} />
       </span>
       <span className="text-base font-semibold leading-5 text-foreground">{next.title}</span>
       <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
@@ -118,7 +122,7 @@ export default async function PlaybookPage({ params }: { params: Promise<{ slug:
           <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
             <span className="rounded-full bg-signal/15 px-2.5 py-0.5 font-semibold text-signal-ink">{category}</span>
             <span>{t(m.readingTime, { count: readingMinutes(playbook.body) })}</span>
-            <StatusLine status={playbookStatus(playbook, now, m.status, locale)} />
+            <CardStatus card={statusOf(playbook)} now={now} locale={locale} m={m.status} />
           </p>
           <h1 className="mt-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">{playbook.title}</h1>
           <p className="mt-4 text-lg leading-7 text-muted-foreground">{playbook.summary}</p>

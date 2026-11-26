@@ -53,6 +53,25 @@ export function StatusLine({ status }: { status: PlaybookStatus }) {
 }
 
 /**
+ * A card's state line worded in the workspace's time zone, for server pages
+ * (the reader), which do not know it: the zone lives in a client context.
+ */
+export function CardStatus({
+  card,
+  now,
+  locale,
+  m,
+}: {
+  card: { isNew: boolean; lastSeenAt: number | null; publishedAt: number };
+  now: number;
+  locale: string;
+  m: Messages['status'];
+}) {
+  const timeZone = useWorkspaceTimeZone();
+  return <StatusLine status={playbookStatus(card, now, m, locale, timeZone)} />;
+}
+
+/**
  * The playbooks gallery: the category tabs and the cards of the selected one.
  * Rendered by the page with the list the API returned before this visit was
  * recorded, so the "New" marks it clears still show this once; the visit is
@@ -175,7 +194,12 @@ export function PlaybooksGallery({
         </div>
       ) : null}
 
-      <div id="playbooks-grid" role="tabpanel" aria-labelledby={`playbooks-tab-${tab}`}>
+      {/* A tab panel only when there are tabs: with "All" alone the tablist is
+          not drawn, and the panel would be labelled by a tab that is not there. */}
+      <div
+        id="playbooks-grid"
+        {...(tabs.length > 1 ? { role: 'tabpanel', 'aria-labelledby': `playbooks-tab-${tab}` } : {})}
+      >
         {shown.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-6 py-12 text-center text-sm text-muted-foreground">
             {m.empty}

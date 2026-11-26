@@ -76,6 +76,14 @@ describe('parseInline', () => {
     ]);
   });
 
+  it('draws no image: its alt text stands in for it', () => {
+    expect(parseInline('Mira ![el panel](/x.png) aquí')).toEqual([
+      { kind: 'text', text: 'Mira ' },
+      { kind: 'text', text: 'el panel' },
+      { kind: 'text', text: ' aquí' },
+    ]);
+  });
+
   it('leaves snake_case and a lone star alone', () => {
     expect(inlineText('utm_source y 5 * 3')).toBe('utm_source y 5 * 3');
   });
@@ -84,12 +92,18 @@ describe('parseInline', () => {
     expect(parseInline('[docs](https://example.com/a)')).toEqual([
       { kind: 'link', href: 'https://example.com/a', children: [{ kind: 'text', text: 'docs' }] },
     ]);
-    const js = parseInline('[aquí](javascript:alert(1))');
-    expect(js.some((n) => n.kind === 'link')).toBe(false);
-    expect(inlineText('[aquí](javascript:alert(1))')).not.toContain('javascript');
+    // A refused link leaves its words, and nothing of its target (no stray ")").
+    expect(parseInline('[aquí](javascript:alert(1)) fin')).toEqual([
+      { kind: 'text', text: 'aquí' },
+      { kind: 'text', text: ' fin' },
+    ]);
     expect(parseInline('[x](data:text/html,hi)')).toEqual([{ kind: 'text', text: 'x' }]);
     expect(safeHref('/admin/forms')).toBe('/admin/forms');
     expect(safeHref('//evil.example')).toBeNull();
+    // Browsers read "/\\host" as another host too.
+    expect(safeHref('/\\evil.example')).toBeNull();
+    expect(parseInline('[x](/\\evil.example)')).toEqual([{ kind: 'text', text: 'x' }]);
+    expect(safeHref('#seccion')).toBe('#seccion');
     expect(safeHref('JaVaScRiPt:alert(1)')).toBeNull();
   });
 });
