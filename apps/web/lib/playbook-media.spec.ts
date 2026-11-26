@@ -7,12 +7,23 @@
  * `public/`, so nothing a test needs is served.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { playbookMediaFiles, playbookMediaIn, type PlaybookMedia } from '@quill/shared';
 import { PLAYBOOKS, playbookMedia } from '@quill/shared/playbooks';
-import { MEDIA_DIR, OUT_FILE, missingMediaFiles, readMediaSizes, renderModule, webpSize } from '../scripts/playbook-media.mjs';
+import {
+  MAX_BYTES,
+  MEDIA_DIR,
+  OUT_FILE,
+  missingMediaFiles,
+  oversizedMediaFiles,
+  readMediaSizes,
+  renderModule,
+  webpSize,
+} from '../scripts/playbook-media.mjs';
 import { playbookMediaSize, playbookMediaUrls } from './playbook-media';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/playbook-media.mjs', import.meta.url));
@@ -64,6 +75,33 @@ describe('the asset check, on the example assets', () => {
       [`${SLUG}/demo-poster.webp`]: { width: 464, height: 288 },
       [`${SLUG}/panel.webp`]: { width: 464, height: 288 },
     });
+  });
+});
+
+describe('the weight limit', () => {
+  it('passes the shipped assets and the example ones', () => {
+    expect(oversizedMediaFiles()).toEqual([]);
+    expect(oversizedMediaFiles(FIXTURES)).toEqual([]);
+  });
+
+  it('names a video over 300 KB and an image over 200 KB, and nothing at the limit', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'playbook-media-'));
+    try {
+      mkdirSync(join(dir, SLUG));
+      const put = (name: string, bytes: number) => writeFileSync(join(dir, SLUG, name), Buffer.alloc(bytes));
+      put('a.webm', MAX_BYTES.video + 1);
+      put('a.mp4', MAX_BYTES.video);
+      put('a-poster.webp', MAX_BYTES.image + 1);
+      put('b.webp', MAX_BYTES.image);
+      put('notas.txt', MAX_BYTES.video * 2);
+      expect(MAX_BYTES).toEqual({ video: 300 * 1024, image: 200 * 1024 });
+      expect(oversizedMediaFiles(dir)).toEqual([
+        { file: `${SLUG}/a-poster.webp`, bytes: MAX_BYTES.image + 1, max: MAX_BYTES.image },
+        { file: `${SLUG}/a.webm`, bytes: MAX_BYTES.video + 1, max: MAX_BYTES.video },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

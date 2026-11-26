@@ -20,6 +20,8 @@ Cuando lanzas un conjunto de anuncios nuevo, Meta entra en fase de aprendizaje. 
 
 Meta necesita del orden de 50 eventos de optimización en una semana para salir de esa fase. Si en B2B te llegan 10 o 15 leads por semana, no vas a salir nunca con cinco conjuntos separados: junta conjuntos o optimiza hacia un evento más frecuente.
 
+<!-- anim: meta-ads-leads-calificados/learning-phase-se-reinicia | Una barra de aprendizaje que va hacia 50 eventos se reinicia a cero cuando subes el presupuesto de golpe, y se completa cuando lo subes 20% cada 3 o 4 días -->
+
 | Reinicia el aprendizaje | No lo reinicia |
 |---|---|
 | Subir o bajar el presupuesto de golpe (más de 20% aprox.) | Cambios chicos de presupuesto |
@@ -51,6 +53,8 @@ El creativo es la variable que más mueve resultados. Pero probar sin método es
 
 Cómo montar el test: ABO para que cada variante gaste parejo, mismo conjunto y misma audiencia, una sola variable distinta, de 3 a 5 creativos, y un presupuesto de unas 3 veces tu costo por lead meta por creativo.
 
+<!-- img: meta-ads-leads-calificados/test-de-creativos | Esquema del test de creativos: un conjunto con presupuesto propio y de 3 a 5 creativos que cambian una sola variable, junto al orden ángulo, hook, formato y detalle -->
+
 **Mata un creativo** cuando, tras un par de miles de impresiones, casi nadie se queda mirando los primeros segundos: no hay nada que optimizar en un hook que nadie ve. **Escálalo** cuando sostiene tu costo por lead con volumen suficiente. Lanza un test nuevo cada semana: la mayoría va a perder, y los pocos que ganan sostienen la cuenta cuando los actuales se cansan. Cuando uno gana, itéralo (mismo ángulo con hooks nuevos, mismo hook en otro formato) en vez de empezar de cero.
 
 ## Anatomía de un anuncio que convierte
@@ -62,6 +66,8 @@ Cómo montar el test: ABO para que cada variante gaste parejo, mismo conjunto y 
 ## Ubicaciones: el presupuesto enterrado
 
 El mismo creativo en todas las ubicaciones pierde eficiencia: se corta el texto, se pierde el contexto o el formato no encaja. Y el panel te muestra un costo por lead promedio que esconde las ubicaciones caras.
+
+<!-- anim: meta-ads-leads-calificados/promedio-esconde-ubicaciones | Un costo por lead promedio se abre en barras por ubicación; la que cuesta más de 1,5 veces la mejor se pausa y su dinero pasa a las que rinden -->
 
 1. Abre el desglose por ubicación de los últimos 30 días.
 2. Pausa la que tenga un costo por lead mayor a 1,5 veces el de la mejor y pasa ese dinero a las que rinden.
@@ -78,6 +84,8 @@ Empieza con 1% y abre a 2 o 3% cuando se sature. **Excluye siempre** a clientes 
 
 Si tu formulario lo llenan freelancers, estudiantes, competidores y clientes reales, y todos cuentan como «Lead», Meta va a traerte más de todos ellos. Eso es un píxel sucio: optimiza hacia volumen, no hacia ventas.
 
+<!-- anim: meta-ads-leads-calificados/pixel-limpio | Todos los leads entran como Lead y ensucian el píxel; con una pregunta calificadora se reparten entre la página A, que dispara Lead, y la página B, que no alimenta la optimización -->
+
 El arreglo tiene dos piezas:
 
 1. **Una pregunta calificadora** en el formulario. Ejemplo: «¿Cuántos clientes potenciales te llegan al mes?».
@@ -86,6 +94,8 @@ El arreglo tiene dos piezas:
 Espera unas semanas con calma: el volumen de leads suele bajar mientras Meta reaprende, y el panel va a mostrar un costo por lead más alto. Lo que tienes que mirar es el **costo por lead calificado** y cuántos calificados recibe ventas. Si cedes a la presión de revertir en la segunda semana, nunca vas a ver el efecto.
 
 **El siguiente paso es la API de conversiones (CAPI):** manda desde tu CRM el evento de compra cuando un lead se vuelve cliente, semanas después. Así le dices a Meta qué tipo de lead realmente importa, y no dependes del navegador ni de los bloqueadores. Se arma sin programar con el Gateway de Meta o con la integración nativa de tu CRM.
+
+<!-- img: meta-ads-leads-calificados/capi-desde-el-crm | Diagrama de la API de conversiones: el lead llena el formulario, pasa a tu CRM, semanas después se vuelve cliente y el CRM le manda a Meta el evento de compra -->
 
 ## Tu plan de 30 días
 

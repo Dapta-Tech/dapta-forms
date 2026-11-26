@@ -16,7 +16,7 @@
  * Exported from the package root and kept free of the catalog, so the web
  * app's renderer can read a marker without pulling the bodies into a bundle.
  * `scripts/playbooks.mjs` validates the markers with the same grammar (it
- * cannot import this file); `src/playbooks.spec.ts` holds the two together.
+ * cannot import this file); `src/playbook-media.spec.ts` holds the two together.
  */
 
 export const PLAYBOOK_MEDIA_KINDS = ['anim', 'img'] as const;

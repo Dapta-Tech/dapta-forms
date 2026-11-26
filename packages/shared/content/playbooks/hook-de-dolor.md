@@ -14,6 +14,8 @@ Esta guía es para quien ya corre anuncios, ya sabe que el hook importa y sigue 
 
 La mayoría de los hooks no fallan por aburridos, sino por vagos. Le hablan a todo el mundo y no le duelen a nadie. «¿Tu equipo está perdiendo leads?» puede que sí, puede que no. Un hook como «De cada 10 leads que te llegan, [N] nunca reciben un segundo contacto», con tu número real, obliga al lector a hacer la cuenta en su cabeza.
 
+<!-- anim: hook-de-dolor/vago-vs-numero | Un feed baja rápido y pasa de largo un hook vago; se frena en seco en el hook con un número concreto de leads perdidos -->
+
 Un hook de dolor cuantificado tiene tres elementos que no se separan:
 
 1. **Un dolor que tu cliente ya siente**, no uno que tú supones que debería sentir.
@@ -61,6 +63,8 @@ Un detalle de formato: «2 horas al día» duele más que «730 horas al año»,
 6. **Estudios de industria** y reportes anuales de las empresas grandes de tu categoría.
 7. **Comparadores y reportes de tus competidores.**
 
+<!-- img: hook-de-dolor/escalera-de-fuentes | Escalera de las 7 fuentes del número, de la más poderosa arriba a la más fácil abajo, con tus propios clientes en el primer peldaño -->
+
 **Cómo citarlo sin parecer inventado:** número más contexto de dónde viene o a quién le aplica («según una encuesta a nuestros clientes», «en equipos de 3 a 8 asesores»). Nunca inventes un número: si un comprador lo detecta, perdiste la confianza en todo el anuncio. Si no tienes el exacto, usa un rango («entre 4 y 6 de cada 10»): el rango se lee honesto.
 
 ## La fórmula de 4 partes
@@ -73,6 +77,8 @@ En este orden exacto:
 4. **Puerta de salida.** La promesa de que existe solución, sin revelarla todavía.
 
 Ejemplo ilustrativo con las 4 partes (cambia el número por el tuyo): «De cada 10 leads, [6] nunca reciben un segundo contacto. Con tu ticket y tu tasa de cierre, eso es dinero que ya pagaste para generar. No es que tus vendedores sean malos: el seguimiento manual no escala. Hay una forma de que cada lead reciba respuesta en minutos, sin contratar a nadie.»
+
+<!-- anim: hook-de-dolor/formula-de-4-partes | Las 4 partes del hook se arman en orden: número, consecuencia, diagnóstico y puerta de salida; si falta el número, el hook se cae -->
 
 | Si le falta... | Pasa esto |
 |---|---|
@@ -96,6 +102,8 @@ Ejemplo ilustrativo con las 4 partes (cambia el número por el tuyo): «De cada 
 7. **El diagnóstico en pregunta:** «¿Por qué [empresa A] cierra [N]% y [empresa B] solo [N]%? No es el producto ni el precio: son [N] procesos. El primero es [proceso].»
 8. **El número acumulado:** «El último año invertiste [monto] en [actividad] para generar [N] leads. [X]% nunca recibió más de [N] intentos.»
 
+<!-- img: hook-de-dolor/plantilla-llena | La plantilla «El número que duele» llena como un anuncio de ejemplo, con cada parte marcada: porcentaje, consecuencia en dinero, causa y promesa -->
+
 ## El test de 3 hooks con unos $300
 
 1. **3 estructuras distintas,** no variaciones menores: por ejemplo plantillas 1, 2 y 5.
@@ -106,6 +114,8 @@ Ejemplo ilustrativo con las 4 partes (cambia el número por el tuyo): «De cada 
 Punto de partida para decidir: si un hook tiene un costo por lead claramente más bajo que los otros dos (alrededor de 30%), es el ganador y le doblas el presupuesto. Si dos quedan muy cerca, corre 7 días más. Si ninguno llega a tu meta, el problema está en la página o en la oferta, no en el hook.
 
 **Para escalar sin quemarlo,** cambia la forma, no la esencia: el mismo dato en otro formato («el 60%» por «6 de cada 10»), otra audiencia en el texto, el mismo texto como primer cuadro de un video, otro diagnóstico u otra puerta de salida.
+
+<!-- anim: hook-de-dolor/test-de-3-hooks | Tres conjuntos con el mismo presupuesto corren 7 días sin tocarlos; el hook con un costo por lead cerca de 30% más bajo gana y recibe el doble de presupuesto -->
 
 ## Hazlo con dForms
 

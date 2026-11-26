@@ -20,6 +20,8 @@ El desperdicio real no está en atraer, está en filtrar. Cada lead que no calif
 
 Un formulario genérico le hace las mismas preguntas al director con presupuesto y al estudiante haciendo tarea. Los dos llegan a tu CRM con el mismo peso, y tu equipo pierde horas descubriendo en llamada lo que 4 preguntas bien hechas habrían revelado gratis.
 
+<!-- anim: calificador-claude/mismo-peso-vs-puntaje | Un director con presupuesto y un estudiante llenan un formulario genérico y llegan iguales a tu CRM; con 4 preguntas bien hechas, uno va a tu agenda y el otro a contenido -->
+
 Las preguntas correctas hacen el trabajo del SDR. Un lead que responde «tengo presupuesto aprobado y lo necesito este trimestre» no necesita una llamada de descubrimiento: necesita un link de agenda. Uno que responde «solo estoy explorando» no necesita una llamada: necesita contenido, y que no le quite tiempo a nadie. La diferencia entre los dos son 3 o 4 preguntas. Las correctas.
 
 El problema nunca fue hacer preguntas, fue saber cuáles. Ahí entra Claude: lee tu negocio y deduce tu cliente ideal, escribe las preguntas que separan compradores de curiosos, le pone puntaje a cada respuesta y define el umbral para agendar.
@@ -34,11 +36,15 @@ El problema nunca fue hacer preguntas, fue saber cuáles. Ahí entra Claude: lee
 4. **El formulario decide solo:** puntaje alto, le muestra tu calendario y agenda ahí mismo; medio, lo manda a tu nutrición; bajo, le agradece con elegancia y no le quita tiempo a nadie.
 5. **Todo cae a tu CRM con su puntaje.** El lunes la lista ya está ordenada: quién es reunión, quién es correo y quién es nada.
 
+<!-- anim: calificador-claude/tres-carriles | Un lead responde las preguntas, su puntaje corre sin que lo vea y el formulario lo manda solo a uno de tres carriles, agenda, nutre o descarta, antes de caer a tu CRM -->
+
 Esto reemplaza al SDR revisando leads uno por uno, las llamadas con gente que nunca iba a comprar y el «déjame ver si califica» de 3 días que enfría al lead bueno.
 
 ## Los 4 prompts
 
 Abre Claude, pega el prompt, reemplaza lo que está entre corchetes y córrelo. Córrelos en orden y en el mismo chat, para que Claude mantenga el contexto. Para el primero, activa la búsqueda web para que lea tu sitio real.
+
+<!-- anim: calificador-claude/cadena-de-4-prompts | Cuatro prompts corren en orden en el mismo chat de Claude y cada uno usa lo que dejó el anterior: cliente ideal, preguntas, puntaje y finales -->
 
 **Prompt 1 · Define a quién calificar.**
 
@@ -115,6 +121,8 @@ Devuelve solo: Pantalla AGENDA, Pantalla NUTRE, Pantalla DESCARTA.
 ## Hazlo con dForms
 
 Ya tienes las preguntas, el puntaje, los umbrales y el copy. Falta pegarlos en un formulario que sepa puntuar, ramificar y agendar, para no correr esto a mano lead por lead.
+
+<!-- img: calificador-claude/resultados-en-dforms | Pantalla de Lógica, Resultados en dForms con los tres rangos agenda, nutre y descarta, sus límites de puntaje y la pantalla final de cada uno -->
 
 **El form: «Calificador»** (plantilla Calificador de leads).
 

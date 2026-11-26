@@ -18,6 +18,8 @@ Este manual junta 8 métodos, uno por problema. No lo leas de corrido: busca tu 
 - **Nadie te escribe:** método 3. **No sabes si tus anuncios convienen:** método 4. **Mucho trabajo, poca ganancia:** método 5.
 - **Sientes que te examinan:** método 6. **«Lo voy a pensar» y no vuelven:** método 7. **No sabes pedir el sí:** método 8.
 
+<!-- img: manual-del-vendedor/mapa-de-sintomas | Mapa de los 8 síntomas agrupados en oferta, clientes y conversación, cada uno con el método que lo resuelve -->
+
 **La única regla:** un método, una semana completa y un solo número que medir. Cambiar de táctica cada dos días es la forma más rápida de no saber qué funcionó.
 
 ## Método 1: la fórmula para cobrar más
@@ -30,6 +32,8 @@ Si te dicen que estás caro, casi nunca es el precio: no ven suficiente valor. E
 - **Esfuerzo (bájalo):** ¿cuánto les cuesta lograrlo? Plantillas, instalación hecha, 10 minutos desde el celular.
 
 Ejemplo ilustrativo: «Clases de inglés a $15 la hora» compite por precio. «Tu primera entrevista en inglés en 30 días o te devuelvo tu dinero, 10 minutos al día desde el celular» compite por resultado, y se puede cobrar varias veces más.
+
+<!-- anim: manual-del-vendedor/cuatro-palancas-del-valor | Cuatro controles suben resultado y certeza y bajan tiempo y esfuerzo, y la oferta de clases de inglés a $15 la hora se reescribe hasta competir por resultado -->
 
 **Plantilla, 10 minutos.** Reescribe tu oferta llenando cuatro líneas:
 
@@ -51,6 +55,8 @@ Nadie sabe su precio correcto el primer día. En vez de adivinar, súbelo por es
 3. **Cuenta por cada 10 conversaciones** cuánto dinero entra: precio × cuántos dijeron sí. Cuando ese dinero baje, regresa un escalón.
 
 Ejemplo ilustrativo de un diseñador web: a $1.500 le dicen sí 5 de 10 ($7.500); a $1.800, 5 de 10 ($9.000); a $2.200, 3 de 10 ($6.600). Su precio es $1.800. Espera a juntar 10 conversaciones por escalón: con 2 o 3, un solo «no» parece tendencia.
+
+<!-- anim: manual-del-vendedor/escalones-de-precio | Tres escalones de precio con sus sí de cada 10 conversaciones muestran que $1.800 deja más dinero que $1.500 y que $2.200 -->
 
 | Escalón | Precio | Dijeron sí (de 10) | Precio × sí |
 |---|---|---|---|
@@ -114,6 +120,8 @@ Nunca preguntes «¿tienes alguna pregunta?». Le das el volante. Mejor: «¿qu�
 
 «No tengo tiempo» casi nunca es la razón real. Una excusa es una cebolla de tres capas (circunstancias, otras personas, él mismo) y la razón está en el centro. No discutas la capa de afuera: pélala.
 
+<!-- anim: manual-del-vendedor/cebolla-de-la-excusa | Una cebolla de tres capas con la excusa «No tengo tiempo» se pela capa por capa: circunstancias, otras personas y él mismo, hasta llegar a la razón real -->
+
 | Excusa | Respuesta |
 |---|---|
 | No tengo tiempo | ¿Cuándo sería mejor momento? Si es nunca, ¿no es justo por eso que lo necesitas? |
@@ -146,6 +154,8 @@ Si no puedes llenar este guion, vuelve al método 6: todavía te faltan pregunta
 Los métodos 2, 6 y 8 dependen de llegar a la llamada sabiendo tres cosas: cuánto puede invertir, para cuándo lo necesita y qué le preocupa. En vez de averiguarlo en la llamada, pregúntalo antes con un formulario de 2 minutos.
 
 **El form: «Antes de tu llamada»** (parte de la plantilla Calificador de leads).
+
+<!-- img: manual-del-vendedor/form-antes-de-tu-llamada | Formulario «Antes de tu llamada» en dForms con la pregunta de rango y sus puntos, y al lado los tres resultados frío, tibio y caliente -->
 
 1. En dForms ve a **Formularios → Crear formulario**, ponle «Antes de tu llamada», elige el diseño **Diapositivas** y empieza con la plantilla **Calificador de leads**. Cambia sus preguntas por estas:
    - ¿Qué quieres resolver? (opción única con tus 3 servicios, sin puntos)

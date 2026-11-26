@@ -39,6 +39,8 @@ Un formulario que califica hace las preguntas por ti antes de que hables con nad
 | ✕ Llamas a ciegas | ✓ Llamas primero al que sí compra |
 | | **Lead caliente · 6 puntos · llámalo hoy** |
 
+<!-- anim: formularios-que-venden-con-ia/contactanos-vs-calificador | Un «Contáctanos» gris con nombre, correo y mensaje se transforma en un formulario de preguntas de un clic que suman puntos hasta marcar «Lead caliente, 6 puntos, llámalo hoy» -->
+
 ### Cómo usar esta guía: 3 pasos, una tarde
 
 1. **Crea tu cuenta gratis** (paso 1). En app.dforms.ai, con tu correo o tu cuenta de Google.
@@ -60,6 +62,8 @@ dForms es un creador de formularios con IA, gratis: sin planes, sin límite de r
 
 **Importante:** usa el mismo correo aquí y al conectar Claude o ChatGPT. Si el conector te rechaza, abre app.dforms.ai otra vez con esa cuenta y vuelve a intentar. «Conecta tu agente», en el menú de la izquierda, tiene la URL y los pasos listos para copiar.
 
+<!-- img: formularios-que-venden-con-ia/inicio-de-dforms | Pantalla de Inicio de app.dforms.ai con el menú de la izquierda y la opción «Conecta tu agente» resaltada -->
+
 ### Lo que tu IA puede hacer en dForms, una vez conectada
 
 - **Crear y publicar:** arma el formulario completo a partir de tu descripción, con lógica y puntos, y te da el link.
@@ -80,6 +84,8 @@ El conector le da a tu IA las herramientas de dForms: crear, publicar y editar f
 
 **URL del conector:** `https://mcp.dforms.ai/mcp`
 
+<!-- anim: formularios-que-venden-con-ia/conector-crea-el-form | En Claude agregas el conector de dForms con su URL, pides tu formulario de cotización y Claude te devuelve el link publicado; lo mismo pasa en ChatGPT con @dForms -->
+
 ### ¿Usas ChatGPT? (app de escritorio)
 
 1. Cambia a modo **Work**, abre **Plugins**, haz clic en **Add** y elige **Create MCP App**.
@@ -96,6 +102,8 @@ Cotizar a ciegas te hace perder tiempo con quien no puede pagar y dinero con qui
 **Lo que arma tu IA:** qué necesita (tus servicios), la pregunta de presupuesto con 3 rangos y puntos, nombre, correo y WhatsApp al final, 3 resultados (básico, normal y completo, uno por rango) y el link público, listo para tu bio.
 
 **Después:** lees el rango y mandas una sola opción, la que sí puede pagar. Nada de cotizaciones bonitas que nunca contestan.
+
+<!-- img: formularios-que-venden-con-ia/formulario-de-cotizacion | Ejemplo del formulario «Cotiza tu página web» que arma tu IA con el prompt 1: la pregunta de presupuesto con 3 rangos y el botón «Quiero mi cotización» -->
 
 **Prompt 1 · Cópialo y pégalo en Claude o ChatGPT** (cambia lo que está entre corchetes)
 
@@ -210,6 +218,8 @@ Los puntos solo sirven si cambian a quién llamas primero. Usa un semáforo: cad
 - **Verde, puntaje alto:** llámalo hoy, en la primera hora si puedes. Abre con lo que contestó.
 - **Amarillo, puntaje medio:** escríbele por WhatsApp esta semana con la opción que le toca.
 - **Rojo, puntaje bajo:** no le cotices a mano. Mándale tu paquete básico o tu contenido gratis.
+
+<!-- anim: formularios-que-venden-con-ia/semaforo-de-respuestas | Las respuestas caen en un semáforo según su puntaje: verde se llama hoy, amarillo recibe un WhatsApp esta semana y rojo recibe el paquete básico o contenido gratis -->
 
 ### Pídeselo a tu IA, con el mismo conector
 

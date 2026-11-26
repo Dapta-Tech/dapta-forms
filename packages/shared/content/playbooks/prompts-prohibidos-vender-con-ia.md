@@ -12,6 +12,8 @@ thumbnailPoster: /playbooks/prompts-prohibidos-vender-con-ia-poster.webp
 ---
 Les decimos prohibidos porque se sienten como hacer trampa: cada prompt de esta guía hace en dos minutos algo que a un vendedor le toma una tarde. Están ordenados por los cuatro momentos que deciden una venta: el primer contacto, el seguimiento, el no-show y la objeción de precio.
 
+<!-- img: prompts-prohibidos-vender-con-ia/cuatro-momentos | Línea de una venta con sus cuatro momentos: primer contacto, seguimiento, no-show y precio, con los prompts de cada nivel debajo -->
+
 Y vienen en 3 niveles, los de tres vendedores distintos:
 
 | Nivel | Qué hace con la IA | Prompts |
@@ -25,6 +27,8 @@ Empieza por tu nivel y sube. Funcionan en ChatGPT, Claude o Gemini, y lo que est
 ## Paso cero: tu ficha de ventas
 
 La razón número uno por la que la IA escribe genérico es que no sabe nada de tu negocio. Llena esta ficha una sola vez, guárdala en tus notas y pégala al inicio de cada chat.
+
+<!-- anim: prompts-prohibidos-vender-con-ia/con-ficha-y-sin-ficha | El mismo pedido en un chat sin ficha da un mensaje genérico; al pegar primero la ficha de ventas, la IA escribe un mensaje que habla de la empresa del prospecto -->
 
 **Prompt 01 · Ficha de ventas.** Úsalo al inicio de cada chat.
 
@@ -130,6 +134,8 @@ ENTREGA: por mensaje, canal, momento y texto. WhatsApp: máximo 40 palabras.
 
 El recordatorio de 24 horas pide una respuesta. Quien contesta «sí» se compromete, y quien no contesta te avisa con tiempo que hay riesgo.
 
+<!-- anim: prompts-prohibidos-vender-con-ia/cadena-anti-no-show | Una línea de tiempo desde que agendas hasta la reunión muestra los recordatorios de la cadena anti no-show y cómo el de 24 horas pide una respuesta que compromete -->
+
 ## Momento 4: «está muy caro»
 
 **$2K · Prompt 08 · Leer la objeción.** Cuando te dicen que está caro.
@@ -176,6 +182,8 @@ Hazlo hábito: en un mes vas a ver el mismo error repetido, y ese es el que más
 ## Nivel $10K: que el filtro trabaje sin ti
 
 Los niveles $2K y $6K te hacen más rápido, pero todavía dependen de ti. Lo que separa al $10K es que parte del trabajo pasa sin él. La mejor forma de manejar la objeción de precio es no llegar a la reunión con alguien que no puede pagar. Para eso, confirma presupuesto, quién decide y urgencia antes de agendar.
+
+<!-- anim: prompts-prohibidos-vender-con-ia/filtro-antes-de-agendar | Tres leads contestan presupuesto, quién decide y urgencia; sus puntos se suman y solo el que pasa el corte ve tu calendario, los demás reciben un recurso gratis -->
 
 **$10K · Prompt 12 · Diseña tu filtro.** Pégalo después de tu ficha.
 
