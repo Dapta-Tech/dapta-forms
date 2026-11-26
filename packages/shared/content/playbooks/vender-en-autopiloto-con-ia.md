@@ -30,6 +30,8 @@ La mayoría de los negocios no pierde ventas por tener un mal producto. Las pier
 
 Las ventas de alto retorno son las que salen de tapar esas fugas, no de conseguir más tráfico. Si hoy cierras 2 de cada 10 personas que te escriben, pasar a 3 de cada 10 es 50% más ventas con la misma gente. Estas son las cinco fugas, y la IA que tapa cada una:
 
+<!-- anim: vender-en-autopiloto-con-ia/cinco-fugas | El camino de la venta es una tubería con 5 fugas por donde se escapan clientes; al taparlas, de cada 10 personas que te escriben cierras 3 en vez de 2 -->
+
 | La fuga | Qué pasa hoy | La IA que la tapa |
 |---|---|---|
 | Fuga 1 · Hablas con todos por igual | Pierdes horas con gente que nunca iba a comprar, y el cliente bueno espera su turno. | Formularios que califican |
@@ -39,6 +41,8 @@ Las ventas de alto retorno son las que salen de tapar esas fugas, no de consegui
 | Fuga 5 · Copias datos a mano | Pasas leads de una app a otra, se te escapan algunos y nadie les da seguimiento. | Flujos con IA |
 
 **La regla del autopiloto:** la IA hace lo repetitivo: contestar, preguntar, llamar, anotar y pasar datos. Tú haces lo único que vale caro: la conversación que cierra la venta.
+
+<!-- img: vender-en-autopiloto-con-ia/la-ia-y-tu | Reparto de trabajo del autopiloto: la IA contesta, pregunta, llama, anota y pasa datos, y tú haces la conversación que cierra la venta -->
 
 **Cómo usar esta guía**
 
@@ -158,6 +162,8 @@ Las ventas de alto retorno son las que salen de tapar esas fugas, no de consegui
 > Si el puntaje pasa de 60: WhatsApp + llamada
 > Siempre: HubSpot + aviso en Gmail
 
+<!-- anim: vender-en-autopiloto-con-ia/flujo-lead-nuevo | Llega una respuesta de dForms y el flujo decide: si el puntaje pasa de 60 activa WhatsApp y llamada, y siempre la manda a HubSpot con aviso en Gmail -->
+
 **Configúralo en 3 pasos**
 
 1. Conecta tu CRM, tu correo y tus hojas.
@@ -177,6 +183,8 @@ Las ventas de alto retorno son las que salen de tapar esas fugas, no de consegui
 | 03 · Llamada | Le llamas en minutos. Cita agendada |
 | 04 · Notas | Cierras la venta. Seguimiento escrito |
 | 05 · Flujos | Todo queda anotado. CRM al día |
+
+<!-- anim: vender-en-autopiloto-con-ia/sistema-completo | Un lead recorre las 5 herramientas en orden: el formulario lo califica, WhatsApp le contesta, el agente le llama, las notas guardan el seguimiento y los flujos dejan el CRM al día -->
 
 | Herramienta | Cuánto cuesta empezar |
 |---|---|

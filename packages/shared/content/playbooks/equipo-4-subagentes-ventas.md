@@ -14,6 +14,8 @@ Un buen SDR hace cuatro trabajos distintos cada día: investiga a la cuenta, dec
 
 Claude Code te deja separar esos cuatro trabajos en **subagentes**: asistentes especializados, cada uno con sus instrucciones, sus herramientas permitidas y su propia memoria de trabajo. Un orquestador (tu sesión principal) les reparte el trabajo y junta los resultados. Tú revisas y apruebas.
 
+<!-- anim: equipo-4-subagentes-ventas/orquestador-y-4-subagentes | Un solo chat que investiga, califica, redacta y da seguimiento se satura; al separarlo en 4 subagentes con su propio contexto, el orquestador reparte el trabajo y tú apruebas -->
+
 Esta guía te da los 4 roles, la configuración de cada uno lista para copiar y una rutina diaria de 20 minutos. No necesitas saber programar, pero sí sentirte cómodo abriendo una terminal.
 
 ## Qué es un subagente, en simple
@@ -63,6 +65,8 @@ Reglas:
 - Corre el investigador en paralelo por lotes de 5 cuentas.
 ```
 
+<!-- anim: equipo-4-subagentes-ventas/flujo-de-archivos | Una lista de cuentas pasa por los 4 subagentes y deja un archivo en cada paso, de la entrada a la lista de hoy, y ningún mensaje se envía solo -->
+
 ## La configuración de los 4, lista para copiar
 
 Crea cada archivo en `.claude/agents/`.
@@ -99,6 +103,8 @@ Veredicto: AGENDA (7 o más), NUTRE (4 a 6), DESCARTA (0 a 3).
 Escribe una fila por cuenta en leads/calificados.csv: empresa, puntaje, veredicto y una línea de por qué.
 No uses nada que no esté en la ficha.
 ```
+
+<!-- anim: equipo-4-subagentes-ventas/puntaje-del-calificador | El calificador suma encaje, señales del problema y momento hasta 10 puntos y da el veredicto; un descalificador deja el puntaje en 0 -->
 
 **`redactor.md`**
 
@@ -140,6 +146,8 @@ Cada mañana:
 3. **5 minutos.** Abre los borradores de AGENDA, edita lo que suene raro y envía tú desde tu correo o LinkedIn.
 4. **Fin del día.** Dile al orquestador qué enviaste y quién respondió: «Actualiza el registro: envié a estas 6, respondieron 2». El subagente de seguimiento lo anota.
 
+<!-- img: equipo-4-subagentes-ventas/rutina-diaria | La rutina diaria de 20 minutos en una línea de tiempo: 5 minutos para cargar la lista, 10 para revisar veredictos, 5 para editar y enviar tú, y el registro al final del día -->
+
 ## Costos, trampas y cuándo no hacerlo
 
 - **Cada subagente gasta tokens.** Correr 4 especialistas por cuenta cuesta más que un solo chat. Empieza con lotes chicos y mira tu consumo antes de pasar a 50 cuentas al día.
@@ -151,6 +159,8 @@ Cada mañana:
 ## Hazlo con dForms
 
 La mejor lista para tu equipo no es una base comprada: son las personas que llenaron tu formulario, con sus respuestas y su puntaje. Conecta las dos cosas.
+
+<!-- img: equipo-4-subagentes-ventas/form-al-equipo | Diagrama: las respuestas del formulario «Solicitud de demo» pasan por el conector de dForms a Claude Code y entran a la lista del investigador -->
 
 **El form: «Solicitud de demo»** (plantilla Calificador de leads).
 

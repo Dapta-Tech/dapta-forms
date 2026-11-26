@@ -20,6 +20,8 @@ Esta guía está escrita para equipos de ventas, no para programadores. Si solo 
 
 Cuando alguien pide «los mejores [categoría] para [caso]», ChatGPT, Gemini, Perplexity y el modo IA de Google casi siempre buscan en internet en ese momento. No responden de memoria: parten la pregunta en varias búsquedas más chicas, leen listas, reseñas, foros, videos y sitios, y nombran a las marcas que aparecen una y otra vez.
 
+<!-- anim: chatgpt-recomiende-tu-marca/consenso-de-fuentes | La IA parte una pregunta en varias búsquedas, lee listas, reseñas, foros y videos, y nombra a las marcas que más fuentes repiten, no a la que tiene el mejor sitio -->
+
 **Gana el que más gente nombra, no el que tiene mejor sitio.** La IA premia el consenso. Si muchas fuentes independientes hablan de ti, te nombra. Si solo tu sitio habla de ti, casi nunca. En un análisis de Ahrefs sobre 75.000 marcas (diciembre de 2025), las menciones de la marca en la web se relacionaron con aparecer en respuestas de IA mucho más que la autoridad del dominio, y las menciones en YouTube fueron la señal más fuerte.
 
 **No existe el «puesto 1 en ChatGPT».** La misma pregunta da listas distintas casi cada vez. Lo que se mide es en cuántas respuestas apareces, no en qué lugar.
@@ -31,6 +33,8 @@ Cuando alguien pide «los mejores [categoría] para [caso]», ChatGPT, Gemini, P
 ## 2. El test de 15 minutos
 
 Antes de cambiar nada, mira dónde estás. Abre un chat nuevo en ChatGPT, Gemini y Perplexity. Pega cada prompt, cambia lo que está entre [corchetes] y córrelo 3 veces, porque las respuestas cambian.
+
+<!-- anim: chatgpt-recomiende-tu-marca/apareces-en-x-de-3 | El mismo prompt corrido 3 veces en ChatGPT, Gemini y Perplexity da listas distintas; lo que cuentas es en cuántas respuestas aparece tu marca -->
 
 1. **¿Te recomienda?** «Soy [tipo de comprador] en [ciudad o país] y busco [lo que vendes]. ¿Cuáles son las 5 mejores opciones y por qué? Cita tus fuentes.»
 2. **¿Contra quién pierdes?** «Compara [tu marca] con [competidor A] y [competidor B] para [caso de uso]. ¿Para quién es mejor cada uno? Dime qué fuentes usaste.»
@@ -131,9 +135,13 @@ Dos formularios cubren la medición y las reseñas, las dos palancas que más de
 
 Conecta HubSpot en **Conectar → Integraciones** y asigna la primera a una propiedad «Origen declarado». En un mes sabes cuántos leads te manda la IA, y las respuestas a la segunda son tus próximas preguntas frecuentes, con las palabras exactas de tus clientes.
 
+<!-- img: chatgpt-recomiende-tu-marca/como-nos-encontraste | La pregunta «¿Cómo nos encontraste?» con sus 5 opciones en un formulario y, al lado, la propiedad «Origen declarado» de HubSpot que se llena con la respuesta -->
+
 **2. Encuesta posventa que pide la reseña solo a los contentos.** Crea un formulario con la plantilla **Encuesta de opinión**, diseño **Diapositivas**, y déjala en dos preguntas:
 
 - Del 0 al 10, ¿qué tan probable es que nos recomiendes? (deslizador con puntos: 0 a 6 vale 0, 7 a 8 vale 1, 9 a 10 vale 2)
 - ¿Qué fue lo que más te sirvió? (texto corto)
 
 En **Lógica → Puntaje** activa el puntaje y en **Lógica → Resultados** crea dos rangos. Al rango de 2 puntos ponle como final la redirección a tu link de reseñas (Google, G2 o Trustpilot), con el mensaje «¿Nos ayudas con una reseña de 2 minutos?». Al de 0 y 1, un mensaje de agradecimiento y aviso por correo a tu equipo para llamarlo. Mándalo a cada cliente 7 días después de la entrega.
+
+<!-- anim: chatgpt-recomiende-tu-marca/resena-solo-a-los-contentos | Tus clientes contestan del 0 al 10 si te recomendarían; los de 9 y 10 van directo a dejar una reseña y los demás reciben las gracias y tu equipo recibe un aviso para llamarlos -->
