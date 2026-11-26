@@ -437,9 +437,17 @@ per-person state is keyed by it), with the front matter `slug`, `category`
 (a date in Bogota time, or an ISO date-time with its offset), `template`, and
 optionally `promisedBy` (`[ig_handle, ...]`), `thumbnailVideo`,
 `thumbnailPoster` and `thumbnailMotif`; split the body with one line holding
-only `<!-- muro -->` (above it, the public preview). Then run
-`pnpm --filter @quill/shared playbooks`, which regenerates
-`src/playbooks.generated.ts` and refuses anything malformed. A playbook with
+only `<!-- muro -->` (above it, the public preview). To place an animation or
+a still inside the text, give it a line of its own:
+`<!-- anim: <slug>/<name> | <alt> -->` or `<!-- img: <slug>/<name> | <alt> -->`
+(`slug` is the playbook's, `name` is `[a-z0-9-]+`, the alt is required), with
+the files in `apps/web/public/playbooks/inline/<slug>/`: `<name>.webm`,
+`<name>.mp4` and `<name>-poster.webp` for an animation, `<name>.webp` for an
+image. Then run `pnpm --filter @quill/shared playbooks`, which regenerates
+`src/playbooks.generated.ts` and refuses anything malformed, and, if you added
+inline assets, `pnpm --filter @quill/web playbook-media`, which records their
+sizes (a web spec fails when a marker names a missing file or the sizes are
+stale). A playbook with
 `promisedBy` exposes its whole body on `GET /v1/public/playbooks`.
 Set `publishedAt` to a moment AFTER the release reaches production: "New" is
 a playbook published after the person's last gallery visit, so one that

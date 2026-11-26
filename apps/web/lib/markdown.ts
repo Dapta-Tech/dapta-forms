@@ -4,14 +4,22 @@
  * bold, italics, inline code and links), turned into a tree of plain data.
  * The component that draws it (`components/playbooks/markdown-view.tsx`)
  * makes React elements from that tree, so text is always text: raw HTML in a
- * file is never interpreted (an HTML comment line, like the `<!-- muro -->`
- * marker, is dropped; anything else shows as the characters it is), and a
- * link only becomes a link when it points at `https:`, `http:` or a path of
- * this app.
+ * file is never interpreted (an HTML comment, on one line or several, like
+ * the `<!-- muro -->` marker, is dropped; anything else shows as the
+ * characters it is), and a link only becomes a link when it points at
+ * `https:`, `http:` or a path of this app.
+ *
+ * The one comment that means something is an inline media marker, on a line
+ * of its own: `<!-- anim: slug/name | alt -->` or `<!-- img: slug/name | alt -->`
+ * (grammar in `@quill/shared`, `playbook-media.ts`). It becomes a `media`
+ * block, drawn as a figure; a marker that does not parse is dropped like any
+ * other comment.
  *
  * No library: the repo has no markdown dependency, and the playbooks are ours,
  * reviewed in a pull request, so the subset is known.
  */
+
+import { parsePlaybookMediaMarker, type PlaybookMedia } from '@quill/shared';
 
 export type Inline =
   | { kind: 'text'; text: string }
@@ -22,6 +30,7 @@ export type Inline =
 
 export type Block =
   | { kind: 'heading'; level: 1 | 2 | 3 | 4; text: string }
+  | { kind: 'media'; media: PlaybookMedia }
   | { kind: 'paragraph'; text: string }
   | { kind: 'list'; ordered: boolean; start: number; items: Block[][] }
   | { kind: 'quote'; blocks: Block[] }
@@ -35,7 +44,8 @@ const RULE = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const QUOTE = /^\s{0,3}>\s?/;
 const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])(\s+|$)(.*)$/;
 const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
-const COMMENT = /^\s*<!--.*-->\s*$/;
+/** A line that opens an HTML comment; it may close on this line or a later one. */
+const COMMENT = /^\s*<!--/;
 
 const isBlank = (line: string) => line.trim() === '';
 const indentOf = (line: string) => line.length - line.trimStart().length;
@@ -107,13 +117,36 @@ function parseList(lines: string[], start: number): [Block, number] {
   return [{ kind: 'list', ordered, start: ordered ? Number.parseInt(first[2]!, 10) || 1 : 1, items }, i];
 }
 
-function parseLines(lines: string[]): Block[] {
+function parseLines(input: string[]): Block[] {
+  // A copy: a comment that closes mid-line leaves the rest of that line to read.
+  const lines = [...input];
   const out: Block[] = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
-    if (isBlank(line) || COMMENT.test(line)) {
+    if (isBlank(line)) {
       i += 1;
+      continue;
+    }
+    if (COMMENT.test(line)) {
+      const media = parsePlaybookMediaMarker(line);
+      if (media) {
+        out.push({ kind: 'media', media });
+        i += 1;
+        continue;
+      }
+      // Any other comment is dropped up to its close, like a browser would,
+      // and to the end of the text when it never closes.
+      let j = i;
+      let close = line.indexOf('-->', line.indexOf('<!--') + 4);
+      while (close < 0 && ++j < lines.length) close = lines[j]!.indexOf('-->');
+      if (close < 0) break;
+      const after = lines[j]!.slice(close + 3);
+      if (isBlank(after)) i = j + 1;
+      else {
+        lines[j] = after;
+        i = j;
+      }
       continue;
     }
     if (FENCE.test(line)) {
@@ -209,6 +242,14 @@ export function parseInline(text: string): Inline[] {
       buf += text[i + 1];
       i += 2;
       continue;
+    }
+    // An inline HTML comment is not text.
+    if (text.startsWith('<!--', i)) {
+      const end = text.indexOf('-->', i + 4);
+      if (end >= 0) {
+        i = end + 3;
+        continue;
+      }
     }
     if (c === '`') {
       const end = text.indexOf('`', i + 1);

@@ -10,7 +10,7 @@
  * in step at compile time.
  */
 import type { FormsMessages } from '@quill/shared';
-import { t } from '@quill/shared';
+import { stripHtmlComments, t } from '@quill/shared';
 import type { PlaybookCategory } from '@quill/shared/playbooks';
 
 type PlaybooksMessages = FormsMessages['admin']['playbooks'];
@@ -144,9 +144,13 @@ export function newSinceLabel(newCount: number, m: PlaybooksMessages): string | 
   return newCount === 1 ? m.newSinceOne : t(m.newSinceOther, { count: newCount });
 }
 
-/** Minutes to read a markdown text at 200 words a minute, at least one. */
+/**
+ * Minutes to read a markdown text at 200 words a minute, at least one. HTML
+ * comments (the inline media markers among them) are not read, so they do
+ * not count.
+ */
 export function readingMinutes(markdown: string): number {
-  const words = markdown.replace(/[#>*`|_-]+/g, ' ').split(/\s+/).filter(Boolean).length;
+  const words = stripHtmlComments(markdown).replace(/[#>*`|_-]+/g, ' ').split(/\s+/).filter(Boolean).length;
   return Math.max(1, Math.ceil(words / 200));
 }
 

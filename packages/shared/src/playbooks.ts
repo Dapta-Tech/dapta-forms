@@ -18,6 +18,7 @@
  * Framework-free: the API decides what a person gets with these helpers, and
  * the landing's build reads the same entries through `GET /v1/public/playbooks`.
  */
+import { playbookMediaIn, stripHtmlComments, type PlaybookMedia } from './playbook-media';
 import { PLAYBOOK_SOURCES } from './playbooks.generated';
 
 /** The gallery's tabs, in the order they show. Keep in step with `CATEGORIES` in scripts/playbooks.mjs. */
@@ -127,11 +128,18 @@ export function playbookOutline(p: Playbook): string[] {
 /**
  * Minutes to read the whole body, preview and rest, at
  * `PLAYBOOK_WORDS_PER_MINUTE`, rounded up and never under 1. A word is a run
- * of letters, digits or underscores, so markdown punctuation does not count.
+ * of letters, digits or underscores, so markdown punctuation does not count,
+ * and HTML comments (the `<!-- anim: ... -->` and `<!-- img: ... -->`
+ * markers among them) are not read, so they do not count either.
  */
 export function playbookReadingMinutes(p: Playbook): number {
-  const words = playbookBody(p).match(/[\p{L}\p{N}_]+/gu)?.length ?? 0;
+  const words = stripHtmlComments(playbookBody(p)).match(/[\p{L}\p{N}_]+/gu)?.length ?? 0;
   return Math.max(1, Math.ceil(words / PLAYBOOK_WORDS_PER_MINUTE));
+}
+
+/** The inline animations and images of the whole body, in order (see `playbook-media.ts`). */
+export function playbookMedia(p: Playbook): PlaybookMedia[] {
+  return playbookMediaIn(playbookBody(p));
 }
 
 /** Whether a guide promises this playbook, which makes its whole body public. */
