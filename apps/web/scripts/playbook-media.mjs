@@ -5,7 +5,8 @@
 // figure its width and height and the text never jumps when a picture loads.
 //
 //   node scripts/playbook-media.mjs          write lib/playbook-media.generated.ts
-//   node scripts/playbook-media.mjs --check  fail if it is stale, or a still is not a WebP it can read
+//   node scripts/playbook-media.mjs --check  fail if it is stale, a still is not a WebP it can read,
+//                                            or an asset is too heavy (see MAX_BYTES)
 //
 // Run it after adding or replacing an inline asset. `lib/playbook-media.spec.ts`
 // runs `--check`, and also fails when a marker of the catalog
@@ -18,6 +19,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const web = resolve(here, '..');
 export const MEDIA_DIR = join(web, 'public', 'playbooks', 'inline');
 export const OUT_FILE = join(web, 'lib', 'playbook-media.generated.ts');
+
+/**
+ * The most an inline asset may weigh: a playbook carries several, and each
+ * loads as its reader scrolls, on a phone too. 300 KB for a video (the webm
+ * and the mp4 of a loop), 200 KB for an image (a still or a loop's poster).
+ */
+export const MAX_BYTES = { video: 300 * 1024, image: 200 * 1024 };
+const VIDEO = /\.(?:webm|mp4)$/;
+const IMAGE = /\.(?:webp|png|jpe?g|avif|gif)$/;
 
 /**
  * The width and height of a WebP, read from its header: the simple lossy
@@ -69,6 +79,18 @@ export function readMediaSizes(dir = MEDIA_DIR) {
   return sizes;
 }
 
+/** The assets under `dir` heavier than `MAX_BYTES`, as `{ file, bytes, max }` sorted by path. */
+export function oversizedMediaFiles(dir = MEDIA_DIR, max = MAX_BYTES) {
+  const out = [];
+  for (const path of walk(dir)) {
+    const limit = VIDEO.test(path) ? max.video : IMAGE.test(path) ? max.image : null;
+    if (limit === null) continue;
+    const bytes = statSync(path).size;
+    if (bytes > limit) out.push({ file: relative(dir, path).split(sep).join('/'), bytes, max: limit });
+  }
+  return out;
+}
+
 /** The files of `files` (paths relative to `dir`) that are not there. */
 export function missingMediaFiles(files, dir = MEDIA_DIR) {
   return files.filter((f) => !existsSync(join(dir, f)));
@@ -98,6 +120,12 @@ function main() {
   }
   const current = existsSync(OUT_FILE) ? readFileSync(OUT_FILE, 'utf8') : '';
   if (check) {
+    const heavy = oversizedMediaFiles();
+    if (heavy.length > 0) {
+      const kb = (n) => `${Math.round(n / 1024)} KB`;
+      for (const h of heavy) console.error(`playbook-media: ${h.file} weighs ${kb(h.bytes)}, over the ${kb(h.max)} limit`);
+      process.exit(1);
+    }
     if (current !== next) {
       console.error('playbook-media: lib/playbook-media.generated.ts is out of date. Run `node apps/web/scripts/playbook-media.mjs`.');
       process.exit(1);

@@ -446,8 +446,8 @@ the files in `apps/web/public/playbooks/inline/<slug>/`: `<name>.webm`,
 image. Then run `pnpm --filter @quill/shared playbooks`, which regenerates
 `src/playbooks.generated.ts` and refuses anything malformed, and, if you added
 inline assets, `pnpm --filter @quill/web playbook-media`, which records their
-sizes (a web spec fails when a marker names a missing file or the sizes are
-stale). A playbook with
+sizes (a web spec fails when a marker names a missing file, the sizes are
+stale, or a video weighs over 300 KB or an image over 200 KB). A playbook with
 `promisedBy` exposes its whole body on `GET /v1/public/playbooks`.
 Set `publishedAt` to a moment AFTER the release reaches production: "New" is
 a playbook published after the person's last gallery visit, so one that

@@ -129,6 +129,27 @@ describe('the catalog build', () => {
     expect(() => parse('Intro. <!-- nota --> fin.\n<!-- muro -->\nRest.')).not.toThrow();
     expect(() => parse('Intro.\n<!-- muro -->\nRest.\n<!-- nota sin cerrar\nY esto no se vería.')).toThrow(/:12: an HTML comment is opened here and never closed/);
   });
+
+  it('reads what follows the close of a multi-line comment with the same rules', () => {
+    // Line 10 opens the comment; it closes on line 11, and the rest of that line is read again.
+    expect(() => parse(`Intro.\n<!-- nota\nfin -->Texto <!-- anim: ${SLUG}/demo | Alt -->\n<!-- muro -->\nRest.`)).toThrow(
+      /:11: an anim or img marker must be a line of its own/,
+    );
+    expect(() => parse(`Intro.\n<!-- nota\nfin --><!-- img: otro/demo | Alt -->\n<!-- muro -->\nRest.`)).toThrow(
+      /:11: img marker names the playbook otro/,
+    );
+    expect(() => parse('Intro.\n<!-- muro -->\n<!-- nota\nfin --> y otra <!-- sin cerrar\nRest.')).toThrow(
+      /:12: an HTML comment is opened here and never closed/,
+    );
+    // A valid marker right after the close is a marker, as the reader sees it.
+    expect(() => parse(`Intro.\n<!-- nota\nfin --><!-- anim: ${SLUG}/demo | Alt -->\n<!-- muro -->\nRest.`)).not.toThrow();
+    expect(() => parse('Intro.\n<!-- nota\nfin --> texto.\n<!-- muro -->\nRest.')).not.toThrow();
+  });
+
+  it('refuses a comment that wraps the wall', () => {
+    expect(() => parse('Intro.\n<!-- nota\n<!-- muro -->\n-->\nRest.')).toThrow(/:11: <!-- muro --> is inside the HTML comment opened on line 10/);
+    expect(() => parse('Intro.\n<!-- nota -->\n<!-- muro -->\nRest.')).not.toThrow();
+  });
 });
 
 const playbook = (preview: string, rest: string): Playbook => ({
@@ -155,6 +176,11 @@ describe('reading time and outline', () => {
     expect(playbookReadingMinutes(p)).toBe(1);
     expect(playbookOutline(p)).toEqual(['Paso']);
     expect(playbookMedia(p).map((m) => m.kind)).toEqual(['anim', 'anim']);
+  });
+
+  it('leaves out the headings inside a comment, on one line or several', () => {
+    const rest = ['## Uno', '<!--', '## Oculto', '-->', '## Dos', '<!-- ## Tampoco -->', '<!-- nota', 'sigue --><!--', '## Oculto 2', '-->', '```', '<!--', '```', '## Tres'].join('\n');
+    expect(playbookOutline(playbook('Intro.', rest))).toEqual(['Uno', 'Dos', 'Tres']);
   });
 
   it('strips every comment, on one line or several', () => {

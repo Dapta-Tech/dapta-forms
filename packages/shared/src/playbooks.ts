@@ -110,12 +110,30 @@ export const PLAYBOOK_WORDS_PER_MINUTE = 200;
 
 /**
  * The `## ` headings of the rest, in order, skipping any inside a fenced code
- * block: what a locked page lists as still to read, without the text itself.
+ * block or an HTML comment (on one line or several, as the reader drops it):
+ * what a locked page lists as still to read, without the text itself.
  */
 export function playbookOutline(p: Playbook): string[] {
   const out: string[] = [];
   let inCode = false;
-  for (const line of p.rest.split('\n')) {
+  let inComment = false;
+  for (const raw of p.rest.split('\n')) {
+    let line = raw;
+    // Drop the comments this line opens or closes; what follows a close is read again.
+    for (;;) {
+      if (inComment) {
+        const close = line.indexOf('-->');
+        if (close < 0) {
+          line = '';
+          break;
+        }
+        inComment = false;
+        line = line.slice(close + 3);
+      } else if (!inCode && /^\s*<!--/.test(line)) {
+        inComment = true;
+        line = line.slice(line.indexOf('<!--') + 4);
+      } else break;
+    }
     if (line.startsWith('```')) inCode = !inCode;
     else if (!inCode && line.startsWith('## ')) {
       const title = line.slice(3).trim();

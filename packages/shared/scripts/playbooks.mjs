@@ -27,7 +27,8 @@
  * `<!-- img: <slug>/<name> | <alt> -->` (a still). The grammar is the one of
  * `src/playbook-media.ts`; here a line that means to be a marker and is not a
  * valid one, or names another playbook, fails the build, and so does an HTML
- * comment that is never closed (the reader would hide the rest of the text).
+ * comment that is never closed (the reader would hide the rest of the text)
+ * or that wraps the `<!-- muro -->` line.
  * Whether the files exist is checked in the web app, which serves them
  * (`apps/web/lib/playbook-media.spec.ts`): a package never reads an app.
  */
@@ -97,17 +98,36 @@ export function readMediaMarker(file, lineNo, line, slug) {
 
 /**
  * The inline media markers of a body, checked; also refuses an HTML comment
- * that never closes. Fenced code is skipped: a marker shown as code is code.
- * `firstLine` is the file line of `body[0]`.
+ * that never closes, and one that wraps the `<!-- muro -->` line (body index
+ * `wallAt`), which would hide the end of the preview and show a stray `-->`
+ * at the top of the rest. Fenced code is skipped: a marker shown as code is
+ * code. When a comment closes partway through a line, what follows the close
+ * is read with the same rules, as the reader does. `firstLine` is the file
+ * line of `body[0]`.
  */
-export function readMediaMarkers(file, body, firstLine, slug) {
+export function readMediaMarkers(file, body, firstLine, slug, wallAt = -1) {
   const out = [];
   let inCode = false;
   let openedAt = 0;
+  // A whole line, or what a closing comment leaves of one.
+  const read = (text, lineNo) => {
+    if (MEDIA_HINT.test(text)) {
+      out.push(readMediaMarker(file, lineNo, text, slug));
+      return;
+    }
+    // Any other comment is free, but it must close, or the reader would drop everything after it.
+    const without = text.replace(/<!--[\s\S]*?-->/g, '');
+    if (without.includes('<!--')) openedAt = lineNo;
+  };
   body.forEach((line, k) => {
     const lineNo = firstLine + k;
     if (openedAt) {
-      if (line.includes('-->')) openedAt = 0;
+      if (k === wallAt) fail(file, lineNo, `${MARKER} is inside the HTML comment opened on line ${openedAt}`);
+      const close = line.indexOf('-->');
+      if (close === -1) return;
+      openedAt = 0;
+      const after = line.slice(close + 3);
+      if (after.trim() !== '') read(after, lineNo);
       return;
     }
     if (/^\s*```/.test(line)) {
@@ -115,13 +135,7 @@ export function readMediaMarkers(file, body, firstLine, slug) {
       return;
     }
     if (inCode) return;
-    if (MEDIA_HINT.test(line)) {
-      out.push(readMediaMarker(file, lineNo, line, slug));
-      return;
-    }
-    // Any other comment is free, but it must close, or the reader would drop everything after it.
-    const without = line.replace(/<!--[\s\S]*?-->/g, '');
-    if (without.includes('<!--')) openedAt = lineNo;
+    read(line, lineNo);
   });
   if (openedAt) fail(file, openedAt, 'an HTML comment is opened here and never closed');
   return out;
@@ -246,7 +260,7 @@ export function parsePlaybook(file, text) {
   const rest = body.slice(at + 1).join('\n').trim();
   if (preview === '') fail(file, 0, `nothing above ${MARKER}: the preview is empty`);
   if (rest === '') fail(file, 0, `nothing below ${MARKER}: the rest is empty`);
-  readMediaMarkers(file, body, end + 2, meta.slug);
+  readMediaMarkers(file, body, end + 2, meta.slug, at);
 
   return {
     slug: meta.slug,
