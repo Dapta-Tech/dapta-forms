@@ -7,6 +7,8 @@ publishedAt: 2026-11-26
 promisedBy: []
 template: "Desde cero: «3 preguntas a tus clientes» con deslizadores (tiempo, leads perdidos, costo) para sacar el número del hook"
 thumbnailMotif: "Un feed baja rápido y se frena en seco cuando aparece un número grande en rojo; el contador de scroll se detiene y el CTR sube."
+thumbnailVideo: /playbooks/hook-de-dolor.webm
+thumbnailPoster: /playbooks/hook-de-dolor-poster.webp
 ---
 Esta guía es para quien ya corre anuncios, ya sabe que el hook importa y sigue sin entender por qué su CTR no despega y su costo por lead sigue alto. La respuesta casi siempre está en los primeros segundos. Más exacto: en la ausencia de un número.
 

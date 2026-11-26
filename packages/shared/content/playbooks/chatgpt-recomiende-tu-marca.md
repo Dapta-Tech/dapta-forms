@@ -7,6 +7,8 @@ publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads + Encuesta de opinión (plantillas `lead` y `feedback` del builder): «¿Cómo nos encontraste?» en tu form de leads y encuesta posventa de 0 a 10 que manda a los contentos a dejar reseña"
 thumbnailMotif: "Una ventana de chat escribe «Estas son 3 opciones…» y en el puesto 2 aparece «Tu marca» resaltada en verde mientras caen íconos de reseñas y un hilo de foro."
+thumbnailVideo: /playbooks/chatgpt-recomiende-tu-marca.webm
+thumbnailPoster: /playbooks/chatgpt-recomiende-tu-marca-poster.webp
 ---
 Antes, tu cliente buscaba en Google, abría cinco pestañas y comparaba. Hoy escribe «recomiéndame un [lo que vendes] en [ciudad]» y recibe tres nombres. Si el tuyo no está, no perdiste un clic: perdiste la conversación completa.
 

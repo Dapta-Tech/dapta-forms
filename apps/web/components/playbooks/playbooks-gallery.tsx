@@ -194,9 +194,9 @@ export function PlaybooksGallery({
                     video={card.thumbnailVideo}
                     poster={card.thumbnailPoster}
                     category={card.category}
-                    className="aspect-[67/36] w-full shrink-0 border-b border-border"
+                    className="aspect-[29/18] w-full shrink-0 border-b border-border"
                   />
-                  <span className="flex flex-1 items-center gap-3 px-4 pb-4 pt-3.5">
+                  <span className="flex flex-1 items-stretch gap-3 px-4 pb-4 pt-3.5">
                     <span className="flex min-w-0 flex-1 flex-col gap-2.5">
                       {/* On a phone the card is a row of the list: the category
                           leads and the summary steps aside, as in the design. */}
@@ -207,7 +207,11 @@ export function PlaybooksGallery({
                         <StatusLine status={playbookStatus(card, now, m.status, locale, timeZone)} />
                       </span>
                     </span>
-                    <i aria-hidden className="pi pi-chevron-right text-faint sm:hidden" style={{ fontSize: 14 }} />
+                    {/* The row's chevron, on a phone only. The wrapper hides it:
+                        the icon sheet's own `display` outranks a utility on the <i>. */}
+                    <span aria-hidden className="flex shrink-0 items-center text-faint sm:hidden">
+                      <i className="pi pi-chevron-right" style={{ fontSize: 14 }} />
+                    </span>
                   </span>
                 </Link>
               </li>

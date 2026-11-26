@@ -4,7 +4,8 @@ import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 /**
  * A playbook card's picture: a short muted loop (webm, with an mp4 beside it
- * for Safari) over its poster, or the poster alone, or a quiet tile in the
+ * for Safari; rendered at 464 x 288, so the card keeps that ratio) over its
+ * poster, or the poster alone, or a quiet tile in the
  * category's tint while the catalog has neither.
  *
  * The loop never loads before it is needed (`preload="none"`), plays only

@@ -7,6 +7,8 @@ publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder), adaptado: «Antes de tu llamada» con presupuesto, urgencia y qué le preocupa; 3 rangos y agenda solo para calientes"
 thumbnailMotif: "Una etiqueta de precio sube de $15 a $490 mientras 4 palancas (resultado, certeza, tiempo, esfuerzo) se mueven; al final un apretón de manos con un check verde."
+thumbnailVideo: /playbooks/manual-del-vendedor.webm
+thumbnailPoster: /playbooks/manual-del-vendedor-poster.webp
 ---
 Un negocio vende cuando tres cosas funcionan juntas: una oferta que vale lo que cobras, gente que llega a pedirla y una conversación que termina en sí. Si una falla, las otras dos no alcanzan.
 
