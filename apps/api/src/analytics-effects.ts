@@ -8,12 +8,17 @@ import { currentAnalyticsSessionId } from './analytics-session';
  * The durable payload an `analytics` outbox row carries: one product-analytics
  * event about a person who USES Dapta Forms.
  *
- * Deliberately small and PII-light. `distinctId` is the member's email — the
- * same identifier the rest of the Dapta estate identifies people by, so a user
- * who arrives from the Dapta admin panel is ONE person and not two. Beyond that
- * identifier, nothing personal is serialized here: no answers, no respondent
- * data, no secrets. A form's respondents are NOT users of this product and are
- * never captured.
+ * Deliberately small and PII-light. `distinctId` is the member's email for
+ * events about a person who uses the product: the same identifier the rest of
+ * the Dapta estate identifies people by, so a user who arrives from the Dapta
+ * admin panel is ONE person and not two. Beyond that identifier, nothing
+ * personal is serialized here: no answers, no respondent data, no secrets.
+ *
+ * A form's respondents are NOT users of this product. Exactly one event is
+ * about them, `forms_response_completed` (see `response-completed-event.ts`),
+ * and it records THAT a response arrived, never WHO sent it or WHAT it said:
+ * its distinct id is a random id the renderer minted for that response (or
+ * `response:<id>` with no person profile), never an email.
  */
 /** Flat primitives only: the vendor indexes them, and nested values would hide PII. */
 export type AnalyticsProperties = Record<string, string | number | boolean | null>;
@@ -25,6 +30,8 @@ export interface AnalyticsCaptureInput {
   properties?: AnalyticsProperties;
   /** Set on the person (`$set`) besides the email. See AnalyticsEventPayload. */
   personProperties?: AnalyticsProperties;
+  /** The event's own id, for the vendor to drop a repeated delivery. See AnalyticsEventPayload. */
+  uuid?: string;
 }
 
 export interface AnalyticsEventPayload {
@@ -46,6 +53,13 @@ export interface AnalyticsEventPayload {
   personProperties?: AnalyticsProperties;
   /** The account the event belongs to; becomes the `forms_account` group. */
   accountId: string | null;
+  /**
+   * The event's id (a UUID) when the call site has a natural one, sent as the
+   * vendor's event `uuid`, which it deduplicates on. A row the worker retries
+   * after the vendor accepted it but the reply was lost then counts once.
+   * Absent on every other event, so their rows read exactly as before.
+   */
+  uuid?: string;
   /** Epoch-ms the event actually happened — NOT when the row is drained. */
   timestamp: number;
 }
@@ -100,6 +114,11 @@ export class AnalyticsEffects {
   /** True when this deployment has product analytics configured at all. */
   get enabled(): boolean {
     return Boolean(this.env.PRODUCT_ANALYTICS_KEY);
+  }
+
+  /** The deployment's staff email domains (`IAM_STAFF_DOMAINS`), to tag internal tests. */
+  get staffDomains(): readonly string[] {
+    return this.env.IAM_STAFF_DOMAINS ?? [];
   }
 
   /**
@@ -158,6 +177,7 @@ export class AnalyticsEffects {
         distinctId: input.distinctId,
         properties,
         ...(input.personProperties ? { personProperties: input.personProperties } : {}),
+        ...(input.uuid ? { uuid: input.uuid } : {}),
         accountId: input.accountId,
         // Stamped at ENQUEUE time. The row may be drained seconds or minutes
         // later (or retried for much longer); sending the drain time would

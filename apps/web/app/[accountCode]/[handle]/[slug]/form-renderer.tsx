@@ -50,6 +50,7 @@ import { useCalendlyPreload } from '@/lib/calendly-preload';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { isEmbeddedRender, navigateTop } from '@/lib/top-navigate';
+import { stitchRedirect } from '@/lib/response-stitch';
 import { reportLeadConversion } from '@/lib/lead-conversion';
 import { useAnnounceScreenChange } from '@/lib/embed-screen';
 import type { ResolvedVisit } from '@/lib/host-visit';
@@ -62,6 +63,7 @@ import {
 } from './transport';
 import {
   useSessionId,
+  useResponseAnalyticsId,
   releaseSessionId,
   readAnswerDraft,
   saveAnswerDraft,
@@ -200,6 +202,8 @@ export function FormRenderer({
   // the same storage key, so both survive a reload together.
   const sessionKey = `quill-form-${accountCode}-${slug}`;
   const sessionId = useSessionId(sessionKey);
+  // Rides every submit, and a redirect to the deployment's own landing (`ph_id`).
+  const analyticsId = useResponseAnalyticsId(sessionKey);
   // Boot the form's Calendly embeds hidden while the visitor answers, so the
   // one they reach is already painted instead of starting cold
   // (lib/calendly-preload). Keyed on content: a re-render changes nothing.
@@ -359,10 +363,10 @@ export function FormRenderer({
     const url = ending.redirectUrl;
     const timer = setTimeout(() => {
       redirected.current = true;
-      navigateTop(url);
+      navigateTop(stitchRedirect(url, analyticsId));
     }, ending.redirectDelayMs);
     return () => clearTimeout(timer);
-  }, [phase, done, engineConfig, answers]);
+  }, [phase, done, engineConfig, answers, analyticsId]);
 
   // The engine decides the ordered, visible, display-resolved steps.
   const steps = useMemo<FormStep[]>(
@@ -620,6 +624,7 @@ export function FormRenderer({
             () =>
               submitForm(accountCode, slug, {
                 sessionId,
+                analyticsId,
                 data: withData(finalAnswers, resolved),
                 ...visitField(resolved),
                 // What the respondent SAW, so the confirmation email matches.
@@ -635,6 +640,7 @@ export function FormRenderer({
             () =>
               submitForm(accountCode, slug, {
                 sessionId,
+                analyticsId,
                 data: withData(finalAnswers, resolved),
                 ...visitField(resolved),
                 partial: true,
@@ -721,7 +727,7 @@ export function FormRenderer({
             setPhase('done');
             return;
           }
-          navigateTop(ending.redirectUrl);
+          navigateTop(stitchRedirect(ending.redirectUrl, analyticsId));
           return;
         }
         console.warn('[forms] ignored non-http(s) redirectUrl');
@@ -729,7 +735,7 @@ export function FormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionKey, sessionId, engineConfig, markSending, resolveVisit],
+    [accountCode, slug, sessionKey, sessionId, analyticsId, engineConfig, markSending, resolveVisit],
   );
 
   // Report the booked meeting to the API (best-effort), THEN redirect/finish.
@@ -763,12 +769,12 @@ export function FormRenderer({
           )
         : null;
       if (redirectUrl && isSafeHttpUrl(redirectUrl)) {
-        navigateTop(redirectUrl);
+        navigateTop(stitchRedirect(redirectUrl, analyticsId));
         return;
       }
       setPhase('done'); // `done` state was set in finalize
     },
-    [accountCode, slug, sessionId, booking, answers, engineConfig],
+    [accountCode, slug, sessionId, analyticsId, booking, answers, engineConfig],
   );
 
   // Completes the current screen and moves on. `members` are the questions
@@ -818,6 +824,7 @@ export function FormRenderer({
             callActionWithRetry(() =>
               submitForm(accountCode, slug, {
                 sessionId,
+                analyticsId,
                 data: withData(nextAnswers, resolved),
                 ...visitField(resolved),
                 partial: true,
@@ -878,6 +885,7 @@ export function FormRenderer({
       accountCode,
       slug,
       sessionId,
+      analyticsId,
       finalize,
       track,
       trackMany,

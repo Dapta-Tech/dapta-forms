@@ -79,6 +79,9 @@ export class AnalyticsCapture {
       api_key: key,
       event: payload.event,
       distinct_id: payload.distinctId,
+      // The vendor deduplicates on it, so a retried row is one event. Only
+      // events that carry one send it.
+      ...(payload.uuid ? { uuid: payload.uuid } : {}),
       // The vendor reads `timestamp` as when the event HAPPENED, which is what
       // the payload carries (enqueue time), not when this row drained.
       timestamp: new Date(payload.timestamp).toISOString(),

@@ -19,7 +19,7 @@ import { createHostVisit, utmParams, type HostVisit, type ResolvedVisit } from '
 import { isTransportError, type TransportError } from '@/lib/call-action';
 import { CaptchaChallenge, type CaptchaWidgetEvent } from '@/components/public/captcha-challenge';
 import { isPreloadableCalendlyUrl } from '@/lib/calendly-preload';
-import { randomId } from '@/lib/random-id';
+import { randomId, randomUuidV7 } from '@/lib/random-id';
 
 type RendererMessages = ReturnType<typeof getMessages>['renderer'];
 
@@ -32,6 +32,36 @@ export function useSessionId(key: string): string {
     const fresh = randomId();
     window.sessionStorage.setItem(key, fresh);
     return fresh;
+  });
+  return id;
+}
+
+/** Where a response's analytics id is kept, beside its session id. */
+export const analyticsIdKey = (sessionKey: string) => `${sessionKey}#aid`;
+
+/**
+ * The response's analytics id: a random UUID v7 with the same life as the
+ * session id (minted with it, kept in the same tab storage, released with it).
+ * The submit carries it so the server's one event about a response has a
+ * distinct id, and a redirect to the deployment's own landing carries it as
+ * `ph_id` (see `lib/response-stitch`), so the two can be joined. It is NOT the
+ * session id: the session id is what the server keys the response row by, and
+ * it must never leave in a URL.
+ */
+export function useResponseAnalyticsId(sessionKey: string): string {
+  const [id] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const key = analyticsIdKey(sessionKey);
+    try {
+      const existing = window.sessionStorage.getItem(key);
+      if (existing) return existing;
+      const fresh = randomUuidV7();
+      window.sessionStorage.setItem(key, fresh);
+      return fresh;
+    } catch {
+      // Storage blocked: an id for this mount only, which still joins this response.
+      return randomUuidV7();
+    }
   });
   return id;
 }
@@ -56,6 +86,8 @@ export function releaseSessionId(key: string): void {
     window.sessionStorage.removeItem(key);
     // The answers kept for a reload belong to that response, which is done.
     window.sessionStorage.removeItem(answerDraftKey(key));
+    // So is its analytics id: the next response is another one.
+    window.sessionStorage.removeItem(analyticsIdKey(key));
   } catch {
     /* storage blocked: nothing was persisted, so there is nothing to release */
   }

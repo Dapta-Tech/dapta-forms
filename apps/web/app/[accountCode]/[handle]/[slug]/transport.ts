@@ -76,6 +76,8 @@ export function submitForm(
     captchaToken?: string;
     hp?: string;
     visit?: SubmissionVisit;
+    /** The response's analytics id (see `useResponseAnalyticsId`). */
+    analyticsId?: string;
   },
 ): Promise<SubmitVerdict> {
   return post<SubmitVerdict>(accountCode, slug, 'submissions', payload);
