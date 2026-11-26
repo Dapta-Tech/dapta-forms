@@ -9,6 +9,7 @@ import { recordLoginStarted, type LoginStart } from '@/lib/login-started';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { SCREEN_PARAM, wantsSignUp } from '@/lib/login-screen';
 import { canonicalHop, requestOrigin } from '@/lib/request-origin';
+import { NEXT_COOKIE, NEXT_COOKIE_MAX_AGE, NEXT_QUERY_KEY, safeNextPath } from '@/lib/return-path';
 
 const OAUTH_STATE_COOKIE = 'quill_oauth_state';
 /**
@@ -135,6 +136,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       secure: process.env.NODE_ENV === 'production',
       maxAge: 600,
     });
+  }
+
+  // Where to land after the login (lib/return-path.ts). Unlike the tags, the
+  // LATEST attempt wins: it is what the person is trying to reach right now. A
+  // login that asks for no destination clears an old one, so a stale cookie
+  // can never redirect a later, unrelated sign-in.
+  const next = safeNextPath(sp.getAll(NEXT_QUERY_KEY));
+  if (next) {
+    jar.set(NEXT_COOKIE, next, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: NEXT_COOKIE_MAX_AGE,
+    });
+  } else if (jar.get(NEXT_COOKIE)) {
+    jar.delete(NEXT_COOKIE);
   }
 
   // `prompt=login` makes AuthKit show its sign-in screen even when the shared
