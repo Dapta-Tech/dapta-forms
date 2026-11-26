@@ -63,6 +63,7 @@ import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-em
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { isEmbeddedRender, navigateTop } from '@/lib/top-navigate';
+import { stitchRedirect } from '@/lib/response-stitch';
 import { reportLeadConversion } from '@/lib/lead-conversion';
 import { useAnnounceScreenChange } from '@/lib/embed-screen';
 import type { ResolvedVisit } from '@/lib/host-visit';
@@ -74,6 +75,7 @@ import {
 } from './transport';
 import {
   useSessionId,
+  useResponseAnalyticsId,
   releaseSessionId,
   readAnswerDraft,
   saveAnswerDraft,
@@ -235,6 +237,8 @@ export function VerticalFormRenderer({
   // the same storage key, so both survive a reload together.
   const sessionKey = `quill-form-${accountCode}-${slug}`;
   const sessionId = useSessionId(sessionKey);
+  // Rides every submit, and a redirect to the deployment's own landing (`ph_id`).
+  const analyticsId = useResponseAnalyticsId(sessionKey);
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
   // The visitor's campaign for the booking page: the same set the submission carries.
@@ -532,6 +536,7 @@ export function VerticalFormRenderer({
             () =>
               submitForm(accountCode, slug, {
                 sessionId,
+                analyticsId,
                 data: withData(finalAnswers, resolved),
                 ...visitField(resolved),
                 // What the respondent SAW, so the confirmation email matches.
@@ -547,6 +552,7 @@ export function VerticalFormRenderer({
             () =>
               submitForm(accountCode, slug, {
                 sessionId,
+                analyticsId,
                 data: withData(finalAnswers, resolved),
                 ...visitField(resolved),
                 partial: true,
@@ -613,7 +619,7 @@ export function VerticalFormRenderer({
             setPhase('done');
             return;
           }
-          navigateTop(ending.redirectUrl);
+          navigateTop(stitchRedirect(ending.redirectUrl, analyticsId));
           return;
         }
         console.warn('[forms] ignored non-http(s) redirectUrl');
@@ -621,7 +627,7 @@ export function VerticalFormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionKey, sessionId, engineConfig, markSending, resolveVisit],
+    [accountCode, slug, sessionKey, sessionId, analyticsId, engineConfig, markSending, resolveVisit],
   );
   const finalizeRef = useRef(finalize);
   finalizeRef.current = finalize;
@@ -639,10 +645,10 @@ export function VerticalFormRenderer({
     const url = ending.redirectUrl;
     const timer = setTimeout(() => {
       redirected.current = true;
-      navigateTop(url);
+      navigateTop(stitchRedirect(url, analyticsId));
     }, ending.redirectDelayMs);
     return () => clearTimeout(timer);
-  }, [phase, done, engineConfig]);
+  }, [phase, done, engineConfig, analyticsId]);
 
   // Pre-warm the booking embed while the interstitial plays (reveal.prewarm).
   useEffect(() => {
@@ -677,6 +683,7 @@ export function VerticalFormRenderer({
           callActionWithRetry(() =>
             submitForm(accountCode, slug, {
               sessionId,
+              analyticsId,
               data: withData(nextAnswers, resolved),
               ...visitField(resolved),
               partial: true,
@@ -686,7 +693,7 @@ export function VerticalFormRenderer({
         );
       }
     },
-    [engineConfig, thresholdKey, accountCode, slug, sessionId, track, resolveVisit],
+    [engineConfig, thresholdKey, accountCode, slug, sessionId, analyticsId, track, resolveVisit],
   );
 
   /** Every answer mutation funnels through here: start signal + error clearing. */
@@ -805,12 +812,12 @@ export function VerticalFormRenderer({
           )
         : null;
       if (redirectUrl && isSafeHttpUrl(redirectUrl)) {
-        navigateTop(redirectUrl);
+        navigateTop(stitchRedirect(redirectUrl, analyticsId));
         return;
       }
       setPhase('done'); // `done` state was set in finalize
     },
-    [accountCode, slug, sessionId, booking, engineConfig],
+    [accountCode, slug, sessionId, analyticsId, booking, engineConfig],
   );
 
   /** Submit the whole page: validate the walk, scroll to the first error. */

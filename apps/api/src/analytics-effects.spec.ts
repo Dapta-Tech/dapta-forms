@@ -277,6 +277,25 @@ describe('AnalyticsCapture — delivery', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('sends the event uuid when the payload carries one, so a retried row counts once', async () => {
+    const calls: RecordedCall[] = [];
+    const uuid = '0b9f5c1e-3a4d-4f6b-9c2d-8e7f6a5b4c3d';
+    await newCapture(envWith(KEY), calls).deliver(
+      'forms_response_completed',
+      JSON.stringify({ event: 'forms_response_completed', distinctId: 'response:x', uuid, accountId: 'acc_1', timestamp: 1 }),
+    );
+    expect(calls[0]!.body.uuid).toBe(uuid);
+  });
+
+  it('sends no uuid when the payload has none (every other event)', async () => {
+    const calls: RecordedCall[] = [];
+    await newCapture(envWith(KEY), calls).deliver(
+      'forms_activation',
+      JSON.stringify({ event: 'forms_activation', distinctId: 'a@b.com', accountId: 'acc_1', timestamp: 1 }),
+    );
+    expect(calls[0]!.body).not.toHaveProperty('uuid');
+  });
+
   it('SKIPS on a 4xx — the vendor will reject it identically forever', async () => {
     const calls: RecordedCall[] = [];
     const capture = newCapture(envWith(KEY), calls, 400);
