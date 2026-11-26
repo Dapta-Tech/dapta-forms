@@ -1,5 +1,4 @@
 ---
-'@quill/web': patch
 '@quill/shared': patch
 ---
 
