@@ -50,6 +50,16 @@ _Avoid_: Conversion, signup
 What a referrer earns on reaching five referrals: the badge can be hidden on every workspace they own, with no expiry. Unlike a paid verdict, it never lapses.
 _Avoid_: Reward, perk
 
+### What people read
+
+**Playbook**:
+A free resource in the in-app gallery and on the landing's resource hub: a long text with a category, a step done with a dForms template, and a public preview. Its full text needs a sign-in, unless a guide promises it. Defined in code, never in the database.
+_Avoid_: Guide, resource, article, lead magnet
+
+**Playbook state**:
+What one person has done with the playbooks: when they first and last opened each one, and when they last visited the gallery. Kept per person, not per workspace; "New" is a playbook published after that last visit and never opened.
+_Avoid_: Progress, read receipt
+
 ### How agents get in
 
 **API key**:

@@ -64,6 +64,7 @@ import { AdminCrudController } from './admin-crud.controller';
 import { BrandingController } from './branding.controller';
 import { AttributionController } from './attribution.controller';
 import { ANNOUNCEMENTS_OPTIONS, AnnouncementsController, isDaptaDeployment } from './announcements.controller';
+import { PLAYBOOKS_OPTIONS, PlaybooksController, PublicPlaybooksController } from './playbooks.controller';
 import { AttributionService } from './attribution.service';
 import { ReferralService, referralOptions } from './referral.service';
 import { PersonReferralUnlocks } from './referral-unlocks';
@@ -127,6 +128,12 @@ function newPersonObserver(referrals: ReferralService): NewPersonObserver | unde
     // GET /v1/me/announcement + POST /v1/me/announcements/:id: in-app news,
     // once per person. Session only (see the controller).
     AnnouncementsController,
+    // /v1/me/playbooks: the playbooks gallery with each person's state (read,
+    // last read, "New"). Per person, any role, session only (see the controller).
+    PlaybooksController,
+    // GET /v1/public/playbooks: what the landing's resource hub may show to
+    // anyone (previews, and the whole body of the promised ones). Rate limited.
+    PublicPlaybooksController,
     // POST /v1/me/referral/claim: the sign-in callback credits a new person
     // to a referral link's owner. Per person, any role, session only.
     ReferralController,
@@ -150,6 +157,8 @@ function newPersonObserver(referrals: ReferralService): NewPersonObserver | unde
       useFactory: (env: ServerEnv) => ({ dapta: isDaptaDeployment(env) }),
       inject: [ENV],
     },
+    // The playbooks catalog and the real clock; the specs swap both.
+    { provide: PLAYBOOKS_OPTIONS, useValue: {} },
     { provide: DB, useFactory: () => createDb() },
     {
       provide: EMAIL,

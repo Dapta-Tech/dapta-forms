@@ -525,6 +525,26 @@ export const referrerBrowser = pgTable(
   }),
 );
 
+/**
+ * What one person has opened in the playbooks gallery (see 0035, ADR 0006 and
+ * `playbooks.ts` in @quill/shared). Keyed by the PERSON with the same key as
+ * `announcement_state.user_id`, so the state is one across a person's
+ * workspaces. The reserved slug `_gallery` holds their visits to the gallery
+ * itself.
+ */
+export const playbookState = pgTable(
+  'playbook_state',
+  {
+    userId: text('user_id').notNull(),
+    playbookSlug: text('playbook_slug').notNull(),
+    firstSeenAt: bigint('first_seen_at', { mode: 'number' }).notNull(),
+    lastSeenAt: bigint('last_seen_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.playbookSlug] }),
+  }),
+);
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -546,4 +566,5 @@ export const pgSchema = {
   referral,
   referralInvite,
   referrerBrowser,
+  playbookState,
 };

@@ -1,0 +1,258 @@
+#!/usr/bin/env node
+/**
+ * Builds `src/playbooks.generated.ts` from `content/playbooks/*.md`.
+ *
+ * The playbooks are written as markdown files, one per playbook: a front
+ * matter block with the catalog fields, then the body, split in two by a line
+ * that holds only `<!-- muro -->`. Above the marker is the preview (anyone may
+ * read it), below it the rest (signed-in people only).
+ *
+ * The package is compiled with plain `tsc` and imported by both apps, so it
+ * cannot read files at runtime: this script turns the markdown into a typed
+ * module that is committed next to the code. Run it after editing a playbook:
+ *
+ *   pnpm --filter @quill/shared playbooks
+ *
+ * `--check` writes nothing and fails when the committed module is out of date;
+ * `src/playbooks.spec.ts` runs it, so CI catches a markdown edit that was
+ * never regenerated.
+ *
+ * Front matter is a small, strict subset of YAML: one `key: value` per line,
+ * a value plain, "double quoted" (JSON escapes), 'single quoted', or a list
+ * `[a, b]` whose items hold no comma (quoted or not). An unknown key, a missing field or a malformed value fails the
+ * build with the file and the line, so a typo never ships as a silent default.
+ */
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+export const CONTENT_DIR = join(ROOT, 'content', 'playbooks');
+export const OUT_FILE = join(ROOT, 'src', 'playbooks.generated.ts');
+
+/** Keep in step with `PLAYBOOK_CATEGORIES` in src/playbooks.ts. */
+export const CATEGORIES = ['ventas', 'marketing', 'ads', 'agentes'];
+export const MARKER = '<!-- muro -->';
+
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** A social account handle as the landing reads it from `utm_source`, e.g. `ig_homerovende`. */
+const ACCOUNT = /^[a-z0-9][a-z0-9_.]*$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})$/;
+/** A root-relative path or an https URL, with no spaces. */
+const MEDIA = /^(?:\/(?!\/)|https:\/\/)\S+$/;
+
+/** Every front matter key, whether it is required, and how its value is read. */
+const FIELDS = {
+  slug: { required: true, kind: 'string' },
+  category: { required: true, kind: 'string' },
+  title: { required: true, kind: 'string' },
+  summary: { required: true, kind: 'string' },
+  publishedAt: { required: true, kind: 'string' },
+  promisedBy: { required: false, kind: 'list' },
+  template: { required: true, kind: 'string' },
+  thumbnailVideo: { required: false, kind: 'string' },
+  thumbnailPoster: { required: false, kind: 'string' },
+  thumbnailMotif: { required: false, kind: 'string' },
+};
+
+class PlaybookError extends Error {}
+
+function fail(file, line, message) {
+  throw new PlaybookError(`${file}${line ? `:${line}` : ''}: ${message}`);
+}
+
+function unquote(raw, file, line) {
+  const v = raw.trim();
+  if (v.startsWith('"')) {
+    try {
+      const parsed = JSON.parse(v);
+      if (typeof parsed !== 'string') throw new Error('not a string');
+      return parsed;
+    } catch {
+      fail(file, line, `malformed double-quoted value ${v}`);
+    }
+  }
+  if (v.startsWith("'")) {
+    if (v.length < 2 || !v.endsWith("'")) fail(file, line, `malformed single-quoted value ${v}`);
+    return v.slice(1, -1).replace(/''/g, "'");
+  }
+  return v;
+}
+
+function readList(raw, file, line) {
+  const v = raw.trim();
+  if (!v.startsWith('[') || !v.endsWith(']')) fail(file, line, `expected a list like [a, b], got ${v}`);
+  const inner = v.slice(1, -1).trim();
+  if (inner === '') return [];
+  // Items are split on commas BEFORE quotes are read, so a comma inside an
+  // item would silently make two. List items are account handles, which never
+  // hold one: refuse a quoted item that would have been cut.
+  return inner.split(',').map((item) => {
+    const trimmed = item.trim();
+    const quote = trimmed[0];
+    if ((quote === '"' || quote === "'") && (trimmed.length < 2 || !trimmed.endsWith(quote))) {
+      fail(file, line, `list items cannot hold a comma: ${v}`);
+    }
+    const value = unquote(item, file, line);
+    if (value === '') fail(file, line, 'empty list item');
+    return value;
+  });
+}
+
+/** Bogota time (UTC-5, no daylight saving), like the announcements' dates. */
+function readDate(value, file, line) {
+  const bad = () => fail(file, line, `publishedAt must be a real YYYY-MM-DD date or an ISO date-time with an offset, got ${value}`);
+  if (!DATE.test(value) && !DATETIME.test(value)) bad();
+  // Date.parse rolls an impossible day over (2026-02-30 is March 2), so the
+  // calendar date is read back and compared with what was written.
+  const [y, m, d] = value.slice(0, 10).split('-').map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d));
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== m - 1 || day.getUTCDate() !== d) bad();
+  if (DATETIME.test(value)) {
+    const [hh, mm, ss = 0] = value.slice(11, 19).split(':').map((n) => Number.parseInt(n, 10));
+    if (hh > 23 || mm > 59 || ss > 59) bad();
+  }
+  const ms = DATE.test(value) ? Date.parse(`${value}T00:00:00-05:00`) : Date.parse(value);
+  if (!Number.isFinite(ms)) bad();
+  return ms;
+}
+
+/**
+ * One markdown file into one catalog entry. Throws with the file and line on
+ * anything it does not understand.
+ */
+export function parsePlaybook(file, text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  if (lines[0] !== '---') fail(file, 1, 'must start with a --- front matter line');
+  const end = lines.indexOf('---', 1);
+  if (end === -1) fail(file, 1, 'front matter is never closed with ---');
+
+  const meta = {};
+  for (let i = 1; i < end; i++) {
+    const lineNo = i + 1;
+    const line = lines[i];
+    if (line.trim() === '') continue;
+    const m = /^([A-Za-z][A-Za-z0-9]*):(.*)$/.exec(line);
+    if (!m) fail(file, lineNo, `expected key: value, got ${line}`);
+    const [, key, raw] = m;
+    const field = FIELDS[key];
+    if (!field) fail(file, lineNo, `unknown front matter key ${key}`);
+    if (key in meta) fail(file, lineNo, `${key} is set twice`);
+    meta[key] = field.kind === 'list' ? readList(raw, file, lineNo) : unquote(raw, file, lineNo);
+    if (field.kind === 'string' && meta[key] === '') fail(file, lineNo, `${key} is empty`);
+  }
+  for (const [key, field] of Object.entries(FIELDS)) {
+    if (field.required && !(key in meta)) fail(file, 0, `missing ${key}`);
+  }
+
+  if (!SLUG.test(meta.slug)) fail(file, 0, `slug ${meta.slug} must be lowercase words joined by hyphens`);
+  const expectedFile = `${meta.slug}.md`;
+  if (basename(file) !== expectedFile) fail(file, 0, `slug ${meta.slug} must match the file name (${expectedFile})`);
+  if (!CATEGORIES.includes(meta.category)) {
+    fail(file, 0, `category ${meta.category} is not one of ${CATEGORIES.join(', ')}`);
+  }
+  const promisedBy = meta.promisedBy ?? [];
+  for (const account of promisedBy) {
+    if (!ACCOUNT.test(account)) fail(file, 0, `promisedBy account ${account} must look like ig_handle`);
+  }
+  if (new Set(promisedBy).size !== promisedBy.length) fail(file, 0, 'promisedBy repeats an account');
+  for (const key of ['thumbnailVideo', 'thumbnailPoster']) {
+    if (meta[key] !== undefined && !MEDIA.test(meta[key])) {
+      fail(file, 0, `${key} must be a path starting with / or an https URL, got ${meta[key]}`);
+    }
+  }
+  if (meta.thumbnailVideo !== undefined && !/\.(?:webm|mp4)(?:\?\S*)?$/.test(meta.thumbnailVideo)) {
+    fail(file, 0, 'thumbnailVideo must be a .webm or .mp4 file');
+  }
+  if (meta.thumbnailPoster !== undefined && !/\.(?:png|jpe?g|webp|avif)(?:\?\S*)?$/.test(meta.thumbnailPoster)) {
+    fail(file, 0, 'thumbnailPoster must be an image (.png, .jpg, .webp or .avif)');
+  }
+
+  const body = lines.slice(end + 1);
+  const markers = body.reduce((n, line) => (line.trim() === MARKER ? n + 1 : n), 0);
+  if (markers !== 1) fail(file, 0, `the body must hold exactly one ${MARKER} line, found ${markers}`);
+  const at = body.findIndex((line) => line.trim() === MARKER);
+  const preview = body.slice(0, at).join('\n').trim();
+  const rest = body.slice(at + 1).join('\n').trim();
+  if (preview === '') fail(file, 0, `nothing above ${MARKER}: the preview is empty`);
+  if (rest === '') fail(file, 0, `nothing below ${MARKER}: the rest is empty`);
+
+  return {
+    slug: meta.slug,
+    category: meta.category,
+    title: meta.title,
+    summary: meta.summary,
+    publishedAt: readDate(meta.publishedAt, file, 0),
+    promisedBy,
+    template: meta.template,
+    thumbnailVideo: meta.thumbnailVideo ?? null,
+    thumbnailPoster: meta.thumbnailPoster ?? null,
+    thumbnailMotif: meta.thumbnailMotif ?? null,
+    preview,
+    rest,
+  };
+}
+
+/** Every playbook in the content directory, by file name. */
+export function readPlaybooks(dir = CONTENT_DIR) {
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.md'))
+    .sort();
+  const entries = files.map((f) => parsePlaybook(`content/playbooks/${f}`, readFileSync(join(dir, f), 'utf8')));
+  const slugs = new Set();
+  for (const e of entries) {
+    if (slugs.has(e.slug)) throw new PlaybookError(`slug ${e.slug} is used twice`);
+    slugs.add(e.slug);
+  }
+  return entries;
+}
+
+/** The TypeScript module for these entries. Deterministic, so `--check` can compare it byte for byte. */
+export function renderModule(entries) {
+  const body = entries.map((e) => `  ${JSON.stringify(e, null, 2).replace(/\n/g, '\n  ')},`).join('\n');
+  return [
+    '// GENERATED by scripts/playbooks.mjs from content/playbooks/*.md. Do not edit by hand:',
+    '// edit the markdown, then run `pnpm --filter @quill/shared playbooks`.',
+    "import type { PlaybookSource } from './playbooks';",
+    '',
+    'export const PLAYBOOK_SOURCES: readonly PlaybookSource[] = [',
+    body,
+    '];',
+    '',
+  ].join('\n');
+}
+
+function main() {
+  const check = process.argv.includes('--check');
+  let next;
+  try {
+    next = renderModule(readPlaybooks());
+  } catch (err) {
+    if (err instanceof PlaybookError) {
+      console.error(`playbooks: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  let current = '';
+  try {
+    current = readFileSync(OUT_FILE, 'utf8');
+  } catch {
+    current = '';
+  }
+  if (check) {
+    if (current !== next) {
+      console.error(
+        'playbooks: src/playbooks.generated.ts is out of date with content/playbooks. Run `pnpm --filter @quill/shared playbooks`.',
+      );
+      process.exit(1);
+    }
+    console.log('playbooks: up to date');
+    return;
+  }
+  if (current !== next) writeFileSync(OUT_FILE, next);
+  console.log(`playbooks: ${current === next ? 'already up to date' : 'wrote src/playbooks.generated.ts'}`);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
