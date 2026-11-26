@@ -7,6 +7,8 @@ publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder): calificador de hasta 7 preguntas con 3 resultados (AGENDA con Agendador, NUTRE, DESCARTA), armado con la salida de los 4 prompts"
 thumbnailMotif: "Claude escribe 4 prompts uno tras otro; los leads entran al formulario y salen ordenados en tres carriles: AGENDA, NUTRE y DESCARTA."
+thumbnailVideo: /playbooks/calificador-claude.webm
+thumbnailPoster: /playbooks/calificador-claude-poster.webp
 ---
 Claude ya puede hacer el trabajo que antes solo hacía tu mejor vendedor: mirar un prospecto y saber, en segundos, si vale la pena. Quién es tu cliente ideal, qué preguntas lo delatan, cuánto pesa cada respuesta. Todo eso lo puede diseñar por ti, hoy.
 

@@ -7,6 +7,8 @@ publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder), adaptado: pregunta calificadora + 2 resultados que redirigen a 2 páginas de gracias (Lead solo en la de calificados)"
 thumbnailMotif: "Una pregunta calificadora reparte leads en dos puertas: los verdes pasan a «Página A · Lead» y los grises a «Página B»; la línea del costo por lead calificado baja."
+thumbnailVideo: /playbooks/meta-ads-leads-calificados.webm
+thumbnailPoster: /playbooks/meta-ads-leads-calificados-poster.webp
 ---
 Meta no es un lugar donde compras espacio. Es un sistema que aprende a encontrar a tu cliente, si le das las señales correctas. Casi todo lo que sale mal en una cuenta viene de dos errores: tocar las campañas antes de que el sistema termine de aprender, y enseñarle con la señal equivocada.
 

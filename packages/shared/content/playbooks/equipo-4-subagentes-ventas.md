@@ -7,6 +7,8 @@ publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder): formulario de entrada con puntaje; el orquestador lee las respuestas calificadas por el conector de dForms"
 thumbnailMotif: "Una terminal lanza 4 tarjetas (Investigador, Calificador, Redactor, Seguimiento) que trabajan en paralelo y juntan una lista del día con borradores listos."
+thumbnailVideo: /playbooks/equipo-4-subagentes-ventas.webm
+thumbnailPoster: /playbooks/equipo-4-subagentes-ventas-poster.webp
 ---
 Un buen SDR hace cuatro trabajos distintos cada día: investiga a la cuenta, decide si vale la pena, escribe un primer mensaje que no suene a plantilla y lleva el registro de a quién contactó y cuándo le toca el siguiente toque. Cuando una sola persona (o un solo chat de IA) hace los cuatro, se mezclan: la investigación se queda corta, el mensaje sale genérico y el seguimiento se olvida.
 

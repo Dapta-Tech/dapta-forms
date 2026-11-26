@@ -395,6 +395,29 @@ html.has-save-pill {
   }
 }
 
+/* The rail's "New" on Playbooks pops once when it appears: a swell to 1.15
+   with a green halo, 700 ms, one iteration, then it holds still. Nothing with
+   reduced motion. */
+.nav-badge-pop {
+  animation: nav-badge-pop 700ms ease-out 1;
+}
+@keyframes nav-badge-pop {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(61 220 132 / 0);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 4px rgb(61 220 132 / 0.3), 0 0 12px 2px rgb(61 220 132 / 0.3);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-badge-pop {
+    animation: none;
+  }
+}
+
 /* The "Recommended" pill on the connect page breathes the same green glow,
    with a slight swell. Still with reduced motion. */
 .pill-pulse {

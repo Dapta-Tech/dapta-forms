@@ -66,7 +66,8 @@ type IconName =
   | 'mcp'
   | 'tools'
   | 'docs'
-  | 'agents';
+  | 'agents'
+  | 'playbooks';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -107,6 +108,11 @@ interface NavItem {
 // and under `/admin/developers` because skill zips already handed out those
 // addresses.
 //
+// Then "Playbooks": the free guides every person can read (/admin/playbooks).
+// It carries the "New" badge while the person has playbooks published after
+// their last visit to the gallery and never opened (`newCount` of
+// `GET /v1/me/playbooks`, read by the layout), until they open the gallery.
+//
 // Then "Docs": the product documentation, always present, in the reader's
 // language (the URL lives in the message catalog, see `docsHref`). External
 // like the platform door below, and tagged the same way.
@@ -132,6 +138,7 @@ const NAV: NavItem[] = [
     prominent: true,
   },
   { key: 'tools', href: '/admin/developers/tools', icon: 'tools' },
+  { key: 'playbooks', href: '/admin/playbooks', icon: 'playbooks' },
   { key: 'docs', href: '', icon: 'docs', external: true, localizedHref: 'docsHref' },
   ...(PLATFORM_URL
     ? [{ key: 'agents', href: suiteHref(PLATFORM_URL, 'sidebar'), icon: 'agents', external: true } as const]
@@ -165,6 +172,7 @@ const PI_BY_NAME: Record<Exclude<IconName, AnimatedIcon>, string> = {
   tools: 'pi-sparkles',
   docs: 'pi-book',
   agents: 'pi-bot',
+  playbooks: 'pi-book-check',
 };
 
 function Icon({ name, className, paused }: { name: IconName; className?: string; paused?: boolean }) {
@@ -220,12 +228,20 @@ function useMinWidth(px: number): boolean {
   return wide;
 }
 
-/** The "New" mark one rail item carries while an announcement points at it. */
+/**
+ * The "New" mark a rail item carries: while an announcement points at it, or,
+ * on Playbooks, while the person has playbooks they have not seen.
+ */
 interface NavBadge {
   /** The visible pill: "New". */
   label: string;
   /** Read after the item's name: ", new", so the link is "Integrations, new". */
   sr: string;
+  /**
+   * Pop once when it appears (a short swell with a green halo, see
+   * `.nav-badge-pop`), then hold still. Still with reduced motion.
+   */
+  pulse?: boolean;
 }
 
 /**
@@ -241,7 +257,7 @@ function BadgedIcon({ badge, collapsed, children }: { badge?: NavBadge | null; c
       <span
         aria-hidden
         data-testid="nav-badge-dot"
-        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-sidebar"
+        className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-sidebar${badge.pulse ? ' nav-badge-pop' : ''}`}
       />
     </span>
   );
@@ -261,7 +277,9 @@ function BadgeTail({ badge, collapsed }: { badge?: NavBadge | null; collapsed: b
         <span
           aria-hidden
           data-testid="nav-badge"
-          className="ml-auto shrink-0 rounded-full bg-signal/15 px-2 py-0.5 text-2xs font-semibold leading-4 text-signal-ink"
+          className={`ml-auto shrink-0 rounded-full bg-signal/15 px-2 py-0.5 text-2xs font-semibold leading-4 text-signal-ink${
+            badge.pulse ? ' nav-badge-pop' : ''
+          }`}
         >
           {badge.label}
         </span>
@@ -330,6 +348,7 @@ function NavLinks({
   newTab,
   onNavigate,
   badgeItem = null,
+  playbooksBadge = false,
   badge,
   referral = null,
   referralM,
@@ -345,6 +364,8 @@ function NavLinks({
   onNavigate?: () => void;
   /** The item an announcement marks "New", or null. */
   badgeItem?: AnnouncementRailItem | null;
+  /** Mark Playbooks "New": the person has playbooks they have not seen. */
+  playbooksBadge?: boolean;
   badge: NavBadge;
   /** The referral program's entry, or null while the program is off. */
   referral?: ShellReferral | null;
@@ -360,9 +381,14 @@ function NavLinks({
       {NAV.map((item) => {
         const href = item.localizedHref ? docsHref : item.href;
         const label = nav[item.key];
-        const itemBadge = badgeItem !== null && item.key === badgeItem ? badge : null;
-        // A click on the marked item is how the visit gets filed as the rail's.
-        const navigate = itemBadge
+        const announced = badgeItem !== null && item.key === badgeItem;
+        const itemBadge = announced
+          ? badge
+          : playbooksBadge && item.key === 'playbooks'
+            ? { ...badge, pulse: true }
+            : null;
+        // A click on the announcement's item is how the visit gets filed as the rail's.
+        const navigate = announced
           ? () => {
               markAnnouncementSurface('rail');
               onNavigate?.();
@@ -440,6 +466,7 @@ function NavLinks({
                 onClick={navigate}
                 title={collapsed ? `${label}${itemBadge ? itemBadge.sr : ''}` : undefined}
                 aria-current={active ? 'page' : undefined}
+                data-testid={`nav-${item.key}`}
                 data-badge={itemBadge ? 'new' : undefined}
                 className={className}
               >
@@ -663,6 +690,7 @@ export function AdminShell({
   currentAccountId,
   staff = false,
   announcement = null,
+  playbooksNew = 0,
   referral = null,
   productHunt = IS_DAPTA_BRAND,
   children,
@@ -684,6 +712,12 @@ export function AdminShell({
   staff?: boolean;
   /** The announcement this person gets, or null (see `ShellAnnouncement`). */
   announcement?: ShellAnnouncement | null;
+  /**
+   * How many playbooks are new to this person (`newCount` of
+   * `GET /v1/me/playbooks`). Above zero, Playbooks carries "New" until the
+   * gallery is opened. Absent (an API without the route): no badge.
+   */
+  playbooksNew?: number;
   /** The referral program's entry, or null while the program is off. */
   referral?: ShellReferral | null;
   /** Show the Product Hunt review row: Dapta's own builds only (the default says which). */
@@ -753,6 +787,16 @@ export function AdminShell({
     announcement && announcement.badge && !followed && !studio && !onAnnouncementRoute
       ? announcement.railBadge
       : null;
+  // Playbooks' "New": read by the layout at load, which is not re-rendered on
+  // client navigation, so opening the gallery ends it here for the rest of the
+  // load (the gallery records the visit, and the next load reads zero). The
+  // reader alone does not end it: "New" is about the gallery.
+  const onPlaybooksGallery = pathname === '/admin/playbooks';
+  const [playbooksGalleryOpened, setPlaybooksGalleryOpened] = useState(false);
+  useEffect(() => {
+    if (onPlaybooksGallery) setPlaybooksGalleryOpened(true);
+  }, [onPlaybooksGallery]);
+  const playbooksBadge = playbooksNew > 0 && !studio && !onPlaybooksGallery && !playbooksGalleryOpened;
   // Analytics counts the badge as seen only when it is really on screen: the
   // desktop rail from 768px up, or the drawer once it is opened.
   const railOnScreen = useMinWidth(768) || drawerOpen;
@@ -1121,6 +1165,7 @@ export function AdminShell({
             docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
             badgeItem={badgeItem}
+            playbooksBadge={playbooksBadge}
             badge={messages.newBadge}
             referral={referral}
             referralM={messages.referral}
@@ -1184,6 +1229,7 @@ export function AdminShell({
             newTab={messages.switcher.opensNewTab}
             onNavigate={() => setDrawerOpen(false)}
             badgeItem={badgeItem}
+            playbooksBadge={playbooksBadge}
             badge={messages.newBadge}
             referral={referral}
             referralM={messages.referral}

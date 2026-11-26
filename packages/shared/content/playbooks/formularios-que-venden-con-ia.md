@@ -7,6 +7,8 @@ publishedAt: 2026-11-26
 promisedBy: [ig_homerovende, ig_burrovende, ig_mcpatovende, ig_shrekmarketing]
 template: "Calificador de leads (plantilla `lead` del builder) o los 4 prompts por el conector: cotización con presupuesto, quiz de 5 preguntas, el formulario que sí terminan y 3 preguntas antes de la llamada"
 thumbnailMotif: "Un «Contáctanos» gris se transforma en un formulario de una pregunta; tres respuestas suman +1, +2, +3 y aparece la etiqueta «Lead caliente · llámalo hoy»."
+thumbnailVideo: /playbooks/formularios-que-venden-con-ia.webm
+thumbnailPoster: /playbooks/formularios-que-venden-con-ia-poster.webp
 ---
 Crea tu cuenta gratis, conecta dForms a Claude o ChatGPT y pega un prompt. Tu IA arma el formulario, lo publica y te da el link.
 

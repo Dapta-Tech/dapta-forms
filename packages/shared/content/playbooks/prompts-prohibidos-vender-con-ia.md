@@ -7,6 +7,8 @@ publishedAt: 2026-11-26
 promisedBy: []
 template: "Calificador de leads (plantilla `lead` del builder), adaptado: «Filtro antes de agendar» con presupuesto, quién decide y urgencia; agenda solo si califica"
 thumbnailMotif: "Un chat recibe un prompt pegado, la respuesta se escribe sola y una etiqueta sube de $2K a $6K a $10K con un candado que se abre."
+thumbnailVideo: /playbooks/prompts-prohibidos-vender-con-ia.webm
+thumbnailPoster: /playbooks/prompts-prohibidos-vender-con-ia-poster.webp
 ---
 Les decimos prohibidos porque se sienten como hacer trampa: cada prompt de esta guía hace en dos minutos algo que a un vendedor le toma una tarde. Están ordenados por los cuatro momentos que deciden una venta: el primer contacto, el seguimiento, el no-show y la objeción de precio.
 
