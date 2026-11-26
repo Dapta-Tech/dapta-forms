@@ -185,6 +185,19 @@ them. Copy it to `.env` to override (a real environment variable always wins).
 When one Docker image is promoted across environments, set `API_URL` per
 environment: `NEXT_PUBLIC_*` values are frozen into the image at build time.
 
+### AI form drafts
+
+**Create with AI** appears in a blank form's editor when the API can reach
+LiteLLM and the configured model alias is available. [Self-hosting setup](SELF-HOSTING.md#ai-form-drafts-optional)
+
+To build a lead qualification form, select **Is a lead qualification?**,
+summarize your product, and select **Generate draft**. dForms loads the published
+`qualify-leads` skill from the LiteLLM catalog. Review the proposed questions and
+select **Use this draft** to add them to your form. [Skill instructions](skills/qualify-leads/SKILL.md)
+
+In LiteLLM **Logs**, look for `skill:qualify-leads@<version>` in the request's
+**Tags** column.
+
 ## Scripts
 
 | Command | What it does |

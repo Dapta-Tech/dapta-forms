@@ -395,6 +395,25 @@ the fork default — disables the feature entirely: nothing is enqueued.
 | `DAPTA_SYNC_FLOW_URL` | _(unset)_ | calling the contact-sync flow | no |
 | `DAPTA_SYNC_FLOW_KEY` | _(unset)_ | calling the contact-sync flow | yes |
 
+### AI form drafts (optional)
+
+Set these variables on the API service to enable **Create with AI** in the form editor.
+
+| Var | Default | Purpose | Secret |
+|---|---|---|---|
+| `LITELLM_BASE_URL` | _(unset)_ | LiteLLM gateway URL reachable from the API, with an optional `/v1` suffix | no |
+| `LITELLM_API_KEY` | _(unset)_ | Key for an authenticated gateway, with access to the model alias and the skill catalog | yes |
+| `LITELLM_MODEL` | `best-model` | Model alias that LiteLLM lists for the configured key | no |
+
+For lead qualification, publish `qualify-leads` in the LiteLLM Skills Hub with a
+GitHub `git-subdir` source that contains a publicly readable `SKILL.md`. The API
+reads the catalog at `/claude-code/marketplace.json` and loads the skill from
+`raw.githubusercontent.com`. [LiteLLM Skills Hub setup](https://docs.litellm.ai/docs/tutorials/claude_code_plugin_marketplace)
+
+After generating a lead qualification draft, the dForms API logs a
+`form_ai_skill_generated` event with the skill tag, LiteLLM call ID, and
+completion ID. Use the completion ID to find that request in LiteLLM **Logs**.
+
 ### Web app
 
 `NEXT_PUBLIC_*` are **build-time** (inlined into the client bundle — pass as
