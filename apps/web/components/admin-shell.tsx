@@ -1433,10 +1433,18 @@ export function AdminShell({
         </button>
         {/* Under 360px the hamburger plus the wordmark crowds the bar, so the
             mark takes over. Done in CSS rather than JS so there is no flash on
-            first paint and no resize listener. Only the visible one is display:
-            block, so only one accessible name reaches the a11y tree. */}
-        <BrandWordmark className="hidden h-6 w-auto text-foreground min-[360px]:block" labelled />
-        <BrandMark className="h-6 w-auto text-foreground min-[360px]:hidden" labelled />
+            first paint and no resize listener. Only the visible one is
+            displayed, so only one accessible name reaches the a11y tree.
+            The visibility classes sit on these wrappers, never on the marks:
+            a build that is not Dapta's renders the fallback chip and text,
+            which do not take `className`, so classes passed to the marks
+            showed both at every width ("F Forms F"). */}
+        <span data-testid="mobile-brand-wordmark" className="hidden items-center min-[360px]:flex">
+          <BrandWordmark className="h-6 w-auto text-foreground" labelled />
+        </span>
+        <span data-testid="mobile-brand-mark" className="flex items-center min-[360px]:hidden">
+          <BrandMark className="h-6 w-auto text-foreground" labelled />
+        </span>
       </header>
 
       {/* Desktop sidebar — flush, bordered, collapsible rail.
