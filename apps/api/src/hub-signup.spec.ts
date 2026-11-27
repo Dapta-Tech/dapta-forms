@@ -176,7 +176,7 @@ describe('the playbook email', () => {
     expect(sent[0]!.subject).toBe(`${subject}: ${title}`);
     expect(sent[0]!.locale).toBe(lang);
     expect(sent[0]!.text).toContain(`${button}: ${link}`);
-    expect(sent[0]!.html).toContain(`href="${link.replace('&', '&amp;')}"`);
+    expect(sent[0]!.html).toContain(`href="${link.replaceAll('&', '&amp;')}"`);
     expect(sent[0]!.attachments).toBeUndefined();
     expect(sent[0]!.idempotencyKey).toBe(`playbook:sub-1:${SLUG}:pdf`);
   });
