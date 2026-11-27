@@ -36,7 +36,8 @@ export interface PlaybookMedia {
 /** Where the inline assets are served from in the web app. */
 export const PLAYBOOK_MEDIA_BASE = '/playbooks/inline';
 
-const MARKER = /^<!--\s*(anim|img):\s*([a-z0-9-]+)\/([a-z0-9-]+)\s*\|\s*(.*?)\s*-->$/;
+// The head only: the alt is cut by hand below, so no lazy group backtracks over it.
+const MARKER_HEAD = /^<!--\s*(anim|img):\s*([a-z0-9-]+)\/([a-z0-9-]+)\s*\|/;
 
 /** A line that means to be an inline media marker, valid or not. */
 export const PLAYBOOK_MEDIA_HINT = /<!--\s*(?:anim|img)\b/;
@@ -46,9 +47,11 @@ export const PLAYBOOK_MEDIA_HINT = /<!--\s*(?:anim|img)\b/;
  * marker (surrounding whitespace aside).
  */
 export function parsePlaybookMediaMarker(line: string): PlaybookMedia | null {
-  const m = MARKER.exec(line.trim());
+  const text = line.trim();
+  if (!text.endsWith('-->')) return null;
+  const m = MARKER_HEAD.exec(text);
   if (!m) return null;
-  const alt = m[4]!;
+  const alt = text.slice(m[0].length, text.length - 3).trim();
   if (alt === '' || alt.includes('-->') || alt.includes('<!--')) return null;
   return { kind: m[1] as PlaybookMediaKind, slug: m[2]!, name: m[3]!, alt };
 }
@@ -95,5 +98,14 @@ export function playbookMediaIn(markdown: string): PlaybookMedia[] {
 
 /** The text with its HTML comments (inline media markers included) taken out. */
 export function stripHtmlComments(markdown: string): string {
-  return markdown.replace(/<!--[\s\S]*?-->/g, ' ');
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = markdown.indexOf('<!--', from);
+    if (open === -1) return out + markdown.slice(from);
+    const close = markdown.indexOf('-->', open + 4);
+    if (close === -1) return out + markdown.slice(from, open);
+    out += markdown.slice(from, open) + ' ';
+    from = close + 3;
+  }
 }
