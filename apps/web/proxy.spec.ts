@@ -248,10 +248,14 @@ describe('an old-host admin link while signed in on PUBLIC_APP_URL', () => {
         expect(state.current.writes).toEqual([]);
         return res;
       }
+      // What the proxy put on the request reaches the render, as in Next.
+      const back = res.headers.get('x-middleware-request-x-quill-return');
+      if (back) state.current.headers.set('x-quill-return', back);
     }
     if (url.pathname === '/api/auth/refresh') return refreshRoute(req);
     if (url.pathname === '/api/auth/logout') return logoutRoute(req);
     if (url.pathname === '/login') return new Response('sign-in page', { status: 200 });
+    if (url.pathname === '/api/auth/login') return new Response('hosted login', { status: 200 });
     if (url.pathname.startsWith('/admin')) {
       // The admin render's auth gate. In the app its redirect rides a streamed
       // 200 (step 1 of the rehearsal); the browser follows it all the same.
@@ -363,6 +367,76 @@ describe('an old-host admin link while signed in on PUBLIC_APP_URL', () => {
     expect(revokes).toEqual([]);
   });
 
+  /**
+   * The link of an email: one playbook, asking for its PDF. It has to survive
+   * an expired or missing session; no other page changes.
+   */
+  describe('a playbook link with a session that ran out', () => {
+    const PLAYBOOK = '/admin/playbooks/guia?lang=en&pdf=1';
+    const NEXT = `next=${encodeURIComponent(PLAYBOOK)}`;
+    const expired = (refreshToken: string) =>
+      jarOf('app.example.com').set(
+        SESSION_COOKIE,
+        encodeSession({ ...canonicalSession, accessToken: 'expired', refreshToken }),
+      );
+
+    it('refreshes and comes back to the playbook, download request included', async () => {
+      expired('canon-refresh');
+
+      const { trail, res } = await open(`${CANONICAL}${PLAYBOOK}`);
+
+      expect(trail).toEqual([
+        `${CANONICAL}${PLAYBOOK}`,
+        `${CANONICAL}/api/auth/refresh?${NEXT}`,
+        `${CANONICAL}${PLAYBOOK}`,
+      ]);
+      expect(await res.text()).toBe('dashboard');
+    });
+
+    it('from the old host too', async () => {
+      expired('canon-refresh');
+
+      const { trail } = await open(`https://${OLD}${PLAYBOOK}`);
+
+      expect(trail.at(-1)).toBe(`${CANONICAL}${PLAYBOOK}`);
+    });
+
+    it('goes to the hosted login with the destination when there is no session', async () => {
+      jars.clear();
+
+      const { trail, res } = await open(`${CANONICAL}${PLAYBOOK}`);
+
+      expect(trail).toEqual([
+        `${CANONICAL}${PLAYBOOK}`,
+        `${CANONICAL}/api/auth/refresh?${NEXT}`,
+        `${CANONICAL}/api/auth/login?${NEXT}`,
+      ]);
+      expect(await res.text()).toBe('hosted login');
+      expect(revokes).toEqual([]);
+    });
+
+    it('keeps the destination on the signed-out landing when the refresh token is dead', async () => {
+      expired('dead-refresh');
+
+      const { trail } = await open(`${CANONICAL}${PLAYBOOK}`);
+
+      expect(trail.at(-1)).toBe(`${CANONICAL}/login?signedout=1&${NEXT}`);
+      expect(sessionOn('app.example.com')).toBeNull();
+      expect(revokes).toHaveLength(1);
+    });
+
+    it.each(['/admin/forms/f1', '/admin/playbooks/guia?lang=en&pdf=1&utm_source=x'])(
+      'leaves %s as it was: the dashboard home after the refresh',
+      async (path) => {
+        expired('canon-refresh');
+
+        const { trail } = await open(`${CANONICAL}${path}`);
+
+        expect(trail).toEqual([`${CANONICAL}${path}`, `${CANONICAL}/api/auth/refresh`, `${CANONICAL}/admin`]);
+      },
+    );
+  });
+
   it('a sign-out on PUBLIC_APP_URL still revokes and lands there, as before', async () => {
     const { trail } = await open(`${CANONICAL}/api/auth/logout`);
 
@@ -459,4 +533,46 @@ describe('proxy and the browser id', () => {
     expect(state.current.writes).not.toContain('dforms_bid');
     expect(res.headers.get('set-cookie') ?? '').not.toContain('dforms_bid');
   });
+});
+
+/**
+ * The address of a playbook page, put on the request for the render that may
+ * answer 401 there (lib/return-path.ts). Only ever the proxy's own value.
+ */
+describe('proxy and the playbook return path', () => {
+  const BID = 'Q2hyb21lQ2hyb21lQ2hyb21lQ2hyb21lQ2hyb21lQ2g';
+  const headers = { host: 'app.example.com', cookie: `dforms_bid=${BID}`, 'sec-fetch-mode': 'navigate' };
+  const forwarded = (res: Response) => res.headers.get('x-middleware-request-x-quill-return');
+
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('PUBLIC_APP_URL', CANONICAL);
+  });
+
+  it.each(['/admin/playbooks', '/admin/playbooks/guia', '/admin/playbooks/guia?lang=en&pdf=1'])('names %s', (path) => {
+    const res = proxy(at(path, headers));
+    expectPass(res);
+    expect(forwarded(res)).toBe(path);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it("leaves the router's own parameter out of it", () => {
+    expect(forwarded(proxy(at('/admin/playbooks/guia?_rsc=1ab2', headers)))).toBe('/admin/playbooks/guia');
+    expect(forwarded(proxy(at('/admin/playbooks/guia?lang=en&pdf=1&_rsc=1ab2', headers)))).toBe(
+      '/admin/playbooks/guia?lang=en&pdf=1',
+    );
+  });
+
+  it.each(['/admin', '/admin/forms', '/admin/playbooks?category=ads', '/onboarding'])('names nothing on %s', (path) => {
+    expect(forwarded(proxy(at(path, headers)))).toBeNull();
+  });
+
+  it.each(['/admin', '/admin/forms', '/admin/playbooks/guia'])(
+    'drops a return header that arrived with the request (%s)',
+    (path) => {
+      const res = proxy(at(path, { ...headers, 'x-quill-return': '/admin/playbooks/otro' }));
+      expect(forwarded(res)).toBe(path.startsWith('/admin/playbooks') ? path : null);
+      expect(res.headers.get('x-middleware-override-headers')).toContain('cookie');
+    },
+  );
 });

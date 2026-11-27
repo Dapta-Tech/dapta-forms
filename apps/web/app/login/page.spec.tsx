@@ -6,6 +6,7 @@
  * page never does, whatever its URL carries.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 const provider = vi.fn(() => 'workos');
 vi.mock('@/lib/auth-session', () => ({ authProvider: () => provider() }));
@@ -36,4 +37,33 @@ describe('/login on a WorkOS build', () => {
     expect(redirect).toHaveBeenCalledWith('/api/auth/login');
     expect(String(redirect.mock.calls[0]?.[0])).not.toContain('screen');
   });
+});
+
+/** The signed-out landing's one button, where an expired session on a playbook ends up. */
+describe('/login?signedout=1, the sign-in button', () => {
+  const href = async (params: Record<string, string>) =>
+    /href="(\/api\/auth\/login[^"]*)"/
+      .exec(renderToStaticMarkup(await visit({ signedout: '1', ...params })))?.[1]
+      ?.replace(/&amp;/g, '&');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    provider.mockReturnValue('workos');
+  });
+
+  it('asks the hosted login, as before', async () => {
+    expect(await href({})).toBe('/api/auth/login?prompt=login');
+  });
+
+  it('brings the person back to the playbook they were on', async () => {
+    const next = '/admin/playbooks/guia?lang=en&pdf=1';
+    expect(await href({ next })).toBe(`/api/auth/login?prompt=login&next=${encodeURIComponent(next)}`);
+  });
+
+  it.each(['https://evil.example', '//evil.example', '/admin/forms', '/admin/playbooks/../../login', '"><script>'])(
+    'drops %s',
+    async (next) => {
+      expect(await href({ next })).toBe('/api/auth/login?prompt=login');
+    },
+  );
 });

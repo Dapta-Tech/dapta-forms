@@ -734,6 +734,23 @@ export interface FormsMessages {
         /** The pill beside the disabled button. */
         soon: string;
       };
+      /**
+       * The download of one playbook, in the language being read: the reader's
+       * button, the notice of an automatic download (`?pdf=1`), and the line
+       * that closes the PDF itself (`apps/web/scripts/playbook-pdfs.mjs`).
+       */
+      pdf: {
+        /** The reader's button. */
+        download: string;
+        /** The notice after an automatic download started. */
+        noticeTitle: string;
+        /** Under it, for the browser that blocked the download. */
+        noticeBody: string;
+        /** The notice's button. */
+        noticeButton: string;
+        /** The last line of the PDF, before the address of the other playbooks. */
+        footer: string;
+      };
       /** The ES / EN toggle of the gallery and the reader: the language of the playbooks, never the platform's. */
       contentLanguage: {
         /** The toggle's accessible name. */
@@ -3826,6 +3843,13 @@ export const en: FormsMessages = {
         doIt: 'Do it with dForms',
         useTemplate: 'Use this template',
         soon: 'Coming soon',
+      },
+      pdf: {
+        download: 'Download PDF',
+        noticeTitle: 'Your PDF is downloading',
+        noticeBody: 'If it did not start, tap the button.',
+        noticeButton: 'Download your PDF',
+        footer: 'Free dForms playbook. Find the others at',
       },
       contentLanguage: {
         label: 'Language of the playbooks',
@@ -6946,6 +6970,13 @@ export const es: FormsMessages = {
         doIt: 'Hazlo con dForms',
         useTemplate: 'Usa esta plantilla',
         soon: 'Próximamente',
+      },
+      pdf: {
+        download: 'Descargar PDF',
+        noticeTitle: 'Tu PDF se está descargando',
+        noticeBody: 'Si no empezó, toca el botón.',
+        noticeButton: 'Descargar tu PDF',
+        footer: 'Playbook gratis de dForms. Encuentra los demás en',
       },
       contentLanguage: {
         label: 'Idioma de los playbooks',

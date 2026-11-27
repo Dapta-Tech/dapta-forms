@@ -9,6 +9,7 @@
 *.ico binary
 *.woff binary
 *.woff2 binary
+*.pdf binary
 
 # Lockfile — keep diffs collapsed in reviews
 pnpm-lock.yaml linguist-generated=true -diff

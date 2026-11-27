@@ -4,13 +4,13 @@ import { getMessages, t } from '@quill/shared';
 import { adminApi, ApiError, type PlaybookCard, type PlaybookList } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { campaignProperties } from '@/lib/product-analytics';
-import { parseMarkdown, inlineText, type Block } from '@/lib/markdown';
+import { parseMarkdown, inlineText } from '@/lib/markdown';
+import { DO_IT_ID, splitDoIt } from '@/lib/playbook-body';
 import {
   PLAYBOOK_LANG_PARAM,
   PLAYBOOK_TAB_PARAM,
   asPlaybookLocale,
   categoryLabel,
-  headingId,
   isPlaybookSlug,
   nextPlaybook,
   playbookLangStorageKey,
@@ -21,33 +21,10 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { MarkdownView, headingIds } from '@/components/playbooks/markdown-view';
 import { PlaybookOpened } from '@/components/playbooks/playbook-opened';
+import { PlaybookPdf } from '@/components/playbooks/playbook-pdf';
 import { CardStatus } from '@/components/playbooks/playbooks-gallery';
 
 export const dynamic = 'force-dynamic';
-
-/** The anchor of the closing section, the one done with a dForms template. */
-const DO_IT_ID = 'hazlo-con-dforms';
-
-/** That section's heading as each language writes it: "Hazlo con dForms", "Do it with dForms". */
-const DO_IT_HEADINGS = new Set([DO_IT_ID, 'do-it-with-dforms']);
-
-/**
- * Splits the body at its closing "Hazlo con dForms" heading ("Do it with
- * dForms" in English): what comes before is the text, what comes after goes
- * in the template panel at the end. A playbook without that heading keeps its
- * whole body as text, and the panel shows the button alone.
- */
-function splitDoIt(blocks: Block[]): { body: Block[]; doIt: Block[] } {
-  const i = blocks.findIndex((b) => b.kind === 'heading' && b.level <= 2 && DO_IT_HEADINGS.has(headingId(inlineText(b.text))));
-  if (i < 0) return { body: blocks, doIt: [] };
-  // Up to the next level-2 heading, should one ever follow it.
-  const end = blocks.findIndex((b, j) => j > i && b.kind === 'heading' && b.level <= 2);
-  const stop = end < 0 ? blocks.length : end;
-  return {
-    body: [...blocks.slice(0, i), ...blocks.slice(stop)],
-    doIt: blocks.slice(i + 1, stop),
-  };
-}
 
 /** Only what a state line reads: the card goes to a client component, and the body must not ride along. */
 function statusOf(c: PlaybookCard) {
@@ -105,6 +82,8 @@ export default async function PlaybookPage({
   const toc = body.flatMap((b) => (ids.has(b) ? [{ id: ids.get(b)!, text: inlineText((b as { text: string }).text) }] : []));
   const category = categoryLabel(playbook.category, m);
   const next = list ? nextPlaybook(list.playbooks, playbook.slug) : null;
+  const storageKey = playbookLangStorageKey(memberId);
+  const campaign = campaignProperties(attribution);
   const categoryHref = withPlaybookLang(
     `/admin/playbooks?${PLAYBOOK_TAB_PARAM}=${encodeURIComponent(playbook.category)}`,
     contentLocale,
@@ -171,9 +150,9 @@ export default async function PlaybookPage({
           shownLocale={playbook.locale}
           fallback={playbook.fallback}
           langInUrl={langInUrl}
-          storageKey={playbookLangStorageKey(memberId)}
+          storageKey={storageKey}
           m={m.contentLanguage}
-          campaign={campaignProperties(attribution)}
+          campaign={campaign}
         />
       </div>
 
@@ -199,6 +178,18 @@ export default async function PlaybookPage({
               {m.fallback.reader}
             </p>
           ) : null}
+          {/* The file and its copy are in the language of the text on screen. */}
+          <PlaybookPdf
+            slug={playbook.slug}
+            category={playbook.category}
+            locale={contentLocale}
+            shownLocale={playbook.locale}
+            fallback={playbook.fallback}
+            langInUrl={langInUrl}
+            storageKey={storageKey}
+            m={getMessages(playbook.locale).admin.playbooks.pdf}
+            campaign={campaign}
+          />
           <hr className="my-8 border-border" />
 
           <div lang={playbook.locale}>

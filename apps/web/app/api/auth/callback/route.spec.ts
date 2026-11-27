@@ -184,6 +184,14 @@ describe('GET /api/auth/callback, the parked destination', () => {
     expect(cookieJar.delete).not.toHaveBeenCalledWith('quill_next');
   });
 
+  it.each(['?pdf=1', '?lang=es&pdf=1', '?lang=en&pdf=1'])('lands on a playbook asking for its PDF (%s)', async (query) => {
+    store.set('quill_next', `/admin/playbooks/guia-de-calificacion${query}`);
+    const res = await callback();
+    const target = new URL(res.headers.get('location')!);
+    expect(target.pathname).toBe('/admin/playbooks/guia-de-calificacion');
+    expect(target.search).toBe(query);
+  });
+
   it.each([
     '//evil.example',
     'https://evil.example/admin',
@@ -191,6 +199,8 @@ describe('GET /api/auth/callback, the parked destination', () => {
     '/admin/playbooks?categoria=ventas',
     '/admin/playbooks/x?lang=fr',
     '/admin/forms?lang=en',
+    '/admin/playbooks?pdf=1',
+    '/admin/playbooks/x?pdf=1&lang=en',
   ])(
     'ignores a tampered cookie (%s) and lands on /admin',
     async (next) => {

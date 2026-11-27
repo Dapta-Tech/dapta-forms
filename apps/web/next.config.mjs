@@ -34,6 +34,12 @@ const nextConfig = {
   // Node runtime only — deployment-agnostic (self-host on any Node/Docker host
   // AND one-click Vercel). No Vercel-only APIs.
   output: 'standalone',
+  // The playbook PDFs are read from disk at request time, by a path the tracer
+  // cannot follow, and they are outside public/ so only a signed-in person gets
+  // one: name them, or the standalone image ships without them.
+  outputFileTracingIncludes: {
+    '/api/playbooks/*/pdf': ['./assets/playbooks-pdf/**/*.pdf'],
+  },
   // Anchor Turbopack to this monorepo (a stray lockfile elsewhere can mislead it).
   turbopack: {
     root: join(here, '..', '..'),

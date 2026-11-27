@@ -5,7 +5,7 @@
  * into a redirect to /login.
  */
 import { cache } from 'react';
-import { cookies } from 'next/headers';
+import { cookies, headers as requestHeaders } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type {
   AnalyticsResponse,
@@ -34,6 +34,7 @@ import { getSession, clearSession, authProvider, getWorkspace } from './auth-ses
 import { analyticsSessionHeaders } from './analytics-session';
 import { browserIdHeaders } from './browser-id';
 import { resolveProductAnalytics } from './product-analytics';
+import { RETURN_PATH_HEADER, playbookReturnPath, withNextPath } from './return-path';
 
 const API_URL = serverApiUrl;
 
@@ -93,7 +94,12 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
     // when the refresh token itself is dead. Deleting the cookie first would
     // hand both routes a null session (see `signOutAction`'s read-then-clear
     // note).
-    if (authProvider() === 'workos') redirect('/api/auth/refresh');
+    // On a playbook page the destination rides along (`proxy.ts` names it), so
+    // the link of an email survives an expired or missing session.
+    if (authProvider() === 'workos') {
+      const next = playbookReturnPath((await requestHeaders()).get(RETURN_PATH_HEADER));
+      redirect(withNextPath('/api/auth/refresh', next));
+    }
     try {
       await clearSession();
     } catch {

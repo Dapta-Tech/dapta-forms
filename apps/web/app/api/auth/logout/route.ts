@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { clearSession, getSession, revokeUpstreamSession } from '@/lib/auth-session';
 import { canonicalOriginElsewhere, requestOrigin } from '@/lib/request-origin';
+import { NEXT_QUERY_KEY, playbookReturnPath, withNextPath } from '@/lib/return-path';
 
 /**
  * Logout, Orbit's contract exactly: revoke upstream best-effort (see
@@ -12,6 +13,8 @@ import { canonicalOriginElsewhere, requestOrigin } from '@/lib/request-origin';
  * stays alive and the next "sign in" re-authenticates the same person without
  * prompting. `?reason=expired` marks the session-expiry arrival from
  * `admin-api.ts` but no longer changes behavior; it stays for observability.
+ * `?next=`, for a playbook page only (`playbookReturnPath`), rides on to the
+ * landing so its sign-in button brings the person back there.
  *
  * The explicit sign-out button does NOT come through here: `signOutAction` and
  * `hostFetch` revoke + clear inline, because an action `redirect()` into a
@@ -32,8 +35,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await getSession();
   await clearSession();
   await revokeUpstreamSession(session);
+  const next = playbookReturnPath(new URL(req.url).searchParams.getAll(NEXT_QUERY_KEY));
+  const landing = withNextPath('/login?signedout=1', next);
   if (canonicalOriginElsewhere((n) => req.headers.get(n))) {
-    return new NextResponse(null, { status: 307, headers: { location: '/login?signedout=1' } });
+    return new NextResponse(null, { status: 307, headers: { location: landing } });
   }
-  return NextResponse.redirect(new URL('/login?signedout=1', requestOrigin(req)));
+  return NextResponse.redirect(new URL(landing, requestOrigin(req)));
 }
