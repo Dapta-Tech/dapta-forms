@@ -9,6 +9,7 @@
     "build": "next build",
     "icons": "node scripts/build-icons.mjs",
     "playbook-media": "node scripts/playbook-media.mjs",
+    "playbook-pdfs": "node scripts/playbook-pdfs.mjs",
     "start": "next start -p 3000",
     "lint": "eslint app components lib proxy.ts proxy.spec.ts",
     "test": "vitest run",

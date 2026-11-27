@@ -6,7 +6,7 @@ import type { FormsMessages } from '@quill/shared';
 import { recordPlaybookSeenAction } from '@/app/admin/playbook-actions';
 import { callAction } from '@/lib/call-action';
 import {
-  readStoredPlaybookLocale,
+  pendingPlaybookLocale,
   storePlaybookLocale,
   withPlaybookLang,
   type PlaybookContentLocale,
@@ -79,8 +79,8 @@ export function PlaybookOpened({
     if (done.current === slug) return;
     if (!langInUrl && !checkedStored.current) {
       checkedStored.current = true;
-      const stored = readStoredPlaybookLocale(storageKey);
-      if (stored && stored !== locale) {
+      const stored = pendingPlaybookLocale(langInUrl, storageKey, locale);
+      if (stored) {
         waitFor.current = stored;
         setPicked(stored);
         startTransition(() => router.replace(hereWithLang(stored), { scroll: false }));

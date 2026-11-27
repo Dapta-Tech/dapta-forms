@@ -7,7 +7,8 @@
 //
 // Every playbook asset lives in the folder of its language: the inline media
 // in public/playbooks/inline/<locale>/<slug>/, the card thumbnails in
-// public/playbooks/<locale>/. Anything outside a language folder (an asset
+// public/playbooks/<locale>/, the downloadable PDFs in
+// public/playbooks/pdf/<locale>/ (made and checked by `playbook-pdfs.mjs`). Anything outside a language folder (an asset
 // left where it was before the playbooks had languages, or a folder that is
 // not one) fails the check, so it is never served by accident.
 //
@@ -106,8 +107,8 @@ export function oversizedMediaFiles(dir = MEDIA_DIR, max = MAX_BYTES) {
 
 /**
  * The paths under `dir` (`public/playbooks/`) that are outside a language
- * folder: a file at its top or at the top of `inline/`, or a folder there
- * that is not a language. Sorted; empty when everything is in place.
+ * folder: a file at its top or at the top of `inline/` or `pdf/`, or a folder
+ * there that is not a language. Sorted; empty when everything is in place.
  */
 export function strayMediaPaths(dir = PLAYBOOKS_DIR, locales = LOCALES) {
   if (!existsSync(dir)) return [];
@@ -120,8 +121,9 @@ export function strayMediaPaths(dir = PLAYBOOKS_DIR, locales = LOCALES) {
       if (!isDir || !allowed.includes(name)) out.push(`${prefix}${name}${isDir ? '/' : ''}`);
     }
   };
-  top(dir, '', [...locales, 'inline']);
+  top(dir, '', [...locales, 'inline', 'pdf']);
   top(join(dir, 'inline'), 'inline/', locales);
+  top(join(dir, 'pdf'), 'pdf/', locales);
   return out;
 }
 

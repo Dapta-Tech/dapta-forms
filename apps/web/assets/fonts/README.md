@@ -56,6 +56,15 @@ on `DEFAULT_FORM_FONT` in `packages/engine/src/form-design.ts`). Full text:
 | Fraunces | Undercase Type, Phaedra Charles, Flavia Zimbardi |
 | Playfair Display | Claus Eggers Sørensen |
 
+## Hanken Grotesk, for the playbook PDFs
+
+`hanken-grotesk-{400,600,700,800}.ttf` is the brand face, read by
+`scripts/playbook-pdfs.mjs` when it prints the playbooks. They are static
+instances of the variable `latin` file (made with `fontTools.varLib.instancer`):
+Chromium embeds a variable face in a PDF as Type 3 glyphs, which several
+viewers draw poorly, and a static one as TrueType. The share cards do not use
+them. SIL Open Font License 1.1, designer Hanken Design Co.
+
 ## Adding a face
 
 Adding a value to `FORM_FONTS` without adding its files here is safe but silent:

@@ -464,6 +464,20 @@ inline assets, `pnpm --filter @quill/web playbook-media`, which records their
 sizes (its `--check` and a web spec fail when a marker or a thumbnail names a
 missing file in either language, an asset sits outside a language folder,
 the sizes are stale, or a video weighs over 300 KB or an image over 200 KB).
+Then run
+`pnpm --filter @quill/web playbook-pdfs`, which prints the downloadable PDF of
+every playbook and language into
+`apps/web/public/playbooks/pdf/<locale>/<slug>.pdf` (only the ones that are
+missing or out of date; it needs Chromium, `pnpm exec playwright install
+chromium`, or an installed Chrome) and records what each was made from in
+`apps/web/scripts/playbook-pdfs.manifest.json`; commit both. Its `--check`
+needs no browser, and a web spec runs it: it fails when a PDF is missing, was
+not printed again after an edit to the markdown, a picture, the template or the
+copy it prints, weighs over 1.5 MB, or belongs to no playbook. The reader
+offers the file of the language being read, and `?pdf=1` on a playbook page
+starts that download once (the return path accepts exactly `?pdf=1`,
+`?lang=es&pdf=1` and `?lang=en&pdf=1`). The files are static, so anyone with
+the address can download one, as with the playbooks' pictures.
 A playbook with `promisedBy` exposes its whole body on
 `GET /v1/public/playbooks`.
 Set `publishedAt` to a moment AFTER the release reaches production: "New" is

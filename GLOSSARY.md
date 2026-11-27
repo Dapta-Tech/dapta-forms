@@ -53,7 +53,7 @@ _Avoid_: Reward, perk
 ### What people read
 
 **Playbook**:
-A free resource in the in-app gallery and on the landing's resource hub: a long text with a category, a step done with a dForms template, and a public preview. Its full text needs a sign-in, unless a guide promises it. Defined in code, never in the database, once per playbook language.
+A free resource in the in-app gallery and on the landing's resource hub: a long text with a category, a step done with a dForms template, and a public preview. Its full text needs a sign-in, unless a guide promises it. Defined in code, never in the database, once per playbook language. Each playbook language also has a PDF of the whole text, which the reader offers as a download.
 _Avoid_: Guide, resource, article, lead magnet
 
 **Playbook language**:
