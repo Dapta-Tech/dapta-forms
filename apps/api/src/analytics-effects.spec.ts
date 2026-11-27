@@ -163,6 +163,54 @@ describe('AnalyticsCapture — delivery', () => {
     expect(props.$groups).toEqual({ forms_account: 'acc_1' });
   });
 
+  describe('environment', () => {
+    async function deliveredProps(publicAppUrl: string | undefined, properties?: Record<string, unknown>) {
+      const calls: RecordedCall[] = [];
+      const env = { PRODUCT_ANALYTICS_KEY: KEY, PRODUCT_ANALYTICS_HOST: HOST, PUBLIC_APP_URL: publicAppUrl } as never;
+      await newCapture(env, calls).deliver(
+        'forms_playbook_viewed',
+        JSON.stringify({ event: 'forms_playbook_viewed', distinctId: 'a@b.com', accountId: 'acc_1', properties, timestamp: 1 }),
+      );
+      return calls[0]!.body.properties as Record<string, unknown>;
+    }
+
+    it('tags a production host as prd, with the app host', async () => {
+      const props = await deliveredProps('https://app.example.com');
+      expect(props.environment).toBe('prd');
+      expect(props.app_host).toBe('app.example.com');
+    });
+
+    it('tags a host with a dev label as dev', async () => {
+      const props = await deliveredProps('https://app.dev.example.com');
+      expect(props.environment).toBe('dev');
+      expect(props.app_host).toBe('app.dev.example.com');
+    });
+
+    it('tags a bare clone (no PUBLIC_APP_URL) and localhost as local', async () => {
+      const bare = await deliveredProps(undefined);
+      expect(bare.environment).toBe('local');
+      expect(bare.app_host).toBeUndefined();
+      expect((await deliveredProps('')).environment).toBe('local');
+      expect((await deliveredProps('http://localhost:3400')).environment).toBe('local');
+    });
+
+    it('cannot be overridden by the call site', async () => {
+      const props = await deliveredProps('https://app.example.com', { environment: 'local', app_host: 'x' });
+      expect(props.environment).toBe('prd');
+      expect(props.app_host).toBe('app.example.com');
+    });
+
+    it('tags $mcp_* events too', async () => {
+      const calls: RecordedCall[] = [];
+      const env = { PRODUCT_ANALYTICS_KEY: KEY, PUBLIC_APP_URL: 'https://app.dev.example.com' } as never;
+      await newCapture(env, calls).deliver(
+        '$mcp_tool_call',
+        JSON.stringify({ event: '$mcp_tool_call', distinctId: 'a@b.com', accountId: 'acc_1', timestamp: 1 }),
+      );
+      expect((calls[0]!.body.properties as Record<string, unknown>).environment).toBe('dev');
+    });
+  });
+
   it('sets the email on the person when the distinct id is an email', async () => {
     // MCP, API-key and tracker-blocked users never run the browser identify,
     // so the server event is the only place their person learns its email.

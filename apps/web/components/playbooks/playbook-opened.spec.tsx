@@ -74,6 +74,14 @@ afterEach(async () => {
 });
 
 describe('PlaybookOpened', () => {
+  it("puts the account's first-touch utm tags on the open and on a language change", async () => {
+    const campaign = { utm_source: 'linkedin', utm_medium: 'social' };
+    await render({ campaign });
+    await click('en');
+    expect(calls.events.map(([e]) => e)).toEqual(['playbook_opened', 'playbooks_locale_changed']);
+    for (const [, props] of calls.events) expect(props).toMatchObject(campaign);
+  });
+
   it('records the open once, with the language read', async () => {
     await render();
     await render();

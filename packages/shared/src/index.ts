@@ -7,6 +7,7 @@ export * from './handle';
 export * from './branding';
 export * from './growth';
 export * from './attribution';
+export * from './deployment-environment';
 export * from './nav';
 export * from './countries';
 export * from './i18n';

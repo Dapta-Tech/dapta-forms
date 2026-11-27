@@ -28,7 +28,7 @@ export function ProductAnalytics({
   analytics: ResolvedProductAnalytics;
   identity: AnalyticsIdentity;
 }) {
-  const { key, host } = analytics;
+  const { key, host, environment } = analytics;
   const { email, memberId, accountId, accountCode, role, attribution, landingDistinctId, referralCode } = identity;
 
   // `attribution` is an OBJECT, re-created by every RSC payload, so depending on
@@ -71,7 +71,7 @@ export function ProductAnalytics({
 
   return (
     <Script id="product-analytics" data-testid="product-analytics" strategy="afterInteractive">
-      {buildAnalyticsSnippet(key, host)}
+      {buildAnalyticsSnippet(key, host, environment)}
     </Script>
   );
 }

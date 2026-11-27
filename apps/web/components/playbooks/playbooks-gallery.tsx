@@ -26,6 +26,9 @@ import { useWorkspaceTimeZone } from '@/components/workspace-timezone';
 import { PlaybookLocaleToggle } from './playbook-locale-toggle';
 import { PlaybookThumb } from './playbook-thumb';
 
+/** One shared empty value, so the default never changes the effect's deps. */
+const NO_CAMPAIGN: Record<string, string> = {};
+
 /** Set (or remove) one query parameter in the address without a navigation. Best effort. */
 function replaceParam(name: string, value: string | null) {
   try {
@@ -113,6 +116,7 @@ export function PlaybooksGallery({
   now,
   locale,
   m,
+  campaign = NO_CAMPAIGN,
 }: {
   /** The same cards in each playbook language (a card not translated yet is its Spanish one, `fallback`). */
   cardsByLocale: Record<PlaybookContentLocale, PlaybookCard[]>;
@@ -131,6 +135,8 @@ export function PlaybooksGallery({
   /** The platform's language: the copy around the cards and their dates. */
   locale: string;
   m: Messages;
+  /** The account's first-touch `utm_*` tags (`campaignProperties`), on every event here. */
+  campaign?: Record<string, string>;
 }) {
   const [tab, setTab] = useState<PlaybookTab>(initialTab);
   const [contentLocale, setContentLocale] = useState<PlaybookContentLocale>(initialLocale);
@@ -163,8 +169,9 @@ export function PlaybooksGallery({
       count: cardsByLocale[shown].length,
       category: initialTab,
       locale: shown,
+      ...campaign,
     });
-  }, [newCount, cardsByLocale, initialTab, initialLocale, langInUrl, storageKey]);
+  }, [newCount, cardsByLocale, initialTab, initialLocale, langInUrl, storageKey, campaign]);
 
   const select = (next: PlaybookTab) => {
     if (next === tab) return;
@@ -172,7 +179,7 @@ export function PlaybooksGallery({
     // Kept in the address so a reload or a shared link opens on the same tab,
     // without a navigation (the cards are already here).
     replaceParam(PLAYBOOK_TAB_PARAM, next === 'all' ? null : next);
-    captureEvent('playbooks_category_selected', { category: next, locale: contentLocale });
+    captureEvent('playbooks_category_selected', { category: next, locale: contentLocale, ...campaign });
   };
 
   // The language of the playbooks only: the cards of each are already here.
@@ -182,7 +189,7 @@ export function PlaybooksGallery({
     setContentLocale(next);
     storePlaybookLocale(storageKey, next);
     replaceParam(PLAYBOOK_LANG_PARAM, next);
-    captureEvent('playbooks_locale_changed', { from, to: next, surface: 'gallery' });
+    captureEvent('playbooks_locale_changed', { from, to: next, surface: 'gallery', ...campaign });
   };
 
   // Arrow keys move along the tabs, as a tablist does.

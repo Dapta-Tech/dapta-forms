@@ -8,6 +8,7 @@ import {
   resolveProductAnalytics,
   buildAnalyticsSnippet,
   identifyMember,
+  campaignProperties,
   DEFAULT_ANALYTICS_HOST,
   type AnalyticsIdentity,
 } from './product-analytics';
@@ -53,9 +54,92 @@ describe('resolveProductAnalytics', () => {
   });
 });
 
+describe('resolveProductAnalytics: environment', () => {
+  it('derives the environment from the host of PUBLIC_APP_URL', () => {
+    expect(resolveProductAnalytics({ PUBLIC_APP_URL: 'https://app.example.com' }).environment).toBe('prd');
+    expect(resolveProductAnalytics({ PUBLIC_APP_URL: 'https://app.dev.example.com' }).environment).toBe('dev');
+    expect(resolveProductAnalytics({ PUBLIC_APP_URL: 'http://localhost:3400' }).environment).toBe('local');
+  });
+
+  it('is local on a bare clone with no PUBLIC_APP_URL', () => {
+    expect(resolveProductAnalytics({}).environment).toBe('local');
+  });
+});
+
+describe('buildAnalyticsSnippet: environment on every event', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Runs the snippet against an already-loaded fake, returning the init config. */
+  function initConfig(environment: 'prd' | 'dev' | 'local') {
+    const inits: Array<[string, Record<string, unknown>]> = [];
+    const registered: unknown[] = [];
+    // `__SV` set: the loader stub sees a library already in place and skips
+    // itself, so only the `posthog.init(...)` half runs.
+    const posthog = {
+      __SV: 1,
+      init: (key: string, config: Record<string, unknown>) => void inits.push([key, config]),
+      register: (p: unknown) => void registered.push(p),
+    };
+    vi.stubGlobal('window', { posthog });
+    vi.stubGlobal('posthog', posthog);
+    vi.stubGlobal('document', {});
+    new Function(buildAnalyticsSnippet('phc_abc', 'https://v.example.com', environment))();
+    expect(inits).toHaveLength(1);
+    // Nothing is registered: a registered value would persist in the shared cookie.
+    expect(registered).toHaveLength(0);
+    return inits[0]![1];
+  }
+
+  it('stamps the environment on each event as it leaves, autocaptured ones included', () => {
+    const beforeSend = initConfig('dev').before_send as (e: unknown) => unknown;
+    const pageview = { event: '$pageview', properties: { $current_url: 'https://app.dev.example.com/admin' } };
+    expect(beforeSend(pageview)).toBe(pageview);
+    expect(pageview.properties).toMatchObject({ environment: 'dev', $current_url: 'https://app.dev.example.com/admin' });
+  });
+
+  it('overrides a stale value instead of keeping it', () => {
+    const beforeSend = initConfig('prd').before_send as (e: unknown) => unknown;
+    const event = { event: 'forms_playbook_opened', properties: { environment: 'dev' } };
+    beforeSend(event);
+    expect(event.properties.environment).toBe('prd');
+  });
+
+  it('never drops an event, even one without properties', () => {
+    const beforeSend = initConfig('local').before_send as (e: unknown) => unknown;
+    const bare = { event: 'x' };
+    expect(beforeSend(bare)).toBe(bare);
+    expect(beforeSend(null)).toBeNull();
+  });
+
+  it('escapes the value it interpolates', () => {
+    const snippet = buildAnalyticsSnippet('phc_abc', 'https://v.example.com', '</script>' as never);
+    expect(snippet).not.toContain('</script>');
+  });
+});
+
+describe('campaignProperties', () => {
+  it('keeps only the non-empty utm tags, snake_cased', () => {
+    expect(
+      campaignProperties({
+        utmSource: 'linkedin',
+        utmCampaign: 'playbooks',
+        utmMedium: '',
+        gclid: 'abc',
+        firstSeenAt: 123,
+      }),
+    ).toEqual({ utm_source: 'linkedin', utm_campaign: 'playbooks' });
+  });
+
+  it('is empty for direct traffic or an account with no attribution', () => {
+    expect(campaignProperties(null)).toEqual({});
+    expect(campaignProperties(undefined)).toEqual({});
+    expect(campaignProperties({})).toEqual({});
+  });
+});
+
 describe('buildAnalyticsSnippet', () => {
   it('initializes with the given key and host', () => {
-    const snippet = buildAnalyticsSnippet('phc_abc', 'https://v.example.com');
+    const snippet = buildAnalyticsSnippet('phc_abc', 'https://v.example.com', 'prd');
     expect(snippet).toContain('posthog.init("phc_abc"');
     expect(snippet).toContain('api_host:"https://v.example.com"');
   });
@@ -64,13 +148,13 @@ describe('buildAnalyticsSnippet', () => {
     // The admin is a real multi-route app: every navigation is its own page.
     // Disabling this (as the single-route public form page does) would mean
     // per-account activity had to be instrumented screen by screen.
-    expect(buildAnalyticsSnippet('phc_abc', DEFAULT_ANALYTICS_HOST)).not.toContain(
+    expect(buildAnalyticsSnippet('phc_abc', DEFAULT_ANALYTICS_HOST, 'prd')).not.toContain(
       'capture_pageview:false',
     );
   });
 
   it('escapes a hostile key so it cannot break out of the inline script', () => {
-    const snippet = buildAnalyticsSnippet('</script><script>alert(1)</script>', 'https://x.example');
+    const snippet = buildAnalyticsSnippet('</script><script>alert(1)</script>', 'https://x.example', 'prd');
     expect(snippet).not.toContain('</script>');
     expect(snippet).toContain('\\u003c');
   });
