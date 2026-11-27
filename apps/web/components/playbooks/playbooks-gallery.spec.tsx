@@ -66,7 +66,11 @@ let host: HTMLDivElement | undefined;
 async function mount(
   initialTab: 'all' | 'ventas' | 'agentes' = 'all',
   tabs: ('all' | 'ventas' | 'agentes')[] = ['all', 'ventas', 'agentes'],
-  { initialLocale = 'es', langInUrl = false }: { initialLocale?: 'es' | 'en'; langInUrl?: boolean } = {},
+  {
+    initialLocale = 'es',
+    langInUrl = false,
+    campaign,
+  }: { initialLocale?: 'es' | 'en'; langInUrl?: boolean; campaign?: Record<string, string> } = {},
 ) {
   host = document.createElement('div');
   document.body.append(host);
@@ -84,6 +88,7 @@ async function mount(
         now={NOW}
         locale="es"
         m={getMessages('es').admin.playbooks}
+        campaign={campaign}
       />,
     ),
   );
@@ -131,6 +136,19 @@ describe('PlaybooksGallery', () => {
     await mount('ventas');
     expect(calls.visits).toBe(1);
     expect(calls.events).toEqual([['playbooks_gallery_viewed', { new_count: 1, count: 3, category: 'ventas', locale: 'es' }]]);
+  });
+
+  it("puts the account's first-touch utm tags on every playbook event", async () => {
+    const campaign = { utm_source: 'linkedin', utm_campaign: 'playbooks' };
+    await mount('all', undefined, { campaign });
+    await act(async () => host!.querySelector<HTMLElement>('[data-testid="playbooks-tab-agentes"]')!.click());
+    await act(async () => [...host!.querySelectorAll<HTMLElement>('[data-testid="playbooks-locale"] button')].find((b) => b.textContent === 'EN')!.click());
+    expect(calls.events.map(([e]) => e)).toEqual([
+      'playbooks_gallery_viewed',
+      'playbooks_category_selected',
+      'playbooks_locale_changed',
+    ]);
+    for (const [, props] of calls.events) expect(props).toMatchObject(campaign);
   });
 
   it('opens on the tab it is given and switches on a click, keeping it in the address', async () => {
