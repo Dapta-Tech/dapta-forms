@@ -416,6 +416,8 @@ export class AdminCrudController {
       await this.productAnalytics.captureForMember('onboarding_completed', p, {
         template: parsed.data.template,
         form_id: result.formId,
+        // Only on a shortened path: an ordinary completion's event is unchanged.
+        ...(parsed.data.flow ? { flow: parsed.data.flow } : {}),
       });
       // The wizard is the THIRD way a form is born, alongside `createForm` and
       // `duplicateForm`, and it has to announce itself the same way they do.

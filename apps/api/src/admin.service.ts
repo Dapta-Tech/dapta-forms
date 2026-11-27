@@ -8,6 +8,7 @@ import {
   getFormTemplate,
   getMe,
   getMemberIdentity,
+  isFoundingMember,
   humanHasCompletedOnboarding,
   recordOnboardingFormId,
   saveOnboardingProgress,
@@ -27,6 +28,7 @@ import type { HostPrincipal } from './auth.service';
 import { isAdmin } from './permissions';
 import { DisabledEntitlementsProvider, type EntitlementsProvider } from './entitlements.provider';
 import { DaptaSyncEffects } from './dapta-sync-effects';
+import { EmailEffects } from './email-effects';
 import { DB, ENTITLEMENTS, ONBOARDING_ENABLED, PREMIUM_MODE } from './tokens';
 
 /** How long a cached Dapta AI entitlement verdict stays fresh before re-asking upstream. */
@@ -69,6 +71,8 @@ export class AdminService {
     // Explicit class token (esbuild elides type-only imports); optional so a
     // deployment without the Dapta pipeline — every fork — simply has no sync.
     @Optional() @Inject(DaptaSyncEffects) private readonly daptaSync?: DaptaSyncEffects,
+    // Optional and last for the same reason: without it no signup email is queued.
+    @Optional() @Inject(EmailEffects) private readonly email?: EmailEffects,
   ) {}
 
   /**
@@ -182,6 +186,7 @@ export class AdminService {
         leadVolume: input.leadVolume,
         leadSource: input.leadSource,
         phone: input.phone,
+        flow: input.flow,
       },
       // The cohort comes from the WIZARD, which is where the IAM probe runs —
       // the API has no `IAM_BASE_URL` and giving it one would mean a configmap
@@ -204,6 +209,7 @@ export class AdminService {
     // (see below), and it must keep the sync too. Awaited for the same reason
     // as the early hook: a local never-rejecting insert, not a network call.
     await this.daptaSync?.enqueueComplete(p.accountId, p.memberId);
+    await this.sendHubPlaybook(p, input);
 
     // Not guarded by `hasExtraHubspotDestination`, unlike POST /v1/forms: the
     // config here is a static server-authored template from the registry, never
@@ -235,6 +241,22 @@ export class AdminService {
 
     await recordOnboardingFormId(this.db, p.accountId, created.value.id);
     return { completed: true, formId: created.value.id };
+  }
+
+  /**
+   * A signup that came for a playbook gets it by email. Only the person who
+   * founded the workspace: someone who joined an existing one did not sign up
+   * through the hub's door. Queued, never sent inline.
+   */
+  private async sendHubPlaybook(p: HostPrincipal, input: OnboardingCompleteInput): Promise<void> {
+    if (input.flow !== 'hub' || !input.playbook || p.accessGrant) return;
+    if (!(await isFoundingMember(this.db, p.accountId, p.memberId))) return;
+    await this.email?.enqueuePlaybookPdf({
+      accountId: p.accountId,
+      memberId: p.memberId,
+      slug: input.playbook,
+      locale: input.playbookLocale ?? input.locale,
+    });
   }
 
   /** The created form's name in the locale the wizard rendered its cards in. */

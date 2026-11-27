@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SubmissionNotifier } from './submission-notifier';
+import { LogOnlyEmailProvider } from './adapters/log-only';
 import type { EmailMessage, EmailProvider, EmailResult } from './email.port';
 
 class CaptureProvider implements EmailProvider {
@@ -478,5 +479,36 @@ describe('SubmissionNotifier referral emails', () => {
     expect(m.subject).toBe('Lo lograste: tus formularios ya no llevan «Hecho con dForms»');
     expect(m.idempotencyKey).toBe('referral:user_ana:unlocked');
     expect(m.html).toContain('lang="es"');
+  });
+});
+
+describe('sendPlaybookPdf', () => {
+  const n = {
+    accountId: 'a1',
+    personId: 'p1',
+    to: 'ana@example.com',
+    slug: 'guide',
+    title: '<b>Guide</b>\r\nBcc: x@example.com',
+    link: 'https://app.example.com/admin/playbooks/guide?lang=en&pdf=1',
+    locale: 'en',
+  };
+
+  it('keeps the title on one subject line and escapes it in the HTML', async () => {
+    const sent: EmailMessage[] = [];
+    const notifier = new SubmissionNotifier({
+      send: async (m) => {
+        sent.push(m);
+        return { delivered: true, driver: 'smtp' };
+      },
+    });
+    await notifier.sendPlaybookPdf(n);
+    expect(sent[0]!.subject).not.toMatch(/[\r\n]/);
+    expect(sent[0]!.html).not.toContain('<b>Guide</b>');
+    expect(sent[0]!.html).toContain('&lt;b&gt;Guide&lt;/b&gt;');
+  });
+
+  it('delivers nothing with the default log-only provider', async () => {
+    const notifier = new SubmissionNotifier(new LogOnlyEmailProvider({ log: () => {} }));
+    expect(await notifier.sendPlaybookPdf(n)).toMatchObject({ delivered: false, driver: 'log-only' });
   });
 });

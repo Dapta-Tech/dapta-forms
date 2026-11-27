@@ -389,6 +389,8 @@ export interface OnboardingProgress {
   phone?: string | null;
   template?: string | null;
   lastStep?: string | null;
+  /** The path that shortened the wizard (`hub`); absent on the ordinary one. */
+  flow?: 'hub';
 }
 
 /**
@@ -413,6 +415,10 @@ export interface OnboardingComplete {
   cohort?: string;
   /** What the wizard rendered in, so the created form is named to match. */
   locale?: string;
+  /** Set together for a signup from the resource hub: the API emails the playbook. */
+  flow?: 'hub';
+  playbook?: string;
+  playbookLocale?: 'es' | 'en';
 }
 
 export interface FormSummary {

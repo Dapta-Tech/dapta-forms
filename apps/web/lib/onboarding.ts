@@ -22,8 +22,10 @@ import {
   ONBOARDING_STEPS,
   ONBOARDING_USE_CASES,
   FORM_TEMPLATE_IDS,
+  onboardingSteps,
   type FormTemplateId,
   type OnboardingCohort,
+  type OnboardingFlow,
   type OnboardingLeadVolume,
   type OnboardingStep,
 } from '@quill/types';
@@ -280,12 +282,19 @@ function allQuestions(m: OnboardingMessages): WizardQuestion[] {
  * role at all, and its `dapta_goals` question is about voice and text agents,
  * not about what someone wants a FORM for.
  *
+ * A `flow` overrides the cohort's list: someone from the resource hub answers
+ * two questions whoever they are (`ONBOARDING_HUB_STEPS`).
+ *
  * Everything downstream — the counter, `lastStep`, the drop-off buckets — reads
  * the length of THIS list rather than a constant, so the two cohorts cannot end
  * up counted against each other's denominator.
  */
-export function wizardQuestions(m: OnboardingMessages, cohort: OnboardingCohort): WizardQuestion[] {
-  const wanted: readonly OnboardingStep[] = ONBOARDING_COHORTS[cohort];
+export function wizardQuestions(
+  m: OnboardingMessages,
+  cohort: OnboardingCohort,
+  flow?: OnboardingFlow,
+): WizardQuestion[] {
+  const wanted = onboardingSteps(cohort, flow);
   return allQuestions(m).filter((q) => wanted.includes(q.key));
 }
 

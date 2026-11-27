@@ -4,6 +4,8 @@ import { getMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { PH_ID_COOKIE, sanitizeLandingDistinctId } from '@/lib/attribution';
 import { preferredLocale } from '@/lib/locale';
+import { hubEntry } from '@/lib/hub-entry';
+import { NEXT_COOKIE } from '@/lib/return-path';
 import { currentOnboardingCohort } from '@/lib/dapta-onboarding';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
@@ -63,6 +65,11 @@ export default async function OnboardingPage({
   // failure rather than asking a Dapta customer what Dapta already knows.
   const cohort = await currentOnboardingCohort();
 
+  // On their way to a playbook (the parked return path): the short wizard, and
+  // the playbook by email once they finish. Read here, once, so a cookie that
+  // expires mid-wizard changes neither.
+  const hub = hubEntry((await cookies()).get(NEXT_COOKIE)?.value);
+
   return (
     <>
       {/* The only surface that passes `signupAccountId`: this page renders once
@@ -92,7 +99,7 @@ export default async function OnboardingPage({
           ),
         }}
       />
-      <OnboardingWizard messages={messages} locale={locale} cohort={cohort} />
+      <OnboardingWizard messages={messages} locale={locale} cohort={cohort} hub={hub} />
     </>
   );
 }

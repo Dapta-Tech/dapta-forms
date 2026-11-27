@@ -1,8 +1,11 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
+  announcementUserKey,
   claimReferralNudge,
   deletePendingOutbox,
   enqueueOutbox,
+  enqueueOutboxOnce,
+  getMemberIdentity,
   getNotificationSettings,
   personContact,
   referralNudgeSent,
@@ -17,12 +20,14 @@ import {
   SubmissionNotifier,
   type EmailProvider,
   type MemberInvitedNotification,
+  type PlaybookPdfNotification,
   type ReferralJoinedNotification,
   type ReferralNudgeNotification,
   type ReferralUnlockedNotification,
   type SubmissionNotification,
 } from '@quill/notifications';
 import { getMessages, referralShareLinks } from '@quill/shared';
+import { findPlaybook, isPlaybookPublished, localizedPlaybook } from '@quill/shared/playbooks';
 import type { ServerEnv } from '@quill/config/env';
 import { AttributionService } from './attribution.service';
 import { referralCampaignActive } from './referral-campaign';
@@ -355,6 +360,54 @@ export class EmailEffects {
   }
 
   /**
+   * Email a new signup the playbook they were on their way to, once per person
+   * and playbook: the outbox row's key is the pair, so a retried completion or a
+   * second workspace cannot send it again.
+   *
+   * Nothing is queued for a slug that names no published playbook, for a member
+   * with no address, or without a `PUBLIC_APP_URL` (the email is its button).
+   * With no mail provider configured the default adapter only logs it.
+   *
+   * Never rejects: a finished signup stands whether or not its email is queued.
+   */
+  async enqueuePlaybookPdf(input: {
+    accountId: string;
+    memberId: string;
+    slug: string;
+    locale?: string | null;
+  }): Promise<void> {
+    try {
+      const playbook = findPlaybook(input.slug);
+      if (!playbook || !isPlaybookPublished(playbook, Date.now())) return;
+      const locale = normalizeLocale(input.locale);
+      const link = this.appUrl(`/admin/playbooks/${playbook.slug}?lang=${locale}&pdf=1`);
+      if (!link) return;
+      const identity = await getMemberIdentity(this.db, input.accountId, input.memberId);
+      const to = identity?.email?.trim();
+      if (!to) return;
+      const personId = await announcementUserKey(this.db, input.accountId, input.memberId);
+      const payload: PlaybookPdfNotification = {
+        accountId: input.accountId,
+        personId,
+        to,
+        slug: playbook.slug,
+        title: localizedPlaybook(playbook, locale).playbook.title,
+        link,
+        locale,
+      };
+      await enqueueOutboxOnce(this.db, `playbook_pdf:${personId}:${playbook.slug}`, {
+        kind: 'email',
+        action: 'playbook_pdf',
+        accountId: input.accountId,
+        subjectUid: input.memberId,
+        payload: JSON.stringify(payload),
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue playbook_pdf: ${String(err)}`);
+    }
+  }
+
+  /**
    * The countdown email to a referrer ("{invitee} joined. {left} to go"),
    * queued on each credited referral that leaves them between 1 and 4.
    *
@@ -556,6 +609,12 @@ export class EmailEffects {
           JSON.parse(payloadJson) as MemberInvitedNotification,
         );
         return;
+      case 'playbook_pdf': {
+        const p = JSON.parse(payloadJson) as PlaybookPdfNotification;
+        if (!p.to) throw new OutboxSkipError('no recipient');
+        await this.notifier.sendPlaybookPdf(p);
+        return;
+      }
       case 'referral_joined': {
         const r = JSON.parse(payloadJson) as ReferralJoinedNotification;
         if (!r.to) throw new OutboxSkipError('no recipient');

@@ -142,6 +142,42 @@ export function renderMemberInvited(
   };
 }
 
+// --- Resource hub: the playbook sent at signup --------------------------------
+
+/** What the playbook email needs. */
+export interface PlaybookPdfCopyVars {
+  /** The playbook's title, in the email's language when it has that version. */
+  title: string;
+}
+
+/**
+ * "Your playbook as a PDF", to someone who signed up on their way to it. The
+ * `button` is the call to action's label; the link itself is the notifier's.
+ */
+export function renderPlaybookPdf(
+  locale: NotificationLocale,
+  v: PlaybookPdfCopyVars,
+): RenderedCopy & { button: string } {
+  if (locale === 'es') {
+    return {
+      subject: `Tu playbook en PDF: ${v.title}`,
+      lines: [
+        `Ya tienes cuenta en dForms. Aquí está «${v.title}», completo y listo para guardar en PDF.`,
+        'Si te pide entrar, usa este mismo correo y vuelve a tocar el botón.',
+      ],
+      button: 'Descargar el PDF',
+    };
+  }
+  return {
+    subject: `Your playbook PDF: ${v.title}`,
+    lines: [
+      `Your dForms account is ready. Here is “${v.title}”, in full and ready to save as a PDF.`,
+      'If it asks you to sign in, use this same address and press the button again.',
+    ],
+    button: 'Get the PDF',
+  };
+}
+
 // --- Referral program: emails to the referrer ---------------------------------
 //
 // Platform copy, never overridable. The badge is named by the label it carries
