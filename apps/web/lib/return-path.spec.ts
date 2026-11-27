@@ -21,6 +21,19 @@ describe('safeNextPath', () => {
     expect(safeNextPath(path)).toBe(path);
   });
 
+  it.each(['/admin/playbooks/x?lang=en', '/admin/playbooks?lang=es', '/admin/playbooks/guia-de-calificacion?lang=es'])(
+    'accepts %s, a playbook with the reader language',
+    (path) => {
+      expect(safeNextPath(path)).toBe(path);
+    },
+  );
+
+  it('counts the language toward the 200 characters', () => {
+    const base = `/admin/playbooks/${'a'.repeat(200 - '/admin/playbooks/'.length - '?lang=en'.length)}`;
+    expect(safeNextPath(`${base}?lang=en`)).toBe(`${base}?lang=en`);
+    expect(safeNextPath(`${base}a?lang=en`)).toBeNull();
+  });
+
   it('takes the first of a repeated param', () => {
     expect(safeNextPath(['/admin/developers/keys', 'https://evil.example'])).toBe('/admin/developers/keys');
   });
@@ -41,6 +54,21 @@ describe('safeNextPath', () => {
     ['a playbook on another host', 'https://evil.example/admin/playbooks/guia'],
     ['a dot segment', '/admin/playbooks/./guia'],
     ['a path of 201 characters', `/admin/playbooks/${'a'.repeat(201 - '/admin/playbooks/'.length)}`],
+    ['a language the reader does not have', '/admin/playbooks/x?lang=fr'],
+    ['a language plus another parameter', '/admin/playbooks/x?lang=en&x=1'],
+    ['another parameter before the language', '/admin/playbooks/x?x=1&lang=en'],
+    ['a parameter other than the language', '/admin/playbooks/x?foo=1'],
+    ['the language outside the playbooks', '/admin/forms?lang=en'],
+    ['the language on the dashboard root', '/admin?lang=en'],
+    ['the language on a look-alike prefix', '/admin/playbooksx?lang=en'],
+    ['the language with a trailing slash', '/admin/playbooks/?lang=en'],
+    ['an upper-case language', '/admin/playbooks/x?lang=EN'],
+    ['an empty language', '/admin/playbooks/x?lang='],
+    ['a repeated language', '/admin/playbooks/x?lang=en&lang=es'],
+    ['a language with a fragment', '/admin/playbooks/x?lang=en#x'],
+    ['a language followed by a host', '/admin/playbooks/x?lang=en//evil.example'],
+    ['a parent segment before the language', '/admin/playbooks/../forms?lang=en'],
+    ['a language on another host', 'https://evil.example/admin/playbooks/x?lang=en'],
     ['a fragment', '/admin#x'],
     ['an encoded slash', '/admin/%2F%2Fevil.example'],
     ['an empty value', ''],
@@ -48,6 +76,29 @@ describe('safeNextPath', () => {
     ['a very long path', `/admin/${'a'.repeat(300)}`],
   ])('rejects %s', (_label, raw) => {
     expect(safeNextPath(raw)).toBeNull();
+  });
+});
+
+describe('the language through the round-trip', () => {
+  const next = '/admin/playbooks/guia?lang=en';
+
+  it('survives the root hand-off to the login route', () => {
+    // app/page.tsx encodes it; api/auth/login reads it back with getAll.
+    const handoff = new URL(withNextPath('/api/auth/login?utm_source=x', next), 'https://app.example.test');
+    expect(handoff.searchParams.getAll('next')).toEqual([next]);
+    expect(safeNextPath(handoff.searchParams.getAll('next'))).toBe(next);
+  });
+
+  it('survives a landing link that does not encode it', () => {
+    const params = new URLSearchParams('next=/admin/playbooks/guia?lang=en&utm_source=x');
+    expect(safeNextPath(params.getAll('next'))).toBe(next);
+  });
+
+  it('reaches the final redirect with its query', () => {
+    // api/auth/callback resolves it against the origin; the wizard redirects to it as is.
+    const target = new URL(safeNextPath(next)!, 'https://app.example.test');
+    expect(target.pathname).toBe('/admin/playbooks/guia');
+    expect(target.search).toBe('?lang=en');
   });
 });
 
