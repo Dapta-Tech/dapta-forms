@@ -7,7 +7,7 @@ import type { TemplateId } from './builder-messages';
 /**
  * The guided empty state (new form / zero questions). The flow reads
  * start-from-scratch-or-pick-a-template: a blank-canvas option comes first as a
- * clear primary choice, then four ready-made template cards. Picking a template
+ * clear primary choice, then the ready-made template cards. Picking a template
  * loads a ready config (the form keeps the name the user already gave it —
  * applyTemplate only swaps `config`); scratch opens the type gallery.
  *
@@ -60,7 +60,7 @@ export function EmptyState({
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <div className="mt-6 grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {TEMPLATE_ORDER.map((id) => {
           const t = m.empty.templates[id];
           // Only the recommended template is emphasized (lime); the rest stay grey.

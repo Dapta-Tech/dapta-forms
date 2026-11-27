@@ -667,7 +667,7 @@ export type GalleryItemId =
   | 'scheduler'
   | 'checkbox';
 
-export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
+export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp' | 'customer-discovery';
 
 const en: BuilderMessages = {
   shell: {
@@ -1167,6 +1167,11 @@ const en: BuilderMessages = {
         name: 'RSVP',
         desc: 'Collect attendance, headcount and dietary notes for an event.',
         meta: '4 questions · logic',
+      },
+      'customer-discovery': {
+        name: 'Customer discovery',
+        desc: 'Learn how customers handle a real task, where they get stuck, and what they’ve tried.',
+        meta: '8 questions',
       },
     },
   },
@@ -1677,6 +1682,11 @@ const es: BuilderMessages = {
         name: 'Confirmación de asistencia',
         desc: 'Recopila asistencia, número de personas y notas de dieta para un evento.',
         meta: '4 preguntas · lógica',
+      },
+      'customer-discovery': {
+        name: 'Entrevista con clientes',
+        desc: 'Conoce cómo tus clientes hacen una tarea real, qué dificultades encuentran y qué han probado.',
+        meta: '8 preguntas',
       },
     },
   },

@@ -231,9 +231,123 @@ const rsvp: FormConfig = {
   scoring: { enabled: false },
 };
 
-export const TEMPLATES: Record<TemplateId, FormConfig> = { lead, contact, feedback, rsvp };
+const discoveryQuestions = [
+  {
+    key: 'recent_task',
+    required: true,
+    en: {
+      question: 'What’s one task you handled recently, and what were you trying to accomplish?',
+      helper: 'Use one real example. If your invitation named a topic, choose a task related to it.',
+    },
+    es: {
+      question: '¿Qué tarea hiciste hace poco y qué querías lograr?',
+      helper: 'Usa un ejemplo real. Si la invitación mencionaba un tema, elige una tarea relacionada.',
+    },
+  },
+  {
+    key: 'workflow',
+    required: true,
+    en: {
+      question: 'How did you handle it from start to finish?',
+      helper: 'Mention any tools, documents, or people you relied on.',
+    },
+    es: {
+      question: '¿Cómo hiciste la tarea de principio a fin?',
+      helper: 'Menciona las herramientas, los documentos o las personas que te ayudaron.',
+    },
+  },
+  {
+    key: 'friction',
+    en: { question: 'What, if anything, slowed you down or made the task harder?' },
+    es: { question: '¿Hubo algo que te retrasara o hiciera más difícil la tarea?' },
+  },
+  {
+    key: 'impact',
+    en: {
+      question: 'If you ran into a problem, what happened as a result?',
+      helper: 'If it’s happened before, mention how often it came up in the past month.',
+    },
+    es: {
+      question: 'Si tuviste algún problema, ¿qué pasó a raíz de eso?',
+      helper: 'Si ya te había pasado, indica cuántas veces ocurrió en el último mes.',
+    },
+  },
+  {
+    key: 'past_attempts',
+    en: {
+      question: 'What have you already tried to make this task easier?',
+      helper: 'For anything you tried, tell us what changed.',
+    },
+    es: {
+      question: '¿Qué has probado para facilitar esta tarea?',
+      helper: 'Si probaste algo, cuéntanos qué cambió.',
+    },
+  },
+  {
+    key: 'actual_cost',
+    en: {
+      question: 'How much time or money did you spend on the task?',
+      helper: 'A rough estimate is fine.',
+    },
+    es: {
+      question: 'Esa vez, ¿cuánto tiempo o dinero invertiste en la tarea?',
+      helper: 'Con una estimación basta.',
+    },
+  },
+  {
+    key: 'decision_process',
+    en: {
+      question: 'Who was involved the last time you changed how this task gets done?',
+      helper: 'If you bought a tool, tell us who chose it and who approved the purchase.',
+    },
+    es: {
+      question: '¿Quién participó la última vez que cambiaste la forma de hacer esta tarea?',
+      helper: 'Si compraste una herramienta, cuéntanos quién la eligió y quién aprobó la compra.',
+    },
+  },
+  {
+    key: 'follow_up_email',
+    type: 'email',
+    flowGroup: 'lead_capture',
+    en: {
+      question: 'What email can we use to arrange a short follow-up?',
+      helper: 'Leave it if you’re open to showing us how you handled the task.',
+    },
+    es: {
+      question: '¿A qué correo te podemos escribir para coordinar una charla breve?',
+      helper: 'Déjalo si te interesa mostrarnos cómo hiciste la tarea.',
+    },
+  },
+] as const;
 
-export const TEMPLATE_ORDER: TemplateId[] = ['lead', 'contact', 'feedback', 'rsvp'];
+function customerDiscovery(language: 'en' | 'es'): FormConfig {
+  return {
+    version: 1,
+    language,
+    steps: discoveryQuestions.map(({ en, es, ...step }) => ({
+      type: 'textarea',
+      required: false,
+      flowGroup: 'qualification',
+      ...step,
+      ...(language === 'es' ? es : en),
+    })),
+    scoring: { enabled: false },
+  };
+}
+
+export const TEMPLATES: Record<TemplateId, FormConfig> = {
+  lead,
+  contact,
+  feedback,
+  rsvp,
+  'customer-discovery': customerDiscovery('en'),
+};
+
+export function getTemplateConfig(id: TemplateId, locale: string): FormConfig {
+  return id === 'customer-discovery' && locale === 'es' ? customerDiscovery('es') : TEMPLATES[id];
+}
+
+export const TEMPLATE_ORDER: TemplateId[] = ['lead', 'contact', 'feedback', 'rsvp', 'customer-discovery'];
 
 /** PrimeIcons glyph shown on each template card (mirrors the mockup). */
 export const TEMPLATE_ICON: Record<TemplateId, string> = {
@@ -241,4 +355,5 @@ export const TEMPLATE_ICON: Record<TemplateId, string> = {
   contact: 'pi-id-card',
   feedback: 'pi-star',
   rsvp: 'pi-calendar',
+  'customer-discovery': 'pi-comment',
 };
