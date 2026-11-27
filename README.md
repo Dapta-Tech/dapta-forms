@@ -198,6 +198,21 @@ select **Use this draft** to add them to your form. [Skill instructions](skills/
 In LiteLLM **Logs**, look for `skill:qualify-leads@<version>` in the request's
 **Tags** column.
 
+#### Lead qualification example
+
+With **Is a lead qualification?** selected, an HVAC scheduling product summary
+leads to questions about the lead's last rescheduling experience and its impact.
+
+![The AI form builder generates four discovery questions with lead qualification enabled.](docs/images/ai-lead-qualification.gif)
+
+#### Standard form example
+
+Leave **Is a lead qualification?** unchecked and describe the form. For a home
+cleaning quote request, dForms suggests questions for contact details, home type,
+and cleaning frequency.
+
+![The AI form builder suggests a home cleaning quote form with lead qualification unchecked.](docs/images/ai-standard-form-draft.gif)
+
 ## Scripts
 
 | Command | What it does |
