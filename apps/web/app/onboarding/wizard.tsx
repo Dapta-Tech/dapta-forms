@@ -27,7 +27,8 @@
  * HOW MANY questions there are depends on who is asking. Someone arriving from
  * Dapta AI already gave Dapta their industry, CRM, lead volume and phone number,
  * so they see two screens where a cold signup sees six. Nothing here hardcodes a
- * count — see `cohort`.
+ * count (see `cohort`). Someone who came for a playbook from the resource hub
+ * sees two whatever their cohort (see `hub`).
  *
  * Every advance patches the server. That is deliberate and is the difference
  * between a funnel and a completion count: the person who quits on question two
@@ -70,6 +71,7 @@ import {
   wizardQuestions,
   wizardTemplates,
 } from '@/lib/onboarding';
+import type { HubEntry } from '@/lib/hub-entry';
 import {
   USE_CASE_TEMPLATE,
   type OnboardingCohort,
@@ -92,6 +94,7 @@ export function OnboardingWizard({
   messages: m,
   locale,
   cohort,
+  hub: hubOnArrival = null,
 }: {
   messages: Messages;
   locale: Locale;
@@ -101,8 +104,17 @@ export function OnboardingWizard({
    * so it has to be known before the first paint.
    */
   cohort: OnboardingCohort;
+  /** Set when they signed up on their way to a playbook (lib/hub-entry.ts). */
+  hub?: HubEntry | null;
 }) {
-  const questions = useMemo(() => wizardQuestions(m, cohort), [m, cohort]);
+  // Pinned for the visit: a server re-render after the return-path cookie
+  // expired must not swap the question list under someone halfway through it.
+  const [hub] = useState(hubOnArrival);
+  const flow = hub ? ('hub' as const) : undefined;
+  // Spread into every event and write: absent on the ordinary path, which keeps
+  // those exactly as they were.
+  const flowProps = useMemo(() => (flow ? { flow } : {}), [flow]);
+  const questions = useMemo(() => wizardQuestions(m, cohort, flow), [m, cohort, flow]);
   const templates = useMemo(() => wizardTemplates(m), [m]);
 
   const [index, setIndex] = useState(0);
@@ -240,9 +252,10 @@ export function OnboardingWizard({
       // denominator and make both drop-off rates meaningless.
       total_steps: questions.length + 1,
       cohort,
+      ...flowProps,
     });
     if (index !== 0) return;
-    captureEvent('onboarding_started', { locale, cohort });
+    captureEvent('onboarding_started', { locale, cohort, ...flowProps });
     // Claim the FIRST screen on arrival. Every later screen has its `lastStep`
     // written by the answer that led to it, but nothing precedes this one — so
     // without this patch, someone who opens the wizard and quits on question one
@@ -258,8 +271,8 @@ export function OnboardingWizard({
     // and `role` for someone from Dapta — hardcoding `role` would have recorded
     // every cold arrival as having already cleared the phone question.
     const first = questions[0]?.key;
-    if (first) save({ lastStep: first });
-  }, [stepKey, index, questions, locale, cohort, save]);
+    if (first) save({ lastStep: first, ...flowProps });
+  }, [stepKey, index, questions, locale, cohort, save, flowProps]);
 
   /**
    * Move to the screen after `from`, recording the one being REACHED.
@@ -274,11 +287,11 @@ export function OnboardingWizard({
       // `lastStep` names the screen being REACHED, which is what makes the
       // stored value a drop-off bucket rather than a record of the last answer.
       const reached = questions[advancing]?.key ?? 'template';
-      save({ ...patch, lastStep: reached });
+      save({ ...patch, lastStep: reached, ...flowProps });
       setIndex(advancing);
       syncStepUrl(advancing);
     },
-    [questions, save, syncStepUrl],
+    [questions, save, syncStepUrl, flowProps],
   );
 
   /** Answer the current question and advance. Choosing IS continuing — one tap. */
@@ -302,6 +315,7 @@ export function OnboardingWizard({
         // is the whole point; this one says only that it was given.
         value: current.field === 'phone' ? '<provided>' : value,
         cohort,
+        ...flowProps,
       });
       // Every answer so far, not just this one. A patch that never landed — the
       // action swallows its failures by design — is repaired by the next advance
@@ -309,7 +323,7 @@ export function OnboardingWizard({
       // fields it already has, so re-sending them costs nothing.
       advanceTo(index, next);
     },
-    [advanceTo, answers, cohort, current, index],
+    [advanceTo, answers, cohort, current, index, flowProps],
   );
 
   const back = useCallback(() => {
@@ -327,6 +341,7 @@ export function OnboardingWizard({
         recommended: id === recommended,
         use_case: answers.useCase ?? null,
         cohort,
+        ...flowProps,
       });
       setFailed(false);
       // `async` so the scope returns a PROMISE. A non-thenable body ends the
@@ -356,6 +371,13 @@ export function OnboardingWizard({
               // industry is indistinguishable from a gap in our own data.
               cohort,
               locale,
+              ...(hub
+                ? {
+                    flow: 'hub' as const,
+                    playbook: hub.playbook,
+                    ...(hub.playbookLocale ? { playbookLocale: hub.playbookLocale } : {}),
+                  }
+                : {}),
             }),
           { timeoutMs: 30_000 },
         );
@@ -367,7 +389,7 @@ export function OnboardingWizard({
         if (result && !result.ok) setFailed(true);
       });
     },
-    [answers, cohort, locale, recommended],
+    [answers, cohort, locale, recommended, hub, flowProps],
   );
 
   const stage = onTemplates ? TEMPLATE_STAGE : QUESTION_STAGE;

@@ -113,3 +113,42 @@ describe('GET /api/auth/logout on a host other than PUBLIC_APP_URL', () => {
     expect(res.headers.get('location')).toBe('https://app.example.com/login?signedout=1');
   });
 });
+
+describe('GET /api/auth/logout with a destination', () => {
+  const PLAYBOOK = '/admin/playbooks/guia?lang=es&pdf=1';
+  const path = (next: string) => `/api/auth/logout?reason=expired&next=${encodeURIComponent(next)}`;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PUBLIC_APP_URL', '');
+    revokeUpstreamSession.mockResolvedValue(null);
+    getSession.mockResolvedValue(workosSession);
+  });
+
+  it('carries a playbook to the signed-out landing, signing out all the same', async () => {
+    const res = await GET(req(path(PLAYBOOK)));
+
+    expect(res.headers.get('location')).toBe(
+      `https://forms.example.com/login?signedout=1&next=${encodeURIComponent(PLAYBOOK)}`,
+    );
+    expect(clearSession).toHaveBeenCalled();
+    expect(revokeUpstreamSession).toHaveBeenCalledWith(workosSession);
+  });
+
+  it('carries it on the old host too, staying there', async () => {
+    vi.stubEnv('PUBLIC_APP_URL', 'https://app.example.com');
+    const res = await GET(
+      new NextRequest(`https://forms.example.org${path(PLAYBOOK)}`, { headers: { host: 'forms.example.org' } }),
+    );
+
+    expect(res.headers.get('location')).toBe(`/login?signedout=1&next=${encodeURIComponent(PLAYBOOK)}`);
+  });
+
+  it.each(['https://evil.example', '//evil.example', '/admin/forms', '/admin/playbooks/../../login'])(
+    'drops %s',
+    async (next) => {
+      const res = await GET(req(path(next)));
+      expect(res.headers.get('location')).toBe('https://forms.example.com/login?signedout=1');
+    },
+  );
+});

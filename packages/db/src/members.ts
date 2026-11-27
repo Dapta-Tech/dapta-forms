@@ -303,6 +303,19 @@ export interface WorkspaceRow {
 }
 
 /**
+ * Did this person found the workspace: its first real member, and its owner?
+ * False for anyone who joined a workspace that was already there (invited, or
+ * projected after a colleague) and for a staff access grant.
+ */
+export async function isFoundingMember(db: Db, accountId: string, memberId: string): Promise<boolean> {
+  const first = await db.get<{ id: string; role: string | null }>(
+    sql`SELECT id, role FROM member WHERE account_id = ${accountId} AND access_grant IS NULL
+        ORDER BY created_at ASC, id ASC LIMIT 1`,
+  );
+  return first?.id === memberId && first.role === 'owner';
+}
+
+/**
  * Read the identity of an already-resolved member, so the caller can look for
  * the same person elsewhere. Returns null for a member that does not exist.
  */

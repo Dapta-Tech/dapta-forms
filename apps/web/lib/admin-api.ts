@@ -5,7 +5,7 @@
  * into a redirect to /login.
  */
 import { cache } from 'react';
-import { cookies } from 'next/headers';
+import { cookies, headers as requestHeaders } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type {
   AnalyticsResponse,
@@ -34,6 +34,7 @@ import { getSession, clearSession, authProvider, getWorkspace } from './auth-ses
 import { analyticsSessionHeaders } from './analytics-session';
 import { browserIdHeaders } from './browser-id';
 import { resolveProductAnalytics } from './product-analytics';
+import { RETURN_PATH_HEADER, playbookReturnPath, withNextPath } from './return-path';
 
 const API_URL = serverApiUrl;
 
@@ -93,7 +94,12 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
     // when the refresh token itself is dead. Deleting the cookie first would
     // hand both routes a null session (see `signOutAction`'s read-then-clear
     // note).
-    if (authProvider() === 'workos') redirect('/api/auth/refresh');
+    // On a playbook page the destination rides along (`proxy.ts` names it), so
+    // the link of an email survives an expired or missing session.
+    if (authProvider() === 'workos') {
+      const next = playbookReturnPath((await requestHeaders()).get(RETURN_PATH_HEADER));
+      redirect(withNextPath('/api/auth/refresh', next));
+    }
     try {
       await clearSession();
     } catch {
@@ -325,6 +331,11 @@ export interface Me {
    * endpoints refuse to serve it, with no way out.
    */
   onboardingRequired: boolean;
+  /**
+   * Whether this person founded the workspace (its first member, as owner). Sent
+   * only while the wizard is owed: it decides the resource hub's short one.
+   */
+  foundingMember?: boolean;
   /** Epoch-ms the wizard was finished; null while still owed. */
   onboardingCompletedAt: number | null;
   /**
@@ -389,6 +400,8 @@ export interface OnboardingProgress {
   phone?: string | null;
   template?: string | null;
   lastStep?: string | null;
+  /** The path that shortened the wizard (`hub`); absent on the ordinary one. */
+  flow?: 'hub';
 }
 
 /**
@@ -413,6 +426,10 @@ export interface OnboardingComplete {
   cohort?: string;
   /** What the wizard rendered in, so the created form is named to match. */
   locale?: string;
+  /** Set together for a signup from the resource hub: the API emails the playbook. */
+  flow?: 'hub';
+  playbook?: string;
+  playbookLocale?: 'es' | 'en';
 }
 
 export interface FormSummary {

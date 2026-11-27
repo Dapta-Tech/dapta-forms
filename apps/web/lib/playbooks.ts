@@ -81,12 +81,69 @@ export function storePlaybookLocale(key: string, locale: PlaybookContentLocale):
   }
 }
 
-/** `href` with `?lang=` set to `locale`, keeping its other parameters and its hash. */
+/**
+ * The stored choice a page is about to be asked again in, or null when the
+ * language on screen stays: the address named it, nothing is stored, or the
+ * stored choice is the one asked for. While there is one, whatever depends on
+ * "the language being read" (the record of the open, an automatic download)
+ * waits for it.
+ */
+export function pendingPlaybookLocale(
+  langInUrl: boolean,
+  storageKey: string,
+  requested: PlaybookContentLocale,
+): PlaybookContentLocale | null {
+  if (langInUrl) return null;
+  const stored = readStoredPlaybookLocale(storageKey);
+  return stored && stored !== requested ? stored : null;
+}
+
+/**
+ * The query parameter that asks the reader to start the PDF download on open
+ * (`?pdf=1`): what the landing's resource hub adds to its return path.
+ */
+export const PLAYBOOK_PDF_PARAM = 'pdf';
+
+/**
+ * Where the PDF of a playbook in one language is downloaded: a route that asks
+ * for a session (`app/api/playbooks/[slug]/pdf`) and answers an attachment.
+ * The files are made by `scripts/playbook-pdfs.mjs`.
+ */
+export function playbookPdfHref(slug: string, locale: string): string {
+  return `/api/playbooks/${slug}/pdf?lang=${asPlaybookLocale(locale) ?? 'es'}`;
+}
+
+/** The name the downloaded file is saved under: the two languages never overwrite each other. */
+export function playbookPdfFileName(slug: string, locale: string): string {
+  return `${slug}-${asPlaybookLocale(locale) ?? 'es'}.pdf`;
+}
+
+/**
+ * `href` without `?pdf=`, keeping its other parameters and its hash, so a
+ * reload (or a shared link) never downloads again.
+ */
+export function withoutPdfParam(href: string): string {
+  const [beforeHash, hash] = href.split('#', 2) as [string, string | undefined];
+  const [path, query = ''] = beforeHash.split('?', 2) as [string, string | undefined];
+  const params = new URLSearchParams(query);
+  params.delete(PLAYBOOK_PDF_PARAM);
+  const rest = params.toString();
+  return `${path}${rest ? `?${rest}` : ''}${hash !== undefined ? `#${hash}` : ''}`;
+}
+
+/**
+ * `href` with `?lang=` set to `locale`, keeping its other parameters and its
+ * hash. `?pdf=` stays last: `?lang=en&pdf=1` is the form the return path
+ * accepts (`lib/return-path.ts`).
+ */
 export function withPlaybookLang(href: string, locale: PlaybookContentLocale): string {
   const [beforeHash, hash] = href.split('#', 2) as [string, string | undefined];
   const [path, query = ''] = beforeHash.split('?', 2) as [string, string | undefined];
   const params = new URLSearchParams(query);
+  const pdf = params.get('pdf');
+  params.delete('pdf');
   params.set(PLAYBOOK_LANG_PARAM, locale);
+  if (pdf !== null) params.set('pdf', pdf);
   return `${path}?${params.toString()}${hash !== undefined ? `#${hash}` : ''}`;
 }
 

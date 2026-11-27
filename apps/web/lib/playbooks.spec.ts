@@ -2,12 +2,16 @@
  * The gallery's view logic: which tab a URL opens, what each tab holds, and
  * how a card words its state ("New", read some time ago, not read yet).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getMessages } from '@quill/shared';
 import { PLAYBOOK_CATEGORIES, PLAYBOOK_LOCALES } from '@quill/shared/playbooks';
 import {
   PLAYBOOK_CONTENT_LOCALES,
   PLAYBOOK_TABS,
+  pendingPlaybookLocale,
+  playbookPdfFileName,
+  playbookPdfHref,
+  withoutPdfParam,
   asPlaybookLocale,
   playbookLangStorageKey,
   playbookLocaleFor,
@@ -27,6 +31,7 @@ import {
   tabFromParam,
   visibleTabs,
 } from './playbooks';
+import { safeNextPath } from './return-path';
 
 const es = getMessages('es').admin.playbooks;
 const en = getMessages('en').admin.playbooks;
@@ -192,5 +197,53 @@ describe('the language of the playbooks', () => {
     expect(withPlaybookLang('/admin/playbooks', 'en')).toBe('/admin/playbooks?lang=en');
     expect(withPlaybookLang('/admin/playbooks?category=ads', 'es')).toBe('/admin/playbooks?category=ads&lang=es');
     expect(withPlaybookLang('/admin/playbooks/a?lang=es#paso', 'en')).toBe('/admin/playbooks/a?lang=en#paso');
+  });
+});
+
+describe('the PDF of a playbook', () => {
+  it('is downloaded per language from the signed-in route, under a name that says which', () => {
+    expect(playbookPdfHref('hook', 'en')).toBe('/api/playbooks/hook/pdf?lang=en');
+    expect(playbookPdfHref('hook', 'es')).toBe('/api/playbooks/hook/pdf?lang=es');
+    expect(playbookPdfFileName('hook', 'en')).toBe('hook-en.pdf');
+    expect(playbookPdfFileName('hook', 'es')).toBe('hook-es.pdf');
+  });
+
+  it('is the Spanish one for a language that is not one', () => {
+    expect(playbookPdfHref('hook', 'pt')).toBe('/api/playbooks/hook/pdf?lang=es');
+    expect(playbookPdfFileName('hook', '../x')).toBe('hook-es.pdf');
+  });
+
+  it('takes ?pdf= out of an address, keeping the rest and the hash', () => {
+    expect(withoutPdfParam('/admin/playbooks/a?pdf=1')).toBe('/admin/playbooks/a');
+    expect(withoutPdfParam('/admin/playbooks/a?lang=en&pdf=1')).toBe('/admin/playbooks/a?lang=en');
+    expect(withoutPdfParam('/admin/playbooks/a?pdf=1&lang=en#paso')).toBe('/admin/playbooks/a?lang=en#paso');
+    expect(withoutPdfParam('/admin/playbooks/a#paso')).toBe('/admin/playbooks/a#paso');
+  });
+
+  it('stays last when the language is set, the form the return path accepts', () => {
+    expect(withPlaybookLang('/admin/playbooks/a?pdf=1', 'en')).toBe('/admin/playbooks/a?lang=en&pdf=1');
+    expect(withPlaybookLang('/admin/playbooks/a?lang=es&pdf=1#x', 'en')).toBe('/admin/playbooks/a?lang=en&pdf=1#x');
+    expect(safeNextPath(withPlaybookLang('/admin/playbooks/a?pdf=1', 'en'))).not.toBeNull();
+  });
+});
+
+describe('the stored language a page is about to be asked in', () => {
+  const store = new Map<string, string>();
+  beforeEach(() => {
+    store.clear();
+    vi.stubGlobal('window', { localStorage: { getItem: (key: string) => store.get(key) ?? null } });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is the stored one when the address names none and it differs', () => {
+    store.set('k', 'en');
+    expect(pendingPlaybookLocale(false, 'k', 'es')).toBe('en');
+  });
+
+  it('is none when the address named the language, nothing is stored, or it is the one asked for', () => {
+    expect(pendingPlaybookLocale(false, 'k', 'es')).toBeNull();
+    store.set('k', 'en');
+    expect(pendingPlaybookLocale(true, 'k', 'es')).toBeNull();
+    expect(pendingPlaybookLocale(false, 'k', 'en')).toBeNull();
   });
 });

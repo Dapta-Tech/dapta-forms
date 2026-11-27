@@ -161,17 +161,34 @@ export function backoffMs(attempts: number): number {
 /** Record a due unit of work. Returns the new row id. */
 export async function enqueueOutbox(db: Db, input: EnqueueOutboxInput): Promise<string> {
   const id = randomUUID();
+  await db.run(insertOutbox(id, input));
+  return id;
+}
+
+/** The INSERT both enqueues share. */
+function insertOutbox(id: string, input: EnqueueOutboxInput) {
   const now = input.now ?? Date.now();
   const dueAt = input.nextAttemptAt ?? now;
-  await db.run(
-    sql`INSERT INTO outbox
+  return sql`INSERT INTO outbox
           (id, kind, action, subject_uid, account_id, webhook_id, payload,
            status, attempts, max_attempts, next_attempt_at, last_error, created_at, updated_at)
         VALUES (${id}, ${input.kind}, ${input.action}, ${input.subjectUid ?? null},
           ${input.accountId ?? null}, ${input.webhookId ?? null}, ${input.payload ?? null},
-          'pending', 0, ${input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS}, ${dueAt}, NULL, ${now}, ${now})`,
+          'pending', 0, ${input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS}, ${dueAt}, NULL, ${now}, ${now})`;
+}
+
+/**
+ * Record a unit of work that must happen at most once, ever, under `key`: the
+ * key IS the row's id, so the primary key refuses every later enqueue, from this
+ * process or another, whatever became of the first row. True when this call
+ * queued it. Settled rows are never pruned, which is what makes the row itself
+ * the record that it was queued.
+ */
+export async function enqueueOutboxOnce(db: Db, key: string, input: EnqueueOutboxInput): Promise<boolean> {
+  const row = await db.get<{ id: string }>(
+    sql`${insertOutbox(`once:${key}`, input)} ON CONFLICT (id) DO NOTHING RETURNING id`,
   );
-  return id;
+  return Boolean(row);
 }
 
 /**

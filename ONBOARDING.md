@@ -98,6 +98,47 @@ Design decisions that are load-bearing:
   (`packages/shared/src/i18n/index.ts`, EN + ES); glyphs live beside the
   question bank keyed by enum so a new value cannot ship without one.
 
+### Signing up from the resource hub
+
+Someone who starts the login on their way to a playbook arrives with the parked
+return path `/admin/playbooks/<slug>` (the `quill_next` cookie,
+`apps/web/lib/return-path.ts`). `apps/web/lib/hub-entry.ts` reads it by its path
+alone (the query never decides), for a playbook that exists and is published. The
+wizard then changes in two ways, **only for whoever founded the workspace** (its
+first member, as owner: `GET /v1/me` says so as `foundingMember`, and the API
+drops `flow` from anyone else's wizard bodies):
+
+- **Two questions, whatever the cohort:** `lead_source` and `use_case`
+  (`ONBOARDING_HUB_STEPS`), then the template picker. The cohort is still
+  resolved and stored; `flow: "hub"` on the blob says why the list was short.
+- **The playbook by email** once the wizard is completed (below).
+
+What a **cold** signup on this path does not give: phone, industry, CRM and lead
+volume. They are never sent empty: the contact sync body carries only what was
+answered, and a hub completion makes no IAM request at all, even if an earlier,
+abandoned long wizard left answers that have a home in its question bank, so
+there is no lead score and their Dapta onboarding stays pending. Any report that reads those four answers, or counts the `phone` screen,
+has to leave `flow: "hub"` out.
+
+Every other arrival, the playbook gallery without a slug included, sees the
+wizard exactly as before. The cookie lasts 30 minutes; the page reads it on
+arrival and keeps it for the visit.
+
+**The email** (`EmailEffects.enqueuePlaybookPdf`, outbox action `playbook_pdf`)
+is a title, two lines and a button to
+`PUBLIC_APP_URL/admin/playbooks/<slug>?lang=<es|en>&pdf=1`, in the language the
+hub link asked for, else the wizard's. No attachment. It is queued:
+
+- only for the winner of the completion claim, and only on the founder's hub
+  flow: never for someone who joined an existing workspace. A failure to queue it
+  is logged and never costs the first form;
+- only for a published playbook, and only with `PUBLIC_APP_URL` set;
+- once per person and playbook, ever: the outbox row's id is that pair
+  (`enqueueOutboxOnce`).
+
+With no mail provider configured the default adapter only logs it, like every
+other email.
+
 ## 3. Templates
 
 `packages/db/src/templates/` — one entry per `FormTemplateId`, exhaustive by
@@ -227,6 +268,10 @@ Client events (`apps/web/app/onboarding/wizard.tsx` via `captureEvent`):
 | `forms_onboarding_step_answered` | each answer | `step_key`, `step_index`, `value` |
 | `forms_onboarding_template_picked` | template card chosen | `template`, `recommended`, `use_case` |
 
+On the resource hub path each of those four events, and
+`forms_onboarding_completed`, also carries `flow: "hub"`. The property is absent
+everywhere else. `total_steps` is 3 there.
+
 Server events (`apps/api/src/admin-crud.controller.ts`):
 
 | Event | When | Properties |
@@ -342,4 +387,5 @@ as a string through node-postgres — the DB layer coerces at the read site.)
 | Enums + schemas | `packages/types/src/index.ts` (`ONBOARDING_*`, `accountOnboardingSchema`, `USE_CASE_TEMPLATE`) |
 | Copy (EN/ES) | `packages/shared/src/i18n/index.ts` (`admin.onboarding`) |
 | Builder tour | `apps/web/app/admin/forms/[id]/edit/_components/builder-tour.tsx` (`?tour=1`) |
-| Tests | `packages/db/src/onboarding.spec.ts`, `packages/db/src/seed.spec.ts`, `packages/db/src/templates/templates.spec.ts`, `apps/api/src/onboarding.controller.spec.ts`, `qa/e2e/v10-onboarding-gate.spec.ts` |
+| Resource hub path | `apps/web/lib/hub-entry.ts`, `apps/api/src/admin.service.ts`, `apps/api/src/email-effects.ts` |
+| Tests | `apps/api/src/hub-signup.spec.ts`, `apps/web/app/onboarding/hub.spec.tsx`, `packages/db/src/onboarding.spec.ts`, `packages/db/src/seed.spec.ts`, `packages/db/src/templates/templates.spec.ts`, `apps/api/src/onboarding.controller.spec.ts`, `qa/e2e/v10-onboarding-gate.spec.ts` |

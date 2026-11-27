@@ -1,0 +1,92 @@
+{
+  "en/calificador-claude": {
+    "source": "6d12550c4846f95c5ab240b2cabeccae90d31730e76315e9f4f93f38f538e2b5",
+    "pdf": "a8e838d0ecbe83e4d8c51f7fab7a8f3bd853af440b65b20af6910dd26cc09fc8",
+    "bytes": 301204
+  },
+  "en/chatgpt-recomiende-tu-marca": {
+    "source": "763d099059c0063f587e6c64902adbfd9c58ec377c3fd98b13f88731afb7355b",
+    "pdf": "951b1023a5b1ebd0dd8df31354f09c1406e7c23b9551eb1e84466d606a52c5a4",
+    "bytes": 445141
+  },
+  "en/equipo-4-subagentes-ventas": {
+    "source": "9b80b948e37fc6d4d57ad088b2a51ad026fccb0570f94c07c61ea024524709cb",
+    "pdf": "9ae7712011ca65cd47db2a5875e7d5ec1491a09304871546a6f5bf7c9ee9213c",
+    "bytes": 367785
+  },
+  "en/formularios-que-venden-con-ia": {
+    "source": "d53d8a12de62f8b3296c4fb1d6a7f3491894f03dfd798b19586e1c48bdb3fc1f",
+    "pdf": "4903ac1388f93bc24c890e8ed30629f7b941761148d1aa0eca3c73a1fe38bd78",
+    "bytes": 449394
+  },
+  "en/hook-de-dolor": {
+    "source": "6c6642e3bc15f7007157c210c7984a91b3572af700acd023243cf1111cb1f252",
+    "pdf": "7364598f3a22ec2404a533c141d538b3d33f6b213746c9c4931736d8548d751c",
+    "bytes": 449601
+  },
+  "en/manual-del-vendedor": {
+    "source": "f2fbdccbb957cf818e4d2fb5c3b658d48f401b74d44a0a794eeeb642e78f7cb0",
+    "pdf": "388753e6f42a0091cd20d72d0694e527d8ee0658f0db76d12a3ea24cf0fbf2a3",
+    "bytes": 446793
+  },
+  "en/meta-ads-leads-calificados": {
+    "source": "565f784b83c19d41f30d514c784e9eb4b12b221914e8c9cd288817f8a1850780",
+    "pdf": "8f990a3f6241acd461327380a59a34c3215671407a2908c53aa6d05c296667e5",
+    "bytes": 378800
+  },
+  "en/prompts-prohibidos-vender-con-ia": {
+    "source": "0925cdcea7ed207d9675adfa3d2a51326a6fd64d061660e0f859227c5ba65586",
+    "pdf": "91ed777507c32badc985cf532862ea35524f64f45feb6d283cf6926c5693bc15",
+    "bytes": 331441
+  },
+  "en/vender-en-autopiloto-con-ia": {
+    "source": "d83cb7b33e7a259d3aabb5a6b4fa724e45174ee8f35e3966dc7481179b89d28c",
+    "pdf": "217ed74f1247f457854a28608b7eeedb57ec2a55e47c4978cc909347f4b229b6",
+    "bytes": 353548
+  },
+  "es/calificador-claude": {
+    "source": "f79da89d3405cce03643b8d759c3b712ca00da94eabcf4f6655adb2c7397e76e",
+    "pdf": "4a6d96da0d2841a6759de9530f0dc4e15fce4cd34592f88a8af444ab21d0b681",
+    "bytes": 316157
+  },
+  "es/chatgpt-recomiende-tu-marca": {
+    "source": "9facf0f43d532d86a383c67e737b453ddd3c61e545f6aa42614d75d421aedd86",
+    "pdf": "4b621b2fc1cbfc40770873e095d0b1244bbce720241cd1eeddc0821ec4d7d310",
+    "bytes": 453588
+  },
+  "es/equipo-4-subagentes-ventas": {
+    "source": "1fa2b8d895eb2f7433adfe4379ee0eafabc6e4936a36d237508baefb8f08cc69",
+    "pdf": "3874b0a8261801fd971892a223a419951db4c945d4fc56d5d34152ca7945de22",
+    "bytes": 383542
+  },
+  "es/formularios-que-venden-con-ia": {
+    "source": "024d567677d91e4f8fb82ac5527c5b411b23bbae37e2014fbf7ae7f91011c167",
+    "pdf": "4d1c7d233ff75495fc39e7bf52a2a92321294b8be57226de039b22028bf9b704",
+    "bytes": 473814
+  },
+  "es/hook-de-dolor": {
+    "source": "8c27b3f2a2c95611c7cfc2e2ae3f520819cb4aa8697701516b6f9c8f93035b77",
+    "pdf": "4216751cf5ce8e8bf399090697ba9b55525fdf66e5670376787c6bc90199921c",
+    "bytes": 461748
+  },
+  "es/manual-del-vendedor": {
+    "source": "f442de7a6ad8e9c71db372093b5361c3a3ef7c38b9d040536a5b6ee4b771bc17",
+    "pdf": "9a05de6d1c2674853dded7d7c19d08d918f7703e7d0bb552a12bf03c1e1be012",
+    "bytes": 453286
+  },
+  "es/meta-ads-leads-calificados": {
+    "source": "7e7675d61ebe18a4cb337cfc2438df9a484b77eab718d42546ae49bea3d82a15",
+    "pdf": "1bb8c7296deff6addf01d4b7d027b9a51390e4d7e4e266e29049a60b70e12de6",
+    "bytes": 392438
+  },
+  "es/prompts-prohibidos-vender-con-ia": {
+    "source": "6a97778d71fc4699c417e50211a0aaa1f339803ab71f070072af34876b9b623c",
+    "pdf": "2827b912e94ec09e1e20f3ce92eb87616dbbd09a1a85330fb193d0a5a4c4f349",
+    "bytes": 339506
+  },
+  "es/vender-en-autopiloto-con-ia": {
+    "source": "45698872763cad0c351801e0a60f5ab6f0c874e0f58c2db4531f1618bc194e2b",
+    "pdf": "51f1ad999c58d5c041bf389e6413a583a14655b46eaffd9e8993be0346eb4e03",
+    "bytes": 366876
+  }
+}

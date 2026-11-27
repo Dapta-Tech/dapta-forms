@@ -4,6 +4,7 @@ import { getMessages } from '@quill/shared';
 import { BrandLockup, PRODUCT_NAME } from '@/components/brand/brand';
 import { getLocale } from '@/lib/locale';
 import { authProvider } from '@/lib/auth-session';
+import { playbookReturnPath, withNextPath } from '@/lib/return-path';
 import { PlatformGtm, resolvePlatformGtmId } from '@/components/analytics/platform-gtm';
 import { LoginForm } from './login-form';
 
@@ -12,11 +13,11 @@ export const metadata = { title: `Sign in: ${PRODUCT_NAME}` };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; signedout?: string }>;
+  searchParams: Promise<{ error?: string; signedout?: string; next?: string | string[] }>;
 }) {
   const m = getMessages(await getLocale()).admin.login;
   const workos = authProvider() === 'workos';
-  const { error, signedout } = await searchParams;
+  const { error, signedout, next } = await searchParams;
 
   // Dapta builds: no intermediate sign-in card — go straight to the hosted
   // login. The card only renders as an ERROR landing (?error=) so a failed
@@ -57,8 +58,9 @@ export default async function LoginPage({
             // account is exactly what the person is trying to escape; the
             // hosted login must actually ask. The bare /login auto-redirect
             // above stays promptless (silent SSO from the Dapta platform).
+            // A playbook whose session ran out rides along as `next`.
             <Link
-              href="/api/auth/login?prompt=login"
+              href={withNextPath('/api/auth/login?prompt=login', playbookReturnPath(next))}
               className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99]"
             >
               {m.workosCta}
