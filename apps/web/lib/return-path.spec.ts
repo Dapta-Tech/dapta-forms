@@ -28,6 +28,21 @@ describe('safeNextPath', () => {
     },
   );
 
+  it.each([
+    '/admin/playbooks/x?pdf=1',
+    '/admin/playbooks/guia-de-calificacion?lang=es&pdf=1',
+    '/admin/playbooks/guia-de-calificacion?lang=en&pdf=1',
+  ])('accepts %s, a playbook that asks for its PDF, byte for byte', (path) => {
+    expect(safeNextPath(path)).toBe(path);
+  });
+
+  it('counts the PDF query toward the 200 characters', () => {
+    const query = '?lang=en&pdf=1';
+    const base = `/admin/playbooks/${'a'.repeat(200 - '/admin/playbooks/'.length - query.length)}`;
+    expect(safeNextPath(`${base}${query}`)).toBe(`${base}${query}`);
+    expect(safeNextPath(`${base}a${query}`)).toBeNull();
+  });
+
   it('counts the language toward the 200 characters', () => {
     const base = `/admin/playbooks/${'a'.repeat(200 - '/admin/playbooks/'.length - '?lang=en'.length)}`;
     expect(safeNextPath(`${base}?lang=en`)).toBe(`${base}?lang=en`);
@@ -84,6 +99,36 @@ describe('safeNextPath', () => {
     ['a double slash after playbooks', '/admin/playbooks//evil.example?lang=en'],
     ['a fragment', '/admin#x'],
     ['an encoded slash', '/admin/%2F%2Fevil.example'],
+    ['the PDF on the gallery', '/admin/playbooks?pdf=1'],
+    ['the PDF with the language on the gallery', '/admin/playbooks?lang=es&pdf=1'],
+    ['the PDF outside the playbooks', '/admin/forms?pdf=1'],
+    ['the PDF on the dashboard root', '/admin?pdf=1'],
+    ['the PDF on a look-alike prefix', '/admin/playbooksx/guia?pdf=1'],
+    ['the PDF below a playbook', '/admin/playbooks/guia/otra?pdf=1'],
+    ['the PDF with a trailing slash', '/admin/playbooks/guia/?pdf=1'],
+    ['the PDF before the language', '/admin/playbooks/x?pdf=1&lang=es'],
+    ['the PDF plus another parameter', '/admin/playbooks/x?pdf=1&x=1'],
+    ['another parameter before the PDF', '/admin/playbooks/x?x=1&pdf=1'],
+    ['the language and the PDF plus another parameter', '/admin/playbooks/x?lang=en&pdf=1&x=1'],
+    ['a repeated PDF', '/admin/playbooks/x?pdf=1&pdf=1'],
+    ['a PDF value of 0', '/admin/playbooks/x?pdf=0'],
+    ['a PDF value of true', '/admin/playbooks/x?pdf=true'],
+    ['a PDF value of 11', '/admin/playbooks/x?pdf=11'],
+    ['an empty PDF value', '/admin/playbooks/x?pdf='],
+    ['a bare PDF parameter', '/admin/playbooks/x?pdf'],
+    ['an upper-case PDF parameter', '/admin/playbooks/x?PDF=1'],
+    ['an unknown language with the PDF', '/admin/playbooks/x?lang=fr&pdf=1'],
+    ['an empty language with the PDF', '/admin/playbooks/x?lang=&pdf=1'],
+    ['a dangling separator', '/admin/playbooks/x?lang=en&'],
+    ['a separator before the PDF', '/admin/playbooks/x?&pdf=1'],
+    ['a second question mark', '/admin/playbooks/x?lang=en?pdf=1'],
+    ['an encoded separator', '/admin/playbooks/x?lang=en%26pdf=1'],
+    ['an encoded PDF value', '/admin/playbooks/x?pdf=%31'],
+    ['the PDF with a fragment', '/admin/playbooks/x?pdf=1#x'],
+    ['the PDF followed by a host', '/admin/playbooks/x?pdf=1//evil.example'],
+    ['a parent segment before the PDF', '/admin/playbooks/..?pdf=1'],
+    ['the PDF on another host', 'https://evil.example/admin/playbooks/x?pdf=1'],
+    ['a literal newline after the PDF', '/admin/playbooks/x?pdf=1\nx'],
     ['an empty value', ''],
     ['a non-string', 42],
     ['a very long path', `/admin/${'a'.repeat(300)}`],
@@ -104,6 +149,19 @@ describe('the language through the round-trip', () => {
 
   it('survives a landing link that does not encode it', () => {
     const params = new URLSearchParams('next=/admin/playbooks/guia?lang=en&utm_source=x');
+    expect(safeNextPath(params.getAll('next'))).toBe(next);
+  });
+
+  it('keeps the PDF request when the link encodes next', () => {
+    const withPdf = `${next}&pdf=1`;
+    const handoff = new URL(withNextPath('/api/auth/login?utm_source=x', withPdf), 'https://app.example.test');
+    expect(handoff.searchParams.getAll('next')).toEqual([withPdf]);
+    expect(safeNextPath(handoff.searchParams.getAll('next'))).toBe(withPdf);
+    expect(new URL(safeNextPath(withPdf)!, 'https://app.example.test').search).toBe('?lang=en&pdf=1');
+  });
+
+  it('loses the PDF request, and only it, when a link leaves the & bare', () => {
+    const params = new URLSearchParams('next=/admin/playbooks/guia?lang=en&pdf=1');
     expect(safeNextPath(params.getAll('next'))).toBe(next);
   });
 

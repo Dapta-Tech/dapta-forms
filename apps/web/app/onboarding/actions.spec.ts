@@ -51,7 +51,23 @@ describe('completeOnboardingAction, the parked destination', () => {
     expect(cookieJar.delete).toHaveBeenCalledWith('quill_next');
   });
 
-  it.each(['/admin/playbooks/x?lang=fr', '/admin/forms?lang=en', '/admin/playbooks/x?lang=en&x=1'])(
+  it.each(['?pdf=1', '?lang=es&pdf=1', '?lang=en&pdf=1'])(
+    'ends on a playbook asking for its PDF (%s), and spends the cookie',
+    async (query) => {
+      store.set('quill_next', `/admin/playbooks/guia-de-calificacion${query}`);
+
+      await expect(finish()).rejects.toThrow(`NEXT_REDIRECT:/admin/playbooks/guia-de-calificacion${query}`);
+      expect(cookieJar.delete).toHaveBeenCalledWith('quill_next');
+    },
+  );
+
+  it.each([
+    '/admin/playbooks/x?lang=fr',
+    '/admin/forms?lang=en',
+    '/admin/playbooks/x?lang=en&x=1',
+    '/admin/playbooks?pdf=1',
+    '/admin/playbooks/x?pdf=1&lang=en',
+  ])(
     'ignores a refused destination (%s) and ends on the new form',
     async (next) => {
       store.set('quill_next', next);

@@ -555,6 +555,9 @@ describe('GET /api/auth/login destination (next)', () => {
     '/admin/playbooks',
     '/admin/playbooks/guia-de-calificacion',
     '/admin/playbooks/x?lang=en',
+    '/admin/playbooks/x?pdf=1',
+    '/admin/playbooks/x?lang=es&pdf=1',
+    '/admin/playbooks/x?lang=en&pdf=1',
   ])('parks %s in an httpOnly cookie for 30 minutes', async (next) => {
     await GET(req(`/api/auth/login?next=${encodeURIComponent(next)}`));
 
@@ -571,6 +574,9 @@ describe('GET /api/auth/login destination (next)', () => {
     ['an overlong path', `/admin/playbooks/${'a'.repeat(200)}`],
     ['a language plus another parameter', '/admin/playbooks/x?lang=en&x=1'],
     ['a language the reader does not have', '/admin/playbooks/x?lang=fr'],
+    ['the PDF on the gallery', '/admin/playbooks?pdf=1'],
+    ['the PDF plus another parameter', '/admin/playbooks/x?lang=en&pdf=1&x=1'],
+    ['another value of the PDF', '/admin/playbooks/x?pdf=2'],
   ])('never parks %s', async (_label, next) => {
     await GET(req(`/api/auth/login?next=${encodeURIComponent(next)}`));
 
