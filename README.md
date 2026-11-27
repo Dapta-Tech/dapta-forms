@@ -192,8 +192,11 @@ LiteLLM and the configured model alias is available. [Self-hosting setup](SELF-H
 
 To build a lead qualification form, select **Is a lead qualification?**,
 summarize your product, and select **Generate draft**. dForms loads the published
-`qualify-leads` skill from the LiteLLM catalog. Review the proposed questions and
-select **Use this draft** to add them to your form. [Skill instructions](skills/qualify-leads/SKILL.md)
+`qualify-leads` skill from the LiteLLM catalog. It draws on Rob Fitzpatrick's
+*The Mom Test* to ask **“Is this a real problem for this lead?”**
+It asks about the last time the lead faced the problem, how they handled it, and
+what it cost them. Review the proposed questions and select **Use this draft** to
+add them to your form. [Skill instructions](skills/qualify-leads/SKILL.md)
 
 In LiteLLM **Logs**, look for `skill:qualify-leads@<version>` in the request's
 **Tags** column.

@@ -405,6 +405,13 @@ Set these variables on the API service to enable **Create with AI** in the form 
 | `LITELLM_API_KEY` | _(unset)_ | Key for an authenticated gateway, with access to the model alias and the skill catalog | yes |
 | `LITELLM_MODEL` | `best-model` | Model alias that LiteLLM lists for the configured key | no |
 
+Both standard and lead qualification drafts use the alias in `LITELLM_MODEL`.
+The API checks that the gateway lists the alias, then sends it as the `model`
+in the chat completion request. For example, set the alias to `form-drafts`
+and configure its deployments and fallback policy in LiteLLM. You can then
+change which deployment serves form creation without changing the editor.
+[LiteLLM model routing](https://docs.litellm.ai/docs/routing)
+
 For lead qualification, publish `qualify-leads` in the LiteLLM Skills Hub with a
 GitHub `git-subdir` source that contains a publicly readable `SKILL.md`. The API
 reads the catalog at `/claude-code/marketplace.json` and loads the skill from
