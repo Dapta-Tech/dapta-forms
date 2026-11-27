@@ -17,3 +17,4 @@ export * from './api-reference';
 export * from './trim';
 export * from './announcements';
 export * from './referral';
+export * from './playbook-media';

@@ -476,6 +476,20 @@ export const referrerBrowser = sqliteTable(
   }),
 );
 
+/** What one person has opened in the playbooks gallery (see 0035 and the Postgres twin). */
+export const playbookState = sqliteTable(
+  'playbook_state',
+  {
+    userId: text('user_id').notNull(),
+    playbookSlug: text('playbook_slug').notNull(),
+    firstSeenAt: integer('first_seen_at').notNull(),
+    lastSeenAt: integer('last_seen_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.playbookSlug] }),
+  }),
+);
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -497,4 +511,5 @@ export const sqliteSchema = {
   referral,
   referralInvite,
   referrerBrowser,
+  playbookState,
 };

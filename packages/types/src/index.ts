@@ -2131,6 +2131,20 @@ export const submissionSchema = z.object({
    * Top-level for the same reason as `hp`: it is not an answer.
    */
   visit: submissionVisitSchema,
+  /**
+   * A random id the renderer mints per response (same life as `sessionId`),
+   * used as the product-analytics distinct id of the one event about a
+   * response, so it can be joined with the page the form redirects to. Not an
+   * answer and never stored. Tolerant: anything but a UUID is dropped, never
+   * refused, so a malformed value cannot fail a submit.
+   */
+  analyticsId: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    .optional()
+    .catch(undefined),
 });
 export type SubmissionInput = z.infer<typeof submissionSchema>;
 

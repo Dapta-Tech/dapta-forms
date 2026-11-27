@@ -6,6 +6,7 @@ import { attributionHandoffQuery } from '@/lib/attribution';
 import { authProvider, getSession } from '@/lib/auth-session';
 import { loginHandoffPath, SCREEN_PARAM, wantsSignUp } from '@/lib/login-screen';
 import { publicFormPath } from '@/lib/public-form-path';
+import { NEXT_QUERY_KEY, safeNextPath, withNextPath } from '@/lib/return-path';
 import { selfHost } from '@/lib/request-origin';
 
 /** The seeded demo form (`packages/db/src/seed.ts`), at the link the builder would hand out. */
@@ -58,9 +59,14 @@ export default async function HomePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   if (authProvider() === 'workos') {
+    // `?next=` is a destination inside the dashboard (the landing's «Connect»
+    // asks for the API keys). Signed in, go straight there; signed out, it
+    // rides through the login and the wizard (lib/return-path.ts).
+    const params = await searchParams;
+    const next = safeNextPath(params[NEXT_QUERY_KEY]);
     const session = await getSession();
-    if (session) redirect('/admin');
-    redirect(await loginHandoff(await searchParams));
+    if (session) redirect(next ?? '/admin');
+    redirect(withNextPath(await loginHandoff(params), next));
   }
 
   return (

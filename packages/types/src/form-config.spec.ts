@@ -363,6 +363,20 @@ describe('publicFormSchema: the challenge the renderer runs (additive)', () => {
   });
 });
 
+describe('submissionSchema: the response analytics id (additive, tolerant)', () => {
+  const ID = '019a6b2e-7c3d-7e4f-8a5b-1c2d3e4f5a6b';
+  it('keeps a UUID, lowercased', () => {
+    expect(submissionSchema.parse({ sessionId: 's', data: {}, analyticsId: ID.toUpperCase() }).analyticsId).toBe(ID);
+  });
+  it('drops anything else instead of refusing the submit', () => {
+    for (const bad of ['a@b.com', 'x', 42, null, { id: ID }, `${ID}x`]) {
+      const parsed = submissionSchema.parse({ sessionId: 's', data: {}, analyticsId: bad });
+      expect(parsed.analyticsId).toBeUndefined();
+    }
+    expect(submissionSchema.parse({ sessionId: 's', data: {} }).analyticsId).toBeUndefined();
+  });
+});
+
 describe('submissionSchema: the challenge token and the honeypot (additive)', () => {
   it('carries both as optional top-level fields, never inside the answers', () => {
     const parsed = submissionSchema.parse({ sessionId: 's', data: {}, captchaToken: 'tok', hp: '' });

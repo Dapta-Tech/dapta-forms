@@ -36,6 +36,7 @@ import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { BookingEffects } from './booking-effects';
 import { AnalyticsEffects } from './analytics-effects';
+import { responseCompletedEvent, type ResponseCompletedInput } from './response-completed-event';
 import { UploadService } from './upload.service';
 import { captchaActive, captchaStrict, type CaptchaVerifier } from './captcha';
 import { hutkRefused, storedVisit } from './submission-visit';
@@ -86,7 +87,8 @@ export class SubmissionService {
     @Optional() @Inject(DestinationEffects) private readonly destinations?: DestinationEffects,
     // Optional for the same reason: enqueues the durable booking → CRM sync.
     @Optional() @Inject(BookingEffects) private readonly bookings?: BookingEffects,
-    // Product analytics about the form OWNER (activation), not the respondent.
+    // Product analytics: about the form OWNER (activation), plus the one
+    // person-free event per completed response (`response_completed`).
     @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
     // Verifies + promotes `file` answers. Optional for the same reason as the
     // rest: a form with no file question never reaches it.
@@ -346,6 +348,18 @@ export class SubmissionService {
           form.id,
         );
       }
+      await this.captureResponseCompleted({
+        accountCode,
+        form,
+        config,
+        responseId: row.id,
+        data,
+        visit: row.visit,
+        outcome,
+        locale: input.locale ?? null,
+        analyticsId: input.analyticsId,
+        respondentEmail,
+      });
     }
 
     // Fan out to every enabled destination (CRM/webhook) via the durable outbox.
@@ -453,6 +467,32 @@ export class SubmissionService {
     }
 
     return { id: row.id, score, outcome: outcome?.id ?? null };
+  }
+
+  /**
+   * `forms_response_completed`, once per NEW complete response (the caller
+   * gates it like the emails: never a partial, never a re-landed complete).
+   * Its uuid is the response id, so an outbox retry is one event too.
+   *
+   * Never fails the submission: the response is already saved, and building
+   * the properties reads the owner's config, so all of it sits in this guard.
+   */
+  private async captureResponseCompleted(
+    input: Omit<ResponseCompletedInput, 'staffDomains'>,
+  ): Promise<void> {
+    const analytics = this.productAnalytics;
+    if (!analytics?.enabled) return;
+    try {
+      const event = responseCompletedEvent({ ...input, staffDomains: analytics.staffDomains });
+      await analytics.capture('response_completed', {
+        distinctId: event.distinctId,
+        accountId: input.form.accountId,
+        uuid: event.uuid,
+        properties: event.properties,
+      });
+    } catch (err) {
+      this.log.warn(`response_completed not captured for form ${input.form.id}: ${String(err)}`);
+    }
   }
 
   /**

@@ -27,6 +27,7 @@ export * from './short-links';
 export * from './outbox';
 export * from './notification-settings';
 export * from './announcements';
+export * from './playbooks';
 export * from './referrals';
 export * from './referral-browsers';
 export * from './referral-banner';

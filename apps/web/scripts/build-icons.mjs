@@ -45,6 +45,7 @@ const MAP = {
   bolt: 'zap',
   bot: 'bot',
   book: 'book-open',
+  'book-check': 'book-check',
   calendar: 'calendar',
   'calendar-plus': 'calendar-plus',
   'chart-bar': 'chart-column',
@@ -93,9 +94,11 @@ const MAP = {
   inbox: 'inbox',
   'info-circle': 'info',
   key: 'key-round',
+  'layout-template': 'layout-template',
   link: 'link',
   list: 'list',
   lock: 'lock',
+  megaphone: 'megaphone',
   'microchip-ai': 'sparkle',
   minus: 'minus',
   mobile: 'smartphone',
@@ -106,6 +109,7 @@ const MAP = {
   phone: 'phone',
   plus: 'plus',
   qrcode: 'qr-code',
+  'question-circle': 'circle-question-mark',
   refresh: 'refresh-cw',
   pause: 'pause',
   play: 'play',
@@ -141,6 +145,20 @@ const MAP = {
 /** Not icons: modifier classes, and the string `api-url` the name regex also hits. */
 const NOT_ICONS = new Set(['spin', 'url']);
 
+/** The text without its HTML comments, cut by index so no `<!--` survives a partial match. */
+function stripComments(text) {
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf('<!--', from);
+    if (open === -1) return out + text.slice(from);
+    const close = text.indexOf('-->', open + 4);
+    if (close === -1) return out + text.slice(from, open);
+    out += text.slice(from, open);
+    from = close + 3;
+  }
+}
+
 function svgFor(spec) {
   const [name, mode] = spec.split(':');
   let svg;
@@ -149,8 +167,7 @@ function svgFor(spec) {
   } catch {
     throw new Error(`lucide-static has no icon named "${name}"`);
   }
-  const inner = svg
-    .replace(/<!--[\s\S]*?-->/g, '')
+  const inner = stripComments(svg)
     .replace(/<svg[\s\S]*?>/, '')
     .replace(/<\/svg>/, '')
     .replace(/\s*\n\s*/g, '')

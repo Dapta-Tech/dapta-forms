@@ -50,6 +50,20 @@ _Avoid_: Conversion, signup
 What a referrer earns on reaching five referrals: the badge can be hidden on every workspace they own, with no expiry. Unlike a paid verdict, it never lapses.
 _Avoid_: Reward, perk
 
+### What people read
+
+**Playbook**:
+A free resource in the in-app gallery and on the landing's resource hub: a long text with a category, a step done with a dForms template, and a public preview. Its full text needs a sign-in, unless a guide promises it. Defined in code, never in the database, once per playbook language.
+_Avoid_: Guide, resource, article, lead magnet
+
+**Playbook language**:
+The language a playbook is written in, Spanish or English, chosen with the ES / EN toggle of the gallery and the reader. It is separate from the platform's language: switching it changes the playbooks only. Spanish is the base: a playbook with no version in the language asked for is served in Spanish, marked as a fallback. One playbook is the same playbook in every language, with one slug, one category, one publication date and one playbook state.
+_Avoid_: Content locale, translation
+
+**Playbook state**:
+What one person has done with the playbooks: when they first and last opened each one, and when they last visited the gallery. Kept per person, not per workspace, and per playbook, not per playbook language; "New" is a playbook published after that last visit and never opened.
+_Avoid_: Progress, read receipt
+
 ### How agents get in
 
 **API key**:

@@ -96,6 +96,7 @@ export function AnchoredMenu({
   autoFocus = false,
   className = '',
   testId,
+  id,
   role = 'menu',
   side = 'below',
   onKeyDown,
@@ -117,6 +118,8 @@ export function AnchoredMenu({
   className?: string;
   /** The panel leaves the trigger's subtree, so QA needs its own handle on it. */
   testId?: string;
+  /** DOM id of the panel, for a trigger's `aria-controls`. */
+  id?: string;
   /**
    * `menu` for a list of actions (the rail's switchers); `dialog` for a panel
    * of form controls (a column filter's checkboxes and fields), which a menu
@@ -289,6 +292,7 @@ export function AnchoredMenu({
   return createPortal(
     <div
       ref={menuRef}
+      id={id}
       role={role}
       aria-label={label}
       onKeyDown={onKeyDown}

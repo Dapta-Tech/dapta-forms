@@ -8,6 +8,7 @@ import { analyticsSessionHeaders } from '@/lib/analytics-session';
 import { browserIdHeaders, ensureBrowserId } from '@/lib/browser-id';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { requestOrigin } from '@/lib/request-origin';
+import { NEXT_COOKIE, safeNextPath } from '@/lib/return-path';
 
 const OAUTH_STATE_COOKIE = 'quill_oauth_state';
 const ATTRIBUTION_COOKIE = 'quill_attribution';
@@ -230,5 +231,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   ensureBrowserId(jar);
   await recordAttribution(jar, tokens.access_token);
   await seedLocale(jar, tokens.access_token);
-  return NextResponse.redirect(new URL('/admin', origin));
+  // A destination parked by /api/auth/login (lib/return-path.ts). The cookie is
+  // NOT spent here: on a first visit the dashboard bounces to the wizard, and
+  // the wizard is what spends it.
+  const next = safeNextPath(jar.get(NEXT_COOKIE)?.value);
+  return NextResponse.redirect(new URL(next ?? '/admin', origin));
 }

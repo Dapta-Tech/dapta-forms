@@ -141,7 +141,7 @@ function expectPinnedLayout(aside: HTMLElement, { collapsed }: { collapsed: bool
   expect(header.children).toHaveLength(2);
   expect(header.children[0]!.childElementCount).toBeGreaterThan(0);
   expect(header.children[1]!.getAttribute('data-testid')).toBe('workspace-switcher');
-  for (const id of ['nav-developers', 'nav-docs', 'nav-referral', 'nav-product-hunt']) {
+  for (const id of ['nav-developers', 'nav-help', 'nav-referral', 'nav-product-hunt']) {
     expect(navEl.querySelector(`[data-testid="${id}"]`)).not.toBeNull();
   }
   expect(navEl.querySelector('a[href="/admin"]')).not.toBeNull();

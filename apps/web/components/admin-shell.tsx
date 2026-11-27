@@ -3,9 +3,11 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   useSyncExternalStore,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type TransitionEvent as ReactTransitionEvent,
@@ -13,7 +15,10 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  initialNavGroupOpen,
+  isNavGroupActive,
   isNavItemActive,
+  navGroupStorageKey,
   type AnnouncementCopy,
   type AnnouncementRailItem,
   type AnnouncementVideo,
@@ -25,6 +30,7 @@ import { ProfileMenu } from '@/components/profile-menu';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import { McpLogos } from '@/components/mcp-logos';
+import { AnchoredMenu } from '@/components/ui/anchored-menu';
 import { IntegrationLogos } from '@/components/integration-logos';
 import {
   announcementShownThisSession,
@@ -66,7 +72,9 @@ type IconName =
   | 'mcp'
   | 'tools'
   | 'docs'
-  | 'agents';
+  | 'agents'
+  | 'playbooks'
+  | 'help';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -88,7 +96,23 @@ interface NavItem {
   prominent?: true;
 }
 
+/**
+ * A parent row with no page of its own: a button that opens onto its
+ * `children`, indented under it in the open rail and the drawer, and as a
+ * flyout beside the icon on the 64px rail. It is marked while one of its
+ * children is the page you are on (`isNavGroupActive`), and opens by itself
+ * there so the highlighted link is never hidden. Whether it is open is kept
+ * per browser in localStorage (`navGroupStorageKey`), closed by default.
+ */
+interface NavGroup {
+  key: keyof ChromeMessages['nav'];
+  icon: IconName;
+  children: NavItem[];
+}
 
+type NavEntry = NavItem | NavGroup;
+
+const isNavGroup = (entry: NavEntry): entry is NavGroup => 'children' in entry;
 
 // Forms information architecture: Home, Forms, Submissions, Analytics,
 // Integrations. Submissions/Analytics/Integrations are per-form surfaces
@@ -102,14 +126,20 @@ interface NavItem {
 // account. Its own prominent item rather than a corner of Account settings or
 // a page under an "MCP" group, so it is found without being looked for: a
 // green-tinted row whose icon is the rotating Claude, ChatGPT and Cursor logos
-// (`McpLogos`) and that breathes a soft glow until you are on it. Then
-// "Tools": what an agent can do in dForms, in plain words. Keyed `developers`
-// and under `/admin/developers` because skill zips already handed out those
-// addresses.
+// (`McpLogos`) and that breathes a soft glow until you are on it. Keyed
+// `developers` and under `/admin/developers` because skill zips already
+// handed out those addresses.
 //
-// Then "Docs": the product documentation, always present, in the reader's
-// language (the URL lives in the message catalog, see `docsHref`). External
-// like the platform door below, and tagged the same way.
+// Then "Help", a group (see `NavGroup`) with two children: "Tools", what an
+// agent can do in dForms, in plain words (under `/admin/developers` for the
+// same reason), and "Docs", the product documentation, always present, in the
+// reader's language (the URL lives in the message catalog, see `docsHref`).
+// Docs is external like the platform door below, and tagged the same way.
+//
+// Then "Playbooks": the free guides every person can read (/admin/playbooks).
+// It carries the "New" badge while the person has playbooks published after
+// their last visit to the gallery and never opened (`newCount` of
+// `GET /v1/me/playbooks`, read by the layout), until they open the gallery.
 //
 // Last, and only on a deployment that has a platform: "Sales AI Agents", the door
 // to the wider platform. It sits IN the nav rather than in a separate block so
@@ -118,7 +148,7 @@ interface NavItem {
 // app-switcher's first row: with NEXT_PUBLIC_PLATFORM_URL unset a fork's rail
 // carries no dead item. Same helper too, so both doors tag themselves alike
 // (`utm_source=forms`, medium = the piece of chrome clicked).
-const NAV: NavItem[] = [
+const NAV: NavEntry[] = [
   { key: 'home', href: '/admin', icon: 'home' },
   { key: 'forms', href: '/admin/forms', icon: 'forms' },
   { key: 'submissions', href: '/admin/submissions', icon: 'submissions' },
@@ -131,14 +161,75 @@ const NAV: NavItem[] = [
     match: ['/admin/developers/connect', '/admin/developers/keys'],
     prominent: true,
   },
-  { key: 'tools', href: '/admin/developers/tools', icon: 'tools' },
-  { key: 'docs', href: '', icon: 'docs', external: true, localizedHref: 'docsHref' },
+  {
+    key: 'help',
+    icon: 'help',
+    children: [
+      { key: 'tools', href: '/admin/developers/tools', icon: 'tools' },
+      { key: 'docs', href: '', icon: 'docs', external: true, localizedHref: 'docsHref' },
+    ],
+  },
+  { key: 'playbooks', href: '/admin/playbooks', icon: 'playbooks' },
   ...(PLATFORM_URL
     ? [{ key: 'agents', href: suiteHref(PLATFORM_URL, 'sidebar'), icon: 'agents', external: true } as const]
     : []),
 ];
 
 const NAV_COLLAPSED_KEY = 'forms.nav.collapsed';
+
+const NAV_GROUPS: NavGroup[] = NAV.filter(isNavGroup);
+
+/**
+ * Which rail groups are open, shared by the desktop rail and the drawer so
+ * the two never disagree. The server cannot read localStorage, so the first
+ * render opens only the group of the page you are on, and what the person
+ * left the others at is applied after mount. Entering a child page opens its
+ * group again; only a click on the group's row is saved.
+ */
+function useNavGroupsOpen(pathname: string) {
+  const [open, setOpen] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(NAV_GROUPS.map((g) => [g.key, isNavGroupActive(pathname, g.children)])),
+  );
+  useEffect(() => {
+    setOpen((prev) => {
+      const next = { ...prev };
+      for (const g of NAV_GROUPS) {
+        let stored: string | null = null;
+        try {
+          stored = localStorage.getItem(navGroupStorageKey(g.key));
+        } catch {
+          /* storage blocked: closed unless on a child page */
+        }
+        next[g.key] = initialNavGroupOpen(prev[g.key] === true, stored);
+      }
+      return next;
+    });
+  }, []);
+  const activeKeys = NAV_GROUPS.filter((g) => isNavGroupActive(pathname, g.children))
+    .map((g) => g.key)
+    .join(' ');
+  useEffect(() => {
+    if (!activeKeys) return;
+    setOpen((prev) => {
+      const next = { ...prev };
+      for (const key of activeKeys.split(' ')) next[key] = true;
+      return next;
+    });
+  }, [activeKeys]);
+  const toggle = useCallback(
+    (key: string) => {
+      const value = !open[key];
+      try {
+        localStorage.setItem(navGroupStorageKey(key), value ? '1' : '0');
+      } catch {
+        /* storage blocked: open for this load only */
+      }
+      setOpen((prev) => ({ ...prev, [key]: value }));
+    },
+    [open],
+  );
+  return { open, toggle };
+}
 
 /** Hover intent for the editor's peek rail. Opening is quick: the 64px strip is
  *  a deliberate target, not somewhere a pointer crosses on its way elsewhere.
@@ -165,16 +256,29 @@ const PI_BY_NAME: Record<Exclude<IconName, AnimatedIcon>, string> = {
   tools: 'pi-sparkles',
   docs: 'pi-book',
   agents: 'pi-bot',
+  playbooks: 'pi-book-check',
+  help: 'pi-question-circle',
 };
 
-function Icon({ name, className, paused }: { name: IconName; className?: string; paused?: boolean }) {
-  if (name === 'mcp') return <McpLogos size={20} paused={paused} />;
-  if (name === 'integrations') return <IntegrationLogos size={20} paused={paused} />;
+function Icon({
+  name,
+  className,
+  paused,
+  size = 20,
+}: {
+  name: IconName;
+  className?: string;
+  paused?: boolean;
+  /** 20px in the rail; a group's flyout lists its links at 14px. */
+  size?: number;
+}) {
+  if (name === 'mcp') return <McpLogos size={size} paused={paused} />;
+  if (name === 'integrations') return <IntegrationLogos size={size} paused={paused} />;
   return (
     <i
       aria-hidden
       className={`pi ${PI_BY_NAME[name]}${className ? ` ${className}` : ''}`}
-      style={{ fontSize: 20 }}
+      style={{ fontSize: size }}
     />
   );
 }
@@ -220,12 +324,20 @@ function useMinWidth(px: number): boolean {
   return wide;
 }
 
-/** The "New" mark one rail item carries while an announcement points at it. */
+/**
+ * The "New" mark a rail item carries: while an announcement points at it, or,
+ * on Playbooks, while the person has playbooks they have not seen.
+ */
 interface NavBadge {
   /** The visible pill: "New". */
   label: string;
   /** Read after the item's name: ", new", so the link is "Integrations, new". */
   sr: string;
+  /**
+   * Pop once when it appears (a short swell with a green halo, see
+   * `.nav-badge-pop`), then hold still. Still with reduced motion.
+   */
+  pulse?: boolean;
 }
 
 /**
@@ -241,7 +353,7 @@ function BadgedIcon({ badge, collapsed, children }: { badge?: NavBadge | null; c
       <span
         aria-hidden
         data-testid="nav-badge-dot"
-        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-sidebar"
+        className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-sidebar${badge.pulse ? ' nav-badge-pop' : ''}`}
       />
     </span>
   );
@@ -261,7 +373,9 @@ function BadgeTail({ badge, collapsed }: { badge?: NavBadge | null; collapsed: b
         <span
           aria-hidden
           data-testid="nav-badge"
-          className="ml-auto shrink-0 rounded-full bg-signal/15 px-2 py-0.5 text-2xs font-semibold leading-4 text-signal-ink"
+          className={`ml-auto shrink-0 rounded-full bg-signal/15 px-2 py-0.5 text-2xs font-semibold leading-4 text-signal-ink${
+            badge.pulse ? ' nav-badge-pop' : ''
+          }`}
         >
           {badge.label}
         </span>
@@ -330,7 +444,10 @@ function NavLinks({
   newTab,
   onNavigate,
   badgeItem = null,
+  playbooksBadge = false,
   badge,
+  groupsOpen,
+  onToggleGroup,
   referral = null,
   referralM,
   onReferral,
@@ -345,7 +462,12 @@ function NavLinks({
   onNavigate?: () => void;
   /** The item an announcement marks "New", or null. */
   badgeItem?: AnnouncementRailItem | null;
+  /** Mark Playbooks "New": the person has playbooks they have not seen. */
+  playbooksBadge?: boolean;
   badge: NavBadge;
+  /** Which groups are open in the open rail and the drawer (`useNavGroupsOpen`). */
+  groupsOpen: Record<string, boolean>;
+  onToggleGroup: (key: string) => void;
   /** The referral program's entry, or null while the program is off. */
   referral?: ShellReferral | null;
   referralM: ChromeMessages['referral'];
@@ -355,101 +477,135 @@ function NavLinks({
   productHunt: ChromeMessages['productHunt'] | null;
 }) {
   const pathname = usePathname();
+  const hrefOf = (item: NavItem) => (item.localizedHref ? docsHref : item.href);
+  const announcedKey = (key: NavItem['key']) => badgeItem !== null && key === badgeItem;
+  const badgeFor = (key: NavItem['key']): NavBadge | null =>
+    announcedKey(key) ? badge : playbooksBadge && key === 'playbooks' ? { ...badge, pulse: true } : null;
+  // A click on the announcement's item is how the visit gets filed as the rail's.
+  const navigateFor = (key: NavItem['key']) =>
+    announcedKey(key)
+      ? () => {
+          markAnnouncementSurface('rail');
+          onNavigate?.();
+        }
+      : onNavigate;
+  // An external item is never "here": its href is another origin, so the
+  // prefix rule could not match anyway, but the intent should not depend
+  // on that accident.
+  const activeOf = (item: NavItem) => !item.external && isNavItemActive(pathname, hrefOf(item), item.match);
+
+  /** One rail link, as a row of the open or collapsed rail (or of an open group). */
+  const renderLink = (item: NavItem, rowCollapsed: boolean) => {
+    const href = hrefOf(item);
+    const label = nav[item.key];
+    const itemBadge = badgeFor(item.key);
+    const navigate = navigateFor(item.key);
+    const active = activeOf(item);
+    const className = [
+      navRowClass(rowCollapsed, active ? 'active' : 'idle'),
+      item.prominent &&
+        (active
+          ? 'bg-signal/15 ring-1 ring-inset ring-signal/50'
+          : 'rail-pulse bg-signal/[0.08] font-medium text-foreground ring-1 ring-inset ring-signal/30 hover:bg-signal/15'),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    // Label stays in the a11y tree when collapsed (sr-only) so the
+    // icon-only link keeps a discernible name (WCAG 4.1.2).
+    const body = (
+      <>
+        <BadgedIcon badge={itemBadge} collapsed={rowCollapsed}>
+          <Icon name={item.icon} />
+        </BadgedIcon>
+        <span className={rowCollapsed ? 'sr-only' : ''}>{label}</span>
+      </>
+    );
+    if (ANIMATED_ICONS.has(item.icon) && !item.external) {
+      return (
+        <LogosLink
+          icon={item.icon}
+          href={href}
+          label={label}
+          collapsed={rowCollapsed}
+          active={active}
+          testId={`nav-${item.key}`}
+          prominent={item.prominent}
+          className={className}
+          onNavigate={navigate}
+          badge={itemBadge}
+        />
+      );
+    }
+    if (item.external) {
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={onNavigate}
+          title={rowCollapsed ? label : undefined}
+          data-testid={`nav-${item.key}`}
+          className={className}
+        >
+          {body}
+          {/* The same trailing arrow the app-switcher rows carry, so
+              "leaves the app" reads the same wherever it appears. Hidden
+              on the 64px rail, where the 44px tile is the icon alone. */}
+          {!rowCollapsed ? (
+            <i aria-hidden className="pi pi-external-link ml-auto text-muted-foreground" style={{ fontSize: 13 }} />
+          ) : null}
+          <span className="sr-only"> {newTab}</span>
+        </a>
+      );
+    }
+    return (
+      <Link
+        href={href}
+        onClick={navigate}
+        title={rowCollapsed ? `${label}${itemBadge ? itemBadge.sr : ''}` : undefined}
+        aria-current={active ? 'page' : undefined}
+        data-testid={`nav-${item.key}`}
+        data-badge={itemBadge ? 'new' : undefined}
+        className={className}
+      >
+        {body}
+        <BadgeTail badge={itemBadge} collapsed={rowCollapsed} />
+      </Link>
+    );
+  };
+
   return (
     <ul className="flex flex-col gap-1">
-      {NAV.map((item) => {
-        const href = item.localizedHref ? docsHref : item.href;
-        const label = nav[item.key];
-        const itemBadge = badgeItem !== null && item.key === badgeItem ? badge : null;
-        // A click on the marked item is how the visit gets filed as the rail's.
-        const navigate = itemBadge
-          ? () => {
-              markAnnouncementSurface('rail');
-              onNavigate?.();
-            }
-          : onNavigate;
-        // An external item is never "here": its href is another origin, so the
-        // prefix rule could not match anyway, but the intent should not depend
-        // on that accident.
-        const active = !item.external && isNavItemActive(pathname, href, item.match);
-        const className = [
-          navRowClass(collapsed, active ? 'active' : 'idle'),
-          item.prominent &&
-            (active
-              ? 'bg-signal/15 ring-1 ring-inset ring-signal/50'
-              : 'rail-pulse bg-signal/[0.08] font-medium text-foreground ring-1 ring-inset ring-signal/30 hover:bg-signal/15'),
-        ]
-          .filter(Boolean)
-          .join(' ');
-        // Label stays in the a11y tree when collapsed (sr-only) so the
-        // icon-only link keeps a discernible name (WCAG 4.1.2).
-        const body = (
-          <>
-            <BadgedIcon badge={itemBadge} collapsed={collapsed}>
-              <Icon name={item.icon} />
-            </BadgedIcon>
-            <span className={collapsed ? 'sr-only' : ''}>{label}</span>
-          </>
-        );
-        if (ANIMATED_ICONS.has(item.icon) && !item.external) {
-          return (
-            <li key={item.key}>
-              <LogosLink
-                icon={item.icon}
-                href={href}
-                label={label}
-                collapsed={collapsed}
-                active={active}
-                testId={`nav-${item.key}`}
-                prominent={item.prominent}
-                className={className}
-                onNavigate={navigate}
-                badge={itemBadge}
-              />
-            </li>
-          );
-        }
-        return (
-          <li key={item.key}>
-            {item.external ? (
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={onNavigate}
-                title={collapsed ? label : undefined}
-                data-testid={`nav-${item.key}`}
-                className={className}
-              >
-                {body}
-                {/* The same trailing arrow the app-switcher rows carry, so
-                    "leaves the app" reads the same wherever it appears. Hidden
-                    on the 64px rail, where the 44px tile is the icon alone. */}
-                {!collapsed ? (
-                  <i
-                    aria-hidden
-                    className="pi pi-external-link ml-auto text-muted-foreground"
-                    style={{ fontSize: 13 }}
-                  />
-                ) : null}
-                <span className="sr-only"> {newTab}</span>
-              </a>
-            ) : (
-              <Link
-                href={href}
-                onClick={navigate}
-                title={collapsed ? `${label}${itemBadge ? itemBadge.sr : ''}` : undefined}
-                aria-current={active ? 'page' : undefined}
-                data-badge={itemBadge ? 'new' : undefined}
-                className={className}
-              >
-                {body}
-                <BadgeTail badge={itemBadge} collapsed={collapsed} />
-              </Link>
-            )}
+      {NAV.map((entry) =>
+        isNavGroup(entry) ? (
+          <li key={entry.key}>
+            <NavGroupEntry
+              group={entry}
+              label={nav[entry.key]}
+              collapsed={collapsed}
+              open={groupsOpen[entry.key] === true}
+              onToggle={() => onToggleGroup(entry.key)}
+              active={entry.children.some(activeOf)}
+              // The first child's "New" stands for the group while its links are out of sight.
+              badge={entry.children.map((c) => badgeFor(c.key)).find((b) => b !== null) ?? null}
+              renderChild={(child) => renderLink(child, false)}
+              flyoutItems={entry.children.map((child) => ({
+                key: child.key,
+                href: hrefOf(child),
+                label: nav[child.key],
+                icon: child.icon,
+                external: child.external === true,
+                active: activeOf(child),
+                badge: badgeFor(child.key),
+                onNavigate: navigateFor(child.key),
+              }))}
+              newTab={newTab}
+            />
           </li>
-        );
-      })}
+        ) : (
+          <li key={entry.key}>{renderLink(entry, collapsed)}</li>
+        ),
+      )}
       {referral ? (
         <li>
           <ReferralNavEntry referral={referral} m={referralM} collapsed={collapsed} onOpen={onReferral} />
@@ -461,6 +617,218 @@ function NavLinks({
         </li>
       ) : null}
     </ul>
+  );
+}
+
+/** One link of a group's flyout on the collapsed rail. */
+interface FlyoutItem {
+  key: string;
+  href: string;
+  label: string;
+  icon: IconName;
+  external: boolean;
+  active: boolean;
+  badge: NavBadge | null;
+  onNavigate?: () => void;
+}
+
+/**
+ * A rail group (see `NavGroup`), one button in both rail widths so focus
+ * survives the editor's peek widening the rail under it.
+ *
+ * Open rail and drawer: a disclosure. The button toggles the indented list
+ * under it (`aria-expanded` + `aria-controls`), Enter and Space for free from
+ * the native button. On the 64px rail there is no room under it, so the same
+ * button opens a menu beside the icon (`AnchoredMenu`, `side="right"`): focus
+ * lands on its first link, the arrows walk it, Escape closes it and hands
+ * focus back, and Tab leaves it for the next control in the rail, closing it
+ * on the way out, so it is never a trap.
+ *
+ * Marked as the page you are on while one of its children is: the full mark
+ * (wash and bar) when that child is out of sight, a quieter one (ink and
+ * weight) when the open list shows the child's own mark, so exactly one bar is
+ * on screen. A child's "New" shows on the group while the list is closed or
+ * the rail is collapsed, and on the child itself once it is visible.
+ */
+function NavGroupEntry({
+  group,
+  label,
+  collapsed,
+  open,
+  onToggle,
+  active,
+  badge,
+  renderChild,
+  flyoutItems,
+  newTab,
+}: {
+  group: NavGroup;
+  label: string;
+  collapsed: boolean;
+  open: boolean;
+  onToggle: () => void;
+  active: boolean;
+  badge: NavBadge | null;
+  renderChild: (child: NavItem) => ReactNode;
+  flyoutItems: FlyoutItem[];
+  newTab: string;
+}) {
+  const id = useId();
+  const listId = `${id}-list`;
+  const menuId = `${id}-menu`;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [flyoutOpen, setFlyoutOpen] = useState(false);
+  const closeFlyout = useCallback(() => setFlyoutOpen(false), []);
+  // The editor's peek widens the rail under an open flyout: the list takes over.
+  useEffect(() => {
+    if (!collapsed) setFlyoutOpen(false);
+  }, [collapsed]);
+
+  const childrenShown = !collapsed && open;
+  const shownBadge = childrenShown ? null : badge;
+  const state = active && !childrenShown ? 'active' : 'idle';
+  const className = [
+    navRowClass(collapsed, state),
+    active && childrenShown && 'font-medium text-foreground',
+    collapsed && flyoutOpen && state === 'idle' && 'bg-muted text-foreground',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const onMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const go = (i: number) => {
+      e.preventDefault();
+      items[(i + items.length) % items.length]?.focus();
+    };
+    if (e.key === 'ArrowDown') go(at + 1);
+    else if (e.key === 'ArrowUp') go(at - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(items.length - 1);
+    else if (e.key === 'Tab') {
+      // Back on the trigger before the browser moves focus, so Tab and
+      // Shift+Tab continue from the group's place in the rail, not from the
+      // end of <body> where the panel lives.
+      triggerRef.current?.focus();
+      setFlyoutOpen(false);
+    }
+  };
+
+  // The ring is drawn inside the row: the panel clips its overflow (rounded
+  // corners), and the global 2px offset would leave only its top and bottom.
+  const itemClass =
+    'flex min-h-[40px] w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:-outline-offset-2!';
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={collapsed ? () => setFlyoutOpen((v) => !v) : onToggle}
+        aria-expanded={collapsed ? flyoutOpen : open}
+        aria-controls={collapsed ? (flyoutOpen ? menuId : undefined) : listId}
+        aria-haspopup={collapsed ? 'menu' : undefined}
+        title={collapsed ? `${label}${shownBadge ? shownBadge.sr : ''}` : undefined}
+        data-testid={`nav-${group.key}`}
+        data-active={active || undefined}
+        data-badge={shownBadge ? 'new' : undefined}
+        className={className}
+      >
+        <BadgedIcon badge={shownBadge} collapsed={collapsed}>
+          <Icon name={group.icon} />
+        </BadgedIcon>
+        <span className={collapsed ? 'sr-only' : ''}>{label}</span>
+        {collapsed ? (
+          <BadgeTail badge={shownBadge} collapsed />
+        ) : (
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            <BadgeTail badge={shownBadge} collapsed={false} />
+            <i
+              aria-hidden
+              className={`pi pi-chevron-down text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}
+              style={{ fontSize: 11 }}
+            />
+          </span>
+        )}
+      </button>
+      {collapsed ? (
+        <AnchoredMenu
+          id={menuId}
+          anchorRef={triggerRef}
+          open={flyoutOpen}
+          onClose={closeFlyout}
+          label={label}
+          side="right"
+          width={220}
+          minWidth={220}
+          autoFocus
+          onKeyDown={onMenuKeyDown}
+          className="flex flex-col overflow-hidden py-1"
+          testId={`nav-${group.key}-flyout`}
+        >
+          <p aria-hidden className="px-2.5 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">
+            {label}
+          </p>
+          {flyoutItems.map((item) => {
+            const body = (
+              <>
+                <Icon name={item.icon} size={14} className="text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              </>
+            );
+            const done = () => {
+              setFlyoutOpen(false);
+              item.onNavigate?.();
+            };
+            return item.external ? (
+              <a
+                key={item.key}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                role="menuitem"
+                onClick={done}
+                data-testid={`nav-${item.key}`}
+                className={`${itemClass} text-foreground`}
+              >
+                {body}
+                <i aria-hidden className="pi pi-external-link text-muted-foreground" style={{ fontSize: 12 }} />
+                <span className="sr-only"> {newTab}</span>
+              </a>
+            ) : (
+              <Link
+                key={item.key}
+                href={item.href}
+                role="menuitem"
+                onClick={done}
+                aria-current={item.active ? 'page' : undefined}
+                data-testid={`nav-${item.key}`}
+                data-badge={item.badge ? 'new' : undefined}
+                className={`${itemClass} ${item.active ? 'bg-muted font-medium text-foreground' : 'text-foreground'}`}
+              >
+                {body}
+                <BadgeTail badge={item.badge} collapsed={false} />
+              </Link>
+            );
+          })}
+        </AnchoredMenu>
+      ) : (
+        // Indented under the group's icon, on a hairline that ties the
+        // children to their parent. In the DOM while closed (`hidden`), so
+        // `aria-controls` always names an element.
+        <ul
+          id={listId}
+          hidden={!open}
+          data-testid={`nav-${group.key}-list`}
+          className="ml-[22px] mt-1 flex flex-col gap-1 border-l border-border pl-2"
+        >
+          {group.children.map((child) => (
+            <li key={child.key}>{renderChild(child)}</li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -663,6 +1031,7 @@ export function AdminShell({
   currentAccountId,
   staff = false,
   announcement = null,
+  playbooksNew = 0,
   referral = null,
   productHunt = IS_DAPTA_BRAND,
   children,
@@ -684,6 +1053,12 @@ export function AdminShell({
   staff?: boolean;
   /** The announcement this person gets, or null (see `ShellAnnouncement`). */
   announcement?: ShellAnnouncement | null;
+  /**
+   * How many playbooks are new to this person (`newCount` of
+   * `GET /v1/me/playbooks`). Above zero, Playbooks carries "New" until the
+   * gallery is opened. Absent (an API without the route): no badge.
+   */
+  playbooksNew?: number;
   /** The referral program's entry, or null while the program is off. */
   referral?: ShellReferral | null;
   /** Show the Product Hunt review row: Dapta's own builds only (the default says which). */
@@ -695,6 +1070,7 @@ export function AdminShell({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const navGroups = useNavGroupsOpen(pathname);
   const [referralOpen, setReferralOpen] = useState(false);
   // Where the referral dialog was opened from, for its open, copy and share events.
   const [referralSurface, setReferralSurface] = useState<ReferralSurface>('menu');
@@ -753,6 +1129,16 @@ export function AdminShell({
     announcement && announcement.badge && !followed && !studio && !onAnnouncementRoute
       ? announcement.railBadge
       : null;
+  // Playbooks' "New": read by the layout at load, which is not re-rendered on
+  // client navigation, so opening the gallery ends it here for the rest of the
+  // load (the gallery records the visit, and the next load reads zero). The
+  // reader alone does not end it: "New" is about the gallery.
+  const onPlaybooksGallery = pathname === '/admin/playbooks';
+  const [playbooksGalleryOpened, setPlaybooksGalleryOpened] = useState(false);
+  useEffect(() => {
+    if (onPlaybooksGallery) setPlaybooksGalleryOpened(true);
+  }, [onPlaybooksGallery]);
+  const playbooksBadge = playbooksNew > 0 && !studio && !onPlaybooksGallery && !playbooksGalleryOpened;
   // Analytics counts the badge as seen only when it is really on screen: the
   // desktop rail from 768px up, or the drawer once it is opened.
   const railOnScreen = useMinWidth(768) || drawerOpen;
@@ -1121,7 +1507,10 @@ export function AdminShell({
             docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
             badgeItem={badgeItem}
+            playbooksBadge={playbooksBadge}
             badge={messages.newBadge}
+            groupsOpen={navGroups.open}
+            onToggleGroup={navGroups.toggle}
             referral={referral}
             referralM={messages.referral}
             onReferral={openReferral}
@@ -1184,7 +1573,10 @@ export function AdminShell({
             newTab={messages.switcher.opensNewTab}
             onNavigate={() => setDrawerOpen(false)}
             badgeItem={badgeItem}
+            playbooksBadge={playbooksBadge}
             badge={messages.newBadge}
+            groupsOpen={navGroups.open}
+            onToggleGroup={navGroups.toggle}
             referral={referral}
             referralM={messages.referral}
             onReferral={openReferral}

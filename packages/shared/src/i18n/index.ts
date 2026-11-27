@@ -538,9 +538,20 @@ export interface FormsMessages {
          * handed out links there.
          */
         developers: string;
-        /** The Tools page (/admin/developers/tools): what an agent can do with dForms. */
+        /**
+         * "Help": the rail group that opens onto Tools and Docs. It has no page
+         * of its own; it is marked while one of its children is.
+         */
+        help: string;
+        /** The Tools page (/admin/developers/tools): what an agent can do with dForms. Under Help. */
         tools: string;
-        /** The product documentation, an EXTERNAL link (see `docsHref`). */
+        /**
+         * The playbooks gallery (/admin/playbooks), right after the Help
+         * group. Carries the "New" badge while the person has playbooks they
+         * have not seen (see `newBadge`).
+         */
+        playbooks: string;
+        /** The product documentation, an EXTERNAL link (see `docsHref`). Under Help. */
         docs: string;
         /**
          * The door to the wider platform (agents), an EXTERNAL link. Rendered
@@ -661,6 +672,83 @@ export interface FormsMessages {
       close: string;
       items: {
         'integrations-2026-11': AnnouncementCopy;
+      };
+    };
+    /**
+     * The playbooks gallery (`/admin/playbooks`) and its reader
+     * (`/admin/playbooks/<slug>`). The playbooks' own titles and texts come
+     * from the catalog (`@quill/shared/playbooks`), in Spanish and, where a
+     * translation exists, in English; this copy is the platform's language.
+     */
+    playbooks: {
+      title: string;
+      intro: string;
+      /** The pill beside the title while some playbooks are new to the person (one of them). */
+      newSinceOne: string;
+      /** The same pill for several. // {count} */
+      newSinceOther: string;
+      /** Accessible name of the category tabs. */
+      tabsLabel: string;
+      /** The tabs, by catalog category, plus `all`. */
+      categories: {
+        all: string;
+        ventas: string;
+        marketing: string;
+        ads: string;
+        agentes: string;
+      };
+      /** A card's state line. */
+      status: {
+        /** The pill of a playbook published after the last visit and never opened. */
+        new: string;
+        unseen: string;
+        seenJustNow: string;
+        /** // {count} */
+        seenMinutes: string;
+        /** // {count} */
+        seenHours: string;
+        seenYesterday: string;
+        /** // {count} */
+        seenDays: string;
+        /** Opened more than a month ago. // {date} */
+        seenOn: string;
+        /** Beside "New": when it came out. // {date} */
+        publishedOn: string;
+      };
+      /** A tab with nothing in it. */
+      empty: string;
+      /** // {count} */
+      readingTime: string;
+      reader: {
+        /** The breadcrumb's accessible name. */
+        breadcrumb: string;
+        /** The side list of the playbook's sections. */
+        toc: string;
+        /** The card that points at the next playbook of the same tab. // {category} */
+        next: string;
+        read: string;
+        /** The closing section: the step done with a dForms template. */
+        doIt: string;
+        /** Its button, disabled until templates ship. */
+        useTemplate: string;
+        /** The pill beside the disabled button. */
+        soon: string;
+      };
+      /** The ES / EN toggle of the gallery and the reader: the language of the playbooks, never the platform's. */
+      contentLanguage: {
+        /** The toggle's accessible name. */
+        label: string;
+        /** Each language's name, in each button's accessible name beside its code. */
+        names: { es: string; en: string };
+      };
+      /** When a playbook has no English version yet and comes in Spanish. */
+      fallback: {
+        /** Above the cards, while some of them are in Spanish. */
+        gallery: string;
+        /** On such a card. */
+        card: string;
+        /** Above the text of such a playbook in the reader. */
+        reader: string;
       };
     };
     /**
@@ -3604,7 +3692,9 @@ export const en: FormsMessages = {
         analytics: 'Analytics',
         integrations: 'Integrations',
         developers: 'Connect your agent',
+        help: 'Help',
         tools: 'Tools',
+        playbooks: 'Playbooks',
         docs: 'Docs',
         agents: 'Sales AI Agents',
       },
@@ -3700,6 +3790,51 @@ export const en: FormsMessages = {
           body: 'Every response goes straight to the tool you already use. Plus dCal: leads book a meeting inside your form.',
           cta: 'See integrations',
         },
+      },
+    },
+    playbooks: {
+      title: 'Playbooks',
+      intro: 'Step-by-step guides to sell more. Each one ends with something you do in dForms.',
+      newSinceOne: '1 new since your last visit',
+      newSinceOther: '{count} new since your last visit',
+      tabsLabel: 'Categories',
+      categories: {
+        all: 'All',
+        ventas: 'Sales',
+        marketing: 'Marketing',
+        ads: 'Ads',
+        agentes: 'Agents and AI',
+      },
+      status: {
+        new: 'New',
+        unseen: 'Not read yet',
+        seenJustNow: 'Read just now',
+        seenMinutes: 'Read {count} min ago',
+        seenHours: 'Read {count} h ago',
+        seenYesterday: 'Read yesterday',
+        seenDays: 'Read {count} days ago',
+        seenOn: 'Read on {date}',
+        publishedOn: 'Published {date}',
+      },
+      empty: 'No playbooks here yet.',
+      readingTime: '{count} min read',
+      reader: {
+        breadcrumb: 'Breadcrumb',
+        toc: 'In this playbook',
+        next: 'Next in {category}',
+        read: 'Read',
+        doIt: 'Do it with dForms',
+        useTemplate: 'Use this template',
+        soon: 'Coming soon',
+      },
+      contentLanguage: {
+        label: 'Language of the playbooks',
+        names: { es: 'Spanish', en: 'English' },
+      },
+      fallback: {
+        gallery: 'Some playbooks are not in English yet, so they show in Spanish.',
+        card: 'In Spanish',
+        reader: 'This playbook is not in English yet, so it shows in Spanish.',
       },
     },
     attributionSetting: {
@@ -6677,7 +6812,9 @@ export const es: FormsMessages = {
         analytics: 'Analíticas',
         integrations: 'Integraciones',
         developers: 'Conecta tu agente',
+        help: 'Ayuda',
         tools: 'Herramientas',
+        playbooks: 'Playbooks',
         docs: 'Documentación',
         agents: 'Agentes de ventas con IA',
       },
@@ -6773,6 +6910,51 @@ export const es: FormsMessages = {
           body: 'Cada respuesta llega directo a la herramienta que ya usas. Y con dCal, tus leads agendan dentro del form.',
           cta: 'Ver integraciones',
         },
+      },
+    },
+    playbooks: {
+      title: 'Playbooks',
+      intro: 'Guías paso a paso para vender más. Cada una termina con algo que haces en dForms.',
+      newSinceOne: '1 nuevo desde tu última visita',
+      newSinceOther: '{count} nuevos desde tu última visita',
+      tabsLabel: 'Categorías',
+      categories: {
+        all: 'Todos',
+        ventas: 'Ventas',
+        marketing: 'Marketing',
+        ads: 'Ads',
+        agentes: 'Agentes e IA',
+      },
+      status: {
+        new: 'Nuevo',
+        unseen: 'No visto',
+        seenJustNow: 'Visto hace un momento',
+        seenMinutes: 'Visto hace {count} min',
+        seenHours: 'Visto hace {count} h',
+        seenYesterday: 'Visto ayer',
+        seenDays: 'Visto hace {count} días',
+        seenOn: 'Visto el {date}',
+        publishedOn: 'Publicado el {date}',
+      },
+      empty: 'Todavía no hay playbooks aquí.',
+      readingTime: '{count} min de lectura',
+      reader: {
+        breadcrumb: 'Ruta',
+        toc: 'En este playbook',
+        next: 'Siguiente en {category}',
+        read: 'Leer',
+        doIt: 'Hazlo con dForms',
+        useTemplate: 'Usa esta plantilla',
+        soon: 'Próximamente',
+      },
+      contentLanguage: {
+        label: 'Idioma de los playbooks',
+        names: { es: 'Español', en: 'Inglés' },
+      },
+      fallback: {
+        gallery: 'Algunos playbooks aún no están en inglés: los ves en español.',
+        card: 'En español',
+        reader: 'Este playbook aún no está en inglés: lo ves en español.',
       },
     },
     attributionSetting: {

@@ -152,3 +152,54 @@ describe('GET /api/auth/callback, the browser id', () => {
     expect(sent).toBe(store.get('dforms_bid'));
   });
 });
+
+/**
+ * A destination parked by /api/auth/login (lib/return-path.ts). The callback
+ * lands on it instead of /admin and leaves the cookie for the onboarding
+ * wizard, which spends it on a first visit.
+ */
+describe('GET /api/auth/callback, the parked destination', () => {
+  it('lands on /admin when none was parked', async () => {
+    const res = await callback();
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/admin');
+  });
+
+  it.each(['/admin/playbooks', '/admin/playbooks/guia-de-calificacion', '/admin/developers/keys'])(
+    'lands on %s, and leaves it for the wizard',
+    async (next) => {
+      store.set('quill_next', next);
+      const res = await callback();
+      expect(new URL(res.headers.get('location')!).pathname).toBe(next);
+      expect(cookieJar.delete).not.toHaveBeenCalledWith('quill_next');
+    },
+  );
+
+  it('lands on a playbook with the reader language, query kept', async () => {
+    store.set('quill_next', '/admin/playbooks/guia-de-calificacion?lang=en');
+    const res = await callback();
+    const target = new URL(res.headers.get('location')!);
+    expect(target.host).toBe('forms.example.com');
+    expect(target.pathname).toBe('/admin/playbooks/guia-de-calificacion');
+    expect(target.search).toBe('?lang=en');
+    expect(cookieJar.delete).not.toHaveBeenCalledWith('quill_next');
+  });
+
+  it.each([
+    '//evil.example',
+    'https://evil.example/admin',
+    '/admin/../login',
+    '/admin/playbooks?categoria=ventas',
+    '/admin/playbooks/x?lang=fr',
+    '/admin/forms?lang=en',
+  ])(
+    'ignores a tampered cookie (%s) and lands on /admin',
+    async (next) => {
+      store.set('quill_next', next);
+      const res = await callback();
+      const target = new URL(res.headers.get('location')!);
+      expect(target.host).toBe('forms.example.com');
+      expect(target.pathname).toBe('/admin');
+      expect(target.search).toBe('');
+    },
+  );
+});

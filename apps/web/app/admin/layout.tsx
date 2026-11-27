@@ -54,9 +54,13 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   //
   // The announcement is best-effort the same way: an API without the route, or
   // one that fails, means no badge, never a broken rail.
-  const [workspaces, announcement] = await Promise.all([
+  //
+  // So are the playbooks: only their `newCount` is read here, for the rail's
+  // "New" on Playbooks. Reading the list records nothing.
+  const [workspaces, announcement, playbooks] = await Promise.all([
     adminApi.listWorkspaces().catch(() => []),
     adminApi.announcement().catch(() => null),
+    adminApi.playbooks().catch(() => null),
   ]);
 
   // Product analytics is scoped to the dashboard on purpose — mounting it here
@@ -127,6 +131,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
               }
             : null
         }
+        playbooksNew={playbooks?.newCount ?? 0}
         // The referral program's menu entry, only while the API reports it on.
         referral={
           me.referral?.enabled

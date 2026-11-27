@@ -4,6 +4,7 @@
  * for the local dev provider. A `401` throws an ApiError the /admin gate turns
  * into a redirect to /login.
  */
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type {
@@ -221,6 +222,58 @@ export interface AnnouncementView {
   /** The person already reached the route: no visit left to report. */
   followed: boolean;
 }
+
+/**
+ * One playbook card, as `GET /v1/me/playbooks` answers it: the catalog fields
+ * (never the body) and what this person has done with it. Dates are epoch ms.
+ * The category stays a plain string here on purpose: the tabs are the web
+ * app's (`lib/playbooks.ts`), and a category an older build does not know
+ * still lands under "All".
+ */
+export interface PlaybookCard {
+  slug: string;
+  /** The language of the text served (`es` or `en`). */
+  locale: string;
+  /** No version in the language asked for yet: this is the Spanish one. */
+  fallback: boolean;
+  category: string;
+  title: string;
+  summary: string;
+  publishedAt: number;
+  promisedBy: readonly string[];
+  template: string;
+  /** A root-relative path or https URL to a short loop, or null. */
+  thumbnailVideo: string | null;
+  /** The still shown before the loop plays, or instead of it. */
+  thumbnailPoster: string | null;
+  /** The person has opened it at least once. */
+  seen: boolean;
+  firstSeenAt: number | null;
+  lastSeenAt: number | null;
+  /** Published after the person's last gallery visit, and never opened. */
+  isNew: boolean;
+}
+
+/** `GET /v1/me/playbooks`. */
+export interface PlaybookList {
+  /** The language asked for; each card says what it was served in. */
+  locale: string;
+  playbooks: PlaybookCard[];
+  /** The tabs with at least one published playbook, in tab order. */
+  categories: string[];
+  galleryLastSeenAt: number | null;
+  /** How many published playbooks are new to the person: the rail's "New". */
+  newCount: number;
+}
+
+/** `?locale=` for a playbook read, or nothing for the API's default (the member's language). */
+const playbookLocaleQuery = (locale?: string) => (locale ? `?locale=${encodeURIComponent(locale)}` : '');
+
+/**
+ * `GET /v1/me/playbooks`, deduplicated per server request and language with
+ * React's `cache` (see `adminApi.playbooks`).
+ */
+const readPlaybooks = cache((locale?: string) => req<PlaybookList>('GET', `/v1/me/playbooks${playbookLocaleQuery(locale)}`));
 
 /** `/v1/me.referral`. Later steps of the program add fields; unknown ones are ignored. */
 export type MeReferral =
@@ -1139,6 +1192,28 @@ export const adminApi = {
   /** Report what the caller did with an announcement: on screen, card closed, or route reached. */
   recordAnnouncement: (id: string, event: AnnouncementEvent) =>
     req<{ ok: boolean }>('POST', `/v1/me/announcements/${encodeURIComponent(id)}`, { event }),
+  /**
+   * The playbooks gallery for the caller (the person, not the workspace).
+   * Reading it records nothing. Read once per request: the layout (for the
+   * rail's "New") and the gallery or the reader all ask for it.
+   */
+  playbooks: (locale?: string) => readPlaybooks(locale),
+  /**
+   * One playbook with its whole markdown body, in `locale` (or Spanish, with
+   * `fallback`). Records nothing; a 404 for an unknown or unpublished slug.
+   */
+  playbook: (slug: string, locale?: string) =>
+    req<{ playbook: PlaybookCard & { body: string } }>(
+      'GET',
+      `/v1/me/playbooks/${encodeURIComponent(slug)}${playbookLocaleQuery(locale)}`,
+    ).then(
+      (r) => r.playbook,
+    ),
+  /** Record that the caller opened a playbook (first and last open), read in `locale`. */
+  recordPlaybookSeen: (slug: string, locale?: string) =>
+    req<{ ok: boolean }>('POST', `/v1/me/playbooks/${encodeURIComponent(slug)}/seen${playbookLocaleQuery(locale)}`),
+  /** Record a visit to the gallery: only playbooks published after it are "New" from then on. */
+  recordPlaybooksGalleryVisit: () => req<{ ok: boolean }>('POST', '/v1/me/playbooks/seen'),
   /** Every workspace the caller can enter, for the switcher. */
   listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
   /** Same list after forcing a re-read from the identity service (when there is one). */
