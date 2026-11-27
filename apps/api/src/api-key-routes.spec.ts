@@ -49,6 +49,9 @@ const DENIED = new Set([
   'GET /v1/api-keys',
   'POST /v1/api-keys',
   'DELETE /v1/api-keys/:id',
+  // Draft generation is an editor action, billed to the deployment's LiteLLM.
+  'GET /v1/form-ai/status',
+  'POST /v1/form-ai/generate',
   // Members and invitations.
   'GET /v1/members',
   'POST /v1/members',

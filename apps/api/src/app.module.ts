@@ -61,6 +61,7 @@ import type { Db } from '@quill/db';
 import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
+import { FormAiController } from './form-ai.controller';
 import { BrandingController } from './branding.controller';
 import { AttributionController } from './attribution.controller';
 import { ANNOUNCEMENTS_OPTIONS, AnnouncementsController, isDaptaDeployment } from './announcements.controller';
@@ -118,6 +119,7 @@ function newPersonObserver(referrals: ReferralService): NewPersonObserver | unde
     DocsController,
     PublicController,
     AdminCrudController,
+    FormAiController,
     ApiKeysController,
     BrandingController,
     AttributionController,

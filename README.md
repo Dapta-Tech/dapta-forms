@@ -185,6 +185,37 @@ them. Copy it to `.env` to override (a real environment variable always wins).
 When one Docker image is promoted across environments, set `API_URL` per
 environment: `NEXT_PUBLIC_*` values are frozen into the image at build time.
 
+### AI form drafts
+
+**Create with AI** appears in a blank form's editor when the API can reach
+LiteLLM and the configured model alias is available. [Self-hosting setup](SELF-HOSTING.md#ai-form-drafts-optional)
+
+To build a lead qualification form, select **Is a lead qualification?**,
+summarize your product, and select **Generate draft**. dForms loads the published
+`qualify-leads` skill from the LiteLLM catalog. It draws on Rob Fitzpatrick's
+*The Mom Test* to ask **“Is this a real problem for this lead?”**
+It asks about the last time the lead faced the problem, how they handled it, and
+what it cost them. Review the proposed questions and select **Use this draft** to
+add them to your form. [Skill instructions](skills/qualify-leads/SKILL.md)
+
+In LiteLLM **Logs**, look for `skill:qualify-leads@<version>` in the request's
+**Tags** column.
+
+#### Lead qualification example
+
+With **Is a lead qualification?** selected, an HVAC scheduling product summary
+leads to questions about the lead's last rescheduling experience and its impact.
+
+![The AI form builder generates four discovery questions with lead qualification enabled.](docs/images/ai-lead-qualification.gif)
+
+#### Standard form example
+
+Leave **Is a lead qualification?** unchecked and describe the form. For a home
+cleaning quote request, dForms suggests questions for contact details, home type,
+and cleaning frequency.
+
+![The AI form builder suggests a home cleaning quote form with lead qualification unchecked.](docs/images/ai-standard-form-draft.gif)
+
 ## Scripts
 
 | Command | What it does |
