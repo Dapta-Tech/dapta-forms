@@ -467,17 +467,25 @@ the sizes are stale, or a video weighs over 300 KB or an image over 200 KB).
 Then run
 `pnpm --filter @quill/web playbook-pdfs`, which prints the downloadable PDF of
 every playbook and language into
-`apps/web/public/playbooks/pdf/<locale>/<slug>.pdf` (only the ones that are
+`apps/web/assets/playbooks-pdf/<locale>/<slug>.pdf` (only the ones that are
 missing or out of date; it needs Chromium, `pnpm exec playwright install
 chromium`, or an installed Chrome) and records what each was made from in
 `apps/web/scripts/playbook-pdfs.manifest.json`; commit both. Its `--check`
 needs no browser, and a web spec runs it: it fails when a PDF is missing, was
 not printed again after an edit to the markdown, a picture, the template or the
-copy it prints, weighs over 1.5 MB, or belongs to no playbook. The reader
-offers the file of the language being read, and `?pdf=1` on a playbook page
-starts that download once (the return path accepts exactly `?pdf=1`,
-`?lang=es&pdf=1` and `?lang=en&pdf=1`). The files are static, so anyone with
-the address can download one, as with the playbooks' pictures.
+copy it prints, weighs over 1.5 MB, embeds a font that is not in the
+repository (add the symbol to `apps/web/scripts/build-symbols-font.py`), or
+belongs to no playbook. Bump `PRINT_VERSION` in the script when you change how
+a page is printed. After a long edit, look at the pages (`pdftoppm`): a PDF that
+ends nearly empty gets a picture height of its own in `PICTURE_MM_FOR`.
+The files are not public: only
+`GET /api/playbooks/<slug>/pdf?lang=es|en` serves them, to a signed-in person,
+and `next.config.mjs` traces them into the standalone build. The reader links
+the file of the language being read, and `?pdf=1` on a playbook page starts
+that download once (the return path accepts exactly `?pdf=1`, `?lang=es&pdf=1`
+and `?lang=en&pdf=1`). A playbook link opened with an expired or missing
+session keeps its destination through the sign-in (`playbookReturnPath`,
+playbooks only; every other dashboard page lands on `/admin`).
 A playbook with `promisedBy` exposes its whole body on
 `GET /v1/public/playbooks`.
 Set `publishedAt` to a moment AFTER the release reaches production: "New" is

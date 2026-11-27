@@ -1,12 +1,12 @@
 /**
  * The playbooks' PDFs: every playbook of the catalog has one per language,
- * made from what is in the repository now and light enough to download on a
- * phone. The check needs no browser (`scripts/playbook-pdfs.mjs`), so CI fails
+ * made from what is in the repository now, light enough to download on a
+ * phone, embedding our faces only and never served as a public file. The check needs no browser (`scripts/playbook-pdfs.mjs`), so CI fails
  * a markdown, picture or template edit whose PDFs were not printed again.
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,8 @@ import { PLAYBOOK_CATALOG, PLAYBOOK_LOCALES, playbookMedia } from '@quill/shared
 import {
   MAX_PDF_BYTES,
   PDF_DIR,
+  PRINT_VERSION,
+  foreignFonts,
   pdfProblems,
   playbookPage,
   playbookPages,
@@ -22,7 +24,7 @@ import {
   sourceHash,
   splitQuoteLines,
 } from '../scripts/playbook-pdfs.mjs';
-import { playbookPdfHref } from './playbooks';
+import nextConfig from '../next.config.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/playbook-pdfs.mjs', import.meta.url));
 const ALL = PLAYBOOK_LOCALES.flatMap((locale) => PLAYBOOK_CATALOG[locale]);
@@ -34,10 +36,8 @@ beforeAll(async () => {
 }, 60_000);
 
 describe('the committed PDFs', () => {
-  it('has one per playbook and language, where the reader links it', () => {
-    expect(pages.map((p) => `/playbooks/pdf/${p.key}.pdf`).sort()).toEqual(
-      ALL.map((p) => playbookPdfHref(p.slug, p.locale)).sort(),
-    );
+  it('has one per playbook and language', () => {
+    expect(pages.map((p) => p.key).sort()).toEqual(ALL.map((p) => `${p.locale}/${p.slug}`).sort());
     expect(Object.keys(readManifest()).sort()).toEqual(pages.map((p) => p.key).sort());
   });
 
@@ -52,6 +52,37 @@ describe('the committed PDFs', () => {
   it('pass the check the script runs', () => {
     expect(() => execFileSync(process.execPath, [SCRIPT, '--check'], { stdio: 'pipe' })).not.toThrow();
   }, 60_000);
+
+  it('are checked too when the script is reached through a symlink', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'playbook-pdfs-link-'));
+    try {
+      const repo = join(dir, 'checkout');
+      symlinkSync(fileURLToPath(new URL('../../..', import.meta.url)), repo);
+      const out = execFileSync(process.execPath, [join(repo, 'apps/web/scripts/playbook-pdfs.mjs'), '--check'], {
+        encoding: 'utf8',
+      });
+      expect(out).toContain(`${ALL.length} PDFs up to date`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('embed the faces of the repository and no other', () => {
+    for (const { key } of pages) {
+      const data = readFileSync(join(PDF_DIR, `${key}.pdf`));
+      expect(foreignFonts(data), key).toEqual([]);
+      expect(data.toString('latin1'), key).toContain('+HankenGrotesk-');
+      expect(data.toString('latin1'), key).not.toContain('/Type3');
+    }
+  });
+
+  it('are outside public/, and traced into the standalone build for their route', () => {
+    const served = readdirSync(fileURLToPath(new URL('../public', import.meta.url)), { recursive: true });
+    expect(served.filter((f) => String(f).endsWith('.pdf'))).toEqual([]);
+    expect(nextConfig.outputFileTracingIncludes).toEqual({
+      '/api/playbooks/*/pdf': ['./assets/playbooks-pdf/**/*.pdf'],
+    });
+  });
 });
 
 describe('the page a PDF is printed from', () => {
@@ -59,7 +90,7 @@ describe('the page a PDF is printed from', () => {
     for (const p of ALL) {
       const key = `${p.locale}/${p.slug}`;
       const { page } = pages.find((x) => x.key === key)!;
-      expect(page, key).toContain(`<html lang="${p.locale}">`);
+      expect(page, key).toContain(`<html lang="${p.locale}" style="--picture:`);
       // A `## ` inside a fenced block is part of a prompt, not a section.
       const sections = `${p.preview}\n${p.rest}`.replace(/^```[\s\S]*?^```/gm, '').match(/^## .+$/gm) ?? [];
       expect((page.match(/<h2>/g) ?? []).length, key).toBe(sections.length);
@@ -92,6 +123,12 @@ describe('the page a PDF is printed from', () => {
     const base = PLAYBOOK_CATALOG.es[0]!;
     const edited = await playbookPage({ ...base, rest: `${base.rest}\n\nUna línea más.` });
     expect(sourceHash(edited)).not.toBe(sourceHash(await playbookPage(base)));
+  });
+
+  it('is hashed with the print version, so a change to how it is printed asks for it again', () => {
+    expect(Number.isInteger(PRINT_VERSION)).toBe(true);
+    const source = readFileSync(SCRIPT, 'utf8');
+    expect(source).toContain('sha256(JSON.stringify({ version: PRINT_VERSION, page,');
   });
 
   it('keeps each line of a quoted conversation on its own', () => {
@@ -133,6 +170,18 @@ describe('the check, on example files', () => {
     ]);
     put('es/hook.pdf', Buffer.from('%PDF-1.4 other'));
     expect(check()).toEqual(['es/hook.pdf is not the file the manifest was written for']);
+  });
+
+  it('names a file that embeds a face that is not ours', () => {
+    const borrowed = Buffer.from(
+      '%PDF-1.4 /BaseFont /AAAAAA+HankenGrotesk-Regular /BaseFont /BAAAAA+dFormsSymbols-Regular /FontName /CAAAAA+.SFNS-Regular /BaseFont/DAAAAA+ZapfDingbatsITC',
+    );
+    expect(foreignFonts(borrowed)).toEqual(['.SFNS-Regular', 'ZapfDingbatsITC']);
+    put('es/hook.pdf', borrowed);
+    const sum = createHash('sha256').update(borrowed).digest('hex');
+    expect(check({ manifest: { 'es/hook': { source: 'abc', pdf: sum, bytes: borrowed.length } } })).toEqual([
+      expect.stringContaining('es/hook.pdf embeds .SFNS-Regular, ZapfDingbatsITC'),
+    ]);
   });
 
   it('names a file over the limit', () => {

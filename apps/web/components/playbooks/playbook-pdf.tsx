@@ -6,7 +6,6 @@ import { buttonVariants } from '@/components/ui/button';
 import {
   PLAYBOOK_PDF_PARAM,
   pendingPlaybookLocale,
-  playbookPdfFileName,
   playbookPdfHref,
   withoutPdfParam,
   type PlaybookContentLocale,
@@ -17,11 +16,15 @@ import { cn } from '@/lib/cn';
 /** One shared empty value, so the default never changes the effect's deps. */
 const NO_CAMPAIGN: Record<string, string> = {};
 
-/** Start a download the way a click on a link would. */
-function startDownload(href: string, fileName: string): void {
+/**
+ * Start a download the way a click on the button does: the route answers an
+ * attachment, so the page stays. No `download` attribute, on purpose: with a
+ * session that ran out the route answers a redirect to the sign-in, which the
+ * browser has to follow instead of saving it as the file.
+ */
+function startDownload(href: string): void {
   const link = document.createElement('a');
   link.href = href;
-  link.download = fileName;
   document.body.append(link);
   link.click();
   link.remove();
@@ -70,7 +73,6 @@ export function PlaybookPdf({
   /** The playbook whose automatic download was started on this page. */
   const [started, setStarted] = useState<string | null>(null);
   const href = playbookPdfHref(slug, shownLocale);
-  const fileName = playbookPdfFileName(slug, shownLocale);
 
   const record = (trigger: 'button' | 'auto') =>
     captureEvent('playbook_pdf_downloaded', {
@@ -95,15 +97,14 @@ export function PlaybookPdf({
     window.history.replaceState(null, '', withoutPdfParam(`${pathname}${search}${hash}`));
     setStarted(slug);
     record('auto');
-    startDownload(href, fileName);
+    startDownload(href);
     // `record` reads the same props as the deps below.
-  }, [slug, category, locale, shownLocale, fallback, langInUrl, storageKey, campaign, href, fileName]);
+  }, [slug, category, locale, shownLocale, fallback, langInUrl, storageKey, campaign, href]);
 
   const auto = started === slug;
   const link = (
     <a
       href={href}
-      download={fileName}
       onClick={() => record('button')}
       data-testid="playbook-pdf-download"
       className={cn(

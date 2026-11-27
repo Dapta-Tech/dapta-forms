@@ -124,16 +124,13 @@ describe('the language folders', () => {
       put('en/hook.webm');
       put('inline/es/hook/demo.webp');
       put('inline/en/hook/demo.webp');
-      put('pdf/es/hook.pdf');
-      put('pdf/en/hook.pdf');
       expect(strayMediaPaths(dir)).toEqual([]);
       put('hook.webm');
       put('pt/hook.webm');
       put('inline/hook/demo.webp');
       put('inline/notas.txt');
-      put('pdf/hook.pdf');
       put('.DS_Store');
-      expect(strayMediaPaths(dir)).toEqual(['hook.webm', 'pt/', 'inline/hook/', 'inline/notas.txt', 'pdf/hook.pdf']);
+      expect(strayMediaPaths(dir)).toEqual(['hook.webm', 'pt/', 'inline/hook/', 'inline/notas.txt']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

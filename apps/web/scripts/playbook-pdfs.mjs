@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 // Makes the downloadable PDF of every playbook, in every language:
-// public/playbooks/pdf/<locale>/<slug>.pdf, committed next to the code, and
+// assets/playbooks-pdf/<locale>/<slug>.pdf, committed next to the code, and
 // the manifest that says what each one was made from
-// (scripts/playbook-pdfs.manifest.json).
+// (scripts/playbook-pdfs.manifest.json). They are outside public/ on purpose:
+// only a signed-in person gets one, through app/api/playbooks/[slug]/pdf.
 //
 //   pnpm --filter @quill/web playbook-pdfs          print what is missing or out of date
 //   pnpm --filter @quill/web playbook-pdfs --all    print every one again
 //   pnpm --filter @quill/web playbook-pdfs --check  fail if a PDF is missing, out of date,
-//                                                   over MAX_PDF_BYTES, changed by hand or
-//                                                   left over from a playbook that is gone
+//                                                   over MAX_PDF_BYTES, changed by hand,
+//                                                   embedding a font that is not in the
+//                                                   repository, or left over from a playbook
+//                                                   that is gone
 //   ... --html <folder>                             also leave the printed pages there
 //
 // A PDF is one HTML page printed by Chromium: the playbook's markdown read by
@@ -20,14 +23,25 @@
 //
 // "Out of date" is decided without a browser: the page of each PDF is built
 // again, with every file it embeds named by its content hash, and hashed
-// together with the print settings. So an edit to the markdown, to a picture,
-// to the parser, to this template or to the copy it prints makes the check
-// fail until the PDF is printed again, and nothing else does. CI runs the
+// together with the print settings and PRINT_VERSION. So an edit to the
+// markdown, to a picture, to the parser, to this template or to the copy it
+// prints makes the check fail until the PDF is printed again, and nothing else
+// does. A change to HOW a page is printed (the code below that drives the
+// browser) is invisible to that hash: bump PRINT_VERSION with it. CI runs the
 // check (`lib/playbook-pdfs.spec.ts`); only printing needs Chromium
 // (`pnpm exec playwright install chromium`, or an installed Chrome, or
 // CHROME=<path to the executable>).
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LOCALES, readCatalog } from '../../../packages/shared/scripts/playbooks.mjs';
@@ -36,11 +50,21 @@ const here = dirname(fileURLToPath(import.meta.url));
 const web = resolve(here, '..');
 const repo = resolve(web, '..', '..');
 const PUBLIC_DIR = join(web, 'public');
-export const PDF_DIR = join(PUBLIC_DIR, 'playbooks', 'pdf');
+export const PDF_DIR = join(web, 'assets', 'playbooks-pdf');
 export const MANIFEST_FILE = join(here, 'playbook-pdfs.manifest.json');
 /** The brand face, one static file per weight the pages use. */
 const FONT_WEIGHTS = [400, 600, 700, 800];
 const fontFile = (weight) => join(web, 'assets', 'fonts', `hanken-grotesk-${weight}.ttf`);
+/** The symbols the brand face lacks (scripts/build-symbols-font.py). */
+const SYMBOLS_FILE = join(web, 'assets', 'fonts', 'dforms-symbols.ttf');
+/** The only faces a PDF may embed, by the start of their PostScript name. */
+const OWN_FONTS = /^(?:HankenGrotesk|dFormsSymbols)-/;
+/**
+ * Part of every PDF's hash. Bump it when the way a page is turned into a PDF
+ * changes (`print`, `toJpeg`, the Chromium major printed with), so the check
+ * asks for every file again.
+ */
+export const PRINT_VERSION = 2;
 const LOGO_FILE = join(PUBLIC_DIR, 'forms_wordmark.svg');
 
 /** The most a PDF may weigh: it is downloaded on a phone. */
@@ -69,10 +93,29 @@ const PRINT = {
   outline: true,
 };
 
+/**
+ * How tall a picture may print, in millimetres, for the PDFs that paginate
+ * badly at the default: one that would end on a nearly empty page, or leave
+ * half a page blank before a picture that did not fit. Chosen by looking at
+ * the pages, so look again (`pdftoppm`) after a long edit to a playbook.
+ */
+const PICTURE_MM = 115;
+const PICTURE_MM_FOR = {
+  'es/chatgpt-recomiende-tu-marca': 108,
+  'es/formularios-que-venden-con-ia': 100,
+  'en/formularios-que-venden-con-ia': 100,
+  'es/hook-de-dolor': 70,
+  'en/hook-de-dolor': 80,
+  'es/manual-del-vendedor': 75,
+  'en/manual-del-vendedor': 85,
+  'en/prompts-prohibidos-vender-con-ia': 95,
+  'en/vender-en-autopiloto-con-ia': 75,
+};
+
 const CSS = `
 *{box-sizing:border-box}
 html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-body{margin:0;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#45454C;background:#fff;font-size:11.5pt;line-height:1.6;overflow-wrap:break-word}
+body{margin:0;font-family:'Hanken Grotesk','dForms Symbols';font-synthesis:weight none;color:#45454C;background:#fff;font-size:11.5pt;line-height:1.6;overflow-wrap:break-word}
 header{display:flex;justify-content:space-between;align-items:center;gap:6mm;padding-bottom:9mm;font-size:9pt;color:#67676F}
 header img{width:28mm;height:auto}
 a{color:#1A1A1C;text-decoration:underline;text-decoration-color:#3DDC84}
@@ -97,7 +140,7 @@ th,td{padding:2mm 2.5mm;border:1px solid #E6E6E8;text-align:left;vertical-align:
 th{background:#F5F5F7;font-weight:700;color:#1A1A1C}
 hr{margin:6mm 0;border:0;border-top:1px solid #E6E6E8}
 figure{margin:2mm 0 5mm;break-inside:avoid}
-figure img{display:block;max-width:100%;max-height:115mm;width:auto;height:auto;margin:0 auto;border:1px solid #E6E6E8;border-radius:2mm}
+figure img{display:block;max-width:100%;max-height:var(--picture);width:auto;height:auto;margin:0 auto;border:1px solid #E6E6E8;border-radius:2mm}
 section.do-it{margin-top:8mm;padding:1mm 6mm 3mm;border:1px solid #BFEFD3;border-radius:3mm;background:#F0FBF5;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 section.do-it h2{margin-top:4mm}
 footer{margin-top:6mm;padding-top:3mm;border-top:1px solid #D5EFE0;font-size:9pt;color:#67676F}
@@ -171,6 +214,9 @@ const fontFace = (weight) =>
  * ones keeps them apart.
  */
 export const splitQuoteLines = (markdown) => markdown.replace(/^(>[ \t]*[^\s|].*)\n(?=>[ \t]*[^\s|])/gm, '$1\n>\n');
+
+const symbolsFace = () =>
+  `@font-face{font-family:'dForms Symbols';font-weight:100 900;src:url("${assetRef(SYMBOLS_FILE)}") format("truetype")}`;
 
 const words = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
@@ -254,8 +300,8 @@ export async function playbookPage(playbook) {
   };
   return [
     '<!DOCTYPE html>',
-    `<html lang="${locale}"><head><meta charset="utf-8"><title>${escapeHtml(playbook.title)}</title>`,
-    `<style>${FONT_WEIGHTS.map(fontFace).join('')}${CSS}</style></head><body>`,
+    `<html lang="${locale}" style="--picture:${PICTURE_MM_FOR[`${locale}/${slug}`] ?? PICTURE_MM}mm"><head><meta charset="utf-8"><title>${escapeHtml(playbook.title)}</title>`,
+    `<style>${FONT_WEIGHTS.map(fontFace).join('')}${symbolsFace()}${CSS}</style></head><body>`,
     `<header><img src="${assetRef(LOGO_FILE)}" alt="dForms"><span>${link(page)}</span></header>`,
     '<main>',
     `<p class="category">${escapeHtml(m.categories[playbook.category])}</p>`,
@@ -271,7 +317,7 @@ export async function playbookPage(playbook) {
 
 /** The hash a PDF is up to date with: its page and the settings it is printed with. */
 export function sourceHash(page) {
-  return sha256(JSON.stringify({ page, print: PRINT, pictures: PICTURE_STEPS }));
+  return sha256(JSON.stringify({ version: PRINT_VERSION, page, print: PRINT, pictures: PICTURE_STEPS }));
 }
 
 /** Every playbook of every language, with its key (`<locale>/<slug>`) and its page. */
@@ -302,6 +348,16 @@ export function readManifest(file = MANIFEST_FILE) {
 }
 
 /**
+ * The faces a PDF embeds that are not the repository's: a glyph neither of ours
+ * has is drawn with a font of the printing machine, which may not be ours to
+ * ship. Chromium writes the font dictionaries uncompressed.
+ */
+export function foreignFonts(data) {
+  const names = [...data.toString('latin1').matchAll(/\/(?:BaseFont|FontName)\s*\/(?:[A-Z]{6}\+)?([^\s/<>[\]()]+)/g)].map((m) => m[1]);
+  return [...new Set(names.filter((name) => !OWN_FONTS.test(name)))].sort();
+}
+
+/**
  * What is wrong with the committed PDFs, one line per problem (none when all
  * is well): `pages` is what the catalog asks for (`playbookPages`).
  */
@@ -318,6 +374,10 @@ export function pdfProblems(pages, { dir = PDF_DIR, manifest = readManifest(), m
     const entry = manifest[key];
     if (data.length > maxBytes) problems.push(`${key}.pdf weighs ${data.length} bytes, over the ${maxBytes} limit`);
     if (data.subarray(0, 5).toString('latin1') !== '%PDF-') problems.push(`${key}.pdf is not a PDF`);
+    const foreign = foreignFonts(data);
+    if (foreign.length > 0) {
+      problems.push(`${key}.pdf embeds ${foreign.join(', ')}: a character neither of our faces has (see scripts/build-symbols-font.py)`);
+    }
     if (!entry) problems.push(`${key}.pdf is not in the manifest`);
     else if (entry.source !== source) problems.push(`${key}.pdf is out of date: its playbook, a picture or the template changed`);
     else if (entry.pdf !== sha256(data)) problems.push(`${key}.pdf is not the file the manifest was written for`);
@@ -453,7 +513,10 @@ async function main() {
   console.log(`playbook-pdfs: printed ${printed}, ${pages.length} PDFs, ${(total / 1_000_000).toFixed(2)} MB in total`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Through the real paths: run from a checkout reached by a symlink, the two
+// spell the same file differently, and a check that did nothing would pass.
+const invoked = process.argv[1] && existsSync(process.argv[1]) ? realpathSync(process.argv[1]) : null;
+if (invoked === realpathSync(fileURLToPath(import.meta.url))) {
   main().catch((err) => {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);

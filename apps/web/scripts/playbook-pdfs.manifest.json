@@ -1,92 +1,92 @@
 {
   "en/calificador-claude": {
-    "source": "e15da8d0620c6b26fcf9e9f0441b847f0becee47727a4ac0eeae39e7dc2bfe1f",
-    "pdf": "fd46e9ad98e91357ab825477ec8982c9d92d6021b8b496c3327ae113129b5ba1",
-    "bytes": 302374
+    "source": "6d12550c4846f95c5ab240b2cabeccae90d31730e76315e9f4f93f38f538e2b5",
+    "pdf": "a8e838d0ecbe83e4d8c51f7fab7a8f3bd853af440b65b20af6910dd26cc09fc8",
+    "bytes": 301204
   },
   "en/chatgpt-recomiende-tu-marca": {
-    "source": "9dee3950cd8b8c18976b7fe6e1cad88d60c6232436cdfcc13c7f2a139fdb673b",
-    "pdf": "d0154f924012cf704d4b8a37743abca32f694b920f358cdc859403160aab95b7",
-    "bytes": 446317
+    "source": "763d099059c0063f587e6c64902adbfd9c58ec377c3fd98b13f88731afb7355b",
+    "pdf": "951b1023a5b1ebd0dd8df31354f09c1406e7c23b9551eb1e84466d606a52c5a4",
+    "bytes": 445141
   },
   "en/equipo-4-subagentes-ventas": {
-    "source": "b929b1e3835ad7d15d3df157be083f3259bd3242a3f4b84198d5884ab907935d",
-    "pdf": "8a3242bee3fe886ccf404bed8d0e46ba7e3e2ef1f79fffc146626fc3a63f3781",
-    "bytes": 368966
+    "source": "9b80b948e37fc6d4d57ad088b2a51ad026fccb0570f94c07c61ea024524709cb",
+    "pdf": "9ae7712011ca65cd47db2a5875e7d5ec1491a09304871546a6f5bf7c9ee9213c",
+    "bytes": 367785
   },
   "en/formularios-que-venden-con-ia": {
-    "source": "06aa40597f711a14bc7b7a350bbe6b41367bc761636b0aaca9a534ae17adbf2e",
-    "pdf": "5e6902dc81d53e877cf1f96b60bba8a1283a47ab6fd13cfb7f68f5b013939995",
-    "bytes": 460106
+    "source": "d53d8a12de62f8b3296c4fb1d6a7f3491894f03dfd798b19586e1c48bdb3fc1f",
+    "pdf": "4903ac1388f93bc24c890e8ed30629f7b941761148d1aa0eca3c73a1fe38bd78",
+    "bytes": 449394
   },
   "en/hook-de-dolor": {
-    "source": "e458acd26559493eeffc6970a56f80f19f9af2531a267202043d751665ef04b6",
-    "pdf": "8655c4e697fa918cc7c7b4d404e7e1936a67b1d5ab850ad335ffccc03549f2ff",
-    "bytes": 452700
+    "source": "6c6642e3bc15f7007157c210c7984a91b3572af700acd023243cf1111cb1f252",
+    "pdf": "7364598f3a22ec2404a533c141d538b3d33f6b213746c9c4931736d8548d751c",
+    "bytes": 449601
   },
   "en/manual-del-vendedor": {
-    "source": "c0d9af41cd1f72ddf479b8aa6593e8d6638ea08a00f5ca9161740680a88a2b79",
-    "pdf": "ef63e28f9af473569331d2132113e565435c3b1319c96209747bb27251c599ef",
-    "bytes": 448928
+    "source": "f2fbdccbb957cf818e4d2fb5c3b658d48f401b74d44a0a794eeeb642e78f7cb0",
+    "pdf": "388753e6f42a0091cd20d72d0694e527d8ee0658f0db76d12a3ea24cf0fbf2a3",
+    "bytes": 446793
   },
   "en/meta-ads-leads-calificados": {
-    "source": "8d6b5051e3b5025c1358b0bb8f9050a51da61ca77170426a66a6a47772b5d17f",
-    "pdf": "adc91804595d44693d9a762f3baae2b7c11d6b1cd588ba8e043f17e1efc749e1",
-    "bytes": 379970
+    "source": "565f784b83c19d41f30d514c784e9eb4b12b221914e8c9cd288817f8a1850780",
+    "pdf": "8f990a3f6241acd461327380a59a34c3215671407a2908c53aa6d05c296667e5",
+    "bytes": 378800
   },
   "en/prompts-prohibidos-vender-con-ia": {
-    "source": "4452845758533311cea69cc9ed39d2e28d3d567c5aee694cdf6f35fdc716352c",
-    "pdf": "262faaef9d80aedace2798c05536309f52e87999dceccfd51487917c050c20b0",
-    "bytes": 335286
+    "source": "0925cdcea7ed207d9675adfa3d2a51326a6fd64d061660e0f859227c5ba65586",
+    "pdf": "91ed777507c32badc985cf532862ea35524f64f45feb6d283cf6926c5693bc15",
+    "bytes": 331441
   },
   "en/vender-en-autopiloto-con-ia": {
-    "source": "3faa0f6ce553d5b0ca688ae2f4ac5158b776ddb1c0a25ada40cd04a315bca1eb",
-    "pdf": "b1169dbef61b2beeaac14b66331f524d4cfe31a195cde6c68105957489c89b67",
-    "bytes": 355187
+    "source": "d83cb7b33e7a259d3aabb5a6b4fa724e45174ee8f35e3966dc7481179b89d28c",
+    "pdf": "217ed74f1247f457854a28608b7eeedb57ec2a55e47c4978cc909347f4b229b6",
+    "bytes": 353548
   },
   "es/calificador-claude": {
-    "source": "f91a1680e9461fe5099a7b144201708e305d17d0e45b4f3fe61a464a31409be3",
-    "pdf": "f18a67e2ea8b6d94454b275dbdca2fa7a48ea1dd39276351737af60f639db921",
-    "bytes": 317319
+    "source": "f79da89d3405cce03643b8d759c3b712ca00da94eabcf4f6655adb2c7397e76e",
+    "pdf": "4a6d96da0d2841a6759de9530f0dc4e15fce4cd34592f88a8af444ab21d0b681",
+    "bytes": 316157
   },
   "es/chatgpt-recomiende-tu-marca": {
-    "source": "5fc1bb0c3846b8d2829f6cc93f4e4b2285f700c3ba32edade949f417fa848fb2",
-    "pdf": "dda37b2e61ea85e58f656203d4b2611680b9f78f90e9187be42ae8a3e7444e43",
-    "bytes": 456111
+    "source": "9facf0f43d532d86a383c67e737b453ddd3c61e545f6aa42614d75d421aedd86",
+    "pdf": "4b621b2fc1cbfc40770873e095d0b1244bbce720241cd1eeddc0821ec4d7d310",
+    "bytes": 453588
   },
   "es/equipo-4-subagentes-ventas": {
-    "source": "64d9efe98c6de6afbcfb506bcac6ef88156b82900ec0a072d0aab926b5750537",
-    "pdf": "e6e2eb858551eddf98fef927e77ca6831b404d4054620caf7f240315c8bf3817",
-    "bytes": 384714
+    "source": "1fa2b8d895eb2f7433adfe4379ee0eafabc6e4936a36d237508baefb8f08cc69",
+    "pdf": "3874b0a8261801fd971892a223a419951db4c945d4fc56d5d34152ca7945de22",
+    "bytes": 383542
   },
   "es/formularios-que-venden-con-ia": {
-    "source": "3ae6b9e9d23e301a97eb1722df213808669197e77123b629fd08560233ab5d0a",
-    "pdf": "1c24554436b6e28a16115d30caeb421a08717fa6a9ae62e0ae0c2af1bd812abe",
-    "bytes": 483199
+    "source": "024d567677d91e4f8fb82ac5527c5b411b23bbae37e2014fbf7ae7f91011c167",
+    "pdf": "4d1c7d233ff75495fc39e7bf52a2a92321294b8be57226de039b22028bf9b704",
+    "bytes": 473814
   },
   "es/hook-de-dolor": {
-    "source": "723748f6b0e57b43079e4dce9ec99ab56ae67618ba61407dd9a8990cbe12f082",
-    "pdf": "aa461f6a2eece0e52670d0b9a6146a03da516a46c45131827fe42ac4e9f5fa19",
-    "bytes": 464836
+    "source": "8c27b3f2a2c95611c7cfc2e2ae3f520819cb4aa8697701516b6f9c8f93035b77",
+    "pdf": "4216751cf5ce8e8bf399090697ba9b55525fdf66e5670376787c6bc90199921c",
+    "bytes": 461748
   },
   "es/manual-del-vendedor": {
-    "source": "a04060e1ec23edb90e87e4c1bfb99f4732e159d69e3da0fc6ca49066efd67d4a",
-    "pdf": "f28a600719d9367f14c572f65b669c3110e3ecae86f06b991f4bc4b7673c2bca",
-    "bytes": 455492
+    "source": "f442de7a6ad8e9c71db372093b5361c3a3ef7c38b9d040536a5b6ee4b771bc17",
+    "pdf": "9a05de6d1c2674853dded7d7c19d08d918f7703e7d0bb552a12bf03c1e1be012",
+    "bytes": 453286
   },
   "es/meta-ads-leads-calificados": {
-    "source": "e757492738ba270d2c0d7e35900c0be5a02fea6076242e78875d97e6efb9041c",
-    "pdf": "7006eb0b55906e6c02214d7293c5a5103bbb66c4a615fb838db6565362ef68d9",
-    "bytes": 393605
+    "source": "7e7675d61ebe18a4cb337cfc2438df9a484b77eab718d42546ae49bea3d82a15",
+    "pdf": "1bb8c7296deff6addf01d4b7d027b9a51390e4d7e4e266e29049a60b70e12de6",
+    "bytes": 392438
   },
   "es/prompts-prohibidos-vender-con-ia": {
-    "source": "36bb4aeefcdb6f0912bfdbebad5795204806e3e9ad2af02165e115e20c082cca",
-    "pdf": "925aecde15149e4fa9172c4defaf15d1b8b3cd70013f7cdc56be9271ce754c55",
-    "bytes": 340679
+    "source": "6a97778d71fc4699c417e50211a0aaa1f339803ab71f070072af34876b9b623c",
+    "pdf": "2827b912e94ec09e1e20f3ce92eb87616dbbd09a1a85330fb193d0a5a4c4f349",
+    "bytes": 339506
   },
   "es/vender-en-autopiloto-con-ia": {
-    "source": "fb0b2799f03a9de39fb56d8e70ddf66c5d04cd4027f76b758c61d142977ef4d4",
-    "pdf": "e4fa0d41b9188ab053bc6bb97f175edea0626a811db4eff7515bfe9e59843926",
+    "source": "45698872763cad0c351801e0a60f5ab6f0c874e0f58c2db4531f1618bc194e2b",
+    "pdf": "51f1ad999c58d5c041bf389e6413a583a14655b46eaffd9e8993be0346eb4e03",
     "bytes": 366876
   }
 }

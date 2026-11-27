@@ -12,8 +12,8 @@ import { getMessages } from '@quill/shared';
 
 const calls = vi.hoisted(() => ({
   events: [] as [string, unknown][],
-  /** Every download started: the anchor's target and name, and the address at that moment. */
-  downloads: [] as { href: string | null; name: string; address: string }[],
+  /** Every download started: the link's target, and the address at that moment. */
+  downloads: [] as { href: string | null; address: string }[],
 }));
 vi.mock('@/lib/product-analytics', () => ({
   captureEvent: (event: string, props: unknown) => calls.events.push([event, props]),
@@ -66,7 +66,8 @@ beforeEach(() => {
   go('/admin/playbooks/hook');
   // The browser's download: record it instead of following the link.
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-    calls.downloads.push({ href: this.getAttribute('href'), name: this.download, address: address() });
+    expect(this.hasAttribute('download')).toBe(false);
+    calls.downloads.push({ href: this.getAttribute('href'), address: address() });
   });
 });
 afterEach(async () => {
@@ -75,12 +76,13 @@ afterEach(async () => {
 });
 
 describe('PlaybookPdf, the button', () => {
-  it('links the file of the language read, as a download, and downloads nothing on its own', async () => {
+  it('links the download of the language read, and downloads nothing on its own', async () => {
     await render();
     const [link, ...others] = buttons();
     expect(others).toEqual([]);
-    expect(link!.getAttribute('href')).toBe('/playbooks/pdf/es/hook.pdf');
-    expect(link!.getAttribute('download')).toBe('hook-es.pdf');
+    expect(link!.getAttribute('href')).toBe('/api/playbooks/hook/pdf?lang=es');
+    // The route names the file; a redirect to the sign-in must be followed, not saved.
+    expect(link!.hasAttribute('download')).toBe(false);
     expect(link!.textContent).toBe('Descargar PDF');
     expect(link!.closest('[lang]')!.getAttribute('lang')).toBe('es');
     expect(notice()).toBeNull();
@@ -91,7 +93,7 @@ describe('PlaybookPdf, the button', () => {
   it('follows the language on screen, in its file, its words and its event', async () => {
     await render(EN);
     const link = buttons()[0]!;
-    expect(link.getAttribute('href')).toBe('/playbooks/pdf/en/hook.pdf');
+    expect(link.getAttribute('href')).toBe('/api/playbooks/hook/pdf?lang=en');
     expect(link.textContent).toBe('Download PDF');
     link.addEventListener('click', (e) => e.preventDefault());
     await act(async () => void link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
@@ -105,7 +107,7 @@ describe('PlaybookPdf, the button', () => {
 
   it('serves the Spanish file of a Spanish fallback read under English', async () => {
     await render({ locale: 'en', shownLocale: 'es', fallback: true, langInUrl: true });
-    expect(buttons()[0]!.getAttribute('href')).toBe('/playbooks/pdf/es/hook.pdf');
+    expect(buttons()[0]!.getAttribute('href')).toBe('/api/playbooks/hook/pdf?lang=es');
   });
 });
 
@@ -117,7 +119,7 @@ describe('PlaybookPdf, ?pdf=1', () => {
     await render({ ...EN, campaign });
     await render({ ...EN, campaign: { ...campaign } });
     expect(calls.downloads).toEqual([
-      { href: '/playbooks/pdf/en/hook.pdf', name: 'hook-en.pdf', address: '/admin/playbooks/hook?lang=en#paso-1' },
+      { href: '/api/playbooks/hook/pdf?lang=en', address: '/admin/playbooks/hook?lang=en#paso-1' },
     ]);
     expect(address()).toBe('/admin/playbooks/hook?lang=en#paso-1');
     expect(calls.events).toEqual([
@@ -172,9 +174,9 @@ describe('PlaybookPdf, ?pdf=1', () => {
     expect(calls.downloads).toEqual([]);
     expect(address()).toBe('/admin/playbooks/hook?pdf=1');
     // The router asks the page again in English, keeping ?pdf=1.
-    go('/admin/playbooks/hook?pdf=1&lang=en');
+    go('/admin/playbooks/hook?lang=en&pdf=1');
     await render(EN);
-    expect(calls.downloads.map((d) => d.href)).toEqual(['/playbooks/pdf/en/hook.pdf']);
+    expect(calls.downloads.map((d) => d.href)).toEqual(['/api/playbooks/hook/pdf?lang=en']);
     expect(address()).toBe('/admin/playbooks/hook?lang=en');
   });
 
@@ -182,7 +184,7 @@ describe('PlaybookPdf, ?pdf=1', () => {
     window.localStorage.setItem(KEY, 'en');
     go('/admin/playbooks/hook?lang=es&pdf=1');
     await render({ langInUrl: true });
-    expect(calls.downloads.map((d) => d.href)).toEqual(['/playbooks/pdf/es/hook.pdf']);
+    expect(calls.downloads.map((d) => d.href)).toEqual(['/api/playbooks/hook/pdf?lang=es']);
   });
 
   it.each(['?pdf=0', '?pdf=true', '?pdf='])('does nothing for %s', async (query) => {

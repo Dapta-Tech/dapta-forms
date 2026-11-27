@@ -105,12 +105,12 @@ export function pendingPlaybookLocale(
 export const PLAYBOOK_PDF_PARAM = 'pdf';
 
 /**
- * The PDF of a playbook in one language, a static file of the web app
- * (`public/playbooks/pdf/<locale>/<slug>.pdf`, made by
- * `scripts/playbook-pdfs.mjs`).
+ * Where the PDF of a playbook in one language is downloaded: a route that asks
+ * for a session (`app/api/playbooks/[slug]/pdf`) and answers an attachment.
+ * The files are made by `scripts/playbook-pdfs.mjs`.
  */
 export function playbookPdfHref(slug: string, locale: string): string {
-  return `/playbooks/pdf/${asPlaybookLocale(locale) ?? 'es'}/${slug}.pdf`;
+  return `/api/playbooks/${slug}/pdf?lang=${asPlaybookLocale(locale) ?? 'es'}`;
 }
 
 /** The name the downloaded file is saved under: the two languages never overwrite each other. */
@@ -131,12 +131,19 @@ export function withoutPdfParam(href: string): string {
   return `${path}${rest ? `?${rest}` : ''}${hash !== undefined ? `#${hash}` : ''}`;
 }
 
-/** `href` with `?lang=` set to `locale`, keeping its other parameters and its hash. */
+/**
+ * `href` with `?lang=` set to `locale`, keeping its other parameters and its
+ * hash. `?pdf=` stays last: `?lang=en&pdf=1` is the form the return path
+ * accepts (`lib/return-path.ts`).
+ */
 export function withPlaybookLang(href: string, locale: PlaybookContentLocale): string {
   const [beforeHash, hash] = href.split('#', 2) as [string, string | undefined];
   const [path, query = ''] = beforeHash.split('?', 2) as [string, string | undefined];
   const params = new URLSearchParams(query);
+  const pdf = params.get('pdf');
+  params.delete('pdf');
   params.set(PLAYBOOK_LANG_PARAM, locale);
+  if (pdf !== null) params.set('pdf', pdf);
   return `${path}?${params.toString()}${hash !== undefined ? `#${hash}` : ''}`;
 }
 

@@ -31,6 +31,7 @@ import {
   tabFromParam,
   visibleTabs,
 } from './playbooks';
+import { safeNextPath } from './return-path';
 
 const es = getMessages('es').admin.playbooks;
 const en = getMessages('en').admin.playbooks;
@@ -200,15 +201,15 @@ describe('the language of the playbooks', () => {
 });
 
 describe('the PDF of a playbook', () => {
-  it('is a static file per language, saved under a name that says which', () => {
-    expect(playbookPdfHref('hook', 'en')).toBe('/playbooks/pdf/en/hook.pdf');
-    expect(playbookPdfHref('hook', 'es')).toBe('/playbooks/pdf/es/hook.pdf');
+  it('is downloaded per language from the signed-in route, under a name that says which', () => {
+    expect(playbookPdfHref('hook', 'en')).toBe('/api/playbooks/hook/pdf?lang=en');
+    expect(playbookPdfHref('hook', 'es')).toBe('/api/playbooks/hook/pdf?lang=es');
     expect(playbookPdfFileName('hook', 'en')).toBe('hook-en.pdf');
     expect(playbookPdfFileName('hook', 'es')).toBe('hook-es.pdf');
   });
 
   it('is the Spanish one for a language that is not one', () => {
-    expect(playbookPdfHref('hook', 'pt')).toBe('/playbooks/pdf/es/hook.pdf');
+    expect(playbookPdfHref('hook', 'pt')).toBe('/api/playbooks/hook/pdf?lang=es');
     expect(playbookPdfFileName('hook', '../x')).toBe('hook-es.pdf');
   });
 
@@ -219,8 +220,10 @@ describe('the PDF of a playbook', () => {
     expect(withoutPdfParam('/admin/playbooks/a#paso')).toBe('/admin/playbooks/a#paso');
   });
 
-  it('survives the switch to the stored language', () => {
-    expect(withPlaybookLang('/admin/playbooks/a?pdf=1', 'en')).toBe('/admin/playbooks/a?pdf=1&lang=en');
+  it('stays last when the language is set, the form the return path accepts', () => {
+    expect(withPlaybookLang('/admin/playbooks/a?pdf=1', 'en')).toBe('/admin/playbooks/a?lang=en&pdf=1');
+    expect(withPlaybookLang('/admin/playbooks/a?lang=es&pdf=1#x', 'en')).toBe('/admin/playbooks/a?lang=en&pdf=1#x');
+    expect(safeNextPath(withPlaybookLang('/admin/playbooks/a?pdf=1', 'en'))).not.toBeNull();
   });
 });
 

@@ -65,6 +65,13 @@ Chromium embeds a variable face in a PDF as Type 3 glyphs, which several
 viewers draw poorly, and a static one as TrueType. The share cards do not use
 them. SIL Open Font License 1.1, designer Hanken Design Co.
 
+## dForms Symbols, for the playbook PDFs
+
+`dforms-symbols.ttf` holds the few symbols the playbooks use that Hanken Grotesk
+lacks (an arrow, a check mark, a cross), so a printed PDF never embeds a font of
+the machine that printed it. Drawn for this repository by
+`scripts/build-symbols-font.py`; SIL Open Font License 1.1.
+
 ## Adding a face
 
 Adding a value to `FORM_FONTS` without adding its files here is safe but silent:
