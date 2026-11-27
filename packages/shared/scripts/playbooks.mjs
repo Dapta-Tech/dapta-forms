@@ -122,6 +122,18 @@ export function readMediaMarker(file, lineNo, line, slug) {
  * is read with the same rules, as the reader does. `firstLine` is the file
  * line of `body[0]`.
  */
+/** True when the text opens an HTML comment it never closes. */
+function hasUnclosedComment(text) {
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf('<!--', from);
+    if (open === -1) return false;
+    const close = text.indexOf('-->', open + 4);
+    if (close === -1) return true;
+    from = close + 3;
+  }
+}
+
 export function readMediaMarkers(file, body, firstLine, slug, wallAt = -1) {
   const out = [];
   let inCode = false;
@@ -133,8 +145,7 @@ export function readMediaMarkers(file, body, firstLine, slug, wallAt = -1) {
       return;
     }
     // Any other comment is free, but it must close, or the reader would drop everything after it.
-    const without = text.replace(/<!--[\s\S]*?-->/g, '');
-    if (without.includes('<!--')) openedAt = lineNo;
+    if (hasUnclosedComment(text)) openedAt = lineNo;
   };
   body.forEach((line, k) => {
     const lineNo = firstLine + k;
