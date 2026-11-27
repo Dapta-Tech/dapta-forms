@@ -174,7 +174,24 @@ describe('GET /api/auth/callback, the parked destination', () => {
     },
   );
 
-  it.each(['//evil.example', 'https://evil.example/admin', '/admin/../login', '/admin/playbooks?categoria=ventas'])(
+  it('lands on a playbook with the reader language, query kept', async () => {
+    store.set('quill_next', '/admin/playbooks/guia-de-calificacion?lang=en');
+    const res = await callback();
+    const target = new URL(res.headers.get('location')!);
+    expect(target.host).toBe('forms.example.com');
+    expect(target.pathname).toBe('/admin/playbooks/guia-de-calificacion');
+    expect(target.search).toBe('?lang=en');
+    expect(cookieJar.delete).not.toHaveBeenCalledWith('quill_next');
+  });
+
+  it.each([
+    '//evil.example',
+    'https://evil.example/admin',
+    '/admin/../login',
+    '/admin/playbooks?categoria=ventas',
+    '/admin/playbooks/x?lang=fr',
+    '/admin/forms?lang=en',
+  ])(
     'ignores a tampered cookie (%s) and lands on /admin',
     async (next) => {
       store.set('quill_next', next);
