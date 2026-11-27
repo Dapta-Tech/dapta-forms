@@ -397,7 +397,8 @@ describe('GET /api/auth/login records the start (forms_login_started)', () => {
         userAgent: UA,
         at: expect.any(Date),
       },
-      { key: 'phc_test', host: 'https://ingest.example.test' },
+      // No PUBLIC_APP_URL in this suite, so the deployment reads as local.
+      { key: 'phc_test', host: 'https://ingest.example.test', environment: 'local' },
     );
   });
 

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { ServerEnv } from '@quill/config/env';
+import { deploymentEnvironment, deploymentHost } from '@quill/shared';
 import { ENV } from './tokens';
 import { OutboxSkipError } from './email-effects';
 import type { AnalyticsEventPayload, AnalyticsProperties } from './analytics-effects';
@@ -75,6 +76,7 @@ export class AnalyticsCapture {
     );
 
     const set = personSet(payload);
+    const appHost = deploymentHost(this.env?.PUBLIC_APP_URL);
     const body = {
       api_key: key,
       event: payload.event,
@@ -93,6 +95,14 @@ export class AnalyticsCapture {
         // telemetry is indistinguishable from the rest of the Dapta estate's in
         // the shared project.
         product: 'forms',
+        // Which deployment sent it (`prd`, `dev` or `local`, from the host of
+        // PUBLIC_APP_URL), and that host. A development install often ships
+        // into the production project, and without these its events land in
+        // the same funnels. The browser registers the same `environment`.
+        // Written after the caller's properties, like `product`, so no call
+        // site can relabel an event as coming from another deployment.
+        environment: deploymentEnvironment(this.env?.PUBLIC_APP_URL),
+        ...(appHost ? { app_host: appHost } : {}),
         // Account-level grouping: activation is a property of a WORKSPACE, not
         // of a person, so "how many accounts activated" has to be answerable
         // without deduplicating members by hand. `forms_account` (not `account`)

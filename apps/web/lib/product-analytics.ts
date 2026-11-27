@@ -14,6 +14,8 @@
  * into an open-source repo for a feature that ships OFF.
  */
 
+import { deploymentEnvironment, type DeploymentEnvironment } from '@quill/shared';
+
 /**
  * The cookie that carries the browser's analytics session id to the server.
  * Written by the snippet below, read by `analytics-session.ts`.
@@ -36,11 +38,19 @@ export interface ResolvedProductAnalytics {
   /** Write-only ingestion key; null = analytics disabled, render nothing. */
   key: string | null;
   host: string;
+  /**
+   * Which deployment this is (`prd`, `dev` or `local`), from the host of
+   * PUBLIC_APP_URL: the same verdict the API stamps on its own events.
+   */
+  environment: DeploymentEnvironment;
 }
 
 /** Environment shape — injectable so the resolve stays a pure, testable function. */
 export type ProductAnalyticsEnv = Partial<
-  Record<'NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY' | 'NEXT_PUBLIC_PRODUCT_ANALYTICS_HOST', string | undefined>
+  Record<
+    'NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY' | 'NEXT_PUBLIC_PRODUCT_ANALYTICS_HOST' | 'PUBLIC_APP_URL',
+    string | undefined
+  >
 >;
 
 /** Who the events are about. Mirrors the fields `/v1/me` already returns. */
@@ -108,6 +118,9 @@ export function resolveProductAnalytics(
   return {
     key: clean(env.NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY),
     host: clean(env.NEXT_PUBLIC_PRODUCT_ANALYTICS_HOST) ?? DEFAULT_ANALYTICS_HOST,
+    // PUBLIC_APP_URL is read at request time (it is not a NEXT_PUBLIC_ value),
+    // so one image built once still tags each deployment by its own host.
+    environment: deploymentEnvironment(env.PUBLIC_APP_URL),
   };
 }
 
@@ -131,8 +144,21 @@ function js(value: unknown): string {
  * `person_profiles: 'always'` so a member gets a person record even before
  * their first identified event, keeping the pre-login part of the session
  * attached to them.
+ *
+ * `environment` goes on EVERY event, autocaptured ones included, through
+ * `before_send` rather than `register`. A registered super property is
+ * persisted in the vendor's cookie, which this app shares on the apex domain
+ * with the landing and with the other deployments: a development visit would
+ * then label the next landing or production event `dev`, and the first
+ * pageview of a session would still carry the previous deployment's value,
+ * since it fires before a queued `register` replays. `before_send` is set at
+ * init, persists nothing, and runs on each event as it leaves.
  */
-export function buildAnalyticsSnippet(key: string, host: string): string {
+export function buildAnalyticsSnippet(
+  key: string,
+  host: string,
+  environment: DeploymentEnvironment,
+): string {
   return (
     `!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);` +
     // `loaded` runs once the real library is in place; a listener queued on the
@@ -140,7 +166,7 @@ export function buildAnalyticsSnippet(key: string, host: string): string {
     // live session id into a first-party cookie the server can read, so the
     // API's events link to this session's recording. It fires again on every
     // rotation, so the cookie never names a session that has ended.
-    `posthog.init(${js(key)},{api_host:${js(host)},person_profiles:'always',loaded:function(ph){ph.onSessionId(function(id){document.cookie=${js(`${ANALYTICS_SESSION_COOKIE}=`)}+encodeURIComponent(id)+';path=/;SameSite=Lax'+(location.protocol==='https:'?';Secure':'')})}});`
+    `posthog.init(${js(key)},{api_host:${js(host)},person_profiles:'always',before_send:function(e){if(e&&e.properties)e.properties.environment=${js(environment)};return e},loaded:function(ph){ph.onSessionId(function(id){document.cookie=${js(`${ANALYTICS_SESSION_COOKIE}=`)}+encodeURIComponent(id)+';path=/;SameSite=Lax'+(location.protocol==='https:'?';Secure':'')})}});`
   );
 }
 
@@ -213,7 +239,7 @@ export function identifyMember(identity: AnalyticsIdentity): void {
     // instead would leave the vendor's autocaptured events unattributed, so
     // "which campaign produced accounts that finished onboarding" would only be
     // answerable across the handful of events we hand-instrument.
-    ...groupAttribution(identity.attribution),
+    ...campaignProperties(identity.attribution),
   });
 }
 
@@ -256,8 +282,13 @@ function aliasLandingVisit(
   ph.alias(landingId, email);
 }
 
-/** The campaign subset of the attribution blob, snake_cased. Empty when absent. */
-function groupAttribution(
+/**
+ * The campaign subset of the attribution blob, snake_cased (`utm_source`, ...).
+ * Empty when absent. The account's FIRST touch, as `/v1/me` returns it: set on
+ * the `forms_account` group, and on the events a page that already holds `me`
+ * wants sliceable by campaign without a group join (the playbooks').
+ */
+export function campaignProperties(
   attribution: AnalyticsIdentity['attribution'],
 ): Record<string, string> {
   const out: Record<string, string> = {};

@@ -9,7 +9,7 @@ import { loginStartedEvent, recordLoginStarted, type LoginStart } from './login-
 const CHROME =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const LANDING_ID = '0192f0a4-7c1e-7d2b-9a3c-5e6f7a8b9c0d';
-const ON = { key: 'phc_test', host: 'https://ingest.example.test/' };
+const ON = { key: 'phc_test', host: 'https://ingest.example.test/', environment: 'dev' as const };
 
 const start = (over: Partial<LoginStart> = {}): LoginStart => ({
   screen: 'sign-up',
@@ -110,8 +110,17 @@ describe('recordLoginStarted', () => {
     });
   });
 
+  it('tags the event with the deployment it came from', async () => {
+    await recordLoginStarted(start(), ON, fetchMock as unknown as typeof fetch);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    const props = (JSON.parse(init.body) as { properties: Record<string, unknown> }).properties;
+    expect(props.environment).toBe('dev');
+    // The event's own properties are kept beside it.
+    expect(props.product).toBe('forms');
+  });
+
   it('does nothing with analytics off', async () => {
-    await recordLoginStarted(start(), { key: null, host: ON.host }, fetchMock as unknown as typeof fetch);
+    await recordLoginStarted(start(), { key: null, host: ON.host, environment: 'local' }, fetchMock as unknown as typeof fetch);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

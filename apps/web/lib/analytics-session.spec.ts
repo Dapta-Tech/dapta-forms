@@ -46,7 +46,7 @@ describe('analyticsSessionHeaders', () => {
 
 describe('the admin snippet', () => {
   it('mirrors the live session id into the cookie the server reads', () => {
-    const snippet = buildAnalyticsSnippet('phc_test', 'https://us.i.posthog.com');
+    const snippet = buildAnalyticsSnippet('phc_test', 'https://us.i.posthog.com', 'prd');
     expect(snippet).toContain('loaded:function(ph){ph.onSessionId(');
     expect(snippet).toContain(`"${ANALYTICS_SESSION_COOKIE}="`);
   });

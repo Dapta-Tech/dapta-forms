@@ -130,7 +130,12 @@ export async function recordLoginStarted(
     const res = await fetchImpl(`${analytics.host.replace(/\/+$/, '')}/capture/`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ api_key: analytics.key, ...body }),
+      // The deployment it came from, like every other product event.
+      body: JSON.stringify({
+        api_key: analytics.key,
+        ...body,
+        properties: { ...body.properties, environment: analytics.environment },
+      }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       cache: 'no-store',
     });

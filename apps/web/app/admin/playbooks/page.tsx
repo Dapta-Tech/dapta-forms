@@ -1,6 +1,7 @@
 import { getMessages } from '@quill/shared';
 import { adminApi } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { campaignProperties } from '@/lib/product-analytics';
 import {
   PLAYBOOK_LANG_PARAM,
   PLAYBOOK_TAB_PARAM,
@@ -53,6 +54,7 @@ export default async function PlaybooksPage({
       now={Date.now()}
       locale={locale}
       m={m}
+      campaign={campaignProperties(me.attribution)}
     />
   );
 }

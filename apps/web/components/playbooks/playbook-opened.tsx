@@ -14,6 +14,9 @@ import {
 import { captureEvent } from '@/lib/product-analytics';
 import { PlaybookLocaleToggle } from './playbook-locale-toggle';
 
+/** One shared empty value, so the default never changes the effect's deps. */
+const NO_CAMPAIGN: Record<string, string> = {};
+
 /** The address of this page with `?lang=` set, keeping the rest and the hash. */
 function hereWithLang(locale: PlaybookContentLocale): string {
   const { pathname, search, hash } = window.location;
@@ -45,6 +48,7 @@ export function PlaybookOpened({
   langInUrl,
   storageKey,
   m,
+  campaign = NO_CAMPAIGN,
 }: {
   slug: string;
   category: string;
@@ -57,6 +61,8 @@ export function PlaybookOpened({
   langInUrl: boolean;
   storageKey: string;
   m: FormsMessages['admin']['playbooks']['contentLanguage'];
+  /** The account's first-touch `utm_*` tags (`campaignProperties`), on every event here. */
+  campaign?: Record<string, string>;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -84,13 +90,20 @@ export function PlaybookOpened({
     if (waitFor.current !== null && waitFor.current !== locale) return;
     done.current = slug;
     void callAction(() => recordPlaybookSeenAction(slug, locale));
-    captureEvent('playbook_opened', { slug, category, locale: shownLocale, requested_locale: locale, fallback });
-  }, [slug, category, locale, shownLocale, fallback, langInUrl, storageKey, router]);
+    captureEvent('playbook_opened', {
+      slug,
+      category,
+      locale: shownLocale,
+      requested_locale: locale,
+      fallback,
+      ...campaign,
+    });
+  }, [slug, category, locale, shownLocale, fallback, langInUrl, storageKey, router, campaign]);
 
   const change = (next: PlaybookContentLocale) => {
     if (next === picked) return;
     waitFor.current = null;
-    captureEvent('playbooks_locale_changed', { from: picked, to: next, surface: 'reader', slug });
+    captureEvent('playbooks_locale_changed', { from: picked, to: next, surface: 'reader', slug, ...campaign });
     setPicked(next);
     storePlaybookLocale(storageKey, next);
     startTransition(() => router.replace(hereWithLang(next), { scroll: false }));

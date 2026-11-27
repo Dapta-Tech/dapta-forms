@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getMessages, t } from '@quill/shared';
 import { adminApi, ApiError, type PlaybookCard, type PlaybookList } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { campaignProperties } from '@/lib/product-analytics';
 import { parseMarkdown, inlineText, type Block } from '@/lib/markdown';
 import {
   PLAYBOOK_LANG_PARAM,
@@ -85,8 +86,9 @@ export default async function PlaybookPage({
   let playbook: PlaybookCard & { body: string };
   let list: PlaybookList | null;
   let memberId: string;
+  let attribution: Awaited<ReturnType<typeof adminApi.me>>['attribution'];
   try {
-    [playbook, list, { memberId }] = await Promise.all([
+    [playbook, list, { memberId, attribution }] = await Promise.all([
       adminApi.playbook(slug, contentLocale),
       adminApi.playbooks(contentLocale).catch((): PlaybookList | null => null),
       adminApi.me(),
@@ -171,6 +173,7 @@ export default async function PlaybookPage({
           langInUrl={langInUrl}
           storageKey={playbookLangStorageKey(memberId)}
           m={m.contentLanguage}
+          campaign={campaignProperties(attribution)}
         />
       </div>
 
