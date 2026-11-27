@@ -103,7 +103,10 @@ Design decisions that are load-bearing:
 Someone who starts the login on their way to a playbook arrives with the parked
 return path `/admin/playbooks/<slug>` (the `quill_next` cookie,
 `apps/web/lib/return-path.ts`). `apps/web/lib/hub-entry.ts` reads it by its path
-alone (the query never decides) and the wizard changes in two ways:
+alone (the query never decides), for a playbook that exists and is published. The
+wizard then changes in two ways, **only for whoever founded the workspace** (its
+first member, as owner: `GET /v1/me` says so as `foundingMember`, and the API
+drops `flow` from anyone else's wizard bodies):
 
 - **Two questions, whatever the cohort:** `lead_source` and `use_case`
   (`ONBOARDING_HUB_STEPS`), then the template picker. The cohort is still
@@ -112,9 +115,9 @@ alone (the query never decides) and the wizard changes in two ways:
 
 What a **cold** signup on this path does not give: phone, industry, CRM and lead
 volume. They are never sent empty: the contact sync body carries only what was
-answered, and with no answer that has a home in the IAM question bank the IAM
-gets no request, so there is no lead score and their Dapta onboarding stays
-pending. Any report that reads those four answers, or counts the `phone` screen,
+answered, and a hub completion makes no IAM request at all, even if an earlier,
+abandoned long wizard left answers that have a home in its question bank, so
+there is no lead score and their Dapta onboarding stays pending. Any report that reads those four answers, or counts the `phone` screen,
 has to leave `flow: "hub"` out.
 
 Every other arrival, the playbook gallery without a slug included, sees the
@@ -126,9 +129,9 @@ is a title, two lines and a button to
 `PUBLIC_APP_URL/admin/playbooks/<slug>?lang=<es|en>&pdf=1`, in the language the
 hub link asked for, else the wizard's. No attachment. It is queued:
 
-- only for the winner of the completion claim, and only when that person founded
-  the workspace (its first member, as owner): never for someone who joined an
-  existing one;
+- only for the winner of the completion claim, and only on the founder's hub
+  flow: never for someone who joined an existing workspace. A failure to queue it
+  is logged and never costs the first form;
 - only for a published playbook, and only with `PUBLIC_APP_URL` set;
 - once per person and playbook, ever: the outbox row's id is that pair
   (`enqueueOutboxOnce`).

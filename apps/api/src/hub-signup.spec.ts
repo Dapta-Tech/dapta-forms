@@ -4,7 +4,7 @@
  * no partial answers to the IAM) and the playbook email it queues, once per
  * person and playbook, only for whoever founded the workspace.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createDb,
   getAccountOnboarding,
@@ -27,6 +27,19 @@ import { DaptaSyncEffects } from './dapta-sync-effects';
 import { DestinationEffects } from './destination-effects';
 import { EmailEffects } from './email-effects';
 import { OutboxWorker } from './outbox.worker';
+
+/** Makes the founding-member read fail, as a database blip would. */
+const failing = vi.hoisted(() => ({ founding: false }));
+vi.mock('@quill/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@quill/db')>();
+  return {
+    ...real,
+    isFoundingMember: async (...args: Parameters<typeof real.isFoundingMember>) => {
+      if (failing.founding) throw new Error('database is away');
+      return real.isFoundingMember(...args);
+    },
+  };
+});
 
 const SLUG = 'formularios-que-venden-con-ia';
 const OTHER_SLUG = 'hook-de-dolor';
@@ -83,7 +96,7 @@ function wire(serverEnv: ServerEnv = env()) {
     undefined,
     analytics,
   );
-  return { controller, email, serverEnv };
+  return { controller, admin, email, serverEnv };
 }
 
 async function account(id: string): Promise<void> {
@@ -135,6 +148,7 @@ beforeEach(async () => {
   db = await createDb('file::memory:');
   await migrate(db);
   sent = [];
+  failing.founding = false;
   await account('acc');
   await member('founder', 'acc', { sub: 'sub-1' });
 });
@@ -253,10 +267,53 @@ describe('the playbook email', () => {
     expect(await playbookRows()).toHaveLength(0);
   });
 
+  it('failing to queue never costs the person their first form', async () => {
+    const { controller, email } = wire();
+    vi.spyOn(email, 'enqueuePlaybookPdf').mockRejectedValue(new Error('outbox is away'));
+    const res = await controller.completeOnboarding(as('acc', 'founder'), hubBody());
+    expect(res.completed).toBe(true);
+    expect(res.formId).toBeTruthy();
+  });
+
+  it('a failed founder read finishes the wizard too, with nothing queued', async () => {
+    failing.founding = true;
+    const { controller } = wire();
+    expect((await controller.me(as('acc', 'founder')))?.onboardingRequired).toBe(true);
+    const res = await controller.completeOnboarding(as('acc', 'founder'), hubBody());
+    expect(res.formId).toBeTruthy();
+    expect(await playbookRows()).toHaveLength(0);
+  });
+
   it('is not queued without a PUBLIC_APP_URL (a bare fork)', async () => {
     const { controller } = wire(env({ PUBLIC_APP_URL: undefined }));
     await controller.completeOnboarding(as('acc', 'founder'), hubBody());
     expect(await playbookRows()).toHaveLength(0);
+  });
+});
+
+describe('who gets the short flow', () => {
+  it('tells the dashboard who founded the workspace, only while the wizard is owed', async () => {
+    await member('invited', 'acc', { role: 'admin', createdAt: 2000 });
+    const { controller } = wire();
+    expect(await controller.me(as('acc', 'founder'))).toMatchObject({ foundingMember: true });
+    expect(await controller.me(as('acc', 'invited'))).toMatchObject({ foundingMember: false });
+
+    await controller.completeOnboarding(as('acc', 'founder'), hubBody());
+    expect(await controller.me(as('acc', 'founder'))).not.toHaveProperty('foundingMember');
+  });
+
+  it('ignores it from an invited admin: no flow stored, announced or kept from the IAM', async () => {
+    await member('invited', 'acc', { role: 'admin', createdAt: 2000 });
+    const { controller } = wire();
+    await controller.saveOnboarding(as('acc', 'invited'), { lastStep: 'lead_source', flow: 'hub' });
+    expect((await getAccountOnboarding(db, 'acc'))!.onboarding).not.toHaveProperty('flow');
+
+    await controller.completeOnboarding(as('acc', 'invited'), hubBody());
+    const blob = (await getAccountOnboarding(db, 'acc'))!.onboarding!;
+    expect(blob.flow).toBeUndefined();
+    // An ordinary cold completion: the unanswered questions read as such.
+    expect(blob.sources?.phone).toBe('skipped');
+    expect((await events('forms_onboarding_completed'))[0]).not.toHaveProperty('flow');
   });
 });
 
@@ -281,6 +338,29 @@ describe('what a hub signup leaves behind', () => {
     const [hub, plain] = await events('forms_onboarding_completed');
     expect(hub).toMatchObject({ flow: 'hub' });
     expect(plain).not.toHaveProperty('flow');
+  });
+
+  it('posts nothing to the IAM even with answers a longer, abandoned wizard stored', async () => {
+    const { controller, serverEnv } = wire();
+    await controller.saveOnboarding(as('acc', 'founder'), {
+      lastStep: 'lead_volume',
+      phone: '+573000000000',
+      industry: 'computer_software',
+      crm: 'hubspot',
+    });
+    await controller.completeOnboarding(as('acc', 'founder'), hubBody());
+
+    const urls: string[] = [];
+    const delivery = new DaptaSyncDelivery(db, serverEnv);
+    delivery.fetchImpl = (async (url: string) => {
+      urls.push(url);
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    await delivery.deliver(
+      'complete',
+      (await listOutbox(db, { kind: 'dapta_sync' })).find((r) => r.action === 'complete')!.payload!,
+    );
+    expect(urls).toEqual(['https://flows.example.com/sync']);
   });
 
   it('syncs only what was answered: no empty property, and nothing to the IAM', async () => {

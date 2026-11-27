@@ -128,7 +128,10 @@ export class DaptaSyncDelivery {
     if (!base || !key) return;
     // Nothing mappable — the whole `dapta` cohort — makes NO IAM request at
     // all, not even the bank fetch.
-    if (!hasMappableAnswer(blob)) return;
+    // Nor does the resource hub's short flow, even holding answers an earlier,
+    // abandoned long wizard stored: posting a partial set would mark their Dapta
+    // onboarding as done.
+    if (blob.flow === 'hub' || !hasMappableAnswer(blob)) return;
 
     const { responses, unmapped } = buildIamResponses(blob, await this.questionBank(base, key));
     if (unmapped.length > 0) {

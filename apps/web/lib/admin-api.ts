@@ -325,6 +325,11 @@ export interface Me {
    * endpoints refuse to serve it, with no way out.
    */
   onboardingRequired: boolean;
+  /**
+   * Whether this person founded the workspace (its first member, as owner). Sent
+   * only while the wizard is owed: it decides the resource hub's short one.
+   */
+  foundingMember?: boolean;
   /** Epoch-ms the wizard was finished; null while still owed. */
   onboardingCompletedAt: number | null;
   /**

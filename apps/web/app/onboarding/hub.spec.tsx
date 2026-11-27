@@ -3,7 +3,7 @@
  * page. The page reads it and hands it to the wizard, the wizard asks two
  * questions.
  */
-import type { ReactElement, ReactNode } from 'react';
+import type { ComponentProps, ReactElement, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getMessages } from '@quill/shared';
@@ -20,8 +20,9 @@ vi.mock('next/navigation', () => ({
   },
   unstable_rethrow: () => {},
 }));
+let foundingMember: boolean | undefined = true;
 vi.mock('@/lib/admin-api', () => ({
-  adminApi: { me: async () => ({ onboardingRequired: true }) },
+  adminApi: { me: async () => ({ onboardingRequired: true, foundingMember }) },
   ApiError: class extends Error {},
 }));
 vi.mock('@/lib/locale', () => ({ preferredLocale: async () => 'en' }));
@@ -40,7 +41,10 @@ async function wizardProps(): Promise<Record<string, unknown>> {
 }
 
 describe('the onboarding page and the resource hub', () => {
-  beforeEach(() => store.clear());
+  beforeEach(() => {
+    store.clear();
+    foundingMember = true;
+  });
 
   it.each([
     ['/admin/playbooks/hook-de-dolor', null],
@@ -49,6 +53,23 @@ describe('the onboarding page and the resource hub', () => {
   ])('reads the hub entry from the parked %s', async (next, playbookLocale) => {
     store.set('quill_next', next);
     expect((await wizardProps()).hub).toEqual({ playbook: 'hook-de-dolor', playbookLocale });
+  });
+
+  it.each([false, undefined])(
+    'passes no hub entry to someone who did not found the workspace (%s)',
+    async (founding) => {
+      foundingMember = founding;
+      store.set('quill_next', '/admin/playbooks/hook-de-dolor');
+      expect((await wizardProps()).hub).toBeNull();
+    },
+  );
+
+  it('gives a slug that names no playbook the ordinary wizard', async () => {
+    store.set('quill_next', '/admin/playbooks/no-such-playbook');
+    const props = await wizardProps();
+    expect(props.hub).toBeNull();
+    const html = renderToStaticMarkup(<OnboardingWizard {...(props as unknown as ComponentProps<typeof OnboardingWizard>)} />);
+    expect(html).toContain('Question 1 of 6');
   });
 
   it.each([undefined, '/admin/playbooks', '/admin/developers/keys'])(

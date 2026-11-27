@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
   cacheEntitlement,
@@ -56,6 +56,8 @@ function answerCount(blob: AccountOnboarding): number {
 /** Authed host/dashboard operations. All are scoped to the caller's account. */
 @Injectable()
 export class AdminService {
+  private readonly log = new Logger('AdminService');
+
   constructor(
     @Inject(DB) private readonly db: Db,
     // Optional so existing direct constructions keep working: OSS default is
@@ -117,10 +119,43 @@ export class AdminService {
         required = false;
       }
     }
-    return { ...view, onboardingRequired: required };
+    // Only while the wizard is owed: it is all this decides (the hub's short one).
+    return {
+      ...view,
+      onboardingRequired: required,
+      ...(required ? { foundingMember: await this.founded(p) } : {}),
+    };
   }
 
   // --- Onboarding (first-run wizard) ---------------------------------------
+
+  /**
+   * Did the caller found this workspace? Never rejects: a failed read answers
+   * no, which costs the short wizard and its email, never the dashboard or the
+   * first form.
+   */
+  private async founded(p: HostPrincipal): Promise<boolean> {
+    if (p.accessGrant) return false;
+    try {
+      return await isFoundingMember(this.db, p.accountId, p.memberId);
+    } catch (err) {
+      this.log.error(`failed to read the founding member of ${p.accountId}: ${String(err)}`);
+      return false;
+    }
+  }
+
+  /**
+   * The wizard body as this caller may send it. The resource hub's short flow is
+   * the founder's alone: from anyone else the flow and its playbook are dropped,
+   * so nothing downstream (the stored blob, the sync, the event) sees them.
+   */
+  async honorHubFlow<T extends OnboardingProgressInput | OnboardingCompleteInput>(
+    p: HostPrincipal,
+    input: T,
+  ): Promise<T> {
+    if (!input.flow || (await this.founded(p))) return input;
+    return { ...input, flow: undefined, playbook: undefined };
+  }
 
   /**
    * Record one screen's worth of progress.
@@ -132,7 +167,11 @@ export class AdminService {
    */
   async saveOnboarding(p: HostPrincipal, patch: OnboardingProgressInput) {
     if (!this.onboardingEnabled) return null;
-    const merged = await saveOnboardingProgress(this.db, p.accountId, patch);
+    const merged = await saveOnboardingProgress(
+      this.db,
+      p.accountId,
+      await this.honorHubFlow(p, patch),
+    );
     // The FIRST answer just landed → make the person exist in the CRM now,
     // not only if they finish. Exactly-one on the MERGED blob: deterministic
     // without knowing the cohort (the PATCH does not carry it), no extra
@@ -166,9 +205,10 @@ export class AdminService {
    */
   async completeOnboarding(
     p: HostPrincipal,
-    input: OnboardingCompleteInput,
+    body: OnboardingCompleteInput,
   ): Promise<{ completed: boolean; formId: string | null }> {
     if (!this.onboardingEnabled) return { completed: false, formId: null };
+    const input = await this.honorHubFlow(p, body);
 
     const templateId = input.template;
     const template = getFormTemplate(templateId);
@@ -244,19 +284,23 @@ export class AdminService {
   }
 
   /**
-   * A signup that came for a playbook gets it by email. Only the person who
-   * founded the workspace: someone who joined an existing one did not sign up
-   * through the hub's door. Queued, never sent inline.
+   * A signup that came for a playbook gets it by email. `input` has been through
+   * `honorHubFlow`, so a hub flow here is the founder's. Queued, never sent
+   * inline, and never rejects: the claim is already spent, so a failure here
+   * must not cost the person their first form.
    */
   private async sendHubPlaybook(p: HostPrincipal, input: OnboardingCompleteInput): Promise<void> {
-    if (input.flow !== 'hub' || !input.playbook || p.accessGrant) return;
-    if (!(await isFoundingMember(this.db, p.accountId, p.memberId))) return;
-    await this.email?.enqueuePlaybookPdf({
-      accountId: p.accountId,
-      memberId: p.memberId,
-      slug: input.playbook,
-      locale: input.playbookLocale ?? input.locale,
-    });
+    if (input.flow !== 'hub' || !input.playbook) return;
+    try {
+      await this.email?.enqueuePlaybookPdf({
+        accountId: p.accountId,
+        memberId: p.memberId,
+        slug: input.playbook,
+        locale: input.playbookLocale ?? input.locale,
+      });
+    } catch (err) {
+      this.log.error(`failed to queue the playbook email of ${p.accountId}: ${String(err)}`);
+    }
   }
 
   /** The created form's name in the locale the wizard rendered its cards in. */

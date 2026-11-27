@@ -66,9 +66,11 @@ export default async function OnboardingPage({
   const cohort = await currentOnboardingCohort();
 
   // On their way to a playbook (the parked return path): the short wizard, and
-  // the playbook by email once they finish. Read here, once, so a cookie that
-  // expires mid-wizard changes neither.
-  const hub = hubEntry((await cookies()).get(NEXT_COOKIE)?.value);
+  // the playbook by email once they finish. Only for whoever founded the
+  // workspace (the API says who, and holds the same line); someone invited into
+  // it gets their ordinary wizard. Read here, once, so a cookie that expires
+  // mid-wizard changes neither.
+  const hub = me.foundingMember ? hubEntry((await cookies()).get(NEXT_COOKIE)?.value) : null;
 
   return (
     <>

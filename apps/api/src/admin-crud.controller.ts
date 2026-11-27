@@ -408,7 +408,9 @@ export class AdminCrudController {
       throw new BadRequestException({ error: 'INVALID_TEMPLATE', message: 'Unknown template.' });
     }
 
-    const result = await this.admin.completeOnboarding(p, parsed.data);
+    // Settled once, so the event below describes the same flow that was stored.
+    const input = await this.admin.honorHubFlow(p, parsed.data);
+    const result = await this.admin.completeOnboarding(p, input);
     if (result.completed && this.productAnalytics?.enabled) {
       // Emitted server-side, from the CLAIM's winner, so the completion count is
       // the count of accounts that finished — not of browsers that reached the
@@ -417,7 +419,7 @@ export class AdminCrudController {
         template: parsed.data.template,
         form_id: result.formId,
         // Only on a shortened path: an ordinary completion's event is unchanged.
-        ...(parsed.data.flow ? { flow: parsed.data.flow } : {}),
+        ...(input.flow ? { flow: input.flow } : {}),
       });
       // The wizard is the THIRD way a form is born, alongside `createForm` and
       // `duplicateForm`, and it has to announce itself the same way they do.
