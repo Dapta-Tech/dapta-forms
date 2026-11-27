@@ -489,3 +489,46 @@ describe('the 0012 industry rewrite', () => {
     expect((await getAccountOnboarding(db, id))?.onboarding?.industry).toBe('nonprofit');
   });
 });
+
+describe('the hub flow', () => {
+  const answers = { flow: 'hub' as const, leadSource: 'outbound' as const, useCase: 'leads' as const };
+
+  it('gives a left-out question no source for a cold signup', async () => {
+    await claimOnboardingComplete(db, ACCOUNT, 'blank', answers, 'cold', 5000);
+    const blob = (await getAccountOnboarding(db, ACCOUNT))!.onboarding!;
+    expect(blob.flow).toBe('hub');
+    expect(blob.sources).toEqual({ lead_source: 'asked', use_case: 'asked' });
+    expect(blob.phone).toBeUndefined();
+  });
+
+  it('keeps pointing at Dapta for the cohort that already told Dapta', async () => {
+    await claimOnboardingComplete(db, ACCOUNT, 'blank', answers, 'dapta', 5000);
+    expect((await getAccountOnboarding(db, ACCOUNT))!.onboarding!.sources).toEqual({
+      phone: 'dapta',
+      industry: 'dapta',
+      crm: 'dapta',
+      lead_volume: 'dapta',
+      lead_source: 'asked',
+      use_case: 'asked',
+    });
+  });
+
+  it('counts an answer an earlier, longer visit stored', async () => {
+    await saveOnboardingProgress(db, ACCOUNT, { phone: '+573000000000' }, 4000);
+    await claimOnboardingComplete(db, ACCOUNT, 'blank', answers, 'cold', 5000);
+    expect((await getAccountOnboarding(db, ACCOUNT))!.onboarding!.sources?.phone).toBe('asked');
+  });
+
+  it('is recorded while the wizard is still open, for the drop-off count', async () => {
+    const saved = await saveOnboardingProgress(db, ACCOUNT, { flow: 'hub', lastStep: 'lead_source' });
+    expect(saved?.flow).toBe('hub');
+  });
+
+  it('is dropped when the completing visit was an ordinary one', async () => {
+    await saveOnboardingProgress(db, ACCOUNT, { flow: 'hub', lastStep: 'lead_source' }, 4000);
+    await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, 'cold', 5000);
+    const blob = (await getAccountOnboarding(db, ACCOUNT))!.onboarding!;
+    expect(blob.flow).toBeUndefined();
+    expect(blob.sources?.phone).toBe('skipped');
+  });
+});

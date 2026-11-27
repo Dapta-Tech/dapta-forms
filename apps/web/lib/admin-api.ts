@@ -331,6 +331,11 @@ export interface Me {
    * endpoints refuse to serve it, with no way out.
    */
   onboardingRequired: boolean;
+  /**
+   * Whether this person founded the workspace (its first member, as owner). Sent
+   * only while the wizard is owed: it decides the resource hub's short one.
+   */
+  foundingMember?: boolean;
   /** Epoch-ms the wizard was finished; null while still owed. */
   onboardingCompletedAt: number | null;
   /**
@@ -395,6 +400,8 @@ export interface OnboardingProgress {
   phone?: string | null;
   template?: string | null;
   lastStep?: string | null;
+  /** The path that shortened the wizard (`hub`); absent on the ordinary one. */
+  flow?: 'hub';
 }
 
 /**
@@ -419,6 +426,10 @@ export interface OnboardingComplete {
   cohort?: string;
   /** What the wizard rendered in, so the created form is named to match. */
   locale?: string;
+  /** Set together for a signup from the resource hub: the API emails the playbook. */
+  flow?: 'hub';
+  playbook?: string;
+  playbookLocale?: 'es' | 'en';
 }
 
 export interface FormSummary {

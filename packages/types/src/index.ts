@@ -2822,6 +2822,35 @@ export const ONBOARDING_COHORTS = {
 export type OnboardingCohort = keyof typeof ONBOARDING_COHORTS;
 
 /**
+ * A path through the wizard that overrides the cohort's question list. Absent is
+ * the ordinary path.
+ *
+ * `hub` is someone who signed up on their way to a playbook from the resource
+ * hub: they came for a resource, so they get two questions whatever their
+ * cohort. The cohort is still resolved and recorded: it says who they are, this
+ * says what they were asked.
+ */
+export const ONBOARDING_FLOWS = ['hub'] as const;
+export type OnboardingFlow = (typeof ONBOARDING_FLOWS)[number];
+
+/**
+ * The two questions of the `hub` flow: the same pair the `dapta` cohort answers.
+ *
+ * Neither has a home in the IAM question bank, so a cold signup on this flow
+ * sends the IAM nothing at all (no partial answers, no lead score) and no phone
+ * number. Both travel to the contact sync flow in its trigger body.
+ */
+export const ONBOARDING_HUB_STEPS = ONBOARDING_COHORTS.dapta;
+
+/** The questions asked of one person: the flow's list when there is one, else the cohort's. */
+export function onboardingSteps(
+  cohort: OnboardingCohort,
+  flow?: OnboardingFlow | null,
+): readonly OnboardingStep[] {
+  return flow === 'hub' ? ONBOARDING_HUB_STEPS : ONBOARDING_COHORTS[cohort];
+}
+
+/**
  * Why an answer is missing.
  *
  * `null` alone cannot tell "we never asked" from "we asked and they skipped" from
@@ -2873,10 +2902,13 @@ export const accountOnboardingSchema = z.object({
   template: z.enum(FORM_TEMPLATE_IDS).nullable().optional(),
   /** Which set of screens this person was shown — cold, or arriving from Dapta. */
   cohort: z.enum(['cold', 'dapta']).nullable().optional(),
+  /** The path that shortened the wizard, if one did (see `ONBOARDING_FLOWS`). */
+  flow: z.enum(ONBOARDING_FLOWS).nullable().optional(),
   /**
    * Why each unasked answer is unasked. Absent means "asked and answered".
    * See `ONBOARDING_ANSWER_SOURCES` — the point is that a NULL industry on a
-   * Dapta account is a pointer, not a gap.
+   * Dapta account is a pointer, not a gap. One exception: a step a `flow` left
+   * out, which nobody holds an answer for, has no entry.
    */
   sources: z
     .record(z.enum(ONBOARDING_STEPS), z.enum(ONBOARDING_ANSWER_SOURCES))
@@ -2924,6 +2956,8 @@ export const onboardingProgressSchema = z.object({
   phone: z.string().trim().max(32).nullable().optional(),
   template: z.enum(FORM_TEMPLATE_IDS).nullable().optional(),
   lastStep: z.enum(ONBOARDING_STEPS).nullable().optional(),
+  /** An unknown value reads as absent: it must never cost the screen's answers. */
+  flow: z.enum(ONBOARDING_FLOWS).optional().catch(undefined),
 });
 export type OnboardingProgressInput = z.infer<typeof onboardingProgressSchema>;
 
@@ -2962,5 +2996,15 @@ export const onboardingCompleteSchema = z.object({
    */
   cohort: z.enum(['cold', 'dapta']).optional(),
   locale: z.enum(['en', 'es']).optional(),
+  /**
+   * The three fields of a signup from the resource hub. All optional and all
+   * tolerant: a bad value reads as absent rather than refusing the completion,
+   * which would trap the person in the wizard.
+   */
+  flow: z.enum(ONBOARDING_FLOWS).optional().catch(undefined),
+  /** The slug of the playbook they were on their way to: it is emailed to them. */
+  playbook: z.string().max(120).optional().catch(undefined),
+  /** The language they were reading the hub in, when the link said so. */
+  playbookLocale: z.enum(['en', 'es']).optional().catch(undefined),
 });
 export type OnboardingCompleteInput = z.infer<typeof onboardingCompleteSchema>;

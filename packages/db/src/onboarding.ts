@@ -25,6 +25,7 @@ import {
   accountOnboardingSchema,
   ONBOARDING_COHORTS,
   ONBOARDING_STEPS,
+  onboardingSteps,
   type AccountOnboarding,
   type FormTemplateId,
   type OnboardingAnswerSource,
@@ -109,6 +110,7 @@ function mergeAnswers(base: AccountOnboarding, patch: OnboardingProgressInput): 
     ...(patch.leadSource != null ? { leadSource: patch.leadSource } : {}),
     ...(patch.phone ? { phone: patch.phone } : {}),
     ...(patch.template != null ? { template: patch.template } : {}),
+    ...(patch.flow != null ? { flow: patch.flow } : {}),
   };
 }
 
@@ -138,6 +140,10 @@ const STEP_FIELD = {
  *                ships, every row carrying it is a backfill query instead of a
  *                re-survey; without it, half the accounts would just have a null
  *                industry and nobody would remember why.
+ *
+ * A step the `hub` flow left out of a list the cohort would have asked gets NO
+ * entry: it was not asked, not declined, and Dapta holds nothing for it. The
+ * blob's `flow` is what explains the empty field.
  */
 function answerSources(
   answers: AccountOnboarding,
@@ -146,15 +152,18 @@ function answerSources(
   // A cohort this build does not know about is metadata, not a reason to fail a
   // completion. The person answered the questions; recording why the OTHERS are
   // empty is strictly less important than letting them finish.
-  const shown: readonly OnboardingStep[] | undefined = ONBOARDING_COHORTS[cohort];
-  if (!shown) return null;
+  const cohortSteps: readonly OnboardingStep[] | undefined = ONBOARDING_COHORTS[cohort];
+  if (!cohortSteps) return null;
+  const shown = onboardingSteps(cohort, answers.flow);
   const out: Partial<Record<OnboardingStep, OnboardingAnswerSource>> = {};
   for (const [step, field] of Object.entries(STEP_FIELD) as [
     OnboardingStep,
     (typeof STEP_FIELD)[keyof typeof STEP_FIELD],
   ][]) {
-    if (!shown.includes(step)) out[step] = 'dapta';
-    else out[step] = answers[field] == null ? 'skipped' : 'asked';
+    if (shown.includes(step)) out[step] = answers[field] == null ? 'skipped' : 'asked';
+    else if (!cohortSteps.includes(step)) out[step] = 'dapta';
+    // Left out by the flow. An answer an earlier, longer visit stored still counts.
+    else if (answers[field] != null) out[step] = 'asked';
   }
   return out;
 }
@@ -258,7 +267,12 @@ export async function claimOnboardingComplete(
   if (!current) return false;
 
   const base = current.onboarding ?? emptyOnboarding(now);
-  const merged = mergeAnswers(base, answers);
+  // The completing screen decides the flow: a flag left by an earlier visit that
+  // was abandoned must not describe the wizard this person actually finished.
+  const merged: AccountOnboarding = {
+    ...mergeAnswers(base, answers),
+    flow: answers.flow ?? undefined,
+  };
   const next: AccountOnboarding = {
     ...merged,
     version: 1,

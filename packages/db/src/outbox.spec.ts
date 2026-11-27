@@ -11,6 +11,7 @@ import { createDb, sqlitePathFromUrl, type Db } from './client';
 import { migrate } from './migrate';
 import {
   enqueueOutbox,
+  enqueueOutboxOnce,
   claimIdentityOf,
   claimDueOutbox,
   markOutboxRetry,
@@ -863,5 +864,26 @@ describe('summarizeFailedDeliveriesByForm', () => {
     });
     await db.run(sql`UPDATE outbox SET status = 'failed' WHERE id = ${id}`);
     expect(await summarizeFailedDeliveriesByForm(db, ACC, 'webhook')).toEqual([]);
+  });
+});
+
+describe('enqueueOutboxOnce', () => {
+  const work = { kind: 'email' as const, action: 'playbook_pdf', now: 1000 };
+
+  it('queues a key once, even when two callers race', async () => {
+    const results = await Promise.all([enqueueOutboxOnce(db, 'k1', work), enqueueOutboxOnce(db, 'k1', work)]);
+    expect(results.sort()).toEqual([false, true]);
+    expect(await listOutbox(db, { kind: 'email' })).toHaveLength(1);
+  });
+
+  it('stays refused after the row was delivered', async () => {
+    await enqueueOutboxOnce(db, 'k1', work);
+    await db.run(sql`UPDATE outbox SET status = 'done'`);
+    expect(await enqueueOutboxOnce(db, 'k1', work)).toBe(false);
+  });
+
+  it('queues another key', async () => {
+    await enqueueOutboxOnce(db, 'k1', work);
+    expect(await enqueueOutboxOnce(db, 'k2', work)).toBe(true);
   });
 });

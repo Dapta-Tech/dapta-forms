@@ -189,3 +189,14 @@ describe('stepParam / stepIndexFromSearch — the URL mirror of the wizard', () 
     expect(stepIndexFromSearch('?utm_source=landing', 7)).toBe(0);
   });
 });
+
+describe('wizardQuestions for a signup from the resource hub', () => {
+  it.each(['cold', 'dapta'] as const)('asks a %s signup two questions', (cohort) => {
+    expect(wizardQuestions(m, cohort, 'hub').map((q) => q.key)).toEqual(['lead_source', 'use_case']);
+  });
+
+  it('changes nothing without the flow', () => {
+    expect(wizardQuestions(m, 'cold', undefined)).toEqual(wizardQuestions(m, 'cold'));
+    expect(keys('cold')).toHaveLength(6);
+  });
+});

@@ -5,6 +5,7 @@ import {
   normalizeLocale,
   referralShareLabels,
   renderMemberInvited,
+  renderPlaybookPdf,
   renderReferralJoined,
   renderReferralNudge,
   renderReferralUnlocked,
@@ -46,6 +47,19 @@ export interface MemberInvitedNotification {
   accountName: string;
   invitedBy?: string | null;
   signInLink?: string | null;
+  locale?: string | null;
+}
+
+/** The playbook email sent at signup, resolved before it is enqueued. */
+export interface PlaybookPdfNotification {
+  accountId: string;
+  /** The person's key (ADR 0006): one email per person and playbook (the idempotency anchor). */
+  personId: string;
+  to: string;
+  slug: string;
+  title: string;
+  /** The absolute app link that opens the playbook ready to save as a PDF. */
+  link: string;
   locale?: string | null;
 }
 
@@ -250,6 +264,30 @@ export class SubmissionNotifier {
       // One invite per member row — a retried delivery must not read as a second
       // invitation to a managed service that de-duplicates on this key.
       idempotencyKey: `member:${n.memberId}:invited`,
+    });
+  }
+
+  /**
+   * The playbook someone was on their way to when they signed up: its title and
+   * a button that opens it. No attachment: the PDF is made from the page. Platform
+   * copy with an interpolated title: every line is escaped (E8).
+   */
+  sendPlaybookPdf(n: PlaybookPdfNotification): Promise<EmailResult> {
+    const locale = normalizeLocale(n.locale);
+    const { subject, lines, button } = renderPlaybookPdf(locale, n);
+    return this.email.send({
+      accountId: n.accountId,
+      to: [n.to],
+      subject: subject.replace(/[\r\n]+/g, ' ').trim(),
+      text: [...lines, '', `${button}: ${n.link}`].join('\n'),
+      html: emailDocument({
+        lang: locale,
+        lines: lines.map(escapeHtml),
+        logoUrl: this.logoUrl,
+        cta: { question: '', action: button, href: n.link },
+      }),
+      locale,
+      idempotencyKey: `playbook:${n.personId}:${n.slug}:pdf`,
     });
   }
 
