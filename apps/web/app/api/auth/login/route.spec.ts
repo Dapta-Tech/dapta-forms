@@ -553,6 +553,7 @@ describe('GET /api/auth/login destination (next)', () => {
     '/admin/developers/docs',
     '/admin/playbooks',
     '/admin/playbooks/guia-de-calificacion',
+    '/admin/playbooks/x?lang=en',
   ])('parks %s in an httpOnly cookie for 30 minutes', async (next) => {
     await GET(req(`/api/auth/login?next=${encodeURIComponent(next)}`));
 
@@ -567,8 +568,19 @@ describe('GET /api/auth/login destination (next)', () => {
     ['a query string', '/admin/playbooks?categoria=ventas'],
     ['a path outside the dashboard', '/playbooks/guia'],
     ['an overlong path', `/admin/playbooks/${'a'.repeat(200)}`],
+    ['a language plus another parameter', '/admin/playbooks/x?lang=en&x=1'],
+    ['a language the reader does not have', '/admin/playbooks/x?lang=fr'],
   ])('never parks %s', async (_label, next) => {
     await GET(req(`/api/auth/login?next=${encodeURIComponent(next)}`));
+
+    expect(nextSet()).toBeUndefined();
+  });
+
+  it.each([
+    ['a language plus an encoded parameter', '/admin/playbooks/x?lang=en%26x=1'],
+    ['a language the reader does not have', '/admin/playbooks/x?lang=fr'],
+  ])('never parks %s written straight into the link', async (_label, raw) => {
+    await GET(req(`/api/auth/login?next=${raw}`));
 
     expect(nextSet()).toBeUndefined();
   });

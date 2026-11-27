@@ -34,6 +34,12 @@ describe('safeNextPath', () => {
     expect(safeNextPath(`${base}a?lang=en`)).toBeNull();
   });
 
+  it('trims a trailing newline but never lets one through', () => {
+    // `.trim()` runs before the match, so the value that passes has none.
+    expect(safeNextPath('/admin/playbooks/x?lang=en\n')).toBe('/admin/playbooks/x?lang=en');
+    expect(safeNextPath('/admin/playbooks/x?lang=en\n')).not.toContain('\n');
+  });
+
   it('takes the first of a repeated param', () => {
     expect(safeNextPath(['/admin/developers/keys', 'https://evil.example'])).toBe('/admin/developers/keys');
   });
@@ -69,6 +75,13 @@ describe('safeNextPath', () => {
     ['a language followed by a host', '/admin/playbooks/x?lang=en//evil.example'],
     ['a parent segment before the language', '/admin/playbooks/../forms?lang=en'],
     ['a language on another host', 'https://evil.example/admin/playbooks/x?lang=en'],
+    ['a backslash below playbooks', '/admin/playbooks\\evil.example?lang=en'],
+    ['an encoded CRLF', '/admin/playbooks/x?lang=en%0d%0a'],
+    ['an encoded CRLF in the path', '/admin/playbooks/x%0d%0aSet-Cookie:a=b?lang=en'],
+    ['an encoded question mark', '/admin/playbooks/x%3Flang=en'],
+    ['a literal newline after the language', '/admin/playbooks/x?lang=en\nx'],
+    ['a newline ending the path before the language', '/admin/playbooks/x\n?lang=en'],
+    ['a double slash after playbooks', '/admin/playbooks//evil.example?lang=en'],
     ['a fragment', '/admin#x'],
     ['an encoded slash', '/admin/%2F%2Fevil.example'],
     ['an empty value', ''],
