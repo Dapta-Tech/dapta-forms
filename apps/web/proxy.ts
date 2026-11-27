@@ -1,6 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { canonicalHop } from '@/lib/request-origin';
 import { BROWSER_ID_COOKIE, browserIdCookieOptions, browserIdFromCookie, newBrowserId } from '@/lib/browser-id';
+import { RETURN_PATH_HEADER, playbookReturnPath } from '@/lib/return-path';
+
+/**
+ * The playbook page being asked for, as a return path, or null for any other
+ * page. `_rsc` is the router's own parameter on its page loads.
+ */
+function requestedPlaybook(req: NextRequest): string | null {
+  const search = req.nextUrl.search.replace(/([?&])_rsc(?:=[^&]*)?(&|$)/, (_m, lead: string, tail: string) => (tail ? lead : ''));
+  return playbookReturnPath(`${req.nextUrl.pathname}${search}`);
+}
 
 /**
  * Let the request through, minting the first-party browser id when the
@@ -8,13 +18,22 @@ import { BROWSER_ID_COOKIE, browserIdCookieOptions, browserIdFromCookie, newBrow
  * write a cookie (a Server Component render), and every dashboard and wizard
  * load passes through. The fresh id is put on the REQUEST too, so the page
  * rendered by this very request already forwards it to `/v1/me`.
+ *
+ * A playbook page also gets its own address on the request
+ * (`RETURN_PATH_HEADER`), which a render cannot read otherwise: a 401 there
+ * brings the person back to it. The header is only ever the proxy's: one that
+ * arrived with the request is dropped.
  */
 function pass(req: NextRequest): NextResponse {
-  if (browserIdFromCookie(req.cookies.get(BROWSER_ID_COOKIE)?.value)) return NextResponse.next();
-  const id = newBrowserId();
-  req.cookies.set(BROWSER_ID_COOKIE, id);
+  const known = browserIdFromCookie(req.cookies.get(BROWSER_ID_COOKIE)?.value);
+  const playbook = requestedPlaybook(req);
+  if (known && !playbook && !req.headers.has(RETURN_PATH_HEADER)) return NextResponse.next();
+  const minted = known ? null : newBrowserId();
+  if (minted) req.cookies.set(BROWSER_ID_COOKIE, minted);
+  req.headers.delete(RETURN_PATH_HEADER);
+  if (playbook) req.headers.set(RETURN_PATH_HEADER, playbook);
   const res = NextResponse.next({ request: { headers: req.headers } });
-  res.cookies.set(BROWSER_ID_COOKIE, id, browserIdCookieOptions());
+  if (minted) res.cookies.set(BROWSER_ID_COOKIE, minted, browserIdCookieOptions());
   return res;
 }
 

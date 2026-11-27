@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { safeNextPath, withNextPath } from './return-path';
+import { playbookReturnPath, safeNextPath, withNextPath } from './return-path';
 
 describe('safeNextPath', () => {
   it('accepts a plain dashboard path', () => {
@@ -134,6 +134,40 @@ describe('safeNextPath', () => {
     ['a very long path', `/admin/${'a'.repeat(300)}`],
   ])('rejects %s', (_label, raw) => {
     expect(safeNextPath(raw)).toBeNull();
+  });
+});
+
+describe('playbookReturnPath, what survives a missing or expired session', () => {
+  it.each([
+    '/admin/playbooks',
+    '/admin/playbooks?lang=en',
+    '/admin/playbooks/guia',
+    '/admin/playbooks/guia?lang=es',
+    '/admin/playbooks/guia?pdf=1',
+    '/admin/playbooks/guia?lang=en&pdf=1',
+  ])('keeps %s, byte for byte', (path) => {
+    expect(playbookReturnPath(path)).toBe(path);
+    expect(playbookReturnPath([path, 'https://evil.example'])).toBe(path);
+  });
+
+  it.each([
+    '/admin',
+    '/admin/forms',
+    '/admin/developers/keys',
+    '/admin/playbooksx',
+    '/admin/forms/playbooks',
+    'https://evil.example/admin/playbooks',
+    '//evil.example/admin/playbooks',
+    '/\\evil.example',
+    '/admin/playbooks/../../login',
+    '/admin/playbooks/%2E%2E/login',
+    '/admin/playbooks//evil.example',
+    '/admin/playbooks/guia?next=https://evil.example',
+    '/admin/playbooks/guia?lang=en&pdf=1&next=//evil.example',
+    '/admin/playbooks/guia#x',
+    '',
+  ])('refuses %s', (path) => {
+    expect(playbookReturnPath(path)).toBeNull();
   });
 });
 

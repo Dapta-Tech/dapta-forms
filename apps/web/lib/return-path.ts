@@ -66,6 +66,26 @@ export function safeNextPath(raw: unknown): string | null {
   return known ? path : null;
 }
 
+/**
+ * The request header the proxy sets on a playbook page with its own return
+ * path, so the render that answers 401 there knows what to come back to
+ * (`proxy.ts`, `lib/admin-api.ts`).
+ */
+export const RETURN_PATH_HEADER = 'x-quill-return';
+
+const PLAYBOOK_ROUTE = /^\/admin\/playbooks(?=$|[/?])/;
+
+/**
+ * `safeNextPath`, narrowed to the gallery and the playbook pages: the only
+ * destinations that survive a missing or expired session. Someone who opens
+ * the link of an email signed out is brought back to the playbook (and its
+ * download); every other dashboard page lands where it always did.
+ */
+export function playbookReturnPath(raw: unknown): string | null {
+  const path = safeNextPath(raw);
+  return path && PLAYBOOK_ROUTE.test(path) ? path : null;
+}
+
 /** `url` with `next` appended, for a relative URL that may already carry a query. */
 export function withNextPath(url: string, next: string | null): string {
   if (!next) return url;
