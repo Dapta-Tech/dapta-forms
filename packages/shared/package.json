@@ -1,6 +1,6 @@
 {
   "name": "@quill/shared",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Framework-free shared utilities: handle validation, branding/accent, growth badge, i18n, design tokens and the playbooks catalog.",
@@ -8,8 +8,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./playbooks": { "types": "./dist/playbooks.d.ts", "import": "./dist/playbooks.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./playbooks": {
+      "types": "./dist/playbooks.d.ts",
+      "import": "./dist/playbooks.js"
+    },
     "./tokens.css": "./src/tokens.css"
   },
   "scripts": {

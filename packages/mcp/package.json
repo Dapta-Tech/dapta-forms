@@ -1,6 +1,6 @@
 {
   "name": "@quill/mcp",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The dForms MCP server: task-shaped tools over a host-provided forms backend, a hardened Streamable HTTP door, and the agent guide (config JSON Schema, rules, examples).",
@@ -8,8 +8,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./guide": { "types": "./dist/guide/index.d.ts", "import": "./dist/guide/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./guide": {
+      "types": "./dist/guide/index.d.ts",
+      "import": "./dist/guide/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
